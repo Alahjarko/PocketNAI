@@ -10,6 +10,7 @@ import net.pocketnai.domain.model.DirectorReferenceKind
 import net.pocketnai.domain.model.GenerationMode
 import net.pocketnai.domain.model.GenerationParams
 import net.pocketnai.domain.model.GenerationRequest
+import net.pocketnai.domain.model.ModelTier
 import net.pocketnai.domain.model.ModelProfile
 import net.pocketnai.domain.model.ReferenceImage
 import net.pocketnai.domain.model.ReferenceRole
@@ -182,7 +183,7 @@ object NovelAiRequestBuilder {
         return buildJsonObject {
             put("input", positive)
             put("model", profile.model.apiModelId)
-            put("action", actionFor(request.mode, img2imgSource != null, useInpaint))
+            put("action", actionFor(profile, request.mode, img2imgSource != null, useInpaint))
             put("parameters", parameters)
         }
     }
@@ -328,17 +329,22 @@ object NovelAiRequestBuilder {
      * action 取值。
      *
      * - 图生图：`img2img`（`image` 字段只在那个 action 下被接受，真机验证结论）；
-     * - 局部重绘：`infill`（服务端报错原文 `use img2img or infill`）；
+     * - 局部重绘：`infill`。**只有这个 action 会真正读取蒙版** ——
+     *   实测把蒙版挂到 `img2img` 上时服务端完全忽略它（涂了 3.55% 的区域，
+     *   出图却有 52.6% 的像素变了、包围盒是整张图，即做了一次普通图生图）。
+     *   而 Curated 档位不被 `infill` 接受（`Model nai-diffusion-4-5-curated doesn't
+     *   support action infill`），因此**Curated 上无法通过公开 API 做局部重绘**，
+     *   见 `ModelProfile.supportsInpaint` 与界面文案。
      * - 其余（含 Precise Reference / Vibe）：`generate`。
      */
     private fun actionFor(
+        profile: ModelProfile,
         mode: GenerationMode,
         hasImg2ImgImage: Boolean,
         useInpaint: Boolean,
     ): String = when {
-        useInpaint -> ACTION_INFILL
+        useInpaint || mode == GenerationMode.INPAINT -> ACTION_INFILL
         hasImg2ImgImage -> ACTION_IMG2IMG
-        mode == GenerationMode.INPAINT -> ACTION_INFILL
         else -> ACTION_GENERATE
     }
 

@@ -94,14 +94,17 @@ data class ModelProfile(
     /** 是否支持 Precise Reference。同上：目前仅 V4.5。 */
     val supportsDirectorReference: Boolean,
     /**
-     * 是否支持局部重绘。
+     * 是否支持局部重绘（通过**公开 API**）。
      *
-     * **只有 Full 档位支持**：实机验证时服务端对 Curated 明确拒绝 ——
-     * `Model nai-diffusion-4-5-curated doesn't support action infill`。
+     * 只有 Full 档位：`action: "infill"` 是唯一会读取蒙版的动作，
+     * 而服务端对 Curated 明确拒绝它 —— `Model nai-diffusion-4-5-curated doesn't support
+     * action infill`。
      *
-     * ⚠️ "Full 支持"这一点尚未用真实生成验证过（需要一次非免费的请求，只能由用户触发）。
-     * 规格上它应当支持（局部重绘属于 Image2Img 家族），因此先按支持实现；
-     * 真机核对后如果 Full 也被拒，把这里改成 false 并同步界面文案即可。
+     * ⚠️ 官方**网页**上 Curated 能重绘（账号所有者确认过），因此这条限制属于
+     * "公开 API 与网页后端能力不一致"，不是实现问题。真机上已排除一条替代路径：
+     * 把蒙版挂到 `img2img` 上会被完全忽略（定量验证见技术决策记录第十五节）。
+     *
+     * ⚠️ 另一方面，"Full 支持"尚未用真实生成验证 —— 需要一次非免费请求。
      */
     val supportsInpaint: Boolean,
     /** Vibe Transfer 的参考图张数上限。数值集中在 [ModelCatalog]，见那里的待核对说明。 */

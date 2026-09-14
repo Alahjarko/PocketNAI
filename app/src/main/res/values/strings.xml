@@ -128,7 +128,7 @@
     <string name="inpaint_hint">只重画被涂抹的区域，其余部分保持不变。涂抹边缘太靠近不想改的地方时，把「蒙版扩张」调大一点。</string>
     <string name="inpaint_empty_hint">还没有涂抹任何区域，此时不能生成。</string>
     <string name="inpaint_open_editor">涂抹要重画的区域</string>
-    <string name="inpaint_needs_base">%1$s 不支持局部重绘（Curated 档位不支持服务端的 infill 操作），请切换到 Full 模型。</string>
+    <string name="inpaint_needs_base">%1$s 不支持局部重绘：公开 API 只在 Full 档位接受 infill 操作（官方网页对 Curated 可用，但 API 会拒绝）。请切换到 Full 模型。</string>
     <string name="inpaint_masked">编辑蒙版</string>
     <string name="inpaint_masked_hint">已涂抹要重画的区域。生成时只重画这一块，其余部分保持不变。</string>
     <string name="inpaint_not_masked">尚未涂抹任何区域。</string>

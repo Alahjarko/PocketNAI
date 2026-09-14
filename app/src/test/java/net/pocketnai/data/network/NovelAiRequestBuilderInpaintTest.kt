@@ -86,7 +86,13 @@ class NovelAiRequestBuilderInpaintTest {
 
     @Test
     fun `局部重绘使用 infill 这个 action`() {
-        val json = build(listOf(base(), mask()), fullUpstream)
+        // 只有 infill 会真正读取蒙版：实测把蒙版挂到 img2img 上时被完全忽略
+        // （涂了 3.55% 的区域，出图却有 52.6% 的像素变了）。
+        val json = build(
+            references = listOf(base(), mask()),
+            upstream = fullUpstream,
+            onProfile = ModelCatalog.profileOf(ImageModel.V4_5_FULL),
+        )
 
         assertThat(json.getValue("action").jsonPrimitive.content).isEqualTo("infill")
         assertThat(json.getValue("action").jsonPrimitive.content)
@@ -148,13 +154,15 @@ class NovelAiRequestBuilderInpaintTest {
         val json = build(
             listOf(base()),
             mapOf(ReferenceRole.IMG2IMG to listOf("BASE64")),
+            onProfile = ModelCatalog.profileOf(ImageModel.V5_FULL),
         )
         val parameters = parameters(json)
 
         assertThat(parameters).doesNotContainKey("mask")
         assertThat(parameters).doesNotContainKey("image")
         // action 仍按模式标明意图（校验会在更早的环节拦下并给出明确原因）。
-        assertThat(json.getValue("action").jsonPrimitive.content).isEqualTo("infill")
+        assertThat(json.getValue("action").jsonPrimitive.content)
+            .isEqualTo(NovelAiRequestBuilder.ACTION_INFILL)
     }
 
     @Test
@@ -209,36 +217,28 @@ class NovelAiRequestBuilderInpaintTest {
     // ---- 模型能力：重绘属于 Image2Img 家族 ----
 
     @Test
-    fun `Curated 档位不支持局部重绘`() {
+    fun `只有 Full 档位能通过公开 API 做局部重绘`() {
         // 服务端原话：Model nai-diffusion-4-5-curated doesn't support action infill
         assertThat(profile.supportsInpaint).isFalse()
         assertThat(v5.supportsInpaint).isFalse()
+        assertThat(ModelCatalog.profileOf(ImageModel.V4_5_FULL).supportsInpaint).isTrue()
+        assertThat(ModelCatalog.profileOf(ImageModel.V5_FULL).supportsInpaint).isTrue()
 
-        val request = GenerationRequest(
+        val curated = GenerationRequest(
             params = params(),
             mode = GenerationMode.INPAINT,
             references = listOf(base(), mask()),
         )
-
-        assertThat(request.validate(profile))
+        assertThat(curated.validate(profile))
             .contains(ReferenceViolation.ModeUnsupported(GenerationMode.INPAINT))
-    }
 
-    @Test
-    fun `Full 档位支持局部重绘`() {
-        // ⚠️ "Full 支持"尚未用真实生成验证（需要一次非免费请求）。
-        // 这条断言锁的是当前的设计意图：Curated 不支持、Full 走通。
-        assertThat(ModelCatalog.profileOf(ImageModel.V4_5_FULL).supportsInpaint).isTrue()
-        assertThat(ModelCatalog.profileOf(ImageModel.V5_FULL).supportsInpaint).isTrue()
-
-        val fullProfile = ModelCatalog.profileOf(ImageModel.V4_5_FULL)
-        val request = GenerationRequest(
-            params = params().copy(model = ImageModel.V4_5_FULL),
+        val fullProfile = ModelCatalog.profileOf(ImageModel.V5_FULL)
+        val full = GenerationRequest(
+            params = params().copy(model = ImageModel.V5_FULL),
             mode = GenerationMode.INPAINT,
             references = listOf(base(), mask()),
         )
-
-        assertThat(request.validate(fullProfile)).isEmpty()
+        assertThat(full.validate(fullProfile)).isEmpty()
     }
 
     // ---- 不影响其它模式 ----
