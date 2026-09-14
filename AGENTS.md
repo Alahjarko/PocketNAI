@@ -213,6 +213,11 @@
 [docs/PocketNAI-技术决策记录.md](docs/PocketNAI-技术决策记录.md) 第 3.7 节，
 改到相关代码时先看一遍。
 
+局部重绘（Inpaint）的调研与待核对清单见
+[docs/PocketNAI-局部重绘功能规划书.md](docs/PocketNAI-局部重绘功能规划书.md)：
+它最大的未知量是**蒙版约定**（涂抹区域是白色还是透明），必须先做一次判别性探针再实现编码。
+那条探针与其余 B 类项一样，**只能由用户手动发起**。
+
 参考图功能（Image2Img / Vibe Transfer / Precise Reference）另有一份待核对清单，
 见 [docs/PocketNAI-参考图功能规划书.md](docs/PocketNAI-参考图功能规划书.md) 第 3.4 节：
 **阶段 0 的 A 类核对（官方网页版的默认值与最大张数）必须先做完**，那些数值不允许按经验猜。

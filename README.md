@@ -5,7 +5,8 @@
 使用你自己的 NovelAI **Persistent API Token** 直连 NovelAI，不经过任何第三方中转服务器，也不要求提供 NovelAI 邮箱或密码。
 
 > 规划基线见 [docs/PocketNAI-规划书草案.md](docs/PocketNAI-规划书草案.md)，实现取舍见 [docs/PocketNAI-技术决策记录.md](docs/PocketNAI-技术决策记录.md)，
-> 参考图（Image2Img / Vibe Transfer / Precise Reference）的分阶段计划见 [docs/PocketNAI-参考图功能规划书.md](docs/PocketNAI-参考图功能规划书.md)。
+> 参考图（Image2Img / Vibe Transfer / Precise Reference）的分阶段计划见 [docs/PocketNAI-参考图功能规划书.md](docs/PocketNAI-参考图功能规划书.md)，
+> 局部重绘（Inpaint）的调研与计划见 [docs/PocketNAI-局部重绘功能规划书.md](docs/PocketNAI-局部重绘功能规划书.md)。
 
 ---
 

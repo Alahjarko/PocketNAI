@@ -1108,3 +1108,46 @@ Vibe 与**图生图**不冲突：实测两者同时发送时请求通过（前�
 - 仅 V4.5 可用（能力位与 Precise Reference 相同）；
 - 费用：价格未确认，只要挂了 Vibe，按钮上就是"费用待确认"；
 - 两个滑块的默认值（0.6 / 1.0）与模型 ID 一样属于**待核对**项，集中在 `NovelAiRequestBuilder`。
+
+---
+
+## 十四、官方文档核对（局部重绘调研的副产品）
+
+为调研 Inpaint 而通读官方文档站（`docs.novelai.net/en/image/*`），顺手核对了三件之前只能靠推断或口述的事。
+**文档是权威来源，这三条从此不再是"待核对"。**
+
+### 14.1 Precise Reference 的 +5 得到官方证实
+
+原文：*"Using Precise Reference will apply an additional cost of 5 Anlas to each image generation.
+This extra cost scales with the number of references you use."*
+
+这确认了两件事：**每张 5 Anlas**，且**按参考图张数累加**。我们的实现
+（`PRECISE_REFERENCE_SURCHARGE_ANLAS` = 5，按张相乘）与官方一致，
+余额观测到的 407 → 402 也与它对得上。
+
+### 14.2 Precise Reference 有三种取用方式，我们少了"纯画风"
+
+官方有 **Character Reference / Style Reference / Character & Style Reference** 三种。
+我们只提供了后两种（`character` / `character&style`），**缺纯画风**。
+
+界面与枚举都要补一个值。请求里它多半仍然写在 `caption.base_caption` 上，
+但纯画风对应的字符串（`style`？`character&style` 之外的哪个？）**需要核对** ——
+OpenAPI 只给出了 `character` / `character&style` 两个取值。
+
+### 14.3 Vibe 的 Strength 有一条官方经验值
+
+原文：*"generally, the strengths of all your vibes should add up to 1.0 or less for good results.
+You can use the Normalize Reference Strengths toggle to do this automatically when using V4 or higher models."*
+
+因此第一版缺的不只是提示文案：官方那侧有一个**归一化开关**。
+建议补一个"归一化"按钮（把当前几张的 Strength 等比例缩放到合计 1.0），
+并在面板上写明这条经验值。
+
+另外 "Information Extracted" 官方建议**用默认值**，并说明 V4 以上先丢的是高频信息（纹理）：
+降低它保留更多构图、更少风格。
+
+### 14.4 仍未解决的
+
+官方文档是散文式的产品说明，**不写数值默认值**。因此这些仍是待核对项：
+Inpaint 的 Strength/Noise 初值、Vibe 两个滑块的初值、img2img 的 Strength/Noise 初值、
+CFG Rescale 的可用区间。它们只能从官方网页的界面上读出来。
