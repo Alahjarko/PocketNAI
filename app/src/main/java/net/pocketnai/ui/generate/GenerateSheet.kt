@@ -67,6 +67,7 @@ import net.pocketnai.data.security.CredentialType
 import net.pocketnai.ui.common.credentialInvalidMessageRes
 import net.pocketnai.R
 import net.pocketnai.domain.model.ModelCatalog
+import net.pocketnai.domain.model.GenerationMode
 import net.pocketnai.domain.model.NoiseSchedule
 import net.pocketnai.domain.model.QualityTagsOption
 import net.pocketnai.domain.model.ResolutionTier
@@ -168,6 +169,17 @@ fun GenerateSheet(
             if (!connected) {
                 NotConnectedCard(onRequestConnect = onRequestConnect)
             }
+
+            // 参考图放在最上面：它是"这次生成用什么模式"的前提，
+            // 而模式会决定下面的尺寸与计费预期。
+            ReferenceImageSection(
+                state = state,
+                connected = connected,
+                viewModel = viewModel,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            SectionHeader(stringResource(R.string.generate_section_prompt))
 
             OutlinedTextField(
                 value = promptField,
@@ -590,9 +602,22 @@ private fun SheetHeader(
                 style = MaterialTheme.typography.titleSmall,
             )
             // 摘要只放参数：提示词的内容属于编辑区，塞进来只会把这一行挤到截断。
+            // 图生图必须在这里体现：否则收起悬浮层后用户看不出这次是在改图，
+            // 会以为出图尺寸或风格出了错。
+            // 注意 stringResource 只能调在 composable 作用域里，不能塞进 buildString。
+            val img2imgMarker = stringResource(R.string.generate_mode_img2img)
             Text(
-                text = "${state.profile.model.shortDisplayName} · " +
-                    "${state.params.size.label} · ${state.params.qualityTags.displayName}",
+                text = buildString {
+                    append(state.profile.model.shortDisplayName)
+                    append(" · ")
+                    append(state.params.size.label)
+                    append(" · ")
+                    append(state.params.qualityTags.displayName)
+                    if (state.mode == GenerationMode.IMG2IMG) {
+                        append(" · ")
+                        append(img2imgMarker)
+                    }
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

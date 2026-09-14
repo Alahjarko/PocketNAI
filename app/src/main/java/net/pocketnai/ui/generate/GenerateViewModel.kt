@@ -15,24 +15,33 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import net.pocketnai.core.AppError
 import net.pocketnai.core.ErrorCode
+import net.pocketnai.core.Outcome
 import net.pocketnai.data.repo.GenerationEvent
 import net.pocketnai.data.repo.GenerationRepository
 import net.pocketnai.data.settings.GenerationDraftPreferences
+import net.pocketnai.domain.image.PreparedReference
+import net.pocketnai.domain.image.ReferenceImageImporter
+import net.pocketnai.domain.image.ReferenceSource
 import net.pocketnai.domain.model.GenerationDraft
+import net.pocketnai.domain.model.GenerationMode
 import net.pocketnai.domain.model.GenerationParams
+import net.pocketnai.domain.model.GenerationRequest
 import net.pocketnai.domain.model.ImageModel
 import net.pocketnai.domain.model.ImageOrientation
+import net.pocketnai.domain.model.ImageSizePreset
 import net.pocketnai.domain.model.ModelCatalog
 import net.pocketnai.domain.model.ModelProfile
 import net.pocketnai.domain.model.NoiseSchedule
 import net.pocketnai.domain.model.ParamViolation
 import net.pocketnai.domain.model.QualityTagsOption
+import net.pocketnai.domain.model.ReferenceImage
 import net.pocketnai.domain.model.ResolutionTier
 import net.pocketnai.domain.model.Sampler
 import net.pocketnai.domain.model.SeedMode
 import net.pocketnai.domain.prompt.PromptRandomizer
 import net.pocketnai.domain.prompt.TagSuggestionSource
 import net.pocketnai.ui.state.GenerationDraftStore
+import java.util.UUID
 
 /**
  * 生成页状态。
@@ -47,6 +56,9 @@ class GenerateViewModel(
     private val draftStore: GenerationDraftStore,
     private val draftPreferences: GenerationDraftPreferences,
     private val tagSuggestionSource: TagSuggestionSource,
+    private val referenceImporter: ReferenceImageImporter,
+    private val idGenerator: () -> String = { UUID.randomUUID().toString() },
+    private val clock: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
     data class UiState(
@@ -63,6 +75,16 @@ class GenerateViewModel(
         val error: AppError? = null,
         /** 切换模型时若参数被替换，向用户说明发生了什么。 */
         val modelSwitchNotice: String? = null,
+        /**
+         * Image2Img 的起点图。非空即代表当前处于图生图模式 ——
+         * 模式不是一个独立的开关，而是"有没有起点图"的结果，
+         * 这样就不可能出现"选了图生图模式却没有图"这种自相矛盾的状态。
+         */
+        val referenceSource: ReferenceImage? = null,
+        /** 正在导入参考图（解码 + 落盘）。期间不该重复触发导入。 */
+        val referenceBusy: Boolean = false,
+        /** 参考图导入失败的原因，与生成失败分开：它不影响已经写好的提示词与参数。 */
+        val referenceError: AppError? = null,
         /** 当前可点的标签建议；补全失败或不适用时为空。 */
         val suggestions: List<String> = emptyList(),
         /**
@@ -87,7 +109,18 @@ class GenerateViewModel(
         val blockingViolations: List<ParamViolation>
             get() = profile.validate(params).filterNot { it is ParamViolation.PromptTooLong }
 
-        val canGenerate: Boolean get() = !inFlight && promptTemplate.isNotBlank()
+        val canGenerate: Boolean get() = !inFlight && !referenceBusy && promptTemplate.isNotBlank()
+
+        val mode: GenerationMode
+            get() = if (referenceSource != null) GenerationMode.IMG2IMG else GenerationMode.TXT2IMG
+
+        /**
+         * 提交时会把起点图裁切到的尺寸。
+         *
+         * 对用户可见很重要：图生图的输出尺寸不是他自己选的，而是按源图比例定的，
+         * 界面必须说清楚"提交的是 1216×832"，否则用户会以为出图尺寸出错了。
+         */
+        val referenceTargetSize: ImageSizePreset? get() = referenceSource?.let { params.size }
     }
 
     /**
@@ -105,6 +138,7 @@ class GenerateViewModel(
             params = draft.params,
             promptTemplate = draft.promptTemplate,
             negativeTemplate = draft.negativeTemplate,
+            referenceSource = draft.referenceSource,
         )
     }
 
@@ -126,6 +160,7 @@ class GenerateViewModel(
                         params = current.params,
                         promptTemplate = current.promptTemplate,
                         negativeTemplate = current.negativeTemplate,
+                        referenceSource = current.referenceSource,
                     )
                 }
                 .distinctUntilChanged()
@@ -138,13 +173,16 @@ class GenerateViewModel(
                 if (pending == null) return@collect
                 val reused = draftStore.consume() ?: return@collect
                 // 复用参数只填充编辑区，绝不自动开始生成（规划书 4.3）。
+                // 参考图一并恢复：只带回 Strength 却没有图，那个参数没有任何意义。
                 _state.update {
                     it.copy(
-                        params = reused,
-                        promptTemplate = reused.prompt,
-                        negativeTemplate = reused.negativePrompt,
+                        params = reused.params,
+                        promptTemplate = reused.params.prompt,
+                        negativeTemplate = reused.params.negativePrompt,
+                        referenceSource = reused.img2imgSource,
                         error = null,
                         modelSwitchNotice = null,
+                        referenceError = null,
                     )
                 }
             }
@@ -323,6 +361,80 @@ class GenerateViewModel(
         _state.update { it.copy(modelSwitchNotice = null) }
     }
 
+    // ---- 参考图（Image2Img） ----
+
+    /**
+     * 导入一张起点图。
+     *
+     * 导入成功后会把 Resolution 设成与源图比例对应的官方预设 ——
+     * 图生图的输出尺寸由源图决定，而不是让用户另外选一个比例再让图去迁就它。
+     * 用官方预设而不是任意合法尺寸是有意的：预设是计费与观感都确定的那些尺寸
+     * （Normal 档位 832×1216 / 1216×832 / 1024×1024），自己算一个尺寸等于引入一个未知量。
+     */
+    fun onReferencePicked(source: ReferenceSource) {
+        if (_state.value.referenceBusy) return
+        _state.update { it.copy(referenceBusy = true, referenceError = null) }
+
+        viewModelScope.launch {
+            when (val outcome = referenceImporter.import(source)) {
+                is Outcome.Success -> {
+                    val prepared = outcome.value
+                    _state.update { current ->
+                        val profile = current.profile
+                        current.copy(
+                            referenceBusy = false,
+                            referenceSource = ReferenceImage.img2imgSource(
+                                prepared = prepared,
+                                strength = profile.defaultImg2ImgStrength,
+                                id = idGenerator(),
+                                createdAt = clock(),
+                            ),
+                            params = current.params.copy(size = sizeForSource(profile, prepared)),
+                        )
+                    }
+                }
+
+                is Outcome.Failure -> _state.update {
+                    it.copy(referenceBusy = false, referenceError = outcome.error)
+                }
+            }
+        }
+    }
+
+    fun onRemoveReference() {
+        _state.update { it.copy(referenceSource = null, referenceError = null) }
+    }
+
+    fun onImg2imgStrengthChange(strength: Double) {
+        _state.update { current ->
+            val source = current.referenceSource ?: return@update current
+            current.copy(
+                referenceSource = source.copy(
+                    strength = current.profile.img2imgStrengthRange.clamp(strength),
+                ),
+            )
+        }
+    }
+
+    fun dismissReferenceError() {
+        _state.update { it.copy(referenceError = null) }
+    }
+
+    /**
+     * 源图比例 → 官方预设尺寸。
+     *
+     * 取 Normal 档位：它是官方默认档位，也是素材最省的档位。
+     * 用户之后仍可以在界面上改成 Large 或换方向，那时 [GenerationRequest] 会带着新的尺寸，
+     * 起点图在提交时按新尺寸重新裁切（见 `ReferenceImageProcessor.encodeBase64`）。
+     */
+    private fun sizeForSource(
+        profile: ModelProfile,
+        prepared: PreparedReference,
+    ): ImageSizePreset {
+        val orientation = ImageSizePreset(prepared.width, prepared.height).orientation
+        return profile.sizeFor(ResolutionTier.NORMAL, orientation) ?: profile.defaultSize
+    }
+
     /**
      * 光标移动后由界面调用，告诉这里当前可以补全的标签片段。
      *
@@ -371,35 +483,41 @@ class GenerateViewModel(
             prompt = resolvedPrompt,
             negativePrompt = resolvedNegative,
         )
+        val request = GenerationRequest(
+            params = frozen,
+            mode = snapshot.mode,
+            references = listOfNotNull(snapshot.referenceSource),
+        )
 
         _state.update {
             it.copy(inFlight = true, completedImages = 0, error = null, modelSwitchNotice = null)
         }
 
         viewModelScope.launch {
-            repository.generate(frozen, promptTemplate = snapshot.promptTemplate).collect { event ->
-                when (event) {
-                    is GenerationEvent.Started -> Unit
+            repository.generate(request, promptTemplate = snapshot.promptTemplate)
+                .collect { event ->
+                    when (event) {
+                        is GenerationEvent.Started -> Unit
 
-                    is GenerationEvent.Final -> _state.update {
-                        it.copy(completedImages = it.completedImages + 1)
+                        is GenerationEvent.Final -> _state.update {
+                            it.copy(completedImages = it.completedImages + 1)
+                        }
+
+                        is GenerationEvent.ItemError -> _state.update {
+                            it.copy(error = event.error)
+                        }
+
+                        is GenerationEvent.FatalError -> _state.update {
+                            it.copy(inFlight = false, error = event.error)
+                        }
+
+                        is GenerationEvent.Completed -> _state.update {
+                            it.copy(inFlight = false)
+                        }
+
+                        is GenerationEvent.Intermediate -> Unit
                     }
-
-                    is GenerationEvent.ItemError -> _state.update {
-                        it.copy(error = event.error)
-                    }
-
-                    is GenerationEvent.FatalError -> _state.update {
-                        it.copy(inFlight = false, error = event.error)
-                    }
-
-                    is GenerationEvent.Completed -> _state.update {
-                        it.copy(inFlight = false)
-                    }
-
-                    is GenerationEvent.Intermediate -> Unit
                 }
-            }
         }
     }
 

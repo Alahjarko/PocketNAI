@@ -132,7 +132,7 @@ Precise Reference 只用到 `caption.base_caption`，`char_captions` 保持空�
 | # | 待核对项 | 为什么要先确认 |
 |---|---|---|
 | A1 | 三个面板各自的滑块**默认值**（Strength、Noise、Information Extracted、Reference Strength、Fidelity） | 规划书 3.2 明确"默认值必须记录后固化，不得凭经验猜"，与本项目对 Steps/Guidance 的处理保持一致 |
-| A2 | Vibe 与 Precise Reference 的**最大张数** | OpenAPI 里这些数组**没有 `maxItems`**，客户端必须自己设上限，猜错会构造出服务端拒绝的请求 |
+| A2 | ~~Vibe 与 Precise Reference 的**最大张数**~~ | **已确认（2026-09-14，用户核对官方网页版）：4**。已固化为 `ModelCatalog` 里两个常量 |
 | A3 | Image2Img 的铅笔图标是否确实进入 Inpaint，以及 Precise Reference 是否支持"从历史选图" | 决定 4.6 的排除范围是否准确 |
 | A4 | 三个功能是否各自有官方标注的 Anlas 加价 | 影响 4.5 的费用提示文案 |
 
@@ -145,6 +145,15 @@ Precise Reference 只用到 `caption.base_caption`，`char_captions` 保持空�
 | B3 | `/ai/encode-vibe` 是否消耗 Anlas | 决定它是"可以随选图自动调用"还是"必须用户点按钮才调用"。**在确认前一律按消耗处理** |
 | B4 | `strength` / `noise` 的合法区间是否就是 0–1 | 界面滑块范围按 0–1 实现，越界由 `ModelProfile.normalize` 夹取 |
 | B5 | encode-vibe 的产物是否**与模型相关**（它的请求体里有 `model` 字段） | 决定缓存键。**默认按相关处理**：缓存键 = `model + 图片 sha256 + information_extracted`，多存几个副本的代价远小于"跨模型复用错的 vibe" |
+
+**C 类：已在阶段 C 的实机验证中解决**
+
+| # | 结论 | 证据 |
+|---|---|---|
+| C1 | 整图图生图必须发 `action = "img2img"`，只在 `parameters` 里带 `image` 会被拒绝 | 服务端原文：`image is not allowed for regular generations, use img2img or infill`。**这一项原本不在清单里**，是实测补上的 |
+| C2 | `strength` 放在 `parameters` 顶层可被接受（不必放进嵌套的 `parameters.img2img`） | 修正 action 后同一次请求即成功 |
+| C3 | 图生图的输出尺寸可以正好等于请求里的 `width`/`height`（提交前按该尺寸裁切源图） | 出图 1216×832，与请求一致 |
+| C4 | `noise` / `extra_noise_seed` / `add_original_image` / `color_correct` 不发也能成功 | 未发这四项的一次生成成功，说明服务端有可用的默认值 |
 
 **核对纪律**：B 类探针一律**由用户在真实界面上手动发起**，实现过程中不得自动调用；
 核对结果写回本文档与 [技术决策记录](PocketNAI-技术决策记录.md)，做法沿用现有的"探针 → 记录 → 固化"流程。
@@ -420,9 +429,12 @@ ALTER TABLE generations ADD COLUMN mode TEXT NOT NULL DEFAULT 'TXT2IMG';
 
 ### 阶段 B：请求构造 + 网络层
 
-- `NovelAiRequestBuilder.build(profile, request)` 重载；
-- `NovelAiApi.encodeVibe` + `NovelAiTagSuggestionSource` 同款的窄接口实现；
-- 新错误码与映射。
+**✅ 已完成（2026-09-14）**，但范围按"本轮只做一张图生图"收窄：**未做 `encodeVibe`**
+（它只服务 Vibe Transfer，随阶段 D 一起做）。
+
+- `NovelAiRequestBuilder.build(profile, request, sourceImageBase64)` 重载；
+- 新增 4 个参考图错误码与文案；
+- ~~`NovelAiApi.encodeVibe`~~ 顺延到阶段 D。
 
 **测试**：逐字段断言三种模式的请求体；**"T2I 请求体与旧实现逐字节一致"**；
 MockWebServer 覆盖 encode-vibe 的路径 / 请求体 / 响应上限 / 失败映射。
@@ -430,10 +442,13 @@ MockWebServer 覆盖 encode-vibe 的路径 / 请求体 / 响应上限 / 失败�
 
 ### 阶段 C：Image2Img 界面与链路
 
-- 悬浮层分页（提示词 / 参考图）；
-- Image2Img 面板、从相册与历史选图、尺寸联动与提示；
-- 摘要行与分页角标；
-- 历史 / 详情 / 复用参数 / 草稿对 img2img 的支持；
+**✅ 已完成（2026-09-14）。**
+
+- ~~悬浮层分页~~ → 改为表单顶部的一张卡片（理由见技术决策记录 10.4；分页留到阶段 D/E）；
+- Image2Img 卡片：从相册（Photo Picker，无权限）与从历史选图、缩略图、Strength、移除；
+- 选定源图后 Resolution 自动切到对应的官方预设（Normal 档位），并在卡片里显示"提交尺寸"；
+- 摘要行带"图生图"标记；详情页显示"生成方式"与参考图缩略图及逐条参数；
+- 历史 / 详情 / 复用参数 / 草稿对 img2img 的完整支持；
 - `GenerationRepository.generate` 接受 `GenerationRequest`。
 
 **测试**：ViewModel 层（选图后尺寸归一化、源图缺失时的降级、生成按钮可用性）+ 截图验证。

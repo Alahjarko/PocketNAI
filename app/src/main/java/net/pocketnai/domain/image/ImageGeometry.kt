@@ -1,10 +1,9 @@
 package net.pocketnai.domain.image
 
-import net.pocketnai.domain.model.SizeConstraints
+import net.pocketnai.domain.model.ImageSizePreset
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-import kotlin.math.sqrt
 
 /** 像素尺寸。domain 层不依赖 Android，因此自带一个最小的表示。 */
 data class PixelSize(val width: Int, val height: Int) {
@@ -15,6 +14,14 @@ data class PixelSize(val width: Int, val height: Int) {
 
     val longestSide: Int get() = max(width, height)
 }
+
+/**
+ * 输出尺寸 → 像素尺寸。
+ *
+ * 两者字面上都是宽高，但语义不同：`ImageSizePreset` 是"用户选的那个档位"，
+ * [PixelSize] 是"要绘制的画布"。显式转换让调用点无法把两者混用。
+ */
+fun ImageSizePreset.toPixelSize(): PixelSize = PixelSize(width, height)
 
 /** 图片上的一块矩形区域，(x, y) 为左上角。 */
 data class PixelRegion(val x: Int, val y: Int, val width: Int, val height: Int)
@@ -141,47 +148,6 @@ object ImageGeometry {
     }
 
     /**
-     * 按源图比例算出一个该模型能接受的尺寸（边长是步长的整数倍、不超上限）。
-     *
-     * **只缩不放**：源图比上限小的时候保持原尺寸的取整结果，不放大 ——
-     * 放大不会增加信息，却会让用户以为"这张图的细节够用"。
-     */
-    fun nearestLegalSize(source: PixelSize, constraints: SizeConstraints): PixelSize {
-        val step = constraints.dimensionStep
-        if (step <= 0) return source
-
-        var scale = 1.0
-        if (source.longestSide > constraints.maxDimension) {
-            scale = constraints.maxDimension.toDouble() / source.longestSide
-        }
-        val scaledPixels = source.totalPixels * scale * scale
-        if (scaledPixels > constraints.maxTotalPixels) {
-            scale *= sqrt(constraints.maxTotalPixels.toDouble() / scaledPixels)
-        }
-
-        var width = floorToStep((source.width * scale).roundToInt(), step)
-            .coerceIn(constraints.minDimension, constraints.maxDimension)
-        var height = floorToStep((source.height * scale).roundToInt(), step)
-            .coerceIn(constraints.minDimension, constraints.maxDimension)
-
-        // 兜底：极端长宽比（例如 4000×100）下，取整后仍可能超过总像素上限。
-        // 每次把较长的一边收一格，最多收 MAX_SHRINK_STEPS 次。
-        var guard = 0
-        while (width.toLong() * height > constraints.maxTotalPixels && guard < MAX_SHRINK_STEPS) {
-            guard++
-            if (width >= height) {
-                if (width - step < constraints.minDimension) break
-                width -= step
-            } else {
-                if (height - step < constraints.minDimension) break
-                height -= step
-            }
-        }
-
-        return PixelSize(width, height)
-    }
-
-    /**
      * 解码时用的降采样倍数（2 的幂，与 `BitmapFactory.Options.inSampleSize` 的语义一致）。
      *
      * 取"能让长边落到 [maxDimension] 以内的**最小** 2 的幂"，因此解码结果的单边落在
@@ -205,9 +171,4 @@ object ImageGeometry {
     /** 编码后的单张参考图是否还在上传预算内。 */
     fun isWithinReferenceBudget(encodedBytes: Long): Boolean =
         encodedBytes <= MAX_REFERENCE_FILE_BYTES
-
-    private fun floorToStep(value: Int, step: Int): Int = (value / step) * step
-
-    /** 收缩兜底的最大迭代次数，避免病态输入下的长循环。 */
-    private const val MAX_SHRINK_STEPS = 64
 }

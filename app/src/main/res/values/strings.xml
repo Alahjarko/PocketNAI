@@ -103,6 +103,28 @@
     <string name="generate_insert">插入标签</string>
     <string name="generate_suggestions_hint">标签建议（点击填入）</string>
 
+    <!-- 参考图（Image2Img） -->
+    <string name="generate_section_prompt">提示词</string>
+    <string name="generate_mode_img2img">图生图</string>
+    <string name="generate_mode_txt2img">纯文字</string>
+    <string name="common_mode">生成方式</string>
+    <string name="detail_reference_img2img">起点图（图生图）</string>
+    <string name="detail_reference_vibe">Vibe 参考图</string>
+    <string name="detail_reference_director">角色 / 画风参考图</string>
+    <string name="generate_reference_title">参考图 · 图生图</string>
+    <string name="generate_reference_empty_hint">选一张图作为起点，模型会在它的基础上重新生成。不选则按纯文字生成。</string>
+    <string name="generate_reference_pick">从相册选择</string>
+    <string name="generate_reference_from_history">从历史选择</string>
+    <string name="generate_reference_remove">移除参考图</string>
+    <string name="generate_reference_importing">正在读取图片…</string>
+    <string name="generate_reference_source_size">源图 %1$d × %2$d</string>
+    <string name="generate_reference_target_size">提交尺寸 %1$s（按源图比例，可在下方 Resolution 里改）</string>
+    <string name="generate_reference_strength">Strength</string>
+    <string name="generate_reference_strength_hint">越小越接近源图，越大越接近纯文字生成的结果。</string>
+    <string name="generate_reference_billing_hint">图生图的计费方式与纯文字生成不同，额度不足时服务端会拒绝这次请求。</string>
+    <string name="generate_reference_history_title">选择历史图片</string>
+    <string name="generate_reference_history_empty">还没有可用的历史图片。</string>
+
     <!-- 画廊 -->
     <string name="gallery_title">画廊</string>
     <string name="gallery_empty">还没有生成记录。</string>

@@ -15,14 +15,19 @@ import net.pocketnai.data.network.NovelAiApi
 import net.pocketnai.data.network.NovelAiRequestBuilder
 import net.pocketnai.data.network.ZipImageExtractor
 import net.pocketnai.data.security.CredentialStore
+import net.pocketnai.domain.image.ImageTransform
+import net.pocketnai.domain.image.ReferenceImageEncoder
+import net.pocketnai.domain.image.toPixelSize
 import net.pocketnai.domain.model.GeneratedImage
 import net.pocketnai.domain.model.GalleryItem
 import net.pocketnai.domain.model.Generation
 import net.pocketnai.domain.model.GenerationParams
+import net.pocketnai.domain.model.GenerationRequest
 import net.pocketnai.domain.model.GenerationStatus
 import net.pocketnai.domain.model.GenerationSummary
 import net.pocketnai.domain.model.ModelCatalog
 import net.pocketnai.domain.model.ParamViolation
+import net.pocketnai.domain.model.ReferenceViolation
 import net.pocketnai.domain.model.SeedMode
 import net.pocketnai.domain.prompt.PromptRandomizer
 import net.pocketnai.domain.prompt.PromptTitle
@@ -52,6 +57,15 @@ class GenerationRepository(
     private val dao: GenerationDao,
     private val fileStore: GenerationFileStore,
     private val zipExtractor: ZipImageExtractor = ZipImageExtractor(),
+    /**
+     * 参考图 → 请求体 base64 的编码器。
+     *
+     * 默认实现直接失败：宁可让图生图报"图片无法读取"，也不能在忘记接线时
+     * 静默地按纯文生图提交 —— 那会让用户以为自己在用参考图，其实没有。
+     */
+    private val referenceEncoder: ReferenceImageEncoder = ReferenceImageEncoder { _, _ ->
+        Outcome.Failure(AppError.of(ErrorCode.REFERENCE_DECODE_FAILED))
+    },
     private val clock: () -> Long = System::currentTimeMillis,
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
     private val random: Random = Random.Default,
@@ -68,17 +82,28 @@ class GenerationRepository(
         dao.observeGalleryImages().map { rows -> rows.map(Mappers::toDomain) }
 
     /**
-     * 执行一次生成。
+     * 执行一次生成（纯文生图）。
+     *
+     * 保留这个重载是为了让既有调用点读起来不变：它只是"参考图为空"的特例。
+     */
+    fun generate(
+        params: GenerationParams,
+        promptTemplate: String,
+    ): Flow<GenerationEvent> = generate(GenerationRequest(params = params), promptTemplate)
+
+    /**
+     * 执行一次生成（可带参考图）。
      *
      * 返回冷流：只有真正收集时才发请求，且请求一旦发出就不会被取消重试
      * —— 规划书 4.2 明确“生成不可取消”，离开页面不等同于取消服务端任务。
      */
     fun generate(
-        params: GenerationParams,
+        request: GenerationRequest,
         promptTemplate: String,
     ): Flow<GenerationEvent> = flow {
         val generationId = idGenerator()
         val startedAt = clock()
+        val params = request.params
         val profile = ModelCatalog.profileOf(params.model)
 
         // 生成链路只关心可用的 Bearer Token，不关心它来自 PST 还是账号会话。
@@ -99,6 +124,25 @@ class GenerationRepository(
                 ),
             )
             return@flow
+        }
+
+        // 参考图的校验与 base64 编码都在**创建记录之前**完成：
+        // 一张已被系统清掉的文件、或一张读不出来的图，不该留下一条注定失败的历史记录。
+        val referenceViolations = request.validate(profile) { fileStore.exists(it.relativePath) }
+        if (referenceViolations.isNotEmpty()) {
+            emit(GenerationEvent.FatalError(generationId, referenceError(referenceViolations)))
+            return@flow
+        }
+        val sourceImageBase64 = request.img2imgSource?.let { source ->
+            // 按**归一化后的**尺寸裁切：界面显示什么尺寸，提交的就是什么尺寸。
+            val transform = ImageTransform.Cover(normalized.size.toPixelSize())
+            when (val outcome = referenceEncoder.encodeBase64(source.relativePath, transform)) {
+                is Outcome.Success -> outcome.value
+                is Outcome.Failure -> {
+                    emit(GenerationEvent.FatalError(generationId, outcome.error))
+                    return@flow
+                }
+            }
         }
 
         val estimatedBytes = normalized.size.totalPixels.toLong() *
@@ -127,15 +171,20 @@ class GenerationRepository(
                     promptTemplate = promptTemplate,
                     params = effectiveParams,
                     requestSnapshotVersion = profile.paramsVersion,
+                    mode = request.mode,
                 ),
             ),
         )
+        // 参考图一条一行。写在生成记录之后：外键要求父行先存在。
+        if (request.references.isNotEmpty()) {
+            dao.insertReferences(request.references.map { Mappers.toEntity(it, generationId) })
+        }
         emit(GenerationEvent.Started(generationId))
 
         val archive = fileStore.newArchiveFile(generationId)
         val transport = api.generateImage(
             token = token,
-            payload = NovelAiRequestBuilder.build(profile, effectiveParams),
+            payload = NovelAiRequestBuilder.build(profile, request, sourceImageBase64),
             destinationZip = archive,
         )
         if (transport is Outcome.Failure) {
@@ -211,10 +260,6 @@ class GenerationRepository(
         images.forEach { emit(GenerationEvent.Final(generationId, it)) }
         emit(GenerationEvent.Completed(generationId, status))
     }.flowOn(Dispatchers.IO)
-
-    /** 详情页“复用参数”：载入参数但绝不自动开始生成（规划书 4.3）。 */
-    suspend fun loadParamsForReuse(imageId: String): GenerationParams? =
-        loadDetail(imageId)?.generation?.params
 
     /** 详情页需要的完整信息：图片本身 + 它所属的生成记录与参数（含参考图）。 */
     suspend fun loadDetail(imageId: String): ImageDetail? {
@@ -336,6 +381,22 @@ class GenerationRepository(
 
     private fun describe(violations: List<ParamViolation>): String =
         violations.joinToString(separator = "; ") { it.toString() }
+
+    /**
+     * 参考图问题 → 错误码。
+     *
+     * 文件丢失单独成一类：它对应的动作是"重新选一张图"，而其余问题（数量超限、
+     * 缺起点图）说明的是界面状态与请求不一致，属于需要用户回去改参数的情况。
+     */
+    private fun referenceError(violations: List<ReferenceViolation>): AppError =
+        if (violations.any { it is ReferenceViolation.FileMissing }) {
+            AppError.of(ErrorCode.REFERENCE_MISSING)
+        } else {
+            AppError.of(
+                code = ErrorCode.INVALID_PARAMS,
+                detail = violations.joinToString(separator = "; ") { it.toString() },
+            )
+        }
 
     data class StartupReport(
         val removedGenerationDirs: Int,

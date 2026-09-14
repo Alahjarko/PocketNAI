@@ -88,6 +88,10 @@ data class ModelProfile(
     val maxVibeReferences: Int,
     /** Precise Reference 的参考图张数上限。数值集中在 [ModelCatalog]，见那里的待核对说明。 */
     val maxDirectorReferences: Int,
+    /** Image2Img 的 Strength 区间。 */
+    val img2imgStrengthRange: NumericRange,
+    /** Image2Img 的 Strength 默认值。 */
+    val defaultImg2ImgStrength: Double,
     val configVersion: String,
 ) {
     val displayName: String get() = model.displayName

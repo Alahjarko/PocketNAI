@@ -1,7 +1,6 @@
 package net.pocketnai.domain.image
 
 import com.google.common.truth.Truth.assertThat
-import net.pocketnai.domain.model.SizeConstraints
 import org.junit.Test
 
 /**
@@ -12,14 +11,6 @@ import org.junit.Test
  * 这些都不会在本机崩溃，而是变成服务端一句笼统的"参数无效"。
  */
 class ImageGeometryTest {
-
-    /** 与 ModelCatalog 中四个模型实际使用的约束一致。 */
-    private val constraints = SizeConstraints(
-        minDimension = 512,
-        maxDimension = 1536,
-        dimensionStep = 64,
-        maxTotalPixels = 1536 * 1536,
-    )
 
     // ---- 铺满画布（Image2Img） ----
 
@@ -121,66 +112,6 @@ class ImageGeometryTest {
             .isEqualTo(ImageGeometry.DIRECTOR_LANDSCAPE)
         assertThat(ImageGeometry.directorCanvas(PixelSize(1000, 1800)))
             .isEqualTo(ImageGeometry.DIRECTOR_PORTRAIT)
-    }
-
-    // ---- 合法尺寸 ----
-
-    @Test
-    fun `取整到 64 的倍数`() {
-        val size = ImageGeometry.nearestLegalSize(PixelSize(1000, 1000), constraints)
-
-        assertThat(size).isEqualTo(PixelSize(960, 960))
-    }
-
-    @Test
-    fun `超出上限的大图按比例缩到上限`() {
-        val size = ImageGeometry.nearestLegalSize(PixelSize(4000, 3000), constraints)
-
-        assertThat(size).isEqualTo(PixelSize(1536, 1152))
-        assertThat(size.width % 64).isEqualTo(0)
-        assertThat(size.height % 64).isEqualTo(0)
-    }
-
-    @Test
-    fun `正方形大图缩到上限时正好是总像素上限`() {
-        val size = ImageGeometry.nearestLegalSize(PixelSize(3000, 3000), constraints)
-
-        assertThat(size).isEqualTo(PixelSize(1536, 1536))
-        assertThat(size.totalPixels).isAtMost(constraints.maxTotalPixels.toLong())
-    }
-
-    @Test
-    fun `过小的图被抬到最小尺寸`() {
-        val size = ImageGeometry.nearestLegalSize(PixelSize(100, 100), constraints)
-
-        assertThat(size).isEqualTo(PixelSize(512, 512))
-    }
-
-    @Test
-    fun `极端长宽比下也不会超出总像素上限`() {
-        val size = ImageGeometry.nearestLegalSize(PixelSize(8000, 1000), constraints)
-
-        assertThat(size.width % 64).isEqualTo(0)
-        assertThat(size.height % 64).isEqualTo(0)
-        assertThat(size.totalPixels).isAtMost(constraints.maxTotalPixels.toLong())
-        assertThat(size.height).isAtLeast(constraints.minDimension)
-    }
-
-    @Test
-    fun `任何尺寸算出来都满足模型约束`() {
-        val samples = listOf(
-            PixelSize(1, 1),
-            PixelSize(64, 64),
-            PixelSize(4096, 4096),
-            PixelSize(10000, 200),
-            PixelSize(200, 10000),
-            PixelSize(1234, 567),
-        )
-
-        samples.forEach { source ->
-            val size = ImageGeometry.nearestLegalSize(source, constraints)
-            assertThat(constraints.isValid(size.width, size.height)).isTrue()
-        }
     }
 
     // ---- 解码降采样 ----

@@ -72,12 +72,21 @@
   `GenerationFileStore.cleanupOrphans` 按"仍被引用的路径集合"回收；
   那个集合必须来自 `GenerationDao.allReferencePaths()` 的完整查询，漏一条就会误删。
 - 不要给参考图做"按生成记录分目录"的改动：那会让重复使用同一张图时磁盘翻倍。
+- **`reference_images` 行的主键是 `"<generationId>:<role>:<ordinal>"`，不是素材的 id。**
+  素材（`ReferenceImage.id`）会被草稿与"复用参数"跨生成复用，而插入用的是
+  `OnConflictStrategy.IGNORE` —— 拿素材 id 当主键会让第二次生成静默丢掉参考图行。
+  跨生成判断"是不是同一张图"要用 `sha256`，不要用 id。
 
 ### 网络
 
 - **所有请求走 `https://image.novelai.net`。** `api.novelai.net` 已拒绝第三方 Persistent API Token（返回 400 要求改用 image URL）。
 - T2I 请求**零次自动重试**；超时/断流映射为 `TIMEOUT_UNCERTAIN`，必须让用户知情而不是自动重来。
 - 生成必须由用户明确点击触发。**自动化流程绝不能代发真实生成请求**——那会消耗用户的 Anlas。
+- **图生图要换 `action`**：`image` 字段只在 `action = "img2img"`（或 `infill`）时被接受，
+  沿用 `generate` 会得到 400 `image is not allowed for regular generations`。
+  `strength` 放在 `parameters` 顶层；嵌套的 `parameters.img2img` 是 inpaint 用的，不要发。
+- 默认值未经核对的字段（`noise`、`extra_noise_seed`、`add_original_image`、`color_correct`）
+  **一律不发**，让服务端用它自己的默认值，比猜一个更接近官方行为。
 
 ### 质量标签
 

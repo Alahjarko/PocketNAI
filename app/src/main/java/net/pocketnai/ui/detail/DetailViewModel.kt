@@ -12,6 +12,7 @@ import net.pocketnai.data.export.MediaStoreExporter
 import net.pocketnai.data.repo.GenerationRepository
 import net.pocketnai.domain.model.GeneratedImage
 import net.pocketnai.domain.model.Generation
+import net.pocketnai.domain.model.GenerationRequest
 import net.pocketnai.domain.prompt.PromptTitle
 import net.pocketnai.ui.state.GenerationDraftStore
 
@@ -71,10 +72,21 @@ class DetailViewModel(
         }
     }
 
-    /** 复用参数：交给生成页，不自动开始生成（规划书 4.3）。 */
+    /**
+     * 复用参数：交给生成页，不自动开始生成（规划书 4.3）。
+     *
+     * 一并带上 [Generation.mode] 与参考图 —— 图生图历史如果只带回参数、不带回起点图，
+     * 那些参数（Strength）就没有任何意义。
+     */
     fun reuseParams() {
-        val params = _state.value.generation?.params ?: return
-        draftStore.post(params)
+        val generation = _state.value.generation ?: return
+        draftStore.post(
+            GenerationRequest(
+                params = generation.params,
+                mode = generation.mode,
+                references = generation.references,
+            ),
+        )
     }
 
     fun deleteGeneration() {

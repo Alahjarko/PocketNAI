@@ -106,6 +106,7 @@ class AppContainer(application: Application) {
             credentialStore = credentialStore,
             dao = database.generationDao(),
             fileStore = fileStore,
+            referenceEncoder = referenceImageProcessor,
         )
     }
 

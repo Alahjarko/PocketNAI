@@ -69,6 +69,7 @@ fun PocketNaiApp() {
                     draftStore = container.draftStore,
                     draftPreferences = container.generationDraftPreferences,
                     tagSuggestionSource = container.tagSuggestionSource,
+                    referenceImporter = container.referenceImageProcessor,
                 )
             }
         },

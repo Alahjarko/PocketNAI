@@ -157,7 +157,13 @@ class MappersTest {
 
         val restored = Mappers.toDomain(Mappers.toEntity(original, generationId = "gen-1"))
 
-        assertThat(restored).isEqualTo(original)
+        assertThat(restored).isNotNull()
+        requireNotNull(restored)
+        // id 刻意不参与比对：它在库里是"哪条生成记录的第几个参考图"（行身份），
+        // 而 original 里的 id 是"用户选的那个素材"的身份。两者语义不同，
+        // 素材可以稳定复用，行身份则必须随生成记录变化（见 referenceRowId 的说明）。
+        assertThat(restored.copy(id = original.id)).isEqualTo(original)
+        assertThat(restored.id).isEqualTo("gen-1:DIRECTOR:0")
     }
 
     @Test
@@ -175,6 +181,35 @@ class MappersTest {
         val entity = Mappers.toEntity(reference("a", ReferenceRole.VIBE, 0), generationId = "gen-9")
 
         assertThat(entity.generationId).isEqualTo("gen-9")
+    }
+
+    /**
+     * 同一张素材被两次生成使用时，必须产生两行互不冲突的记录。
+     *
+     * 这一条是真机验证时抓到的缺陷的回归测试：起初用素材自己的 id 当主键，
+     * 加上 `OnConflictStrategy.IGNORE`，第二次生成插参考图时被静默忽略 ——
+     * 表现为那条历史的详情页没有参考图、"复用参数"也带不回起点图。
+     */
+    @Test
+    fun `同一张参考图在两条生成记录里产生不同的主键`() {
+        val asset = reference("asset-1", ReferenceRole.IMG2IMG, 0)
+
+        val first = Mappers.toEntity(asset, generationId = "gen-1")
+        val second = Mappers.toEntity(asset, generationId = "gen-2")
+
+        assertThat(first.id).isNotEqualTo(second.id)
+        assertThat(first.sha256).isEqualTo(second.sha256)
+    }
+
+    @Test
+    fun `同一条生成记录内的参考图主键不重复`() {
+        val ids = listOf(
+            Mappers.toEntity(reference("a", ReferenceRole.VIBE, 0), "gen-1").id,
+            Mappers.toEntity(reference("a", ReferenceRole.VIBE, 1), "gen-1").id,
+            Mappers.toEntity(reference("a", ReferenceRole.DIRECTOR, 0), "gen-1").id,
+        )
+
+        assertThat(ids.toSet()).hasSize(3)
     }
 
     @Test

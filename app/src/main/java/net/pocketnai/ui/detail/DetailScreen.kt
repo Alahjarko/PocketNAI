@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,7 +16,9 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -37,7 +40,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -51,6 +56,9 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import net.pocketnai.R
 import net.pocketnai.data.repo.GenerationRepository
+import net.pocketnai.domain.model.GenerationMode
+import net.pocketnai.domain.model.ReferenceImage
+import net.pocketnai.domain.model.ReferenceRole
 import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.common.CenteredHint
 import net.pocketnai.ui.common.messageRes
@@ -165,6 +173,19 @@ fun DetailScreen(
                 DetailRow("错误", generation.errorMessage ?: generation.errorCode.name)
             }
 
+            // 生成模式必须显示：图生图的尺寸、Strength 都只有在"这是一次改图"的前提下才说得通，
+            // 否则用户回看历史时会以为那次生成的参数配错了。
+            DetailRow(
+                stringResource(R.string.common_mode),
+                when (generation.mode) {
+                    GenerationMode.IMG2IMG -> stringResource(R.string.generate_mode_img2img)
+                    GenerationMode.TXT2IMG -> stringResource(R.string.generate_mode_txt2img)
+                },
+            )
+            generation.references.forEach { reference ->
+                ReferenceRow(reference = reference)
+            }
+
             Card(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -260,6 +281,53 @@ fun DetailScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+/**
+ * 一条参考图：缩略图 + 它的逐条参数。
+ *
+ * 缩略图直接是**提交时用的那张本地文件**，因此用户看到的就是当时真正发出去的图
+ * （图生图的起点图在提交时会被裁切，这里显示的是原始素材，两者的裁切关系在生成页已说明）。
+ */
+@Composable
+private fun ReferenceRow(reference: ReferenceImage) {
+    val container = LocalAppContainer.current
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AsyncImage(
+            model = container.fileStore.resolve(reference.relativePath),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(56.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        )
+        Column(modifier = Modifier.padding(start = 8.dp)) {
+            Text(
+                text = when (reference.role) {
+                    ReferenceRole.IMG2IMG -> stringResource(R.string.detail_reference_img2img)
+                    ReferenceRole.VIBE -> stringResource(R.string.detail_reference_vibe)
+                    ReferenceRole.DIRECTOR -> stringResource(R.string.detail_reference_director)
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = "${reference.width} × ${reference.height}",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            reference.strength?.let { strength ->
+                Text(
+                    text = stringResource(R.string.generate_reference_strength) + "  $strength",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

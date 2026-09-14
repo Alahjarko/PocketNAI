@@ -48,6 +48,21 @@ object ModelCatalog {
     private const val MAX_VIBE_REFERENCES = 4
     private const val MAX_DIRECTOR_REFERENCES = 4
 
+    /**
+     * Image2Img 的 Strength 默认值。
+     *
+     * ⚠️ **待核对**：官方网页版 Image2Img 面板的 Strength 默认值尚未记录，暂用 0.7。
+     * 这是《参考图功能规划书》阶段 0 核对清单里剩下的最后一项数值缺口 ——
+     * 在官方网页版打开 Image2Img 面板读一下滑块初值即可确认，改这一处常量即可。
+     *
+     * 之所以必须有默认值而不是留空：这个值要显示在界面的滑块上，
+     * 用户看到的数就是提交的数，不能靠服务端兜底。
+     */
+    private const val DEFAULT_IMG2IMG_STRENGTH = 0.7
+
+    /** Image2Img 的 Strength 区间。官方滑块是 0–1。 */
+    private val IMG2IMG_STRENGTH_RANGE = NumericRange(min = 0.0, max = 1.0, step = 0.01)
+
     /** DPM++ 2S Ancestral 不支持 Karras 调度。 */
     private val NO_KARRAS = linkedSetOf(
         NoiseSchedule.NATIVE,
@@ -141,6 +156,8 @@ object ModelCatalog {
         supportsImg2Img = true,
         maxVibeReferences = MAX_VIBE_REFERENCES,
         maxDirectorReferences = MAX_DIRECTOR_REFERENCES,
+        img2imgStrengthRange = IMG2IMG_STRENGTH_RANGE,
+        defaultImg2ImgStrength = DEFAULT_IMG2IMG_STRENGTH,
         configVersion = CONFIG_VERSION,
     )
 

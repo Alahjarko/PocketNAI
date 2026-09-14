@@ -15,6 +15,13 @@ data class GenerationDraft(
     /** 用户输入的原文（可能含 Randomizer 语法）。 */
     val promptTemplate: String,
     val negativeTemplate: String,
+    /**
+     * Image2Img 的起点图。
+     *
+     * 只记本地文件索引，不记图片数据 —— 图片本身已经在 `files/references/` 里内容寻址存着。
+     * 这样重开应用后不用重新选图，而草稿文件依然只有几百字节。
+     */
+    val referenceSource: ReferenceImage? = null,
 ) {
     companion object {
         fun defaults(): GenerationDraft {

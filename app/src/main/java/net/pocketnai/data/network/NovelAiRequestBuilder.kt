@@ -5,7 +5,9 @@ import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import net.pocketnai.domain.model.GenerationMode
 import net.pocketnai.domain.model.GenerationParams
+import net.pocketnai.domain.model.GenerationRequest
 import net.pocketnai.domain.model.ModelProfile
 import net.pocketnai.domain.model.applyQualityTags
 
@@ -33,8 +35,44 @@ object NovelAiRequestBuilder {
 
     const val ACTION_GENERATE: String = "generate"
 
+    /**
+     * 整图图生图的 action。
+     *
+     * **这是真机验证出来的，不是推测。** 起初图生图沿用了 `action = "generate"`，服务端返回
+     * 400：`image is not allowed for regular generations, use img2img or infill` ——
+     * 也就是说 `image` 字段只在 `action` 为 `img2img` / `infill` 时才被接受。
+     * 详见《参考图功能规划书》与技术决策记录。
+     */
+    const val ACTION_IMG2IMG: String = "img2img"
+
     /** 构造完整请求体。会先按模型档案归一化参数，保证不会提交已知无效组合。 */
-    fun build(profile: ModelProfile, params: GenerationParams): JsonObject {
+    fun build(profile: ModelProfile, params: GenerationParams): JsonObject =
+        build(profile, GenerationRequest(params = params), sourceImageBase64 = null)
+
+    /**
+     * 构造完整请求体（含参考图）。
+     *
+     * [sourceImageBase64] 是 Image2Img 起点图的 base64；由调用方在提交前从本地文件编码得到，
+     * 不进入 [GenerationRequest]，也就不会被写进数据库或长期驻留。
+     *
+     * ## 图生图用的是 `parameters` 顶层字段
+     * - `image`：起点图的 base64；
+     * - `strength`：改动幅度。
+     *
+     * OpenAPI 里还有一个嵌套的 `parameters.img2img` 对象，但它的字段说明写的是
+     * `used by inpaint` —— 那是局部重绘的形态，整图图生图不发它（见规划书 3.1）。
+     *
+     * ## 刻意不发的字段
+     * `noise`、`extra_noise_seed`、`add_original_image`、`color_correct` 一律不发：
+     * 这些字段的官方默认值尚未核对，**留空让服务端用它自己的默认值**，
+     * 比我们猜一个值更接近官方行为。等阶段 0 核对后再决定是否暴露给用户。
+     */
+    fun build(
+        profile: ModelProfile,
+        request: GenerationRequest,
+        sourceImageBase64: String?,
+    ): JsonObject {
+        val params = request.params
         val normalized = profile.normalize(params)
 
         // 质量标签按官方网页版的行为追加到提示词末尾，而不是交给服务端处理。
@@ -42,6 +80,12 @@ object NovelAiRequestBuilder {
         // 因此这里必须真的改写提交给模型的正向提示词。
         val positive = applyQualityTags(normalized.prompt, normalized.qualityTags)
         val negative = normalized.negativePrompt
+
+        // 起点图真的拿到了才算图生图。缺图时按纯文生图提交，并且**连 action 都不换** ——
+        // 换了 action 却没有 image，服务端同样会报参数错误。
+        val img2imgSource = request.img2imgSource?.takeIf {
+            request.mode == GenerationMode.IMG2IMG && !sourceImageBase64.isNullOrEmpty()
+        }
 
         val parameters = buildJsonObject {
             put("params_version", profile.paramsVersion)
@@ -67,12 +111,23 @@ object NovelAiRequestBuilder {
             // NovelAI 的 V4.5 / V5 需要结构化 Prompt；首版不做多角色，char_captions 固定为空。
             put("v4_prompt", captionBlock(text = positive, isNegative = false))
             put("v4_negative_prompt", captionBlock(text = negative, isNegative = true))
+
+            if (img2imgSource != null) {
+                put("image", sourceImageBase64)
+                // 越界值在这里夹取，与其它数值参数走同一条规则（ModelProfile 是唯一出口）。
+                put(
+                    "strength",
+                    profile.img2imgStrengthRange.clamp(
+                        img2imgSource.strength ?: profile.defaultImg2ImgStrength,
+                    ),
+                )
+            }
         }
 
         return buildJsonObject {
             put("input", positive)
             put("model", profile.model.apiModelId)
-            put("action", ACTION_GENERATE)
+            put("action", if (img2imgSource != null) ACTION_IMG2IMG else ACTION_GENERATE)
             put("parameters", parameters)
         }
     }

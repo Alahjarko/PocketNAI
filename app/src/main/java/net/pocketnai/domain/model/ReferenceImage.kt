@@ -67,6 +67,14 @@ enum class DirectorReferenceKind(val apiValue: String) {
  * - [ReferenceRole.DIRECTOR]：[strength]、[secondaryStrength]、[informationExtracted]、[directorKind]。
  */
 data class ReferenceImage(
+    /**
+     * 标识符。**两种身份共用这一个字段，但语义随来源不同**：
+     * - 由界面刚导入时：素材身份（同一次导入在多次生成间保持不变）；
+     * - 从数据库读回时：行身份（哪条生成记录的第几个参考图）。
+     *
+     * 因此它只适合当"诊断用的标识"（例如 [ReferenceViolation.FileMissing] 里指认是哪一张），
+     * **不要拿它做跨生成的去重或比较** —— 那种判断要用 [sha256]。
+     */
     val id: String,
     val role: ReferenceRole,
     /** 同一次生成内的顺序号，从 0 开始，与请求数组的下标一一对应。 */
@@ -91,4 +99,29 @@ data class ReferenceImage(
      * 为空表示尚未编码。缓存键含模型，因此换模型后需要重新编码（见规划书 3.4 B5）。
      */
     val vibeRelativePath: String? = null,
-)
+) {
+    companion object {
+        /**
+         * 把一张刚导入的本地图片变成 Image2Img 的起点。
+         *
+         * 顺序号固定为 0：起点图只有一张，`GenerationRequest.validate` 也会拒绝多于一张。
+         */
+        fun img2imgSource(
+            prepared: net.pocketnai.domain.image.PreparedReference,
+            strength: Double,
+            id: String,
+            createdAt: Long,
+        ): ReferenceImage = ReferenceImage(
+            id = id,
+            role = ReferenceRole.IMG2IMG,
+            ordinal = 0,
+            relativePath = prepared.relativePath,
+            width = prepared.width,
+            height = prepared.height,
+            byteSize = prepared.byteSize,
+            sha256 = prepared.sha256,
+            createdAt = createdAt,
+            strength = strength,
+        )
+    }
+}

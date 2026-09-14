@@ -104,9 +104,26 @@ object Mappers {
     // 单独插入，读取时也要单独查一次再拼装。这样 `generations` 表的结构与既有查询
     // 完全不受影响，也不会因为一次 join 把画廊的查询变复杂。
 
+    /**
+     * 参考图行的主键：按"哪条生成记录 + 什么角色 + 第几张"唯一。
+     *
+     * **不能用 `ReferenceImage.id` 当主键。** 那是"素材"的身份，同一张图被两次生成
+     * 使用（草稿恢复、复用参数都会这样）时它是一样的；而 `insertReferences` 用的是
+     * `OnConflictStrategy.IGNORE`，于是第二条记录的参考图会被静默丢弃 ——
+     * 表现为详情页看不到参考图、"复用参数"带不回起点图。这是真机验证时抓到的缺陷。
+     *
+     * 这个组合在一条生成记录内天然唯一（`GenerationRequest.validate` 不允许重复角色/序号），
+     * 因此既是确定的，也不会碰撞。
+     */
+    private fun referenceRowId(
+        generationId: String,
+        role: ReferenceRole,
+        ordinal: Int,
+    ): String = "$generationId:${role.name}:$ordinal"
+
     fun toEntity(reference: ReferenceImage, generationId: String): ReferenceImageEntity =
         ReferenceImageEntity(
-            id = reference.id,
+            id = referenceRowId(generationId, reference.role, reference.ordinal),
             generationId = generationId,
             role = reference.role.name,
             ordinal = reference.ordinal,
