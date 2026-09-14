@@ -335,7 +335,7 @@
     <string name="metadata_note_uc_preset">反向提示词已导入；服务端的 UC 预设无法从元数据读出，保持当前选择。</string>
 
     <!-- 自定义分辨率 -->
-    <string name="resolution_custom">自定义</string>
+    <string name="resolution_custom">Custom</string>
     <string name="resolution_width">宽度</string>
     <string name="resolution_height">高度</string>
     <string name="resolution_swap">交换宽高</string>

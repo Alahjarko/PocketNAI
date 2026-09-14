@@ -45,7 +45,7 @@ import net.pocketnai.domain.model.SizeConstraints
  *
  * ```
  * Resolution                    1920 × 1080
- * [ Normal ▾ ]  [ ▭ ] [ ▯ ] [ □ ]   [自定义]
+ * [ Normal ▾ ]  [ ▭ ] [ ▯ ] [ □ ]      ← 下拉里含 Custom
  * ```
  *
  * 官方把尺寸拆成“档位 + 方向”两维，而不是给一个几十项的像素下拉：
@@ -75,6 +75,9 @@ fun ResolutionSelector(
     onExactOutputChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 先取出来：下拉的 `optionLabel` 不是 @Composable 上下文，不能在里面调 stringResource。
+    val customLabel = stringResource(R.string.resolution_custom)
+
     Column(modifier = modifier) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -98,17 +101,31 @@ fun ResolutionSelector(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // `Custom` 是**下拉里的一项**，不是旁边的独立按钮 —— 官方网页版就是这么放的
+            // （尺寸列表里最后一项就是 `{name:"Custom", category:"Custom"}`）。
+            // 独立 chip 试过：它在一行里会被挤成没有文字的空药丸，既看不出来也点不准。
             DropdownSelector(
                 label = null,
-                selectedText = tier.displayName,
-                options = availableTiers,
-                optionLabel = { it.displayName },
-                onSelect = onTierChange,
-                enabled = custom == null,
+                selectedText = if (custom != null) customLabel else tier.displayName,
+                options = availableTiers.map(ResolutionSizeOption::Tier) + ResolutionSizeOption.Custom,
+                optionLabel = { option ->
+                    when (option) {
+                        is ResolutionSizeOption.Tier -> option.tier.displayName
+                        ResolutionSizeOption.Custom -> customLabel
+                    }
+                },
+                onSelect = { option ->
+                    when (option) {
+                        is ResolutionSizeOption.Tier -> onTierChange(option.tier)
+                        ResolutionSizeOption.Custom -> onCustomEnabled()
+                    }
+                },
                 modifier = Modifier.width(140.dp),
             )
 
-            // 按钮顺序固定为官方网页版的 横 / 竖 / 方，不受枚举声明顺序影响。
+            // 选了 Custom 就退出预设档位：横竖方这几颗按钮整体变灰（禁用态自带灰化），
+            // 因为方向由自定义的宽高决定，再让它们可点会让人以为能一起用。
+            // 顺序固定为官方网页版的 横 / 竖 / 方，不受枚举声明顺序影响。
             ORIENTATION_DISPLAY_ORDER.forEach { orientation ->
                 val enabled = custom == null && orientation in availableOrientations
                 FilledIconToggleButton(
@@ -123,12 +140,6 @@ fun ResolutionSelector(
                     )
                 }
             }
-
-            FilterChip(
-                selected = custom != null,
-                onClick = { if (custom == null) onCustomEnabled() else onCustomDisabled() },
-                label = { Text(stringResource(R.string.resolution_custom)) },
-            )
         }
 
         if (custom != null) {
@@ -340,6 +351,18 @@ private fun DimensionField(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         modifier = modifier,
     )
+}
+
+/**
+ * 下拉里的一项：预设档位，或自定义。
+ *
+ * 用独立的类型而不是给 [ResolutionTier] 加一个 `CUSTOM` 常量：档位是
+ * "固定组合 × 三个方向"，自定义是任意宽高，两者的状态结构不同 ——
+ * 塞进枚举会制造一个假的档位，还要在每处 `when` 里处理一个没有尺寸的档位。
+ */
+private sealed interface ResolutionSizeOption {
+    data class Tier(val tier: ResolutionTier) : ResolutionSizeOption
+    data object Custom : ResolutionSizeOption
 }
 
 private val ORIENTATION_DISPLAY_ORDER = listOf(

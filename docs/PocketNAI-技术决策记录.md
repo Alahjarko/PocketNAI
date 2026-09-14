@@ -1922,7 +1922,21 @@ IHDR → IDAT × N → tEXt(Comment) → tEXt(Title) → tEXt(Description)
 已在 `gradle.properties` 里把它设为 `true`，并在 AGENTS.md 里写明：
 跑仪器化测试前先确认这台设备的本地数据是否可以丢。
 
-### 20.9 没做的事
+### 20.9 界面：Custom 放进下拉，而不是旁边的独立按钮
+
+第一版把 Custom 做成档位下拉右边的一个独立 chip，装机后用户反馈两点：
+"选 custom 的时候那几个尺寸都变灰"和"这个 custom 在最右边条状的按钮很没有辨识度"。
+截图一看，那个 chip 在一行里被挤成了**没有文字的空药丸** —— 既看不出来也点不准。
+
+改为：**Custom 就是下拉里的一项**（`Normal` / `Large` / `Custom`），选中它时
+档位下拉显示 `Custom`、三个横竖方按钮整体变灰（禁用态）。这也正是官方网页版的做法：
+官方尺寸列表的最后一项就是 `{name:"Custom", width:0, height:0, category:"Custom"}`。
+
+实现上用一个文件内的 `sealed interface ResolutionSizeOption { Tier / Custom }` 作为下拉的选项类型，
+**不给 `ResolutionTier` 加 `CUSTOM`**：档位是"固定组合 × 三个方向"，自定义是任意宽高，
+塞进枚举会制造一个没有尺寸的假档位，还要在每个 `when` 里处理它。
+
+### 20.10 没做的事
 
 - **真实的自定义尺寸生成**：会产生费用（`1920×1088` V4.5 约 34 Anlas），留给你在界面上手动验收；
 - **锁定宽高比**：只做了"交换宽高"，没有做锁定 16:9 这类比例锁；

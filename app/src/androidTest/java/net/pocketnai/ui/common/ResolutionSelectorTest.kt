@@ -1,8 +1,11 @@
 package net.pocketnai.ui.common
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -98,14 +101,43 @@ class ResolutionSelectorTest {
     }
 
     @Test
-    fun presetModeHasNoCustomPanelUntilTheChipIsTapped() {
+    fun presetModeHasNoCustomPanelAndOffersCustomInTheDropdown() {
         var enabled = false
         setContent(custom = null, onCustomEnabled = { enabled = true })
 
-        compose.onNodeWithText("自定义").performClick()
-
-        org.junit.Assert.assertTrue(enabled)
         // 预设模式下不显示尺寸对照：没有裁切就没有需要解释的东西。
         compose.onNodeWithText("最终输出：832 × 1216").assertDoesNotExist()
+
+        // Custom 在下拉里（与 Normal / Large 并列），不是旁边那个会被挤扁的独立按钮。
+        compose.onNodeWithText("Normal").performClick()
+        compose.onNodeWithText("Custom").performClick()
+
+        org.junit.Assert.assertTrue(enabled)
+    }
+
+    @Test
+    fun customModeShowsCustomInTheDropdown() {
+        setContent(CustomResolution(width = 1920, height = 1080, exactOutput = true))
+
+        // 选中 Custom 后下拉显示 Custom。
+        compose.onNodeWithText("Custom").assertIsDisplayed()
+    }
+
+    @Test
+    fun orientationButtonsAreDisabledInCustomMode() {
+        // 用户的要求：选了 Custom，那几个尺寸按钮要变灰 —— 方向由宽高决定，
+        // 留着可点会让人以为能一起用。
+        setContent(CustomResolution(width = 1920, height = 1080, exactOutput = true))
+
+        compose.onNodeWithContentDescription("竖图").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("横图").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("方图").assertIsNotEnabled()
+    }
+
+    @Test
+    fun orientationButtonsAreEnabledInPresetMode() {
+        setContent(custom = null)
+
+        compose.onNodeWithContentDescription("竖图").assertIsEnabled()
     }
 }
