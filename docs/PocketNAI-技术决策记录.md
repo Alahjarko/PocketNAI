@@ -624,3 +624,81 @@ A–F 全部完成。**账号登录仍是实验性功能**，且官方当前推�
 
 **没有做的事**：没有用真实账号尝试过登录。真实账号验证按计划书 §12.4 只能由用户手动完成，
 而且对 SSO 账号而言试也是白试——缺的是密码，不是协议。
+
+---
+
+## 七、关于"内嵌 WebView 走 Google SSO 并读取会话"的可行性评估
+
+**结论：不可行，且不予实现。** 这一节记录评估依据，避免以后重复论证。
+
+### 7.1 需求
+
+提出过一个设想：在 PocketNAI 内嵌 NovelAI 网页 → 用户在 WebView 里点 Google 登录 →
+由 PocketNAI 读取 Cookie / Local Storage / 网页 Access Token。
+
+### 7.2 阻断性依据一：Google 明文禁止这种用法
+
+Google OAuth 2.0 政策（`developers.google.com/identity/protocols/oauth2/policies`，
+2026-09-14 取回）原文：
+
+> **Use secure browsers**
+> A developer must not direct a Google OAuth 2.0 authorization request to an embedded
+> user-agent under the developer's control. Embedded user-agents include, but are not
+> limited to, software libraries that allow a developer to insert arbitrary scripts,
+> alter the default routing of a request to the Google OAuth server, **or access session
+> cookies**.
+
+这条政策把设想的三个要点**逐条点名禁止**：受开发者控制的嵌入式 user-agent、
+可注入任意脚本的容器、读取会话 Cookie。而且这不只是纸面规定——Google 长期在
+WebView 里直接拒绝登录（`disallowed_useragent`），第二步"点 Google 登录"就走不通。
+
+唯一能让它在 WebView 里跑通的办法是把 User-Agent 伪装成普通浏览器，
+即**绕过 Google 的安全控制**。这不在可接受范围内。
+
+### 7.3 阻断性依据二：与项目自己的规则冲突
+
+- 《双认证模式实施计划》§2.2 明确排除"Google SSO、OAuth、WebView 登录或 Cookie 导入"；
+- §9 安全红线与 §12.4 写明**编码助手不得**"从浏览器抓取 Cookie、Local Storage 或 Token"；
+- §15 暂停条件 #4 与 #10 覆盖了"需要无法在安全范围内支持的验证"与"转发到第三方"。
+
+当初写下这些排除项，理由不是"做不到"，而是这样做需要接管用户浏览器会话，
+把凭据安全标准拉低到整个计划书都在避免的水平。现在没有任何新论据推翻它。
+
+### 7.4 附带依据：NovelAI 服务条款
+
+§9.1.5 "Circumvent any access or use restrictions put into place to prevent certain uses
+of the Services"；§9.1.6 禁止对服务造成过度压力的自动化系统。
+条款并未为这种接入方式提供许可，官方文档也仍要求第三方应用使用 Persistent API Token。
+
+### 7.5 更关键的一点：这个需求本身不成立
+
+提出该设想的动机是"我用 Google 账号登录，所以没有密码，账号登录走不通"。
+但 PST 的存在**恰恰不依赖密码**，而且已经有实证：
+
+- 用户提供的 Persistent API Token 对 `image.novelai.net/user/data` 返回 **HTTP 200**；
+- 同一个响应的 `information.loginMethod` 为 **`sso`**；
+- 该 Token 已实际用于生成图片。
+
+也就是说：**这是一个 SSO 账号，它已经有可用的 Persistent API Token。**
+"SSO 账号用不了 PST"这个前提是错的，因此整套 WebView 方案要去解决的问题并不存在。
+
+真正可能需要的一步只是"从官网把 Token 复制过来"，而这一步已经由连接页的
+"打开 NovelAI 网页"按钮覆盖（计划书 §7.2 明确允许：只打开官方页面，
+不抓 Cookie、不代取 Token）。
+
+### 7.6 如果确实想让账号登录工作
+
+唯一可能且合规的路径是**让该账号拥有 NovelAI 密码**：官方文档没有说明 SSO 账号能否设置密码，
+因此不做承诺。用户可以自己在官网账户设置里确认有没有这个选项；
+若有，`邮箱 + 密码` 那条链路即可使用（且仍属实验功能）。
+
+### 7.7 顺带：本次为实验建立的还原点
+
+实验前先把当前版本存成了正式的版本还原点：
+
+- 本目录原先不是 git 仓库，已 `git init`；
+- 首次提交 `7c612b8`，标签 `v0.1.0-baseline`，121 个文件；
+- `.gitignore` 已排除 `persistent-api-token.txt`、`local.properties`、`.tooling/`、构建产物，
+  并已核对版本库中**从未**包含凭据文件；
+- git 身份设为本仓库局部（`PocketNAI Dev <dev@pocketnai.local>`），未改全局配置 ——
+  若要推送到远端请先改成你自己的身份。
