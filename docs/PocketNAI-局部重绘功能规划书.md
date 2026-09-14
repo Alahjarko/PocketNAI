@@ -357,11 +357,23 @@ fun renderMask(strokes: List<MaskStroke>, size: PixelSize, convention: MaskConve
 2. **能力位按模型档位而不是按"家族"**：原计划认为重绘属于 Image2Img 家族、四个模型都能用；
    实测被服务端否定（Curated 不支持 infill），改为**只有 Full 档位支持**。
 
-### 9.3 尚未验证（都需要一次非免费请求，只能由用户触发）
+### 9.3 结论：只支持 Full 档位
 
-1. **Full 档位是否真的支持 infill** —— 账号的免费组合只有 V4.5 Curated，换 Full 就会扣费；
+账号所有者确认：官方网页上 Curated 确实能重绘，但**公开 API 只在 Full 档位接受 `infl`
+（Curated 会被服务端拒绝），并且 Curated 走 `img2img` + 蒙版时蒙版被完全忽略**
+（定量验证见技术决策记录 §15.8）。因此本功能的适用范围定为：
+
+> **只有 Full 档位可用。** 官方网页能做到不代表公开 API 能做到 —— 这两条能力边界不是一回事。
+
+界面在 Curated 上会说明原因并指路切换到 Full。
+
+### 9.4 尚未验证（需要一次非免费请求，只能由用户触发）
+
+1. **Full 档位是否真的能跑通 infill** —— 账号的免费组合只有 V4.5 Curated，换 Full 就会扣费；
 2. **蒙版约定**（B1 探针）—— 因为生成一直没成功，探针尚未执行；
 3. Full 档位下的实际计费（预期与图生图同价，但未观测）。
+
+这三项都不影响代码结构：蒙版约定是一个枚举、计费是一条规则、能力位是一个布尔。
 
 在此之前，`MaskConvention.CURRENT` 取 `PAINTED_IS_WHITE`（SD 系常见约定），
 `supportsInpaint` 对 Full 返回 true。两处都是一行常量。

@@ -1256,5 +1256,8 @@ regular generations`）是同一类问题：**接口的能力边界只能实测�
 这条死路会误导后来者，故在 `actionFor` 的注释里写明了实测证据）。
 界面在 Curated 上直说"公开 API 只在 Full 档位接受 infill（官方网页对 Curated 可用，但 API 会拒绝）"。
 
+**决定**（账号所有者）：官方网页上是用 Curated 测的，但既然公开 API 只有 Full 走得通，
+就**只支持 Full**，不再为 Curated 找别的路。
+
 **仍未验证**：Full 档位是否真的能跑通 `infill`、以及蒙版约定（白/透明）。
 两者都需要一次真实生成，只能由用户触发。
