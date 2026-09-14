@@ -244,12 +244,6 @@ fun SettingsScreen(onRequestConnect: () -> Unit) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text(
-            text = "首次发布只支持文生图（T2I）与四个 V4.5 / V5 模型。" +
-                "Img2Img、Inpaint、Vibe Transfer 等能力不在首版范围内。",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
