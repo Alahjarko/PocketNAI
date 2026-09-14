@@ -37,6 +37,21 @@ data class GenerationRequest(
         if (profile.supportsImg2Img.not() && mode == GenerationMode.IMG2IMG) {
             add(ReferenceViolation.ModeUnsupported(GenerationMode.IMG2IMG))
         }
+        if (!profile.supportsInpaint && mode == GenerationMode.INPAINT) {
+            add(ReferenceViolation.ModeUnsupported(GenerationMode.INPAINT))
+        }
+        if (mode == GenerationMode.INPAINT) {
+            // 没有蒙版（或蒙版是空的）时提交等于"整图重画"，语义不明，直接拦下。
+            if (referencesOf(ReferenceRole.INPAINT_MASK).isEmpty()) {
+                add(ReferenceViolation.MissingInpaintMask)
+            }
+            // 底图 + 蒙版是重绘的全部输入，再挂参考条件只会被服务端拒绝。
+            if (referencesOf(ReferenceRole.DIRECTOR).isNotEmpty() ||
+                referencesOf(ReferenceRole.VIBE).isNotEmpty()
+            ) {
+                add(ReferenceViolation.ConflictingWithMode(GenerationMode.INPAINT))
+            }
+        }
         // Precise Reference 与 Vibe 目前只有 V4.5 能用（账号所有者确认），
         // V5 上提交这类请求只会得到服务端拒绝，因此在本地就拦下并说明原因。
         if (mode == GenerationMode.PRECISE_REFERENCE && !profile.supportsDirectorReference) {
@@ -85,6 +100,17 @@ sealed interface ReferenceViolation {
 
     /** 该功能在当前模型上不可用（例如 V5 上的 Vibe Transfer / Precise Reference）。 */
     data class FeatureUnsupported(val role: ReferenceRole) : ReferenceViolation
+
+    /** 局部重绘缺少蒙版（或蒙版为空）。 */
+    data object MissingInpaintMask : ReferenceViolation
+
+    /**
+     * 与该模式冲突的参考图。
+     *
+     * 服务端对互斥关系有硬约束（实测：`cannot mix reference and director_reference`），
+     * 因此在本地就把明显冲突的组合拦下，而不是发出去等一句笼统的参数错误。
+     */
+    data class ConflictingWithMode(val mode: GenerationMode) : ReferenceViolation
 
     data class TooMany(
         val role: ReferenceRole,

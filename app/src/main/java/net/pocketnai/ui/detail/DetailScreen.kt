@@ -77,6 +77,7 @@ fun DetailScreen(
     imageId: String,
     onBack: () -> Unit,
     onParamsReused: () -> Unit,
+    onInpaint: (String) -> Unit,
 ) {
     val container = LocalAppContainer.current
     val viewModel: DetailViewModel = viewModel(
@@ -181,6 +182,7 @@ fun DetailScreen(
                 when (generation.mode) {
                     GenerationMode.IMG2IMG -> stringResource(R.string.generate_mode_img2img)
                     GenerationMode.PRECISE_REFERENCE -> stringResource(R.string.generate_mode_precise_reference)
+                    GenerationMode.INPAINT -> stringResource(R.string.generate_mode_inpaint)
                     GenerationMode.TXT2IMG -> stringResource(R.string.generate_mode_txt2img)
                 },
             )
@@ -271,6 +273,15 @@ fun DetailScreen(
                 }
             }
 
+            // 局部重绘：官方文档说可以从"任意一张已生成的图片"进入，
+            // 而"这张图某处画坏了"正是用户点进详情页的常见理由。
+            OutlinedButton(
+                onClick = { onInpaint(image.privateFilePath) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.action_inpaint))
+            }
+
             OutlinedButton(
                 onClick = viewModel::deleteGeneration,
                 modifier = Modifier.fillMaxWidth(),
@@ -315,6 +326,7 @@ private fun ReferenceRow(reference: ReferenceImage) {
                     ReferenceRole.IMG2IMG -> stringResource(R.string.detail_reference_img2img)
                     ReferenceRole.VIBE -> stringResource(R.string.detail_reference_vibe)
                     ReferenceRole.DIRECTOR -> stringResource(R.string.detail_reference_director)
+                    ReferenceRole.INPAINT_MASK -> stringResource(R.string.detail_reference_inpaint_mask)
                 },
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -342,6 +354,7 @@ private fun ReferenceRow(reference: ReferenceImage) {
                     text = stringResource(
                         when (kind) {
                             DirectorReferenceKind.CHARACTER -> R.string.generate_reference_kind_character
+                            DirectorReferenceKind.STYLE -> R.string.generate_reference_kind_style
                             DirectorReferenceKind.CHARACTER_AND_STYLE ->
                                 R.string.generate_reference_kind_character_style
                         },

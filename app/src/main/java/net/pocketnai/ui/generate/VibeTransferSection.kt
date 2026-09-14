@@ -155,6 +155,27 @@ fun VibeTransferSection(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+
+                // 官方经验值：多张 vibe 的强度合计建议不超过 1.0。网页端有自动归一化开关，
+                // 这里给一个同样的按钮（只在合计超限时才可点）。
+                val totalStrength = state.vibeReferences.sumOf { it.strength ?: 0.0 }
+                Text(
+                    text = stringResource(R.string.generate_vibe_strength_total, totalStrength),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (totalStrength > 1.0) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+                if (state.vibeReferences.size > 1) {
+                    OutlinedButton(
+                        onClick = viewModel::normalizeVibeStrengths,
+                        enabled = totalStrength > 1.0,
+                    ) {
+                        Text(stringResource(R.string.generate_vibe_normalize))
+                    }
+                }
             }
         }
     }

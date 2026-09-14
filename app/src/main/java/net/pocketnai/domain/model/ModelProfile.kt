@@ -93,6 +93,17 @@ data class ModelProfile(
     val supportsVibeTransfer: Boolean,
     /** 是否支持 Precise Reference。同上：目前仅 V4.5。 */
     val supportsDirectorReference: Boolean,
+    /**
+     * 是否支持局部重绘。
+     *
+     * **只有 Full 档位支持**：实机验证时服务端对 Curated 明确拒绝 ——
+     * `Model nai-diffusion-4-5-curated doesn't support action infill`。
+     *
+     * ⚠️ "Full 支持"这一点尚未用真实生成验证过（需要一次非免费的请求，只能由用户触发）。
+     * 规格上它应当支持（局部重绘属于 Image2Img 家族），因此先按支持实现；
+     * 真机核对后如果 Full 也被拒，把这里改成 false 并同步界面文案即可。
+     */
+    val supportsInpaint: Boolean,
     /** Vibe Transfer 的参考图张数上限。数值集中在 [ModelCatalog]，见那里的待核对说明。 */
     val maxVibeReferences: Int,
     /** Precise Reference 的参考图张数上限。数值集中在 [ModelCatalog]，见那里的待核对说明。 */

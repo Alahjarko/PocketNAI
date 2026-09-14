@@ -32,6 +32,9 @@ import net.pocketnai.domain.billing.GenerationKind
 import net.pocketnai.domain.billing.ObservedBalanceChange
 import net.pocketnai.domain.billing.SubscriptionBalance
 import net.pocketnai.domain.image.ImageTransform
+import net.pocketnai.domain.image.toPixelSize
+import net.pocketnai.domain.inpaint.MaskStroke
+import net.pocketnai.data.image.MaskImageProcessor
 import net.pocketnai.domain.image.PreparedReference
 import net.pocketnai.domain.image.ReferenceImageImporter
 import net.pocketnai.domain.image.ReferenceSource
@@ -114,6 +117,12 @@ class GenerateViewModel(
          * 官方界面里也是独立面板，可以同时使用。
          */
         val vibeReferences: List<ReferenceImage> = emptyList(),
+        /**
+         * 局部重绘的蒙版（最多一条）。
+         *
+         * 蒙版与底图（[referenceSource]）配成一对；生成时它以 `parameters.mask` 提交。
+         */
+        val inpaintReferences: List<ReferenceImage> = emptyList(),
         /** 正在导入参考图（解码 + 落盘）。期间不该重复触发导入。 */
         val referenceBusy: Boolean = false,
         /** 参考图导入失败的原因，与生成失败分开：它不影响已经写好的提示词与参数。 */
@@ -155,18 +164,35 @@ class GenerateViewModel(
 
         val canGenerate: Boolean get() = !inFlight && !referenceBusy && promptTemplate.isNotBlank()
 
-        /** 本次会用的全部参考图（图生图起点 + Precise Reference + Vibe）。 */
+        /** 本次会用的全部参考图（图生图起点 + Precise Reference + Vibe + 重绘蒙版）。 */
         val allReferences: List<ReferenceImage>
-            get() = listOfNotNull(referenceSource) + directorReferences + vibeReferences
+            get() = listOfNotNull(referenceSource) + directorReferences + vibeReferences + inpaintReferences
 
         /** 当前模型是否支持 Vibe Transfer（目前仅 V4.5）。 */
         val supportsVibeTransfer: Boolean get() = profile.supportsVibeTransfer
+
+        /** 当前模型是否支持局部重绘（属于 Image2Img 家族，四个模型都支持）。 */
+        val supportsInpaint: Boolean get() = profile.supportsInpaint
+
+        /**
+         * 局部重绘的蒙版。它同时也是"当前是否处于重绘模式"的判据 ——
+         * 没有蒙版就没有可重画的区域，模式也就不成立。
+         */
+        val inpaintMask: ReferenceImage?
+            get() = inpaintReferences.firstOrNull { it.role == ReferenceRole.INPAINT_MASK }
+
+        /** 重绘的底图：就是图生图那张起点图（两者共用同一个角色）。 */
+        val inpaintBase: ReferenceImage? get() = referenceSource
+
+        /** 蒙版是否已经在编辑器里画过（用于界面提示与生成按钮的可用性）。 */
+        val hasInpaintMask: Boolean get() = inpaintMask != null
 
         val remainingVibeSlots: Int
             get() = (profile.maxVibeReferences - vibeReferences.size).coerceAtLeast(0)
 
         val mode: GenerationMode
             get() = when {
+                hasInpaintMask -> GenerationMode.INPAINT
                 directorReferences.isNotEmpty() -> GenerationMode.PRECISE_REFERENCE
                 referenceSource != null -> GenerationMode.IMG2IMG
                 else -> GenerationMode.TXT2IMG
@@ -206,6 +232,7 @@ class GenerateViewModel(
             referenceSource = draft.references.firstOrNull { it.role == ReferenceRole.IMG2IMG },
             directorReferences = draft.references.filter { it.role == ReferenceRole.DIRECTOR },
             vibeReferences = draft.references.filter { it.role == ReferenceRole.VIBE },
+            inpaintReferences = draft.references.filter { it.role == ReferenceRole.INPAINT_MASK },
         )
     }
 
@@ -262,6 +289,7 @@ class GenerateViewModel(
                     GenerationMode.TXT2IMG -> GenerationKind.TEXT_TO_IMAGE
                     GenerationMode.IMG2IMG -> GenerationKind.IMAGE_TO_IMAGE
                     GenerationMode.PRECISE_REFERENCE -> GenerationKind.PRECISE_REFERENCE
+                    GenerationMode.INPAINT -> GenerationKind.INPAINT
                 }
             },
             hasBaseImage = state.referenceSource != null,
@@ -269,6 +297,8 @@ class GenerateViewModel(
             referenceImageCount = when (state.mode) {
                 GenerationMode.PRECISE_REFERENCE -> state.directorReferences.size
                 GenerationMode.IMG2IMG -> 1
+                // 重绘的底图算一张（与图生图同族），蒙版不计费。
+                GenerationMode.INPAINT -> 1
                 GenerationMode.TXT2IMG -> 0
             },
             pricingPolicyVersion = costCalculator.policyVersion,
@@ -314,6 +344,7 @@ class GenerateViewModel(
                         referenceSource = reused.img2imgSource,
                         directorReferences = reused.referencesOf(ReferenceRole.DIRECTOR),
                         vibeReferences = reused.referencesOf(ReferenceRole.VIBE),
+                        inpaintReferences = reused.referencesOf(ReferenceRole.INPAINT_MASK),
                         error = null,
                         modelSwitchNotice = null,
                         referenceError = null,
@@ -525,6 +556,8 @@ class GenerateViewModel(
                             ),
                             // 图生图与 Precise Reference 互斥：挂上起点图就清掉另一类。
                             directorReferences = emptyList(),
+                            // 换底图必须作废旧蒙版：蒙版是按上一张底图的尺寸裁的，留着就会错位。
+                            inpaintReferences = emptyList(),
                             params = current.params.copy(size = sizeForSource(profile, prepared)),
                         )
                     }
@@ -539,6 +572,89 @@ class GenerateViewModel(
 
     fun onRemoveReference() {
         _state.update { it.copy(referenceSource = null, referenceError = null) }
+    }
+
+    // ---- 局部重绘 ----
+
+    /**
+     * 笔画与扩张量放在 ViewModel 而不是编辑器内部：编辑器是一个独立页面，
+     * 来回导航之间笔画必须留着（否则用户从编辑器返回生成页再进去，涂的东西就没了）。
+     * 它们**不进草稿**：草稿只记渲染好的蒙版文件（见 [onInpaintMaskRendered]）。
+     */
+    private val _inpaintStrokes = MutableStateFlow<List<MaskStroke>>(emptyList())
+    val inpaintStrokes: StateFlow<List<MaskStroke>> = _inpaintStrokes.asStateFlow()
+
+    private val _inpaintDilation = MutableStateFlow(0f)
+    val inpaintDilation: StateFlow<Float> = _inpaintDilation.asStateFlow()
+
+    /**
+     * 选一张图作为**局部重绘的底图**。
+     *
+     * 导入时就按当前输出尺寸裁切（Cover），因此编辑器显示的就是提交图，
+     * 手指涂的坐标与提交的像素严格对应 —— 这是 Precise Reference 那次"忘了补齐黑边"的教训。
+     */
+    fun onInpaintBasePicked(source: ReferenceSource) {
+        val current = _state.value
+        if (current.referenceBusy) return
+
+        _state.update { it.copy(referenceBusy = true, referenceError = null) }
+        viewModelScope.launch {
+            val target = ImageTransform.Cover(current.params.size.toPixelSize())
+            when (val outcome = referenceImporter.import(source, target)) {
+                is Outcome.Success -> {
+                    val prepared = outcome.value
+                    _state.update { state ->
+                        state.copy(
+                            referenceBusy = false,
+                            referenceSource = ReferenceImage.img2imgSource(
+                                prepared = prepared,
+                                strength = state.profile.defaultImg2ImgStrength,
+                                id = idGenerator(),
+                                createdAt = clock(),
+                            ),
+                            // 重绘与参考条件互斥（服务端拒绝混用）；
+                            // 同时作废上一次的蒙版 —— 新底图需要重新涂。
+                            directorReferences = emptyList(),
+                            vibeReferences = emptyList(),
+                            inpaintReferences = emptyList(),
+                        )
+                    }
+                    _inpaintStrokes.value = emptyList()
+                }
+
+                is Outcome.Failure -> _state.update {
+                    it.copy(referenceBusy = false, referenceError = outcome.error)
+                }
+            }
+        }
+    }
+
+    /** 编辑器把渲染好的蒙版交回来。它就代表"当前处于重绘模式"。 */
+    fun onInpaintMaskRendered(mask: ReferenceImage) {
+        _state.update { current ->
+            current.copy(
+                inpaintReferences = listOf(mask),
+                directorReferences = emptyList(),
+                vibeReferences = emptyList(),
+            )
+        }
+    }
+
+    fun onInpaintMaskCleared() {
+        _state.update { it.copy(inpaintReferences = emptyList()) }
+        _inpaintStrokes.value = emptyList()
+        _inpaintDilation.value = 0f
+    }
+
+    fun onInpaintStrokesChange(strokes: List<MaskStroke>) {
+        _inpaintStrokes.value = strokes
+    }
+
+    fun onInpaintDilationChange(value: Float) {
+        _inpaintDilation.value = value.coerceIn(
+            MaskImageProcessor.DILATION_RANGE.start,
+            MaskImageProcessor.DILATION_RANGE.endInclusive,
+        )
     }
 
     // ---- Precise Reference ----
@@ -593,8 +709,10 @@ class GenerateViewModel(
                             referenceBusy = false,
                             // 与图生图互斥。
                             referenceSource = null,
-                            // 与服务端约束一致：Vibe 与 Precise Reference 不能混用。
+                            // 与服务端约束一致：Vibe 与 Precise Reference 不能混用；
+                            // 重绘同样不能与参考条件混用。
                             vibeReferences = emptyList(),
+                            inpaintReferences = emptyList(),
                             directorReferences = state.directorReferences + reference,
                         )
                     }
@@ -647,8 +765,9 @@ class GenerateViewModel(
                         state.copy(
                             referenceBusy = false,
                             // 服务端明确不允许混用：`cannot mix reference and director_reference
-                            // at the same time`。因此挂上 Vibe 就清掉 Precise Reference。
+                            // at the same time`。因此挂上 Vibe 就清掉 Precise Reference 与重绘蒙版。
                             directorReferences = emptyList(),
+                            inpaintReferences = emptyList(),
                             vibeReferences = state.vibeReferences + reference,
                         )
                     }
@@ -678,6 +797,31 @@ class GenerateViewModel(
 
     fun onVibeInformationExtractedChanged(id: String, value: Double) {
         updateVibeReference(id) { it.copy(informationExtracted = clampedDirector(value)) }
+    }
+
+    /**
+     * 把所有 Vibe 的 Reference Strength 等比例缩放到合计 1.0。
+     *
+     * 官方文档的经验值：*"generally, the strengths of all your vibes should add up to 1.0 or less"*，
+     * 网页端也有一个 Normalize Reference Strengths 开关做同样的事。
+     * 只有一张时直接设为 1.0；合计本就不超过 1.0 时**不动**（避免用户只是想微调却被改）。
+     */
+    fun normalizeVibeStrengths() {
+        _state.update { current ->
+            val vibes = current.vibeReferences
+            if (vibes.isEmpty()) return@update current
+            val total = vibes.sumOf { it.strength ?: 0.0 }
+            if (total <= NORMALIZE_TARGET || total <= 0.0) return@update current
+            val factor = NORMALIZE_TARGET / total
+            current.copy(
+                vibeReferences = vibes.map { reference ->
+                    val scaled = (reference.strength ?: 0.0) * factor
+                    reference.copy(
+                        strength = current.profile.img2imgStrengthRange.clamp(scaled),
+                    )
+                },
+            )
+        }
     }
 
     private fun updateVibeReference(id: String, transform: (ReferenceImage) -> ReferenceImage) {
@@ -994,9 +1138,17 @@ class GenerateViewModel(
         /** 费用预估流的订阅超时，与画廊保持一致。 */
         const val COST_SUBSCRIPTION_TIMEOUT_MS = 5_000L
 
-        /** Vibe 两个滑块的默认值。官方初值未核对，先取工作值。 */
+        /**
+         * Vibe 两个滑块的默认值。
+         *
+         * ⚠️ 这是**我们的选择，不是官方默认值**：官方文档只给了"所有 vibe 的强度建议合计
+         * 不超过 1.0"这条经验值，网页端的具体初值无法读取（用户确认过也看不到）。
+         */
         const val VIBE_DEFAULT_STRENGTH = 0.6
         const val VIBE_DEFAULT_INFORMATION = 1.0
+
+        /** 归一化目标：官方建议的合计上限。 */
+        const val NORMALIZE_TARGET = 1.0
     }
 
     /** 一次生成前后的余额核对上下文（规划 §8.2）。 */

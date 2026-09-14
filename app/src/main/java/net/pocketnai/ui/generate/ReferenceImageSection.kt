@@ -79,6 +79,8 @@ fun ReferenceImageSection(
     state: GenerateViewModel.UiState,
     connected: Boolean,
     viewModel: GenerateViewModel,
+    /** 打开全屏蒙版编辑器。底图未就绪时按钮不可点。 */
+    onOpenInpaintEditor: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val container = LocalAppContainer.current
@@ -146,6 +148,49 @@ fun ReferenceImageSection(
                     targetSizeLabel = state.referenceTargetSize?.label.orEmpty(),
                     onRemove = viewModel::onRemoveReference,
                 )
+
+                // 局部重绘入口：底图就绪才出现。重绘属于 Image2Img 家族，
+                // 因此这里不额外做模型判断。
+                if (!state.supportsInpaint) {
+                    // 不支持的档位说清楚原因与下一步（切到 Full），而不是只把按钮藏起来。
+                    Text(
+                        text = stringResource(
+                            R.string.inpaint_needs_base,
+                            state.profile.displayName,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                } else {
+                    val mask = state.inpaintMask
+                    OutlinedButton(
+                        onClick = onOpenInpaintEditor,
+                        enabled = connected && !state.referenceBusy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            if (mask == null) {
+                                stringResource(R.string.inpaint_open_editor)
+                            } else {
+                                stringResource(R.string.inpaint_masked)
+                            },
+                        )
+                    }
+                    Text(
+                        text = if (mask == null) {
+                            stringResource(R.string.inpaint_not_masked)
+                        } else {
+                            stringResource(R.string.inpaint_masked_hint)
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (mask != null) {
+                        TextButton(onClick = viewModel::onInpaintMaskCleared) {
+                            Text(stringResource(R.string.inpaint_clear))
+                        }
+                    }
+                }
                 val strengthRange = state.profile.img2imgStrengthRange
                 LabeledSlider(
                     label = stringResource(R.string.generate_reference_strength),

@@ -511,6 +511,11 @@ class GenerationRepository(
         ReferenceRole.VIBE -> ImageTransform.Letterbox(
             PixelSize(reference.width, reference.height),
         )
+        // 蒙版**不做任何几何变换**：生成它的时候就与输出尺寸严格一致，
+        // 一旦在这里缩放就会与底图错位（而且是那种"看着差不多、其实整体偏了几像素"的错位）。
+        ReferenceRole.INPAINT_MASK -> ImageTransform.Letterbox(
+            PixelSize(reference.width, reference.height),
+        )
     }
 
     /**

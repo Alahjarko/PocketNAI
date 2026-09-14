@@ -108,6 +108,32 @@
     <string name="generate_mode_img2img">图生图</string>
     <string name="generate_mode_txt2img">纯文字</string>
     <string name="generate_mode_precise_reference">Precise Reference</string>
+    <string name="generate_mode_inpaint">局部重绘</string>
+    <string name="generate_precise_reference_short2">重绘</string>
+    <string name="detail_reference_inpaint_mask">重绘蒙版</string>
+
+    <!-- 局部重绘 -->
+    <string name="inpaint_title">局部重绘</string>
+    <string name="inpaint_done">完成</string>
+    <string name="inpaint_back_hint">返回并保存</string>
+    <string name="inpaint_brush">画笔</string>
+    <string name="inpaint_eraser">橡皮</string>
+    <string name="inpaint_undo">撤销这一笔</string>
+    <string name="inpaint_redo">重做</string>
+    <string name="inpaint_clear">清空蒙版</string>
+    <string name="inpaint_clear_confirm_title">清空整个蒙版？</string>
+    <string name="inpaint_clear_confirm_message">这会丢掉你涂过的所有区域，且不能撤销。底图不受影响。</string>
+    <string name="inpaint_brush_size">笔刷 %1$d px</string>
+    <string name="inpaint_dilation">蒙版扩张 %1$d px</string>
+    <string name="inpaint_hint">只重画被涂抹的区域，其余部分保持不变。涂抹边缘太靠近不想改的地方时，把「蒙版扩张」调大一点。</string>
+    <string name="inpaint_empty_hint">还没有涂抹任何区域，此时不能生成。</string>
+    <string name="inpaint_open_editor">涂抹要重画的区域</string>
+    <string name="inpaint_needs_base">%1$s 不支持局部重绘（Curated 档位不支持服务端的 infill 操作），请切换到 Full 模型。</string>
+    <string name="inpaint_masked">编辑蒙版</string>
+    <string name="inpaint_masked_hint">已涂抹要重画的区域。生成时只重画这一块，其余部分保持不变。</string>
+    <string name="inpaint_not_masked">尚未涂抹任何区域。</string>
+    <string name="inpaint_preparing">正在准备底图…</string>
+    <string name="action_inpaint">局部重绘</string>
     <string name="generate_reference_fidelity">Fidelity</string>
     <string name="generate_reference_kind_character">参考类型：角色</string>
     <string name="generate_reference_kind_character_style">参考类型：角色与画风</string>
@@ -129,6 +155,10 @@
     <string name="generate_vibe_encode_hint">提交生成时会编码为 Vibe（同一张图只编码一次）</string>
     <string name="generate_vibe_cost_hint">费用以 NovelAI 为准</string>
     <string name="generate_vibe_short">Vibe</string>
+    <string name="generate_vibe_strength_total">参考强度合计 %1$.2f（官方建议不超过 1.0）</string>
+    <string name="generate_vibe_normalize">归一化到 1.0</string>
+    <string name="generate_reference_kind_style">参考类型：画风</string>
+    <string name="generate_reference_kind_style_short">画风</string>
     <string name="generate_precise_reference_short">Precise Ref</string>
     <string name="common_mode">生成方式</string>
     <string name="detail_reference_img2img">起点图（图生图）</string>

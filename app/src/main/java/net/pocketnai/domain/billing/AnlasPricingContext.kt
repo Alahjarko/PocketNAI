@@ -9,6 +9,8 @@ enum class GenerationKind {
     IMAGE_TO_IMAGE,
     VIBE_TRANSFER,
     PRECISE_REFERENCE,
+    /** 局部重绘：按 Image2Img 家族计费，没有额外附加费。 */
+    INPAINT,
     OTHER,
 }
 

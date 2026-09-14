@@ -31,7 +31,11 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import net.pocketnai.R
 import net.pocketnai.ui.connect.ConnectScreen
+import net.pocketnai.domain.image.ReferenceSource
 import net.pocketnai.ui.detail.DetailScreen
+import net.pocketnai.ui.inpaint.InpaintEditorScreen
+import net.pocketnai.ui.inpaint.InpaintPreparing
+import net.pocketnai.ui.inpaint.InpaintUnavailable
 import net.pocketnai.ui.generate.GenerateViewModel
 import net.pocketnai.ui.home.HomeScreen
 import net.pocketnai.ui.settings.SettingsScreen
@@ -44,6 +48,9 @@ object Routes {
     const val HOME = "home"
     const val SETTINGS = "settings"
     const val DETAIL = "detail/{imageId}"
+
+    /** 局部重绘的蒙版编辑器（全屏）。 */
+    const val INPAINT = "inpaint"
 
     fun detail(imageId: String): String = "detail/$imageId"
 
@@ -140,7 +147,18 @@ fun PocketNaiApp() {
                     connected = connected,
                     credentialType = credentialType,
                     onOpenImage = { imageId -> navController.navigate(Routes.detail(imageId)) },
+                    onInpaintImage = { item ->
+                        // 画廊长按 → 直接以这张图作为重绘底图并进入编辑器。
+                        generateViewModel.onInpaintBasePicked(
+                            ReferenceSource.LocalPath(item.relativePath),
+                        )
+                        navController.navigate(Routes.INPAINT) {
+                            popUpTo(Routes.HOME)
+                            launchSingleTop = true
+                        }
+                    },
                     onRequestConnect = { navController.navigate(Routes.CONNECT) },
+                    onOpenInpaintEditor = { navController.navigate(Routes.INPAINT) },
                 )
             }
             composable(Routes.SETTINGS) {
@@ -158,7 +176,40 @@ fun PocketNaiApp() {
                             launchSingleTop = true
                         }
                     },
+                    onInpaint = { relativePath ->
+                        // 详情页 → 以当前这张图作为重绘底图并进入编辑器。
+                        generateViewModel.onInpaintBasePicked(ReferenceSource.LocalPath(relativePath))
+                        navController.navigate(Routes.INPAINT) {
+                            popUpTo(Routes.HOME)
+                            launchSingleTop = true
+                        }
+                    },
                 )
+            }
+            composable(Routes.INPAINT) {
+                // 底图是**异步导入**的：进入这个路由时它可能还在处理中，
+                // 因此要显式区分"正在准备 / 失败 / 就绪"三种状态，
+                // 不能因为一次读不到就弹回首页（真机验证时正是这么错的）。
+                val base = generateState.referenceSource
+                when {
+                    base != null -> InpaintEditorScreen(
+                        viewModel = generateViewModel,
+                        base = base,
+                        onDone = {
+                            navController.navigate(Routes.HOME) {
+                                popUpTo(Routes.HOME)
+                                launchSingleTop = true
+                            }
+                        },
+                    )
+
+                    generateState.referenceError != null -> InpaintUnavailable(
+                        messageRes = generateState.referenceError!!.code,
+                        onBack = { navController.popBackStack() },
+                    )
+
+                    else -> InpaintPreparing(onCancel = { navController.popBackStack() })
+                }
             }
         }
     }

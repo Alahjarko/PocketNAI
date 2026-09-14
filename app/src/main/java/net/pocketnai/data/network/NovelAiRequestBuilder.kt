@@ -50,11 +50,19 @@ object NovelAiRequestBuilder {
     const val ACTION_IMG2IMG: String = "img2img"
 
     /**
+     * 局部重绘的 action。
+     *
+     * 来源：服务端自己的报错 —— `image is not allowed for regular generations, use img2img or infill`
+     * （做图生图时实测到的，见技术决策记录第十二节）。
+     */
+    const val ACTION_INFILL: String = "infill"
+
+    /**
      * Vibe 两个滑块的默认值。
      *
-     * ⚠️ **待核对**：官方网页版 Vibe Transfer 面板的初值尚未记录。与 `noise` 那种
-     * "可以留空让服务端兜底"的字段不同，这两个值必须由客户端发送（数组要与图片一一对应），
-     * 因此先取工作值；核对后改这两行即可。
+     * ⚠️ 这是**我们的选择，不是官方默认值**：官方文档只给出"所有 vibe 的强度建议合计
+     * 不超过 1.0"这条经验值，网页端的具体初值读不到（用户确认过网页上看不到）。
+     * 这两个值必须由客户端发送（数组要与图片一一对应），没有留空的余地。
      */
     private const val VIBE_DEFAULT_STRENGTH = 0.6
     private const val VIBE_DEFAULT_INFORMATION = 1.0
@@ -103,8 +111,14 @@ object NovelAiRequestBuilder {
         val positive = applyQualityTags(normalized.prompt, normalized.qualityTags)
         val negative = normalized.negativePrompt
 
-        val img2imgSource = upstreamImages[ReferenceRole.IMG2IMG]?.firstOrNull()
-            ?.takeIf { request.mode == GenerationMode.IMG2IMG && it.isNotEmpty() }
+        val baseImage = upstreamImages[ReferenceRole.IMG2IMG]?.firstOrNull()?.takeIf { it.isNotEmpty() }
+        val maskImage = upstreamImages[ReferenceRole.INPAINT_MASK]?.firstOrNull()?.takeIf { it.isNotEmpty() }
+        val img2imgSource = baseImage?.takeIf { request.mode == GenerationMode.IMG2IMG }
+        // 局部重绘要求底图与蒙版同时具备：缺一个都不发，
+        // 否则服务端只会回一句笼统的参数错误，指不到真正的原因。
+        val useInpaint = request.mode == GenerationMode.INPAINT &&
+            baseImage != null &&
+            maskImage != null
         val directorSources = upstreamImages[ReferenceRole.DIRECTOR].orEmpty()
         val directors = request.referencesOf(ReferenceRole.DIRECTOR)
         // 数量对不上说明编码环节漏了图：宁可不发这组字段，也不发一个对不齐的数组。
@@ -152,6 +166,10 @@ object NovelAiRequestBuilder {
                 )
             }
 
+            if (useInpaint) {
+                appendInpaint(profile, baseImage, maskImage, request)
+            }
+
             if (useDirector) {
                 appendDirectorReferences(profile, directors, directorSources)
             }
@@ -164,7 +182,7 @@ object NovelAiRequestBuilder {
         return buildJsonObject {
             put("input", positive)
             put("model", profile.model.apiModelId)
-            put("action", actionFor(request.mode, img2imgSource != null))
+            put("action", actionFor(request.mode, img2imgSource != null, useInpaint))
             put("parameters", parameters)
         }
     }
@@ -273,11 +291,56 @@ object NovelAiRequestBuilder {
     }
 
     /**
-     * Precise Reference 不换 action：它是普通 `generate` 请求加上 `director_reference_*` 字段。
-     * 只有 Image2Img 需要换 `img2img`（`image` 字段只在那个 action 下被接受，真机验证结论）。
+     * 局部重绘的字段（`action = "infill"`）。
+     *
+     * ## 强度/噪声放在嵌套对象里
+     * OpenAPI 里除了顶层的 `strength`，还有一个嵌套的
+     * `parameters.img2img {strength, noise, extra_noise_seed, color_correct}`，
+     * 它的字段说明写的是 **`used by inpaint`** —— 因此这里发嵌套对象，不发顶层 `strength`。
+     * 真机核对后如果服务端要的是顶层，改这一处即可。
+     *
+     * ## 只发 strength
+     * `noise` / `color_correct` / `extra_noise_seed` 的默认值未知，按全项目一致的纪律**不发**，
+     * 让服务端用自己的默认值。
      */
-    private fun actionFor(mode: GenerationMode, hasImg2ImgImage: Boolean): String =
-        if (hasImg2ImgImage) ACTION_IMG2IMG else ACTION_GENERATE
+    private fun JsonObjectBuilder.appendInpaint(
+        profile: ModelProfile,
+        baseImageBase64: String,
+        maskBase64: String,
+        request: GenerationRequest,
+    ) {
+        put("image", baseImageBase64)
+        put("mask", maskBase64)
+        put(
+            "img2img",
+            buildJsonObject {
+                put(
+                    "strength",
+                    profile.img2imgStrengthRange.clamp(
+                        request.img2imgSource?.strength ?: profile.defaultImg2ImgStrength,
+                    ),
+                )
+            },
+        )
+    }
+
+    /**
+     * action 取值。
+     *
+     * - 图生图：`img2img`（`image` 字段只在那个 action 下被接受，真机验证结论）；
+     * - 局部重绘：`infill`（服务端报错原文 `use img2img or infill`）；
+     * - 其余（含 Precise Reference / Vibe）：`generate`。
+     */
+    private fun actionFor(
+        mode: GenerationMode,
+        hasImg2ImgImage: Boolean,
+        useInpaint: Boolean,
+    ): String = when {
+        useInpaint -> ACTION_INFILL
+        hasImg2ImgImage -> ACTION_IMG2IMG
+        mode == GenerationMode.INPAINT -> ACTION_INFILL
+        else -> ACTION_GENERATE
+    }
 
     private fun captionBlock(text: String, isNegative: Boolean): JsonObject = buildJsonObject {
         put(

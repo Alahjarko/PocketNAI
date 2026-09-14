@@ -179,6 +179,8 @@ object ModelCatalog {
         // 参考条件类功能目前只有 V4.5 能用，V5 不支持（账号所有者确认）。
         supportsVibeTransfer = model.family == GenerationFamily.V4_5,
         supportsDirectorReference = model.family == GenerationFamily.V4_5,
+        // 局部重绘：Curated 已被服务端明确拒绝（action infill），只有 Full 档位可用。
+        supportsInpaint = model.tier == ModelTier.FULL,
         maxVibeReferences = MAX_VIBE_REFERENCES,
         maxDirectorReferences = MAX_DIRECTOR_REFERENCES,
         img2imgStrengthRange = IMG2IMG_STRENGTH_RANGE,

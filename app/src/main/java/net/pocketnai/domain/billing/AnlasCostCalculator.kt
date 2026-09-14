@@ -199,6 +199,8 @@ class AnlasCostCalculator(
                 GenerationKind.TEXT_TO_IMAGE -> true
                 // 起点图只有一张，多于一张说明请求本身不合法，不在此判免费。
                 GenerationKind.IMAGE_TO_IMAGE -> context.referenceImageCount <= 1
+                // 局部重绘属于 Image2Img 家族，同样不额外收费。
+                GenerationKind.INPAINT -> context.referenceImageCount <= 1
                 // 上限由 ModelProfile 保证（V4.5 最多 4 张）。
                 GenerationKind.PRECISE_REFERENCE -> true
                 else -> false

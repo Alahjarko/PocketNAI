@@ -105,6 +105,7 @@ fun GenerateSheet(
     connected: Boolean,
     credentialType: CredentialType?,
     onRequestConnect: () -> Unit,
+    onOpenInpaintEditor: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberScrollState()
@@ -194,6 +195,7 @@ fun GenerateSheet(
                 state = state,
                 connected = connected,
                 viewModel = viewModel,
+                onOpenInpaintEditor = onOpenInpaintEditor,
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -681,6 +683,7 @@ private fun SheetHeader(
             val img2imgMarker = stringResource(R.string.generate_mode_img2img)
             val preciseReferenceMarker = stringResource(R.string.generate_precise_reference_short)
             val vibeMarker = stringResource(R.string.generate_vibe_short)
+            val inpaintMarker = stringResource(R.string.generate_mode_inpaint)
             Text(
                 text = buildString {
                     append(state.profile.model.shortDisplayName)
@@ -699,6 +702,10 @@ private fun SheetHeader(
                     if (state.vibeReferences.isNotEmpty()) {
                         append(" · ")
                         append(vibeMarker)
+                    }
+                    if (state.hasInpaintMask) {
+                        append(" · ")
+                        append(inpaintMarker)
                     }
                 },
                 style = MaterialTheme.typography.bodySmall,

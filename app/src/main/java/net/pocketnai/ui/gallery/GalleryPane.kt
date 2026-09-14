@@ -79,6 +79,13 @@ import java.io.File
 @Composable
 fun GalleryPane(
     onOpenImage: (String) -> Unit,
+    /**
+     * 对这张图做局部重绘。
+     *
+     * 官方文档明确说局部重绘可以从"任意一张已生成的图片"进入，因此这里是画廊的入口：
+     * 用户看到一张构图不错但某处画坏的图，最自然的动作就是在这里直接改它。
+     */
+    onInpaintImage: (GalleryItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val container = LocalAppContainer.current
@@ -213,6 +220,15 @@ fun GalleryPane(
                         },
                     ) {
                         Text(stringResource(R.string.action_copy_prompt))
+                    }
+
+                    TextButton(
+                        onClick = {
+                            actionTarget = null
+                            onInpaintImage(target)
+                        },
+                    ) {
+                        Text(stringResource(R.string.action_inpaint))
                     }
 
                     TextButton(

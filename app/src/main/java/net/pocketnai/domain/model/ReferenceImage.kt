@@ -18,6 +18,14 @@ enum class GenerationMode {
      * 因此它不是一个"带图的文生图"，而是独立的一种模式。
      */
     PRECISE_REFERENCE,
+
+    /**
+     * 局部重绘（官方界面叫 Inpaint，API 里叫 `infill`）。
+     *
+     * 属于 **Image2Img 家族**：底图 + 蒙版，只重画被涂抹的区域。
+     * 因此它四个模型都能用（V4.5 与 V5），也不额外计费。
+     */
+    INPAINT,
     ;
 
     companion object {
@@ -42,6 +50,15 @@ enum class ReferenceRole {
 
     /** 角色 / 画风参考：`director_reference_*` 五个数组。 */
     DIRECTOR,
+
+    /**
+     * 局部重绘的蒙版（`parameters.mask`）。
+     *
+     * 单独占一个角色的好处：**不需要改数据库 schema**，而且启动清理按"仍被引用的路径集合"
+     * 回收文件时，`allReferencePaths()` 的 UNION 查询会自动把它算进去 ——
+     * 这正是之前"草稿里的参考图被当孤儿删掉"那个坑的同一条防线。
+     */
+    INPAINT_MASK,
 }
 
 /**
@@ -51,6 +68,16 @@ enum class ReferenceRole {
 enum class DirectorReferenceKind(val apiValue: String) {
     /** 只取角色。 */
     CHARACTER("character"),
+
+    /**
+     * 只取画风（官方文档里的 Style Reference）。
+     *
+     * ⚠️ `"style"` 这个取值是**推断**的：OpenAPI 的字段说明只给出了 `character` 与
+     * `character&style` 两个可用值（那份说明是写给 Character Reference 的），
+     * 而官方文档明确列出三种参考类型（Character / Style / Character & Style）。
+     * 真机核对后如果服务端不接受，改这一个字符串即可。
+     */
+    STYLE("style"),
 
     /** 角色与画风一起取。 */
     CHARACTER_AND_STYLE("character&style"),

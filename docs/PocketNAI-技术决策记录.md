@@ -1151,3 +1151,78 @@ You can use the Normalize Reference Strengths toggle to do this automatically wh
 官方文档是散文式的产品说明，**不写数值默认值**。因此这些仍是待核对项：
 Inpaint 的 Strength/Noise 初值、Vibe 两个滑块的初值、img2img 的 Strength/Noise 初值、
 CFG Rescale 的可用区间。它们只能从官方网页的界面上读出来。
+
+---
+
+## 十五、局部重绘（Inpaint）实现记录
+
+按《局部重绘功能规划书》实现了阶段 0–E。真机验证把一个关键假设推翻了，因此**功能现状是"界面完整、链路待最后一步验证"**。
+
+### 15.1 已确认：`action` 用 `infill`
+
+服务端在报错里明确把它当作一个 action 名字使用：
+
+```
+Model nai-diffusion-4-5-curated doesn't support action infill
+```
+
+这句话同时确认了另一件更重要的事，见 15.2。
+
+### 15.2 ⚠️ 推翻的假设：Curated 档位不支持局部重绘
+
+账号所有者原先的判断是"局部重绘属于 Image2Img 家族，所以四个模型都能用"。
+真机实测**不成立**：同样的请求换成 Curated 模型后，服务端直接拒绝：
+
+```
+HTTP 400: {"statusCode":400,"message":"Model nai-diffusion-4-5-curated doesn't support action infill"}
+{"statusCode":500,"message":"Internal Server Error"}
+```
+
+（响应体里还跟了一段 500，服务端在拒绝之后的内部处理似乎也不干净，但不影响结论。）
+
+于是 `ImageModel` 增加了 `tier`（CURATED / FULL），`supportsInpaint` 按档位判定：
+**只有 Full 支持**。界面在 Curated 上会直白说明"Curated 档位不支持服务端的 infill 操作，请切换到 Full 模型"，
+而不是把入口藏起来让用户猜。
+
+**仍未验证的一点**：Full 是否真的支持。这一条无法免费验证 —— 账号的免费组合只有
+V4.5 Curated + Normal + 23 + 7，换 Full 就会真实扣费，因此只能由用户触发。
+
+### 15.3 仍未确认：蒙版约定
+
+因为生成一直没成功，规划书 §3 的 B1 探针（蒙版只涂左半边 + 完全不同的提示词，一次生成判定
+"白色=重画区域"还是"透明=重画区域"）**尚未执行**。代码里已经把约定关进
+`MaskConvention` 这一个枚举，探针出结果后改一行。
+
+在那之前按更常见的 `PAINTED_IS_WHITE` 实现。
+
+### 15.4 已实现且已验证的部分
+
+| 部分 | 状态 |
+|---|---|
+| 蒙版几何（视图↔位图换算、笔刷半径换算、扩张=半径偏移） | ✅ 12 个单元测试 |
+| 请求构造（`action=infill`、`image`+`mask`、嵌套 `img2img.strength`） | ✅ 14 个单元测试 |
+| 蒙版渲染落盘（硬边、内容寻址、约定可翻转） | ✅ |
+| 全屏蒙版编辑器 | ✅ 截图验证：画笔/橡皮、笔刷 27px、撤销重做、清空二次确认、**扩张 15px 实时预览**（蓝带明显变粗） |
+| 三个入口 | ✅ 画廊长按菜单（截图确认）、详情页按钮、参考图卡片（底图就绪后出现） |
+| WYSIWYG | ✅ 底图进入重绘时按输出尺寸裁切，编辑器显示的就是提交图 |
+| 费用 | ✅ `GenerationKind.INPAINT` 按图生图家族算：免费组合下按钮显示"免费"，不额外收费 |
+
+### 15.5 扩张为什么不做形态学运算
+
+`effectiveRadius(stroke, dilation)`：圆头笔刷画出的形状是"笔画 ∪ 半径 r 的圆"（Minkowski 和），
+把半径整体加 N 就等价于把整个蒙版膨胀 N 像素。因此**不需要对位图做卷积**，
+扩张滑块的实时预览只需"换个半径重放笔画"。
+橡皮不参与扩张 —— 把橡皮也放大等于缩小涂抹区域，与"扩张"的字面意思相反。
+
+### 15.6 顺带完成的两处补缺（官方文档刚确认过的缺口）
+
+1. **Precise Reference 补上"纯画风"**（官方有 Character / Style / Character & Style 三种）。
+   ⚠️ `"style"` 这个 API 取值是**推断**的（OpenAPI 只给了另两个），真机核对后可能需要改一个字符串。
+2. **Vibe 面板加"参考强度合计"提示与"归一化到 1.0"按钮**（官方经验值 + 网页端的
+   Normalize Reference Strengths 开关），只在合计超过 1.0 时可点。
+
+### 15.7 教训
+
+"属于某个功能家族"是一条**产品层面的推断**，不能直接当成协议事实使用。
+这次是服务端的报错把推断纠正回来的。与 Image2Img 的 `action` 那次（`image is not allowed for
+regular generations`）是同一类问题：**接口的能力边界只能实测，不能从功能分类推导**。

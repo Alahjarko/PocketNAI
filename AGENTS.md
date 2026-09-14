@@ -75,6 +75,18 @@
 - Vibe Transfer：`action` 也保持 `generate`，发 `reference_*_multiple` **三个数组**，
   内容是 `encode-vibe` 的产物 base64（实测服务端收编码产物，不收原图）。
   编码缓存在 `files/vibes/<hash>.vibe`，键含模型 + 图片 sha256 + Information Extracted。
+### 局部重绘（Inpaint）
+
+- `action` 用 `infill`，底图放 `parameters.image`、蒙版放 `parameters.mask`，
+  强度放在**嵌套的** `parameters.img2img.strength`（OpenAPI 对它的说明是 `used by inpaint`）。
+- **只有 Full 档位支持**：服务端明确拒绝 Curated —— `Model nai-diffusion-4-5-curated
+  doesn't support action infill`。不要因为"它属于 Image2Img 家族"就以为所有模型都能用。
+- 蒙版必须与底图**同尺寸**、**硬边（关抗锯齿）**，且是二值语义。
+  约定（白色 vs 透明 = 重画区域）关在 `MaskConvention` 里，**尚未用真实生成验证**。
+- 扩张用"笔刷半径加 N"实现（Minkowski 和），**不要**改成对位图做形态学卷积 ——
+  那样会毁掉实时预览。橡皮不参与扩张。
+- 重绘与参考条件（Precise Reference / Vibe）互斥；换底图必须作废旧蒙版。
+
 - **Vibe 与 Precise Reference 不能同时发**：服务端会拒绝
   （`cannot mix reference and director_reference at the same time`）。界面必须互斥。
   Vibe 与图生图可以同时发。

@@ -34,6 +34,8 @@ fun HomeScreen(
     connected: Boolean,
     credentialType: CredentialType?,
     onOpenImage: (String) -> Unit,
+    onInpaintImage: (net.pocketnai.domain.model.GalleryItem) -> Unit,
+    onOpenInpaintEditor: () -> Unit,
     onRequestConnect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -64,12 +66,14 @@ fun HomeScreen(
                 connected = connected,
                 credentialType = credentialType,
                 onRequestConnect = onRequestConnect,
+                onOpenInpaintEditor = onOpenInpaintEditor,
             )
         },
         modifier = modifier,
     ) { contentPadding ->
         GalleryPane(
             onOpenImage = onOpenImage,
+            onInpaintImage = onInpaintImage,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(contentPadding),
