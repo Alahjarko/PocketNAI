@@ -18,8 +18,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         GenerationEntity::class,
         GeneratedImageEntity::class,
         PromptFavoriteEntity::class,
+        ReferenceImageEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class PocketNaiDatabase : RoomDatabase() {
@@ -82,13 +83,58 @@ abstract class PocketNaiDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v3 → v4：新增参考图表，并给 `generations` 加一列生成模式。
+         *
+         * 两处都是纯加法：
+         * - 新表 `reference_images` 用 `CREATE TABLE`，列定义必须与
+         *   [ReferenceImageEntity] 完全一致（列名、类型、NOT NULL、主键），否则打开数据库时校验会失败；
+         * - `generations` 只 `ADD COLUMN`，**不重建**（原因见 [MIGRATION_1_2]）。
+         *   新列不带默认值、声明成可空，这是 Room 的默认值比对陷阱的规避方式；
+         *   老记录靠一次 `UPDATE` 回填成 TXT2IMG，语义上它们确实都是纯文生图。
+         */
+        val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE generations ADD COLUMN mode TEXT")
+                db.execSQL("UPDATE generations SET mode = 'TXT2IMG' WHERE mode IS NULL")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `reference_images` (
+                        `id` TEXT NOT NULL,
+                        `generationId` TEXT NOT NULL,
+                        `role` TEXT NOT NULL,
+                        `ordinal` INTEGER NOT NULL,
+                        `relativePath` TEXT NOT NULL,
+                        `width` INTEGER NOT NULL,
+                        `height` INTEGER NOT NULL,
+                        `byteSize` INTEGER NOT NULL,
+                        `sha256` TEXT NOT NULL,
+                        `strength` REAL,
+                        `informationExtracted` REAL,
+                        `secondaryStrength` REAL,
+                        `directorKind` TEXT,
+                        `vibeRelativePath` TEXT,
+                        `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`generationId`) REFERENCES `generations`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_reference_images_generationId` " +
+                        "ON `reference_images` (`generationId`)",
+                )
+            }
+        }
+
         fun build(context: Context): PocketNaiDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
                 PocketNaiDatabase::class.java,
                 DATABASE_NAME,
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
     }
 }

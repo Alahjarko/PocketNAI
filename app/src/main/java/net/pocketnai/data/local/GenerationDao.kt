@@ -53,6 +53,33 @@ interface GenerationDao {
     @Query("SELECT * FROM generations WHERE id = :generationId")
     suspend fun findGeneration(generationId: String): GenerationEntity?
 
+    // ---- 参考图 ----
+    //
+    // 参考图与生成记录分开查询，而不是在画廊 / 历史的查询里 join：
+    // 那两条查询已经被瀑布流依赖，加 join 会让"一张图对应多行"的语义无处安放。
+    // 需要参考图的只有详情页与"复用参数"，按需查一次即可。
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertReferences(entities: List<ReferenceImageEntity>)
+
+    @Query("SELECT * FROM reference_images WHERE generationId = :generationId ORDER BY ordinal ASC")
+    suspend fun findReferences(generationId: String): List<ReferenceImageEntity>
+
+    /**
+     * 所有仍被引用的参考图 / vibe 文件路径，供启动清理使用。
+     *
+     * 返回的是"路径集合"而不是文件名：文件商店按相对路径判活，
+     * 这样它不需要知道内容寻址的命名规则。
+     */
+    @Query(
+        """
+        SELECT relativePath FROM reference_images
+        UNION
+        SELECT vibeRelativePath FROM reference_images WHERE vibeRelativePath IS NOT NULL
+        """,
+    )
+    suspend fun allReferencePaths(): List<String>
+
     @Query("SELECT * FROM generated_images WHERE generationId = :generationId ORDER BY ordinal ASC")
     suspend fun findImages(generationId: String): List<GeneratedImageEntity>
 

@@ -28,11 +28,23 @@ data class Generation(
     val params: GenerationParams,
     /** 请求体快照版本，用于 NovelAI 更新接口后做迁移。 */
     val requestSnapshotVersion: Int,
+    /** 本次使用的生成模式（纯文生图 / 图生图）。 */
+    val mode: GenerationMode = GenerationMode.TXT2IMG,
+    /**
+     * 本次使用的参考图（含图生图起点）。
+     *
+     * 与 [params] 分开保存：参考图是文件索引，不属于"参数"，也不参与请求体的纯文本部分。
+     * 详情页与"复用参数"都依赖它，否则只带回参数而不带回图是没有意义的。
+     */
+    val references: List<ReferenceImage> = emptyList(),
     val errorCode: ErrorCode? = null,
     val errorMessage: String? = null,
     val correlationId: String? = null,
 ) {
     val isActive: Boolean get() = status == GenerationStatus.GENERATING
+
+    /** 详情页与界面摘要用：本次是否挂了参考图。 */
+    val hasReferences: Boolean get() = references.isNotEmpty()
 }
 
 /** 单张最终图片（规划书 7.2）。数据库只保存索引与参数，不保存 PNG 二进制。 */

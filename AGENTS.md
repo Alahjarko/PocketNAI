@@ -54,13 +54,24 @@
 
 ### 数据库
 
-- 当前 schema 版本 **3**。新增表（如 `prompt_favorites`）用独立 `CREATE TABLE`，
-  不要触碰既有表。
+- 当前 schema 版本 **4**。新增表（如 `prompt_favorites`、`reference_images`）用独立 `CREATE TABLE`，
+  不要触碰既有表。v3 → v4 新增了 `reference_images` 表与 `generations.mode` 列（可空，见下）。
 - **`generations` 表绝不能重建（DROP / RENAME）。** `generated_images` 以 `ON DELETE CASCADE` 引用它，重建会连带删除用户的图片记录。
 - 加列用 `ALTER TABLE ... ADD COLUMN`；删列需要 SQLite 3.35+，`minSdk 26` 不满足，所以宁可保留遗留列。
 - Room 的表校验要求实体列与真实表列**完全一致**，多一列少一列都会失败。因此遗留列必须留在实体里。
 - 升级必须写显式 `Migration`，不使用破坏性迁移。schema 导出到 `app/schemas`。
-- 新增的字段如果是给既有表加列，实体侧声明成可空可以避开 Room 的默认值比对陷阱。
+- 新增的字段如果是给既有表加列，实体侧声明成可空可以避开 Room 的默认值比对陷阱
+  （`generations.mode` 就是这么加的：迁移里只 `ADD COLUMN` 不带默认值，再用一次
+  `UPDATE` 回填 `TXT2IMG`）。
+
+### 参考图的文件存储
+
+- 参考图与 encode-vibe 产物是**内容寻址**的：`files/references/<sha256>.png`、
+  `files/vibes/<缓存键>.vibe`。同一张图被多次使用只占一份磁盘。
+- 因此它们**不能随生成记录一起删**（可能被别的历史引用），只能由
+  `GenerationFileStore.cleanupOrphans` 按"仍被引用的路径集合"回收；
+  那个集合必须来自 `GenerationDao.allReferencePaths()` 的完整查询，漏一条就会误删。
+- 不要给参考图做"按生成记录分目录"的改动：那会让重复使用同一张图时磁盘翻倍。
 
 ### 网络
 

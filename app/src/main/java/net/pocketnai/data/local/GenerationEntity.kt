@@ -28,6 +28,14 @@ data class GenerationEntity(
     val title: String,
     /** 用户输入的原文，可能含 Randomizer 语法。 */
     val promptTemplate: String,
+    /**
+     * [net.pocketnai.domain.model.GenerationMode] 的名字。
+     *
+     * 声明成可空是**故意的**：v3 之前落库的记录没有这一列，`ALTER TABLE ADD COLUMN`
+     * 加出来的列也没有默认值，可空声明才能通过 Room 的 schema 校验
+     * （见 AGENTS.md 中"新增字段声明成可空"的约定）。读取时按 TXT2IMG 降级。
+     */
+    val mode: String?,
 
     // ---- GenerationParams 展平 ----
     /** 本次实际提交的提示词（Randomizer 已展开）。 */

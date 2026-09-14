@@ -75,6 +75,18 @@ enum class ErrorCode {
     /** 保存到系统相册失败。 */
     SAVE_TO_GALLERY_FAILED,
 
+    /** 参考图无法读取：文件损坏、格式不支持或内存不足。 */
+    REFERENCE_DECODE_FAILED,
+
+    /** 参考图编码后仍超过上传体积上限。 */
+    REFERENCE_TOO_LARGE,
+
+    /** 参考图文件已不在本机（被系统清理或用户手工删除）。 */
+    REFERENCE_MISSING,
+
+    /** Vibe 编码失败。只影响该张参考图，不阻断其它编辑。 */
+    VIBE_ENCODE_FAILED,
+
     /** 未预期错误。 */
     UNKNOWN,
 }

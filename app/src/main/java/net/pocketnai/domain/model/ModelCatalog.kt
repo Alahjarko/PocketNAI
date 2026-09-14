@@ -38,6 +38,16 @@ object ModelCatalog {
     private const val DEFAULT_STEPS = 23
     private const val DEFAULT_GUIDANCE = 7.0
 
+    /**
+     * 参考图张数的**临时上限**（《参考图功能规划书》第 8 节风险清单第 2 项）。
+     *
+     * ⚠️ 官方 OpenAPI 对这些数组**没有声明 `maxItems`**，网页版的实际上限也尚未记录。
+     * 在完成规划书"阶段 0"的 A2 核对之前，先用 4 作为临时值，并且**只在这里定义一次** ——
+     * 核对之后改这两个常量即可，界面与请求构造都通过 [ModelProfile] 读取，不必跟着改。
+     */
+    private const val MAX_VIBE_REFERENCES = 4
+    private const val MAX_DIRECTOR_REFERENCES = 4
+
     /** DPM++ 2S Ancestral 不支持 Karras 调度。 */
     private val NO_KARRAS = linkedSetOf(
         NoiseSchedule.NATIVE,
@@ -128,6 +138,9 @@ object ModelCatalog {
         promptSoftLimitChars = promptSoftLimitChars,
         supportsMultilingualPrompt = supportsMultilingualPrompt,
         paramsVersion = PARAMS_VERSION_V4_V5,
+        supportsImg2Img = true,
+        maxVibeReferences = MAX_VIBE_REFERENCES,
+        maxDirectorReferences = MAX_DIRECTOR_REFERENCES,
         configVersion = CONFIG_VERSION,
     )
 

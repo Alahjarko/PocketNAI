@@ -5,6 +5,7 @@ import kotlinx.serialization.json.Json
 import net.pocketnai.BuildConfig
 import net.pocketnai.data.export.MediaStoreExporter
 import net.pocketnai.data.files.GenerationFileStore
+import net.pocketnai.data.image.ReferenceImageProcessor
 import net.pocketnai.data.local.PocketNaiDatabase
 import net.pocketnai.data.network.NovelAiApi
 import net.pocketnai.data.network.NovelAiAuthApi
@@ -91,6 +92,11 @@ class AppContainer(application: Application) {
     }
 
     val mediaStoreExporter: MediaStoreExporter by lazy { MediaStoreExporter(application) }
+
+    /** 参考图处理管线（解码 / 变换 / 编码 / 落盘）。全部几何计算在 domain 层，见 ImageGeometry。 */
+    val referenceImageProcessor: ReferenceImageProcessor by lazy {
+        ReferenceImageProcessor(application, fileStore)
+    }
 
     val draftStore: GenerationDraftStore = GenerationDraftStore()
 

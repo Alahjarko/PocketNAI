@@ -79,6 +79,15 @@ data class ModelProfile(
     val supportsMultilingualPrompt: Boolean,
     /** 请求体 `params_version`。 */
     val paramsVersion: Int,
+    /**
+     * 是否支持整图图生图。四个模型目前都支持；保留成字段而不是写死 `true`，
+     * 是为了将来出现不支持的模型时不必回头改调用点。
+     */
+    val supportsImg2Img: Boolean,
+    /** Vibe Transfer 的参考图张数上限。数值集中在 [ModelCatalog]，见那里的待核对说明。 */
+    val maxVibeReferences: Int,
+    /** Precise Reference 的参考图张数上限。数值集中在 [ModelCatalog]，见那里的待核对说明。 */
+    val maxDirectorReferences: Int,
     val configVersion: String,
 ) {
     val displayName: String get() = model.displayName

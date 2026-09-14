@@ -31,6 +31,10 @@ fun ErrorCode.messageRes(): Int = when (this) {
     ErrorCode.ZIP_INVALID -> R.string.error_zip_invalid
     ErrorCode.STORAGE_FULL -> R.string.error_storage_full
     ErrorCode.SAVE_TO_GALLERY_FAILED -> R.string.error_save_to_gallery_failed
+    ErrorCode.REFERENCE_DECODE_FAILED -> R.string.error_reference_decode_failed
+    ErrorCode.REFERENCE_TOO_LARGE -> R.string.error_reference_too_large
+    ErrorCode.REFERENCE_MISSING -> R.string.error_reference_missing
+    ErrorCode.VIBE_ENCODE_FAILED -> R.string.error_vibe_encode_failed
     ErrorCode.UNKNOWN -> R.string.error_unknown
 }
 

@@ -395,6 +395,8 @@ ALTER TABLE generations ADD COLUMN mode TEXT NOT NULL DEFAULT 'TXT2IMG';
 
 ### 阶段 A：图片管线 + 存储 + 迁移（不含任何界面）
 
+**✅ 已完成（2026-09-14）。**
+
 - 新增 `domain/image/`（纯逻辑：目标尺寸、黑边画布、降采样倍数、体积判定）与 `data/image/`（Android 实现）；
 - 新增 `ReferenceImage` / `GenerationRequest` / `GenerationMode`；
 - 数据库 v3 → v4 与 `Mappers` 扩展；
@@ -403,6 +405,18 @@ ALTER TABLE generations ADD COLUMN mode TEXT NOT NULL DEFAULT 'TXT2IMG';
 **测试**：纯逻辑边界（极端长宽比、1px、超大图、已合法尺寸、黑边补齐的居中位置）+
 迁移测试（在 v3 数据上迁移后记录与图片数量不变）。
 **验收**：现有 219 个测试全绿；APK 安装后打开旧历史一切正常。
+
+**实际结果**：262 个单元测试全绿（新增 43 个：图片几何 23 个、参考图校验 11 个、映射往返 9 个）。
+迁移在两台模拟器上各验证一次，7 条历史与 7 张图片的 id / 时间 / 标题 / 路径 / 哈希完全一致，
+`mode` 全部回填为 `TXT2IMG`。实现细节与设计取舍见[技术决策记录第九节](PocketNAI-技术决策记录.md)。
+
+**与原计划的两处偏差**：
+
+1. 参考图文件用**内容寻址**（`references/<sha256>.png`）而不是原文写的 `references/<referenceId>.png`。
+   同一张图被多次使用时只占一份磁盘，代价是文件不能随记录删除，必须在启动清理里按
+   "仍被引用的路径集合"回收（已实现）。
+2. 参考图张数上限先用 4 作为**临时值**，集中在 `ModelCatalog` 两个常量里，
+   等阶段 0 的 A2 核对结果出来再改（见 3.4 与第 8 节）。
 
 ### 阶段 B：请求构造 + 网络层
 

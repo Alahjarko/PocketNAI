@@ -216,14 +216,16 @@ class GenerationRepository(
     suspend fun loadParamsForReuse(imageId: String): GenerationParams? =
         loadDetail(imageId)?.generation?.params
 
-    /** 详情页需要的完整信息：图片本身 + 它所属的生成记录与参数。 */
+    /** 详情页需要的完整信息：图片本身 + 它所属的生成记录与参数（含参考图）。 */
     suspend fun loadDetail(imageId: String): ImageDetail? {
         val imageEntity = dao.findImage(imageId) ?: return null
         val generationEntity = dao.findGeneration(imageEntity.generationId) ?: return null
         val generation = Mappers.toDomain(generationEntity) ?: return null
+        // 参考图单独查一次再拼装：画廊与历史的查询不 join 它，避免影响瀑布流。
+        val references = dao.findReferences(generation.id).mapNotNull(Mappers::toDomain)
         return ImageDetail(
             image = Mappers.toDomain(imageEntity),
-            generation = generation,
+            generation = generation.copy(references = references),
         )
     }
 
@@ -271,13 +273,16 @@ class GenerationRepository(
      * 启动时恢复与清理（规划书 7.2）。
      *
      * - 清理没有数据库记录的图片目录与所有中间文件；
+     * - 回收不再被任何生成记录引用的参考图与 vibe 文件（内容寻址，不能随记录一起删）；
      * - 把上次进程被系统回收时卡在 `Generating` 的任务标记为失败，
-     *   并按规划书 9.1 的口径说明“服务端可能已经接受任务”；
+     *   并按规划书 9.1 的口径说明”服务端可能已经接受任务”；
      * - 识别数据库记录指向但磁盘上已缺失的图片文件。
      */
     suspend fun cleanupOnStartup(): StartupReport {
         val knownIds = dao.allGenerationIds().toSet()
-        val cleanup = fileStore.cleanupOrphans(knownIds)
+        // 参考图的存活集合必须来自完整查询：漏一条就会误删别的历史还在用的文件。
+        val referencedPaths = dao.allReferencePaths().toSet()
+        val cleanup = fileStore.cleanupOrphans(knownIds, referencedPaths)
 
         // 标记删除但没能完成清理的记录（例如进程在撤销窗口内被杀）在启动时收尾。
         // 撤销窗口是有意设计成短暂的，跨重启保留会让“已删除”的记录长期占着磁盘。
@@ -308,6 +313,7 @@ class GenerationRepository(
         return StartupReport(
             removedGenerationDirs = cleanup.removedGenerationDirs,
             removedIncomingDirs = cleanup.removedIncomingDirs,
+            removedReferenceFiles = cleanup.removedReferenceFiles,
             recoveredStuckGenerations = stuck.size,
             missingImageFiles = missingFiles,
         )
@@ -336,6 +342,8 @@ class GenerationRepository(
         val removedIncomingDirs: Int,
         val recoveredStuckGenerations: Int,
         val missingImageFiles: Int,
+        /** 回收的参考图与 vibe 文件数（内容寻址，因此不能随记录删除，只能在这里回收）。 */
+        val removedReferenceFiles: Int = 0,
     )
 
     private companion object {
