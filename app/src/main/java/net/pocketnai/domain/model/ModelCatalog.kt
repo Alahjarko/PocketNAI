@@ -179,8 +179,11 @@ object ModelCatalog {
         // 参考条件类功能目前只有 V4.5 能用，V5 不支持（账号所有者确认）。
         supportsVibeTransfer = model.family == GenerationFamily.V4_5,
         supportsDirectorReference = model.family == GenerationFamily.V4_5,
-        // 局部重绘：只有 Full 档位能通过公开 API 做（Curated 会被服务端拒绝 infill）。
-        supportsInpaint = model.tier == ModelTier.FULL,
+        // 局部重绘：**公开 API 目前不接受** infill（V4.5 的 Curated 与 Full 都已实测被拒，
+        // 详见技术决策记录第十五节）。因此四个模型一律关闭入口 ——
+        // 一个必然失败、或（在未核实的模型上）可能真扣费的按钮没有存在价值。
+        // 服务端哪天开放这个 action，把这里改回按档位判定即可，其余代码都已就绪。
+        supportsInpaint = false,
         maxVibeReferences = MAX_VIBE_REFERENCES,
         maxDirectorReferences = MAX_DIRECTOR_REFERENCES,
         img2imgStrengthRange = IMG2IMG_STRENGTH_RANGE,

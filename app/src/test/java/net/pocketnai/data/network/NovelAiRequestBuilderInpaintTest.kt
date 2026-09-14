@@ -189,7 +189,7 @@ class NovelAiRequestBuilderInpaintTest {
     }
 
     @Test
-    fun `Full 档位带上底图与蒙版就合法`() {
+    fun `底图与蒙版齐全时请求字段完整`() {
         val fullProfile = ModelCatalog.profileOf(ImageModel.V4_5_FULL)
         val request = GenerationRequest(
             params = params().copy(model = ImageModel.V4_5_FULL),
@@ -197,7 +197,9 @@ class NovelAiRequestBuilderInpaintTest {
             references = listOf(base(), mask()),
         )
 
-        assertThat(request.validate(fullProfile)).isEmpty()
+        // 唯一的问题是能力位（接口未开放）；底图/蒙版/参数本身都合法。
+        assertThat(request.validate(fullProfile))
+            .containsExactly(ReferenceViolation.ModeUnsupported(GenerationMode.INPAINT))
     }
 
     @Test
@@ -217,28 +219,46 @@ class NovelAiRequestBuilderInpaintTest {
     // ---- 模型能力：重绘属于 Image2Img 家族 ----
 
     @Test
-    fun `只有 Full 档位能通过公开 API 做局部重绘`() {
-        // 服务端原话：Model nai-diffusion-4-5-curated doesn't support action infill
-        assertThat(profile.supportsInpaint).isFalse()
-        assertThat(v5.supportsInpaint).isFalse()
-        assertThat(ModelCatalog.profileOf(ImageModel.V4_5_FULL).supportsInpaint).isTrue()
-        assertThat(ModelCatalog.profileOf(ImageModel.V5_FULL).supportsInpaint).isTrue()
+    fun `公开 API 目前一律不支持局部重绘`() {
+        // 服务端对 V4.5 的 Curated 与 Full 都回 "doesn't support action infill"，
+        // 因此在接口开放之前，四个模型的入口都是关闭的 —— 免得给用户一个
+        // 必然失败（在未核实的模型上还可能真扣费）的按钮。
+        ImageModel.entries.forEach { model ->
+            val modelProfile = ModelCatalog.profileOf(model)
+            assertThat(modelProfile.supportsInpaint).isFalse()
 
-        val curated = GenerationRequest(
-            params = params(),
-            mode = GenerationMode.INPAINT,
-            references = listOf(base(), mask()),
-        )
-        assertThat(curated.validate(profile))
-            .contains(ReferenceViolation.ModeUnsupported(GenerationMode.INPAINT))
+            val request = GenerationRequest(
+                params = params().copy(model = model),
+                mode = GenerationMode.INPAINT,
+                references = listOf(base(), mask()),
+            )
+            assertThat(request.validate(modelProfile))
+                .contains(ReferenceViolation.ModeUnsupported(GenerationMode.INPAINT))
+        }
+    }
 
+    @Test
+    fun `接口开放后只需改能力位即可启用`() {
+        // 请求构造本身是按 OpenAPI 写好的：把 supportsInpaint 打开后，
+        // 校验通过、字段齐全 —— 这条断言锁住"代码已就绪"这件事。
         val fullProfile = ModelCatalog.profileOf(ImageModel.V5_FULL)
-        val full = GenerationRequest(
+        val request = GenerationRequest(
             params = params().copy(model = ImageModel.V5_FULL),
             mode = GenerationMode.INPAINT,
             references = listOf(base(), mask()),
         )
-        assertThat(full.validate(fullProfile)).isEmpty()
+        val violations = request.validate(fullProfile)
+            .filterNot { it is ReferenceViolation.ModeUnsupported }
+
+        assertThat(violations).isEmpty()
+
+        val json = build(
+            references = listOf(base(), mask()),
+            upstream = fullUpstream,
+            onProfile = fullProfile,
+        )
+        assertThat(json.getValue("action").jsonPrimitive.content).isEqualTo("infill")
+        assertThat(parameters(json)).containsKey("mask")
     }
 
     // ---- 不影响其它模式 ----

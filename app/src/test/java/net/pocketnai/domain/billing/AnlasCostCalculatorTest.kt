@@ -70,12 +70,27 @@ class AnlasCostCalculatorTest {
     }
 
     @Test
-    fun `非 Opus 的实测组合走另一条免费规则`() {
+    fun `等级字段读不出来但带 V5 额度的账号仍算有订阅权益`() {
+        // 本机实测账号就是这样：tier 0 / active false，但既有 V5 使用额度、生成也不扣费。
+        // 官方文档说明 V5 使用额度是 V5 Opus 的功能，因此它的存在是订阅的旁证。
         val estimate = calculator.estimate(context(tier = SubscriptionTier.None))
 
         assertThat(estimate).isInstanceOf(GenerationCostEstimate.Free::class.java)
         assertThat((estimate as GenerationCostEstimate.Free).reason)
-            .isEqualTo(FreeReason.OTHER_VERIFIED_RULE)
+            .isEqualTo(FreeReason.OPUS_V45_ELIGIBLE)
+    }
+
+    @Test
+    fun `只买积分、没有订阅证据的账号不免费`() {
+        // 免费额度是订阅权益：未订阅的账号会正常扣费，不能对它宣称免费。
+        val estimate = calculator.estimate(
+            context(
+                tier = SubscriptionTier.None,
+                usage = null,
+            ),
+        )
+
+        assertThat(estimate).isNotInstanceOf(GenerationCostEstimate.Free::class.java)
     }
 
     @Test
@@ -119,18 +134,11 @@ class AnlasCostCalculatorTest {
     }
 
     @Test
-    fun `非 Opus 的 V4_5 Full 不算免费`() {
-        // 实测只覆盖了 Curated，不能顺手把 Full 也算成免费。
-        val estimate = calculator.estimate(context(profile = v45Full, tier = SubscriptionTier.None))
+    fun `Guidance 不影响免费判定`() {
+        // 官方免费条件里没有 Guidance 这一项，因此不再把它当成门槛。
+        val estimate = calculator.estimate(context(guidance = 5.0))
 
-        assertThat(estimate).isNotInstanceOf(GenerationCostEstimate.Free::class.java)
-    }
-
-    @Test
-    fun `非实测的 Guidance 不算免费`() {
-        val estimate = calculator.estimate(context(tier = SubscriptionTier.None, guidance = 5.0))
-
-        assertThat(estimate).isNotInstanceOf(GenerationCostEstimate.Free::class.java)
+        assertThat(estimate).isInstanceOf(GenerationCostEstimate.Free::class.java)
     }
 
     // ---- V5 额度 ----
@@ -266,19 +274,40 @@ class AnlasCostCalculatorTest {
     // ---- 未知与非法 ----
 
     @Test
-    fun `未知订阅等级不冒充 Opus 也不冒充免费`() {
-        // 用 V4.5 Full（不在实测规则里）来验：等级读不出来时不能靠猜走进免费分支。
-        val estimate = calculator.estimate(context(profile = v45Full, tier = SubscriptionTier.Unknown(9)))
+    fun `等级未知又没有订阅证据时不冒充 Opus 也不冒充免费`() {
+        // 拿掉 V5 额度这一订阅旁证后，等级读不出来就必须落到"待确认"。
+        val estimate = calculator.estimate(
+            context(
+                profile = v45Full,
+                tier = SubscriptionTier.Unknown(9),
+                usage = null,
+            ),
+        )
 
         assertThat((estimate as GenerationCostEstimate.Unknown).reason)
             .isEqualTo(UnknownCostReason.UNKNOWN_SUBSCRIPTION_TIER)
     }
 
     @Test
+    fun `等级未知但有订阅旁证时按免费处理`() {
+        // tier 字段不可信（本机账号就是 tier 0/active false 却免费），
+        // 因此"带 V5 使用额度"这条旁证足以支撑免费判定。
+        val estimate = calculator.estimate(
+            context(profile = v45Full, tier = SubscriptionTier.Unknown(9)),
+        )
+
+        assertThat(estimate).isInstanceOf(GenerationCostEstimate.Free::class.java)
+    }
+
+    @Test
     fun `余额未知时实测免费组合仍然显示免费`() {
         // 实测规则只依赖参数，不依赖订阅等级；因此余额还没读回来时按钮上也是稳定的"免费"。
         val estimate = calculator.estimate(
-            context(tier = SubscriptionTier.Unknown(DefaultSubscriptionTierResolver.RAW_MISSING)),
+            context(
+                tier = SubscriptionTier.Unknown(DefaultSubscriptionTierResolver.RAW_MISSING),
+                // 等级读不出来，但账户带着 V5 使用额度 → 有订阅权益。
+                usage = V5UsageLimit(1, isNegative = false, timeUntilNextPercentSeconds = 3600),
+            ),
         )
 
         assertThat(estimate).isInstanceOf(GenerationCostEstimate.Free::class.java)

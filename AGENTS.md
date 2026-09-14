@@ -79,8 +79,10 @@
 
 - `action` 用 `infill`，底图放 `parameters.image`、蒙版放 `parameters.mask`，
   强度放在**嵌套的** `parameters.img2img.strength`（OpenAPI 对它的说明是 `used by inpaint`）。
-- **只有 Full 档位支持**：服务端明确拒绝 Curated —— `Model nai-diffusion-4-5-curated
-  doesn't support action infill`。不要因为"它属于 Image2Img 家族"就以为所有模型都能用。
+- **公开 API 目前不提供这个 action**：V4.5 的 Curated 与 Full 实测都被拒
+  （`Model ... doesn't support action infill`），而把蒙版挂到 `img2img` 上会被完全忽略。
+  因此 `supportsInpaint` 对四个模型一律为 false、入口关闭；**不要**因为它"属于 Image2Img 家族"
+  就以为换个模型就能用。接口开放后改 `ModelCatalog` 一行即可启用。
 - 蒙版必须与底图**同尺寸**、**硬边（关抗锯齿）**，且是二值语义。
   约定（白色 vs 透明 = 重画区域）关在 `MaskConvention` 里，**尚未用真实生成验证**。
 - 扩张用"笔刷半径加 N"实现（Minkowski 和），**不要**改成对位图做形态学卷积 ——

@@ -43,16 +43,13 @@ sealed interface GenerationCostEstimate {
 }
 
 enum class FreeReason {
-    /** 官方规则：Opus 且满足单张 / Normal / Steps ≤ 28 / 无基础图。 */
-    OPUS_V45_ELIGIBLE,
-
     /**
-     * 本仓库开发账号实测确认的免费组合（见 [AnlasCostCalculator] 的常量说明）。
+     * 官方免费条件：账号带订阅（Opus）+ V4.5 + 单张 + Normal + Steps ≤ 28。
      *
-     * 与上一条分开，是因为它**不是**官方公开规则，而是针对特定账户观测到的事实；
-     * 一旦余额观测显示该组合在扣费，就应该删掉这条规则。
+     * 免费额度是**订阅权益**：只买 Anlas、没有生效订阅的账号会正常扣费，
+     * 因此判定里必须确认账号确实带订阅（见 [AnlasCostCalculator.hasSubscriptionBenefit]）。
      */
-    OTHER_VERIFIED_RULE,
+    OPUS_V45_ELIGIBLE,
 }
 
 enum class UnknownCostReason {

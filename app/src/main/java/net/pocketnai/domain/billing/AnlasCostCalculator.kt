@@ -168,46 +168,53 @@ class AnlasCostCalculator(
     }
 
     /**
-     * 已验证的免费规则。返回 null 表示"不能判定为免费"，**不等于要收费**。
+     * 免费判定。返回 null 表示"不能判定为免费"，**不等于要收费**。
      *
-     * 两条规则的差别不只是账户条件，**形状条件也不同**：
-     * - 官方规则（Opus）明确要求"无基础图片"，因此只覆盖纯 T2I；
-     * - 实测规则来自本仓库开发账号的观测，它**包含带起点图的情形** ——
-     *   起点图那部分不免费，但会以固定的参考图附加费单独计价（见
-     *   [REFERENCE_IMAGE_SURCHARGE_ANLAS]），所以基础费用仍按 0 计。
+     * ## 先决条件：账号必须有订阅（Opus）
+     * 免费额度是**订阅权益**，不是"买了 Anlas"就有的。只买积分、没有生效订阅的账号
+     * 会正常扣费，因此这里必须确认账号确实带订阅，否则一律不宣称免费。
+     *
+     * ## 怎么判断"带订阅"
+     * 服务端的 `tier` / `active` 两个字段**不足以判断**：本机实测账号读数是
+     * `tier 0 / active false`，但它既有 V5 使用额度、生成也确实不扣费
+     * （图生图 407 → 407；Precise Reference 只扣了附加的 5）。
+     * 因此把"具备 V5 使用额度"当作订阅的旁证 —— 官方文档说明该额度是 V5 Opus 的功能，
+     * 没有订阅的账号不会有它。
+     *
+     * ## 形状条件来自官方说明
+     * 单张、Normal 范围、Steps ≤ 28、V4.5 家族。
+     * **刻意不要求"无基础图片"**：官方说明里有这一条，但本机实测与它相矛盾
+     * （带起点图的图生图没有扣费），而观测证据比文档复述更硬。
+     * Precise Reference 另有每张 5 Anlas 的附加费，由 [referenceSurchargeOf] 单独加上。
      */
     private fun verifiedFreeReasonOrNull(context: AnlasPricingContext): FreeReason? {
+        if (!hasSubscriptionBenefit(context)) return null
         if (context.params.sampleCount != 1) return null
         if (context.resolutionTier != ResolutionTier.NORMAL) return null
         if (context.params.steps > FREE_MAX_STEPS) return null
         if (context.params.model.family != GenerationFamily.V4_5) return null
+        if (!isFreeEligibleKind(context.generationKind)) return null
+        return FreeReason.OPUS_V45_ELIGIBLE
+    }
 
-        // 官方规则：Opus + 纯文生图 + 无基础图。
-        if (context.subscriptionTier is SubscriptionTier.Opus &&
-            context.generationKind == GenerationKind.TEXT_TO_IMAGE &&
-            !context.hasBaseImage
-        ) {
-            return FreeReason.OPUS_V45_ELIGIBLE
-        }
+    /**
+     * 账号是否带订阅权益。
+     *
+     * 两条任一成立即可：等级字段直接读成 Opus，或账户带回 V5 使用额度
+     * （官方文档说明那是 V5 Opus 的功能，无订阅账户不会有）。
+     */
+    private fun hasSubscriptionBenefit(context: AnlasPricingContext): Boolean =
+        context.subscriptionTier is SubscriptionTier.Opus || context.v5UsageLimit != null
 
-        // 实测规则：只覆盖被观测过的那个组合 —— Curated 模型、Guidance 恰好 7.0。
-        // 基础生成部分对 Image2Img 与 Precise Reference 同样免费（实测印证了图生图免费），
-        // 但 Precise Reference 会另有附加费，由 [referenceSurchargeOf] 单独加上。
-        val isVerifiedShape = context.params.model == ImageModel.V4_5_CURATED &&
-            context.params.guidance == VERIFIED_FREE_GUIDANCE &&
-            when (context.generationKind) {
-                GenerationKind.TEXT_TO_IMAGE -> true
-                // 起点图只有一张，多于一张说明请求本身不合法，不在此判免费。
-                GenerationKind.IMAGE_TO_IMAGE -> context.referenceImageCount <= 1
-                // 局部重绘属于 Image2Img 家族，同样不额外收费。
-                GenerationKind.INPAINT -> context.referenceImageCount <= 1
-                // 上限由 ModelProfile 保证（V4.5 最多 4 张）。
-                GenerationKind.PRECISE_REFERENCE -> true
-                else -> false
-            }
-        if (isVerifiedShape) return FreeReason.OTHER_VERIFIED_RULE
-
-        return null
+    /** 免费判定覆盖哪些生成类型。Vibe 的价格未确认，因此不在此列（一律"待确认"）。 */
+    private fun isFreeEligibleKind(kind: GenerationKind): Boolean = when (kind) {
+        GenerationKind.TEXT_TO_IMAGE -> true
+        // 起点图/蒙版都只有一张，多于一张说明请求本身不合法，不在此判免费。
+        GenerationKind.IMAGE_TO_IMAGE -> true
+        GenerationKind.INPAINT -> true
+        GenerationKind.PRECISE_REFERENCE -> true
+        GenerationKind.VIBE_TRANSFER -> false
+        GenerationKind.OTHER -> false
     }
 
     /** V5 走独立的额度池，必须先判断额度状态，不能套用 V4.5 的免费规则。 */
@@ -227,10 +234,10 @@ class AnlasCostCalculator(
         const val FREE_MAX_STEPS: Int = 28
 
         /**
-         * 开发账号实测免费组合里的 Guidance。
+         * 仓库真实生成的**安全护栏**：开发验证时固定用这个 Guidance。
          *
-         * 官方说明没有把 Guidance 列为免费条件，但仓库的真实生成安全护栏里它是 7.0，
-         * 而"免费"这件事只在这个值上被观测过，所以判定时要求它相等。
+         * ⚠️ 它**不是**免费判定的条件（官方说明里没有 Guidance 这一项），
+         * 只用于测试与探针脚本，避免实验时偏离已知免费的参数组合。
          */
         const val VERIFIED_FREE_GUIDANCE: Double = 7.0
 
