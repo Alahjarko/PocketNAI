@@ -78,6 +78,18 @@ data class GenerationParams(
     val qualityTags: QualityTagsOption,
     val undesiredContentPresetIndex: Int,
 ) {
+    /**
+     * 把"这一次生成实际使用的 seed"定下来。
+     *
+     * `SeedMode.RANDOM` 是**每次生成抽一个新 seed**，而不是"让服务端随便挑"：
+     * 抽出来的值要同时进入**请求体**与**历史记录**，否则历史里显示的那个 seed
+     * 跟真正出图用的对不上 —— 用户按历史里的数字去复现，只会得到另一张图。
+     */
+    fun withResolvedSeed(random: kotlin.random.Random): GenerationParams = when (seedMode) {
+        SeedMode.FIXED -> this
+        SeedMode.RANDOM -> copy(baseSeed = random.nextLong(0L, MAX_SEED + 1))
+    }
+
     /** 用户最终要拿到的尺寸（自定义分辨率下与 [size] 不同）。 */
     val targetSize: ImageSizePreset get() = outputSize ?: size
 

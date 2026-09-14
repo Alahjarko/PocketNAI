@@ -1941,3 +1941,77 @@ IHDR → IDAT × N → tEXt(Comment) → tEXt(Title) → tEXt(Description)
 - **真实的自定义尺寸生成**：会产生费用（`1920×1088` V4.5 约 34 Anlas），留给你在界面上手动验收；
 - **锁定宽高比**：只做了"交换宽高"，没有做锁定 16:9 这类比例锁；
 - **JPEG / WebP 输出**：最终文件仍然是 PNG（与现有链路一致）。
+
+---
+
+## 二十一、随机 Seed 不随机的 bug（2026-09-14 深夜，用户报告）
+
+### 21.1 症状与证据
+
+用户报告："随机种子不再随机，而是一直使用同一个种子了。"
+
+先取证再改代码。同一个 /user/subscription 读出的是账号状态、数据库里记的是本地参数，
+两边都不足以说明"服务端到底收到了什么"，**图片自己的元数据才是权威**：
+
+| 来源 | 读数 |
+|---|---|
+| 生成图的 PNG 元数据（服务端写入） | `"seed": 0` |
+| 本地数据库那一行 | `seedMode = RANDOM`、`baseSeed = 63722125` |
+
+也就是说：我们**抽了一个随机 seed、写进了历史、显示在界面上**，而请求体发的是
+另一个值（原始参数里的默认 0）。用户按历史里那个数字去复现，永远复现不出来；
+反过来，同一提示词反复生成会得到一模一样的结果。
+
+### 21.2 成因
+
+`GenerationRepository.generate()` 里：
+
+```kotlin
+val seed = when (normalized.seedMode) { ... }        // 随机模式下抽一个新的
+val effectiveParams = normalized.copy(baseSeed = seed)   // 只用于落库
+...
+api.generateImage(payload = NovelAiRequestBuilder.build(profile, request, …))  // ← 用的是原始 request
+```
+
+`request.params.baseSeed` 在随机模式下一直是默认值（或在草稿里长期不变的值），
+于是每次都把同一个 seed 发出去。请求体与历史记录**必须来自同一份参数**，
+而这里恰好是两份。
+
+### 21.3 修法
+
+```kotlin
+val effectiveParams = normalized.withResolvedSeed(random)
+...
+payload = NovelAiRequestBuilder.build(profile, request.copy(params = effectiveParams), encodedImages)
+```
+
+- 把"这次用哪个 seed"抽成一个纯函数 `GenerationParams.withResolvedSeed`（可单测）；
+- 落库与请求体**共用** `effectiveParams`，从结构上消除"两份参数"的可能；
+- 顺手把 `generated_images.seed` 填上：单张时我们本来就知道这个值
+  （随机模式下就是我们自己抽的那个），以前一直留空说"需要解析 PNG 才能知道"。
+  批量时服务端会派生每张图的 seed，那个值我们不知道，仍然留空。
+
+### 21.4 为什么以前没被发现
+
+每次生成的提示词都不一样，所以"seed 固定"这件事不会显形 —— 只有**同一提示词生成两次**
+才会看到两张一模一样的图（或者去读图片元数据）。历史里显示的随机 seed 还起了误导作用：
+它看起来完全正常。
+
+### 21.5 补的测试
+
+这个 bug 能溜进来，根因是 `GenerationRepository` **一个测试都没有**
+（它依赖 Room 与 `GenerationFileStore`，后者要 Context，JVM 单测里没有）。
+现在补了 `app/src/androidTest/.../GenerationSeedAndPayloadTest`，
+用假的 `NovelAiApi`（不联网）+ 内存 Room + 真实文件存储，断言：
+
+1. 随机模式发出去的 seed **不是 0**，且**历史记录里的值与之相等**；
+2. 连续两次随机生成发出去的 seed **不同**；
+3. 固定模式发出去的就是那个固定值；
+4. 自定义分辨率下请求体发的是**画布**（1920×1088），最终尺寸只进数据库。
+
+第 1 条在修复前必然失败 —— 这正是它存在的意义。
+
+### 21.6 顺带记一条坑
+
+仪器化测试里读 Room 的 Flow 要用 `first()`，**不能写 `toList().first()`**：
+Room 的 Flow 永不结束，`toList()` 会一直等下去，表现为"测试跑到一半卡死"。

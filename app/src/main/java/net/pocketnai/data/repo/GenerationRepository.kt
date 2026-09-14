@@ -201,11 +201,11 @@ class GenerationRepository(
             return@flow
         }
 
-        val seed = when (normalized.seedMode) {
-            SeedMode.FIXED -> normalized.baseSeed
-            SeedMode.RANDOM -> random.nextLong(0L, GenerationParams.MAX_SEED + 1)
-        }
-        val effectiveParams = normalized.copy(baseSeed = seed)
+        // 这一次生成用的 seed 在这里定下来，下面的**历史记录与请求体用的是同一份参数**。
+        // 曾经踩过的坑：seed 只算进了落库的那一份，而请求体发的是原始 request.params，
+        // 于是 RANDOM 模式下每次都把默认值 0 发出去 —— 同一提示词反复生成同一张图，
+        // 而历史里却显示着一个"看起来随机"的 seed（那个值根本没被用过）。
+        val effectiveParams = normalized.withResolvedSeed(random)
         val title = PromptTitle.buildTitle(effectiveParams.prompt, startedAt)
 
         dao.upsertGeneration(
@@ -232,7 +232,11 @@ class GenerationRepository(
         val archive = fileStore.newArchiveFile(generationId)
         val transport = api.generateImage(
             token = token,
-            payload = NovelAiRequestBuilder.build(profile, request, encodedImages),
+            payload = NovelAiRequestBuilder.build(
+                profile = profile,
+                request = request.copy(params = effectiveParams),
+                upstreamImages = encodedImages,
+            ),
             destinationZip = archive,
         )
         if (transport is Outcome.Failure) {
@@ -283,9 +287,10 @@ class GenerationRepository(
             return@flow
         }
 
-        // 只有固定 Seed 模式下我们才知道确定值；随机模式的每张图真实 Seed 需要
-        // 解析 PNG 元数据（第二层能力），所以这里留空而不是猜一个值。
-        val knownSeed = if (effectiveParams.seedMode == SeedMode.FIXED) effectiveParams.baseSeed else null
+        // 单张时我们知道这次用的 seed（随机模式下就是我们自己抽的那个），因此直接落库 ——
+        // 用户在详情页看到它，才能按同一个 seed 复现。批量（n_samples > 1）时服务端会从
+        // 这个 seed 派生出每张图各自的 seed，那个值我们不知道，留空而不是四张都填同一个数。
+        val knownSeed = effectiveParams.baseSeed.takeIf { effectiveParams.sampleCount == 1 }
         val committedAt = clock()
         val images = committed.map { image ->
             GeneratedImage(

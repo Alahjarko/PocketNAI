@@ -210,6 +210,13 @@
 - **所有请求走 `https://image.novelai.net`。** `api.novelai.net` 已拒绝第三方 Persistent API Token（返回 400 要求改用 image URL）。
 - T2I 请求**零次自动重试**；超时/断流映射为 `TIMEOUT_UNCERTAIN`，必须让用户知情而不是自动重来。
 - 生成必须由用户明确点击触发。**自动化流程绝不能代发真实生成请求**——那会消耗用户的 Anlas。
+- **"这次用哪个 seed"只能有一份**：随机模式下由 `GenerationParams.withResolvedSeed(random)`
+  抽一次，**历史记录与请求体共用同一份参数**（`request.copy(params = effectiveParams)`）。
+  曾经把随机 seed 只算进落库的那一份，请求体发的是原始参数里的默认 0 ——
+  同一提示词反复生成同一张图，而历史里显示着一个根本没被用过的"随机"seed。
+- 请求体与数据库不一致这类问题**只有把链路串起来才看得见**，因此
+  `GenerationRepository` 由 `app/src/androidTest/.../GenerationSeedAndPayloadTest` 覆盖
+  （假 API + 内存 Room + 真文件存储，不联网）。改生成链路时先跑它。
 - **图生图要换 `action`**：`image` 字段只在 `action = "img2img"`（或 `infill`）时被接受，
   沿用 `generate` 会得到 400 `image is not allowed for regular generations`。
   `strength` 放在 `parameters` 顶层；嵌套的 `parameters.img2img` 是 inpaint 用的，不要发。
@@ -339,6 +346,8 @@
   而卸载 = 清空应用数据：本机凭据（Keystore 加密）与全部生成历史一起消失。
   已在 `gradle.properties` 里设 `android.injected.androidTest.leaveApksInstalledAfterRun=true`
   挡住这个默认行为；**但换机器/换 IDE 时先确认这条还在**。
+- 仪器化测试里读 Room 的 Flow 用 `first()`，**不要写 `toList().first()`** —— Room 的 Flow
+  永不结束，`toList()` 会一直等下去，表现是"测试卡死"。
 - 仪器化测试（`app/src/androidTest`）目前只覆盖三件必须依赖 Android API 的事：
   生成结果的裁切与元数据保全、Room 迁移、分辨率控件的文案。
   纯逻辑一律放 JVM 单测，不要往 androidTest 里塞。
