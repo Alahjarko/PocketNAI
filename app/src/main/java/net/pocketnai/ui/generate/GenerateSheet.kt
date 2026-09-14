@@ -204,6 +204,14 @@ fun GenerateSheet(
                 modifier = Modifier.fillMaxWidth(),
             )
 
+            // Vibe 是叠加的风格条件，与前两者不互斥。
+            VibeTransferSection(
+                state = state,
+                connected = connected,
+                viewModel = viewModel,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
             SectionHeader(stringResource(R.string.generate_section_prompt))
 
             OutlinedTextField(
@@ -671,6 +679,8 @@ private fun SheetHeader(
             // 会以为出图尺寸或风格出了错。
             // 注意 stringResource 只能调在 composable 作用域里，不能塞进 buildString。
             val img2imgMarker = stringResource(R.string.generate_mode_img2img)
+            val preciseReferenceMarker = stringResource(R.string.generate_precise_reference_short)
+            val vibeMarker = stringResource(R.string.generate_vibe_short)
             Text(
                 text = buildString {
                     append(state.profile.model.shortDisplayName)
@@ -681,6 +691,14 @@ private fun SheetHeader(
                     if (state.mode == GenerationMode.IMG2IMG) {
                         append(" · ")
                         append(img2imgMarker)
+                    }
+                    if (state.mode == GenerationMode.PRECISE_REFERENCE) {
+                        append(" · ")
+                        append(preciseReferenceMarker)
+                    }
+                    if (state.vibeReferences.isNotEmpty()) {
+                        append(" · ")
+                        append(vibeMarker)
                     }
                 },
                 style = MaterialTheme.typography.bodySmall,

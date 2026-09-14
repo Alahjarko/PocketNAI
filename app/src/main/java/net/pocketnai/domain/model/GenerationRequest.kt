@@ -43,7 +43,10 @@ data class GenerationRequest(
             add(ReferenceViolation.ModeUnsupported(GenerationMode.PRECISE_REFERENCE))
         }
         if (referencesOf(ReferenceRole.VIBE).isNotEmpty() && !profile.supportsVibeTransfer) {
-            add(ReferenceViolation.ModeUnsupported(GenerationMode.PRECISE_REFERENCE))
+            add(ReferenceViolation.FeatureUnsupported(ReferenceRole.VIBE))
+        }
+        if (referencesOf(ReferenceRole.DIRECTOR).isNotEmpty() && !profile.supportsDirectorReference) {
+            add(ReferenceViolation.FeatureUnsupported(ReferenceRole.DIRECTOR))
         }
 
         val vibes = referencesOf(ReferenceRole.VIBE).size
@@ -79,6 +82,9 @@ sealed interface ReferenceViolation {
     data object MissingImg2ImgSource : ReferenceViolation
 
     data class ModeUnsupported(val mode: GenerationMode) : ReferenceViolation
+
+    /** 该功能在当前模型上不可用（例如 V5 上的 Vibe Transfer / Precise Reference）。 */
+    data class FeatureUnsupported(val role: ReferenceRole) : ReferenceViolation
 
     data class TooMany(
         val role: ReferenceRole,

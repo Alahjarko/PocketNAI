@@ -13,5 +13,12 @@ import net.pocketnai.core.Outcome
  */
 fun interface ReferenceImageEncoder {
 
-    suspend fun encodeBase64(relativePath: String, transform: ImageTransform): Outcome<String>
+    /**
+     * [transform] 为 null 表示**原图直接编码**，不做任何裁剪或补齐。
+     * Vibe 编码需要这样：官方也是把原图交给 `encode-vibe`。
+     */
+    suspend fun encodeBase64(
+        relativePath: String,
+        transform: ImageTransform?,
+    ): Outcome<String>
 }

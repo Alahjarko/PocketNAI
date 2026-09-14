@@ -457,8 +457,13 @@ MockWebServer 覆盖 encode-vibe 的路径 / 请求体 / 响应上限 / 失败�
 
 ### 阶段 D：Vibe Transfer
 
-**⏸ 未开始**（账号所有者要求先做 Precise Reference）。注意它的模型能力与 Precise Reference 相同：
-**目前只有 V4.5 能用**，且价格未确认，因此界面必须显示"费用待确认"。
+**✅ 已完成（2026-09-14）。** 实测确认了三件事（详见技术决策记录第十三节）：
+
+1. `reference_image_multiple` 接受的是 `encode-vibe` 的产物（不是原始图片），编码层保留；
+2. **Vibe 与 Precise Reference 不能混用**，服务端明确拒绝，界面已做成互斥；
+3. Vibe 与图生图可以同时使用。
+
+价格仍未确认，因此界面显示"费用待确认"；模型能力与 Precise Reference 相同（仅 V4.5）。
 
 - 多条目面板与逐条参数；
 - encode-vibe 调用与缓存（可摘除的一层）；

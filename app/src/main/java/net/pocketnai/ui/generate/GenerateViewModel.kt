@@ -107,6 +107,13 @@ class GenerateViewModel(
          * 两者同时存在时请求形态没有经过验证，因此界面上一挂上其中一类就清掉另一类。
          */
         val directorReferences: List<ReferenceImage> = emptyList(),
+        /**
+         * Vibe Transfer 的参考图，最多 [ModelProfile.maxVibeReferences] 张。
+         *
+         * 与图生图 / Precise Reference **不互斥**：Vibe 是在它们之上叠加的风格条件，
+         * 官方界面里也是独立面板，可以同时使用。
+         */
+        val vibeReferences: List<ReferenceImage> = emptyList(),
         /** 正在导入参考图（解码 + 落盘）。期间不该重复触发导入。 */
         val referenceBusy: Boolean = false,
         /** 参考图导入失败的原因，与生成失败分开：它不影响已经写好的提示词与参数。 */
@@ -148,9 +155,15 @@ class GenerateViewModel(
 
         val canGenerate: Boolean get() = !inFlight && !referenceBusy && promptTemplate.isNotBlank()
 
-        /** 本次会用的全部参考图（图生图起点 + Precise Reference）。 */
+        /** 本次会用的全部参考图（图生图起点 + Precise Reference + Vibe）。 */
         val allReferences: List<ReferenceImage>
-            get() = listOfNotNull(referenceSource) + directorReferences
+            get() = listOfNotNull(referenceSource) + directorReferences + vibeReferences
+
+        /** 当前模型是否支持 Vibe Transfer（目前仅 V4.5）。 */
+        val supportsVibeTransfer: Boolean get() = profile.supportsVibeTransfer
+
+        val remainingVibeSlots: Int
+            get() = (profile.maxVibeReferences - vibeReferences.size).coerceAtLeast(0)
 
         val mode: GenerationMode
             get() = when {
@@ -192,6 +205,7 @@ class GenerateViewModel(
             negativeTemplate = draft.negativeTemplate,
             referenceSource = draft.references.firstOrNull { it.role == ReferenceRole.IMG2IMG },
             directorReferences = draft.references.filter { it.role == ReferenceRole.DIRECTOR },
+            vibeReferences = draft.references.filter { it.role == ReferenceRole.VIBE },
         )
     }
 
@@ -240,10 +254,15 @@ class GenerateViewModel(
             ),
             v5UsageLimit = known?.v5UsageLimit,
             resolutionTier = state.profile.tierOf(state.params.size),
-            generationKind = when (state.mode) {
-                GenerationMode.TXT2IMG -> GenerationKind.TEXT_TO_IMAGE
-                GenerationMode.IMG2IMG -> GenerationKind.IMAGE_TO_IMAGE
-                GenerationMode.PRECISE_REFERENCE -> GenerationKind.PRECISE_REFERENCE
+            // Vibe 的价格未确认，只要挂了它就整单"待确认"（即使同时还有别的参考图）。
+            generationKind = if (state.vibeReferences.isNotEmpty()) {
+                GenerationKind.VIBE_TRANSFER
+            } else {
+                when (state.mode) {
+                    GenerationMode.TXT2IMG -> GenerationKind.TEXT_TO_IMAGE
+                    GenerationMode.IMG2IMG -> GenerationKind.IMAGE_TO_IMAGE
+                    GenerationMode.PRECISE_REFERENCE -> GenerationKind.PRECISE_REFERENCE
+                }
             },
             hasBaseImage = state.referenceSource != null,
             // 只有 Precise Reference 的参考图数量影响价格；图生图的起点图不额外收费。
@@ -294,6 +313,7 @@ class GenerateViewModel(
                         negativeTemplate = reused.params.negativePrompt,
                         referenceSource = reused.img2imgSource,
                         directorReferences = reused.referencesOf(ReferenceRole.DIRECTOR),
+                        vibeReferences = reused.referencesOf(ReferenceRole.VIBE),
                         error = null,
                         modelSwitchNotice = null,
                         referenceError = null,
@@ -573,6 +593,8 @@ class GenerateViewModel(
                             referenceBusy = false,
                             // 与图生图互斥。
                             referenceSource = null,
+                            // 与服务端约束一致：Vibe 与 Precise Reference 不能混用。
+                            vibeReferences = emptyList(),
                             directorReferences = state.directorReferences + reference,
                         )
                     }
@@ -582,6 +604,89 @@ class GenerateViewModel(
                     it.copy(referenceBusy = false, referenceError = outcome.error)
                 }
             }
+        }
+    }
+
+    /**
+     * 添加一张 Vibe 参考图。
+     *
+     * 导入时**不做变换**：官方是把原图交给 `encode-vibe`，编码发生在提交生成时
+     * （见 `GenerationRepository.vibeBase64For`），产物会按内容寻址缓存起来。
+     */
+    fun onVibeReferencePicked(source: ReferenceSource) {
+        val current = _state.value
+        if (current.referenceBusy) return
+        if (!current.supportsVibeTransfer) {
+            _state.update {
+                it.copy(referenceError = AppError.of(ErrorCode.INVALID_PARAMS, detail = "当前模型不支持 Vibe Transfer"))
+            }
+            return
+        }
+        if (current.remainingVibeSlots <= 0) return
+
+        _state.update { it.copy(referenceBusy = true, referenceError = null) }
+        viewModelScope.launch {
+            when (val outcome = referenceImporter.import(source)) {
+                is Outcome.Success -> {
+                    val prepared = outcome.value
+                    _state.update { state ->
+                        val profile = state.profile
+                        val reference = ReferenceImage(
+                            id = idGenerator(),
+                            role = ReferenceRole.VIBE,
+                            ordinal = state.vibeReferences.size,
+                            relativePath = prepared.relativePath,
+                            width = prepared.width,
+                            height = prepared.height,
+                            byteSize = prepared.byteSize,
+                            sha256 = prepared.sha256,
+                            createdAt = clock(),
+                            strength = VIBE_DEFAULT_STRENGTH,
+                            informationExtracted = VIBE_DEFAULT_INFORMATION,
+                        )
+                        state.copy(
+                            referenceBusy = false,
+                            // 服务端明确不允许混用：`cannot mix reference and director_reference
+                            // at the same time`。因此挂上 Vibe 就清掉 Precise Reference。
+                            directorReferences = emptyList(),
+                            vibeReferences = state.vibeReferences + reference,
+                        )
+                    }
+                }
+
+                is Outcome.Failure -> _state.update {
+                    it.copy(referenceBusy = false, referenceError = outcome.error)
+                }
+            }
+        }
+    }
+
+    fun onVibeReferenceRemoved(id: String) {
+        _state.update { current ->
+            current.copy(
+                vibeReferences = current.vibeReferences
+                    .filterNot { it.id == id }
+                    // 顺序号必须连续：它直接对应请求数组的下标。
+                    .mapIndexed { index, reference -> reference.copy(ordinal = index) },
+            )
+        }
+    }
+
+    fun onVibeStrengthChanged(id: String, value: Double) {
+        updateVibeReference(id) { it.copy(strength = clampedDirector(value)) }
+    }
+
+    fun onVibeInformationExtractedChanged(id: String, value: Double) {
+        updateVibeReference(id) { it.copy(informationExtracted = clampedDirector(value)) }
+    }
+
+    private fun updateVibeReference(id: String, transform: (ReferenceImage) -> ReferenceImage) {
+        _state.update { current ->
+            current.copy(
+                vibeReferences = current.vibeReferences.map { reference ->
+                    if (reference.id == id) transform(reference) else reference
+                },
+            )
         }
     }
 
@@ -888,6 +993,10 @@ class GenerateViewModel(
 
         /** 费用预估流的订阅超时，与画廊保持一致。 */
         const val COST_SUBSCRIPTION_TIMEOUT_MS = 5_000L
+
+        /** Vibe 两个滑块的默认值。官方初值未核对，先取工作值。 */
+        const val VIBE_DEFAULT_STRENGTH = 0.6
+        const val VIBE_DEFAULT_INFORMATION = 1.0
     }
 
     /** 一次生成前后的余额核对上下文（规划 §8.2）。 */

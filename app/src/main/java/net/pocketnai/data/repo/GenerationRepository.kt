@@ -1,5 +1,6 @@
 package net.pocketnai.data.repo
 
+import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -7,6 +8,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import net.pocketnai.core.AppError
 import net.pocketnai.core.ErrorCode
+import net.pocketnai.core.Hashing
 import net.pocketnai.core.Outcome
 import net.pocketnai.data.files.GenerationFileStore
 import net.pocketnai.data.local.GenerationDao
@@ -28,6 +30,7 @@ import net.pocketnai.domain.model.GenerationParams
 import net.pocketnai.domain.model.GenerationRequest
 import net.pocketnai.domain.model.GenerationStatus
 import net.pocketnai.domain.model.GenerationSummary
+import net.pocketnai.domain.model.ImageModel
 import net.pocketnai.domain.model.ModelCatalog
 import net.pocketnai.domain.model.ParamViolation
 import net.pocketnai.domain.model.ReferenceImage
@@ -146,12 +149,23 @@ class GenerationRepository(
             return@flow
         }
         val encodedImages = mutableMapOf<ReferenceRole, List<String>>()
+        // Vibe 编码会产出可复用的 `.vibe` 缓存，因此这里保留一份可写回的参考图列表。
+        var referencesWithVibe = request.references
         for (role in ReferenceRole.entries) {
             val group = request.referencesOf(role)
             if (group.isEmpty()) continue
-            val encoded = group.map { reference ->
-                when (val outcome = referenceEncoder.encodeBase64(reference.relativePath, transformFor(reference, normalized))) {
-                    is Outcome.Success -> outcome.value
+            val encoded = mutableListOf<String>()
+            for (reference in group) {
+                val outcome = if (role == ReferenceRole.VIBE) {
+                    vibeBase64For(reference, token, normalized.model)
+                } else {
+                    referenceEncoder.encodeBase64(
+                        reference.relativePath,
+                        transformFor(reference, normalized),
+                    )
+                }
+                when (outcome) {
+                    is Outcome.Success -> encoded += outcome.value
                     is Outcome.Failure -> {
                         emit(GenerationEvent.FatalError(generationId, outcome.error))
                         return@flow
@@ -159,6 +173,20 @@ class GenerationRepository(
                 }
             }
             encodedImages[role] = encoded
+        }
+        if (request.referencesOf(ReferenceRole.VIBE).isNotEmpty()) {
+            // 编码产物已落盘，把缓存路径写回参考图：同一张图下次不必再编码一次。
+            referencesWithVibe = referencesWithVibe.map { reference ->
+                if (reference.role == ReferenceRole.VIBE) {
+                    reference.copy(
+                        vibeRelativePath = fileStore.vibeRelativePath(
+                            vibeCacheKey(reference, normalized.model),
+                        ),
+                    )
+                } else {
+                    reference
+                }
+            }
         }
 
         val estimatedBytes = normalized.size.totalPixels.toLong() *
@@ -192,8 +220,8 @@ class GenerationRepository(
             ),
         )
         // 参考图一条一行。写在生成记录之后：外键要求父行先存在。
-        if (request.references.isNotEmpty()) {
-            dao.insertReferences(request.references.map { Mappers.toEntity(it, generationId) })
+        if (referencesWithVibe.isNotEmpty()) {
+            dao.insertReferences(referencesWithVibe.map { Mappers.toEntity(it, generationId) })
         }
         emit(GenerationEvent.Started(generationId))
 
@@ -403,6 +431,67 @@ class GenerationRepository(
         violations.joinToString(separator = "; ") { it.toString() }
 
     /**
+     * Vibe 参考图 → 请求体里的 base64。
+     *
+     * ## 为什么先编码再发送
+     * 官方网页的做法是先把图编码成 `.vibe` 二进制，再把它的 base64 放进
+     * `reference_image_multiple`。OpenAPI 没有说明这个数组收的是原始图片还是编码产物，
+     * 因此这里按官方行为实现；**这一层是可摘除的** —— 真机核对后如果服务端直接收原图，
+     * 把本函数换成一次 [referenceEncoder.encodeBase64] 即可，其余流程不用动。
+     *
+     * ## 缓存键含模型与信息量
+     * `encode-vibe` 的请求体里有 `model` 与 `information_extracted`，两者都可能影响产物，
+     * 因此都进缓存键（多存几个副本的代价远小于"跨参数复用错的 vibe"）。
+     */
+    private suspend fun vibeBase64For(
+        reference: ReferenceImage,
+        token: String,
+        model: ImageModel,
+    ): Outcome<String> {
+        val cacheKey = vibeCacheKey(reference, model)
+        val cached = fileStore.resolve(fileStore.vibeRelativePath(cacheKey))
+        if (cached.isFile) {
+            return encodeFileBase64(cached)
+        }
+
+        val informationExtracted = reference.informationExtracted ?: DEFAULT_VIBE_INFORMATION_EXTRACTED
+        val imageBase64 = when (
+            val outcome = referenceEncoder.encodeBase64(reference.relativePath, null)
+        ) {
+            is Outcome.Success -> outcome.value
+            is Outcome.Failure -> return outcome
+        }
+
+        val bytes = when (val outcome = api.encodeVibe(token, model, imageBase64, informationExtracted)) {
+            is Outcome.Success -> outcome.value
+            is Outcome.Failure -> return outcome
+        }
+
+        return try {
+            val file = fileStore.writeVibe(cacheKey, bytes)
+            encodeFileBase64(file)
+        } catch (e: IOException) {
+            Outcome.Failure(AppError.of(ErrorCode.STORAGE_FULL, detail = e.message.orEmpty()))
+        }
+    }
+
+    /** 缓存键：模型 + 图片内容 + 信息量，取哈希后当文件名（避免把模型 id 直接拼进路径）。 */
+    private fun vibeCacheKey(reference: ReferenceImage, model: ImageModel): String {
+        val raw = listOf(
+            model.apiModelId,
+            reference.sha256,
+            (reference.informationExtracted ?: DEFAULT_VIBE_INFORMATION_EXTRACTED).toString(),
+        ).joinToString(separator = "|")
+        return Hashing.sha256(raw.toByteArray())
+    }
+
+    private fun encodeFileBase64(file: File): Outcome<String> = try {
+        Outcome.Success(Base64.encodeToString(file.readBytes(), Base64.NO_WRAP))
+    } catch (e: IOException) {
+        Outcome.Failure(AppError.of(ErrorCode.REFERENCE_DECODE_FAILED, detail = e.message.orEmpty()))
+    }
+
+    /**
      * 每类参考图在提交时要被做成什么形状。
      *
      * - 图生图起点图：**铺满**输出尺寸（裁掉多余边缘）；
@@ -418,7 +507,7 @@ class GenerationRepository(
         ReferenceRole.DIRECTOR -> ImageTransform.Letterbox(
             ImageGeometry.directorCanvas(PixelSize(reference.width, reference.height)),
         )
-        // Vibe 走 encode-vibe 编码，不在这里做几何变换；它还没有实现。
+        // Vibe 走 encode-vibe 编码，几何变换在编码前不做：官方也是把原图交给编码接口。
         ReferenceRole.VIBE -> ImageTransform.Letterbox(
             PixelSize(reference.width, reference.height),
         )
@@ -452,5 +541,8 @@ class GenerationRepository(
     private companion object {
         /** 写入前的粗略空间估算：每像素最多约 4 字节的 PNG 未压缩上限，留足余量。 */
         const val ESTIMATED_BYTES_PER_PIXEL = 4L
+
+        /** Vibe 的 Information Extracted 缺省值。官方默认值未核对，取"全部提取"。 */
+        const val DEFAULT_VIBE_INFORMATION_EXTRACTED = 1.0
     }
 }

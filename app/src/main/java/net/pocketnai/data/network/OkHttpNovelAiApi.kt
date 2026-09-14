@@ -6,6 +6,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.contentOrNull
 import net.pocketnai.core.AppError
 import net.pocketnai.core.ErrorCode
@@ -197,6 +199,54 @@ class OkHttpNovelAiApi(
         }
     }
 
+    /**
+     * Vibe 编码。
+     *
+     * 响应是**二进制**（不是 JSON），因此这里只做传输与体积上限，不解析内容。
+     * 用生成用的 client，但调用方保证它是用户动作触发的短请求。
+     */
+    override suspend fun encodeVibe(
+        token: String,
+        model: ImageModel,
+        imageBase64: String,
+        informationExtracted: Double,
+    ): Outcome<ByteArray> = withContext(Dispatchers.IO) {
+        val payload = buildJsonObject {
+            put("image", imageBase64)
+            put("model", model.apiModelId)
+            put("information_extracted", informationExtracted)
+        }
+        val request = Request.Builder()
+            .url("$baseUrl/ai/encode-vibe")
+            .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .header(HEADER_AUTHORIZATION, bearer(token))
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                val correlationId = correlationIdOf(response)
+                if (!response.isSuccessful) {
+                    val body = response.body?.string().orEmpty()
+                    return@withContext Outcome.Failure(
+                        NovelAiErrorMapper.fromHttpStatus(response.code, body, correlationId),
+                    )
+                }
+                val body = response.body
+                    ?: return@withContext Outcome.Failure(AppError.of(ErrorCode.VIBE_ENCODE_FAILED))
+                if (body.contentLength() > MAX_VIBE_BYTES) {
+                    return@withContext Outcome.Failure(AppError.of(ErrorCode.VIBE_ENCODE_FAILED))
+                }
+                val bytes = body.bytes()
+                if (bytes.isEmpty() || bytes.size > MAX_VIBE_BYTES) {
+                    return@withContext Outcome.Failure(AppError.of(ErrorCode.VIBE_ENCODE_FAILED))
+                }
+                Outcome.Success(bytes)
+            }
+        } catch (e: IOException) {
+            Outcome.Failure(NovelAiErrorMapper.fromTransportError(e))
+        }
+    }
+
     private fun parseTags(body: String): List<String> {
         val root = runCatching { json.parseToJsonElement(body) as? JsonObject }.getOrNull()
             ?: return emptyList()
@@ -248,5 +298,8 @@ class OkHttpNovelAiApi(
         const val HEADER_CONTENT_TYPE = "Content-Type"
 
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+
+        /** `.vibe` 产物的体积上限。编码结果通常是几十 KB，1 MB 已经是很宽的上限。 */
+        const val MAX_VIBE_BYTES = 1L * 1024 * 1024
     }
 }

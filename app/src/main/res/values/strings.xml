@@ -122,6 +122,14 @@
     <string name="generate_director_slots">已添加 %1$d / %2$d 张</string>
     <string name="generate_director_cost_hint">每张 5 Anlas</string>
     <string name="generate_director_padded_size">已按官方要求补齐为 %1$d × %2$d</string>
+
+    <!-- Vibe Transfer -->
+    <string name="generate_vibe_title">参考图 · Vibe Transfer</string>
+    <string name="generate_vibe_hint">把参考图的风格（配色、笔触、氛围）带到这次生成里。可以和图生图同时使用；但 NovelAI 不允许与 Precise Reference 混用，挂上其中一类会清空另一类。</string>
+    <string name="generate_vibe_encode_hint">提交生成时会编码为 Vibe（同一张图只编码一次）</string>
+    <string name="generate_vibe_cost_hint">费用以 NovelAI 为准</string>
+    <string name="generate_vibe_short">Vibe</string>
+    <string name="generate_precise_reference_short">Precise Ref</string>
     <string name="common_mode">生成方式</string>
     <string name="detail_reference_img2img">起点图（图生图）</string>
     <string name="detail_reference_vibe">Vibe 参考图</string>

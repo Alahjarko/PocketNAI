@@ -87,7 +87,7 @@ class ReferenceImageProcessor(
     /** 按 [transform] 裁切并编码成请求体里的 base64。 */
     override suspend fun encodeBase64(
         relativePath: String,
-        transform: ImageTransform,
+        transform: ImageTransform?,
     ): Outcome<String> = withContext(Dispatchers.IO) {
         val file = fileStore.resolve(relativePath)
         if (!file.isFile) {
@@ -98,10 +98,14 @@ class ReferenceImageProcessor(
             ?: return@withContext Outcome.Failure(AppError.of(ErrorCode.REFERENCE_DECODE_FAILED))
 
         try {
-            val rendered = render(decoded, transform)
-                ?: return@withContext Outcome.Failure(
-                    AppError.of(ErrorCode.REFERENCE_DECODE_FAILED),
-                )
+            val rendered = if (transform == null) {
+                decoded
+            } else {
+                render(decoded, transform)
+                    ?: return@withContext Outcome.Failure(
+                        AppError.of(ErrorCode.REFERENCE_DECODE_FAILED),
+                    )
+            }
             val bytes = encodePng(rendered)
                 ?: return@withContext Outcome.Failure(
                     AppError.of(ErrorCode.REFERENCE_DECODE_FAILED),

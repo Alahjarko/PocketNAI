@@ -51,6 +51,20 @@ interface NovelAiApi {
         model: ImageModel,
         prompt: String,
     ): Outcome<List<String>>
+
+    /**
+     * 把一张图片编码成 Vibe Transfer 用的二进制（`.vibe`）。
+     *
+     * 官方网页的做法是先把图编码成 `.vibe`，再把它的 base64 放进 `reference_image_multiple`。
+     * 这个接口**是否计费尚未确认**，因此调用方必须保证它只由用户动作触发
+     * （选图之后），不得放在自动化流程里。
+     */
+    suspend fun encodeVibe(
+        token: String,
+        model: ImageModel,
+        imageBase64: String,
+        informationExtracted: Double,
+    ): Outcome<ByteArray>
 }
 
 /**

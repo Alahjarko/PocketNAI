@@ -72,6 +72,12 @@
   否则"这个角色的强度"会落到"那个角色"上，而服务端不报错。
 - 黑边补齐在**导入时**做（`ImageTransform.DirectorCanvas`），缩略图因此就是提交图；
   提交时再套一次同样的 Letterbox 是恒等变换，不要"聪明地"跳过。
+- Vibe Transfer：`action` 也保持 `generate`，发 `reference_*_multiple` **三个数组**，
+  内容是 `encode-vibe` 的产物 base64（实测服务端收编码产物，不收原图）。
+  编码缓存在 `files/vibes/<hash>.vibe`，键含模型 + 图片 sha256 + Information Extracted。
+- **Vibe 与 Precise Reference 不能同时发**：服务端会拒绝
+  （`cannot mix reference and director_reference at the same time`）。界面必须互斥。
+  Vibe 与图生图可以同时发。
 
 ### 参考图的文件存储
 

@@ -49,6 +49,16 @@ object NovelAiRequestBuilder {
      */
     const val ACTION_IMG2IMG: String = "img2img"
 
+    /**
+     * Vibe 两个滑块的默认值。
+     *
+     * ⚠️ **待核对**：官方网页版 Vibe Transfer 面板的初值尚未记录。与 `noise` 那种
+     * "可以留空让服务端兜底"的字段不同，这两个值必须由客户端发送（数组要与图片一一对应），
+     * 因此先取工作值；核对后改这两行即可。
+     */
+    private const val VIBE_DEFAULT_STRENGTH = 0.6
+    private const val VIBE_DEFAULT_INFORMATION = 1.0
+
     /** 构造完整请求体。会先按模型档案归一化参数，保证不会提交已知无效组合。 */
     fun build(profile: ModelProfile, params: GenerationParams): JsonObject =
         build(profile, GenerationRequest(params = params), sourceImageBase64 = null)
@@ -102,6 +112,10 @@ object NovelAiRequestBuilder {
             directorSources.size == directors.size &&
             directors.isNotEmpty()
 
+        val vibeSources = upstreamImages[ReferenceRole.VIBE].orEmpty()
+        val vibes = request.referencesOf(ReferenceRole.VIBE)
+        val useVibe = vibeSources.size == vibes.size && vibes.isNotEmpty()
+
         val parameters = buildJsonObject {
             put("params_version", profile.paramsVersion)
 
@@ -140,6 +154,10 @@ object NovelAiRequestBuilder {
 
             if (useDirector) {
                 appendDirectorReferences(profile, directors, directorSources)
+            }
+
+            if (useVibe) {
+                appendVibeReferences(profile, vibes, vibeSources)
             }
         }
 
@@ -213,6 +231,43 @@ object NovelAiRequestBuilder {
                 references.forEach {
                     add(strengthRange.clamp(it.informationExtracted ?: profile.defaultDirectorInfoExtracted))
                 }
+            },
+        )
+    }
+
+    /**
+     * Vibe Transfer 的三个数组。
+     *
+     * ## 为什么用 `_multiple` 那一组
+     * OpenAPI 同时提供了单数（`reference_image` / `reference_strength` /
+     * `reference_information_extracted`）与复数（`..._multiple`）两套字段。
+     * 官方网页最多支持 4 张，因此它用的是复数那一套；我们也统一走复数，
+     * 免得出现"一张用单数、两张用复数"这种两套代码路径。
+     *
+     * ## 数组按下标一一对应
+     * 与 Precise Reference 一样，任何一项缺失都不能跳过，否则强度会落到错误的图上。
+     *
+     * ## 传的是编码后的 `.vibe`
+     * 调用方给的是 `encode-vibe` 的产物 base64（见 `GenerationRepository.vibeBase64For`）。
+     * OpenAPI 没有说明这个数组收原始图片还是编码产物，这一层按官方行为实现且**可摘除**。
+     */
+    private fun JsonObjectBuilder.appendVibeReferences(
+        profile: ModelProfile,
+        references: List<ReferenceImage>,
+        encoded: List<String>,
+    ) {
+        val range = profile.img2imgStrengthRange
+        put("reference_image_multiple", buildJsonArray { encoded.forEach { add(it) } })
+        put(
+            "reference_information_extracted_multiple",
+            buildJsonArray {
+                references.forEach { add(range.clamp(it.informationExtracted ?: VIBE_DEFAULT_INFORMATION)) }
+            },
+        )
+        put(
+            "reference_strength_multiple",
+            buildJsonArray {
+                references.forEach { add(range.clamp(it.strength ?: VIBE_DEFAULT_STRENGTH)) }
             },
         )
     }

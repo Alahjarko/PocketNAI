@@ -313,6 +313,13 @@ class ConnectViewModelTest {
             model: ImageModel,
             prompt: String,
         ): Outcome<List<String>> = error("本测试不涉及标签建议")
+
+        override suspend fun encodeVibe(
+            token: String,
+            model: ImageModel,
+            imageBase64: String,
+            informationExtracted: Double,
+        ): Outcome<ByteArray> = error("本测试不涉及 Vibe 编码")
     }
 
     private class FakeAuthApi : NovelAiAuthApi {

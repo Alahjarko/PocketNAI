@@ -1048,3 +1048,63 @@ OpenAPI 里 `action` 只是一个没有枚举约束的 string，字段说明也�
    修正为引入 [LiveReferencePathsProvider]：存活集合 = 数据库引用 ∪ 草稿引用。
    它被做成 `GenerationRepository` 的**必填**参数而不是可选参数 ——
    漏掉它是一个静默的数据丢失，不该靠调用方记得传。
+
+---
+
+## 十三、Vibe Transfer（规划书阶段 D）
+
+### 13.1 请求形态：用复数那一组字段
+
+`reference_image_multiple` / `reference_strength_multiple` /
+`reference_information_extracted_multiple`（官方同时提供了单数与复数两套，
+网页最多 4 张、用的就是复数那套，我们也统一走复数，避免"一张用单数、两张用复数"两条代码路径）。
+
+### 13.2 编码层是可摘除的 —— 实测确认传的是编码产物
+
+`reference_image_multiple` 到底收原始图片还是 `encode-vibe` 的产物，OpenAPI 没有说明。
+按官方行为实现为**先编码再发送**，并把这一层做成可摘除的（`GenerationRepository.vibeBase64For`）。
+
+真机验证结果：**服务端接受编码后的 `.vibe` base64**，一次带 Vibe 的生成成功。
+因此这一层保留。如果将来发现服务端改收原图，把该函数换成一次 `referenceEncoder.encodeBase64` 即可，
+请求构造与界面都不用动。
+
+缓存按 `模型 + 图片 sha256 + Information Extracted` 取哈希命名（`files/vibes/<hash>.vibe`），
+实测第二次用同一张图时没有再次编码（缓存命中），缓存路径也写回了参考图行。
+这三个输入都进缓存键，是因为 `encode-vibe` 的请求体里带着 `model` 与 `information_extracted`。
+
+### 13.3 ⚠️ Vibe 与 Precise Reference 不能混用（服务端明确拒绝）
+
+原以为参考条件类功能可以叠加，实测被服务端否定：
+
+```
+HTTP 400: Validation error: error validating request:
+          cannot mix reference and director_reference at the same time, got 1 refs, 1 director refs
+```
+
+因此界面上这两者**互斥**（挂上其中一类会清空另一类），与图生图 ⟷ Precise Reference 的互斥一致。
+Vibe 与**图生图**不冲突：实测两者同时发送时请求通过（前者是条件、后者是起点，字段互不重叠）。
+
+这条规则 OpenAPI 里没有任何提示，只有真机能发现。
+
+### 13.4 encode-vibe 很可能收费 2 Anlas（观测到一次，未重复验证）
+
+时间线（都在免费档位参数下）：
+
+| 事件 | 余额 | 说明 |
+|---|---|---|
+| 加入 Vibe 后第一次生成 | 402 → **400** | 该次生成被服务端以 400 拒绝（Vibe 与 Precise Reference 混用），但在此之前 `encode-vibe` 已成功返回并写出 48 KB 的 `.vibe` |
+| 移除 Precise Reference 后再生成（Vibe 缓存命中） | 400 → 400 | 没有再次编码 |
+
+生成请求本身被校验拒绝、不该计费，因此那 2 Anlas 最可能来自 `encode-vibe`。
+**只观测到一次**，且存在"服务端延迟更新"的干扰，因此不写成结论。
+
+对实现的影响：编码发生在**按下生成之后**，不是选中图片时。所以即使用户不生成，
+也不会因为"选了一张图"而被扣费 —— 这一点无论 §13.4 的结论如何都是对的。
+
+### 13.5 当前状态
+
+- 界面：Vibe Transfer 面板（最多 4 张、逐张 Strength 与 Information Extracted、可从相册/历史选图）；
+- 与图生图可同时使用，与 Precise Reference 互斥；
+- 仅 V4.5 可用（能力位与 Precise Reference 相同）；
+- 费用：价格未确认，只要挂了 Vibe，按钮上就是"费用待确认"；
+- 两个滑块的默认值（0.6 / 1.0）与模型 ID 一样属于**待核对**项，集中在 `NovelAiRequestBuilder`。

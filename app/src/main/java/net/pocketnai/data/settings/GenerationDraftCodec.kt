@@ -90,6 +90,7 @@ object GenerationDraftCodec {
         val informationExtracted: Double? = null,
         val secondaryStrength: Double? = null,
         val directorKind: String? = null,
+        val vibeRelativePath: String? = null,
     )
 
     fun encode(draft: GenerationDraft): String {
@@ -132,6 +133,7 @@ object GenerationDraftCodec {
         informationExtracted = informationExtracted,
         secondaryStrength = secondaryStrength,
         directorKind = directorKind?.apiValue,
+        vibeRelativePath = vibeRelativePath,
     )
 
     /** 解码失败或输入为空时返回 null，由调用方使用 [GenerationDraft.defaults]。 */
@@ -205,6 +207,7 @@ object GenerationDraftCodec {
             informationExtracted = informationExtracted?.let { profile.directorReferenceRange.clamp(it) },
             secondaryStrength = secondaryStrength?.let { profile.directorReferenceRange.clamp(it) },
             directorKind = directorKind?.let { DirectorReferenceKind.fromApiValueOrDefault(it) },
+            vibeRelativePath = vibeRelativePath,
         )
     }
 }
