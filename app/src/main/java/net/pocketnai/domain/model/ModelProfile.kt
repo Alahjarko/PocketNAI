@@ -94,16 +94,13 @@ data class ModelProfile(
     /** 是否支持 Precise Reference。同上：目前仅 V4.5。 */
     val supportsDirectorReference: Boolean,
     /**
-     * 是否支持局部重绘（通过**公开 API**）。当前四个模型**一律为 false**。
+     * 是否支持局部重绘（通过**公开 API**）。当前四个模型都为 true（真机实测通过，
+     * 2026-09-14，技术决策记录第十八节）。
      *
-     * 实测结论：`action: "infill"` 是唯一会读取蒙版的动作，但服务端对
-     * `nai-diffusion-4-5-curated` **与** `nai-diffusion-4-5-full` 都回同一句
-     * `Model ... doesn't support action infill`；另一条替代路径（把蒙版挂到 `img2img`）
-     * 经逐像素比对证实**蒙版被完全忽略**。
-     *
-     * 也就是说：官方**网页**能做局部重绘，但公开 API 的能力边界不同。这不是我们的实现问题，
-     * 因此入口关闭并说明原因，而不是给一个必然失败（在未核实的模型上还可能真扣费）的按钮。
-     * 服务端哪天开放这个 action，改 `ModelCatalog` 一行即可，编辑器与请求构造都已就绪。
+     * 前提在请求侧：`model` 字段必须换成专用的 `-inpainting` 模型 ID
+     * （见 [ImageModel.inpaintingApiModelId]），蒙版约定为 [net.pocketnai.domain.inpaint.MaskConvention.PAINTED_IS_WHITE]
+     * （已实测确认）。保留这个字段而不是写死 true，是为了将来出现不支持的模型时
+     * 不必回头改调用点。
      */
     val supportsInpaint: Boolean,
     /** Vibe Transfer 的参考图张数上限。数值集中在 [ModelCatalog]，见那里的待核对说明。 */
@@ -114,6 +111,14 @@ data class ModelProfile(
     val img2imgStrengthRange: NumericRange,
     /** Image2Img 的 Strength 默认值。 */
     val defaultImg2ImgStrength: Double,
+    /**
+     * 局部重绘的 Strength 默认值：**1.0**（蒙版内默认完全重画）。
+     *
+     * 来自官方前端 bundle：重绘面板的 `inpaintImg2ImgStrength` 滑块初值是 1，
+     * 且等于 1 时请求里**不发**嵌套的 `img2img` 对象。它与图生图的默认值（0.7）
+     * 刻意不同 —— 图生图要保留原图构图，重绘的蒙版内则是换掉那块内容。
+     */
+    val defaultInpaintStrength: Double,
     /** Precise Reference 三个滑块（Strength / Fidelity / Information Extracted）共用的区间。 */
     val directorReferenceRange: NumericRange,
     /** Precise Reference 的 Strength 默认值。 */

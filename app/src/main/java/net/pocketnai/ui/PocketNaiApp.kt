@@ -82,6 +82,7 @@ fun PocketNaiApp() {
                     draftPreferences = container.generationDraftPreferences,
                     tagSuggestionSource = container.tagSuggestionSource,
                     referenceImporter = container.referenceImageProcessor,
+                    metadataInspector = container.imageMetadataInspector,
                     accountBalanceRepository = container.accountBalanceRepository,
                     settingsStore = container.settingsStore,
                     costCalculator = container.anlasCostCalculator,

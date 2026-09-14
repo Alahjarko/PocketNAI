@@ -188,32 +188,8 @@ fun GenerateSheet(
             // 费用状态的展开态说明（按钮上只有短文案）。
             CostDetailLine(costEstimate = costEstimate)
 
-            // 参考图放在最上面：它们是"这次生成用什么模式"的前提，
-            // 而模式会决定下面的尺寸与计费预期。
-            // 两块互斥（图生图 vs 参考条件），挂上其中一类会清空另一类。
-            ReferenceImageSection(
-                state = state,
-                connected = connected,
-                viewModel = viewModel,
-                onOpenInpaintEditor = onOpenInpaintEditor,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            PreciseReferenceSection(
-                state = state,
-                connected = connected,
-                viewModel = viewModel,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            // Vibe 是叠加的风格条件，与前两者不互斥。
-            VibeTransferSection(
-                state = state,
-                connected = connected,
-                viewModel = viewModel,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
+            // 提示词在最上面：它是每次进来都要写的东西（用户明确要求）。
+            // 参考图三个区块因此挪到内容区最底部，见下方。
             SectionHeader(stringResource(R.string.generate_section_prompt))
 
             OutlinedTextField(
@@ -534,6 +510,33 @@ fun GenerateSheet(
                 )
             }
 
+            // 参考图三个区块放在内容区最底部：它们只在需要图生图/参考条件时才用，
+            // 不该挡在每次都要写的提示词前面。模式仍由它们驱动（挂上底图即图生图等），
+            // 只是位置挪了 —— 头部摘要行的模式标记与费用预估不受顺序影响。
+            // 两块互斥（图生图 vs 参考条件），挂上其中一类会清空另一类。
+            ReferenceImageSection(
+                state = state,
+                connected = connected,
+                viewModel = viewModel,
+                onOpenInpaintEditor = onOpenInpaintEditor,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            PreciseReferenceSection(
+                state = state,
+                connected = connected,
+                viewModel = viewModel,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            // Vibe 是叠加的风格条件，与前两者不互斥。
+            VibeTransferSection(
+                state = state,
+                connected = connected,
+                viewModel = viewModel,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
             Spacer(Modifier.size(8.dp))
         }
     }
@@ -585,6 +588,19 @@ fun GenerateSheet(
             subscriptionStatus = viewModel.subscriptionStatusOf(state.balanceState),
             onRefresh = viewModel::refreshBalance,
             onDismiss = { balanceDialogOpen = false },
+        )
+    }
+
+    // 选图时读到的元数据：只填参数，不自动生成。
+    state.metadataCandidate?.let { candidate ->
+        MetadataImportDialog(
+            metadata = candidate.metadata,
+            selection = candidate.selection,
+            plan = viewModel.currentMetadataPlan(),
+            currentPromptIsNotEmpty = state.params.prompt.isNotBlank(),
+            onSelectionChange = viewModel::onMetadataSelectionChange,
+            onConfirm = viewModel::confirmMetadataImport,
+            onDismiss = viewModel::dismissMetadataImport,
         )
     }
 
@@ -704,7 +720,9 @@ private fun SheetHeader(
                         append(" · ")
                         append(vibeMarker)
                     }
-                    if (state.hasInpaintMask) {
+                    // 与其它三个标记一样跟随 mode，而不是只看蒙版存不存在：
+                    // 只有蒙版没有底图的残缺状态不该挂"重绘"标记（那次的提交一定会 400）。
+                    if (state.mode == GenerationMode.INPAINT) {
                         append(" · ")
                         append(inpaintMarker)
                     }

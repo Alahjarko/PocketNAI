@@ -2,9 +2,11 @@ package net.pocketnai.data.network
 
 import com.google.common.truth.Truth.assertThat
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import net.pocketnai.domain.model.GenerationMode
 import net.pocketnai.domain.model.GenerationParams
 import net.pocketnai.domain.model.GenerationRequest
@@ -19,17 +21,21 @@ import org.junit.Test
 /**
  * 局部重绘的请求体（`action = "infill"`）。
  *
- * 三条纪律：
- * 1. `image` + `mask` 必须同时存在，缺一个就整组不发；
- * 2. 强度发在**嵌套的** `parameters.img2img` 里（OpenAPI 的 `used by inpaint`），不发顶层；
- * 3. 其它模式的请求体逐字节不变。
+ * 请求形态已按官方网页前端 bundle 对齐（技术决策记录第十七节，2026-09-14）：
+ * 1. `model` 换成专用的 `-inpainting` 模型 ID —— 此前的
+ *    `doesn't support action infill` 就是因为发了常规模型 ID；
+ * 2. `image` + `mask` 必须同时存在，缺一个就整组不发；
+ * 3. `add_original_image` / `sm` / `sm_dyn` / `extra_noise_seed` 按官方原样照发；
+ * 4. 强度等于官方默认值 1.0 时**不发**嵌套 `img2img` 对象，否则发
+ *    `{strength, color_correct: true}`；
+ * 5. 其它模式的请求体逐字节不变（由 T2I / Img2Img / Vibe / Director 各自的测试守住）。
  */
 class NovelAiRequestBuilderInpaintTest {
 
     private val profile = ModelCatalog.profileOf(ImageModel.V4_5_CURATED)
     private val v5 = ModelCatalog.profileOf(ImageModel.V5_CURATED)
 
-    private fun base() = ReferenceImage(
+    private fun base(strength: Double? = 0.7) = ReferenceImage(
         id = "base",
         role = ReferenceRole.IMG2IMG,
         ordinal = 0,
@@ -39,7 +45,7 @@ class NovelAiRequestBuilderInpaintTest {
         byteSize = 100,
         sha256 = "base",
         createdAt = 0L,
-        strength = 0.7,
+        strength = strength,
     )
 
     private fun mask() = ReferenceImage(
@@ -82,22 +88,50 @@ class NovelAiRequestBuilderInpaintTest {
         ReferenceRole.INPAINT_MASK to listOf("MASK64"),
     )
 
-    // ---- 字段形态 ----
+    // ---- 专用模型 ID（本次修正的核心） ----
 
     @Test
-    fun `局部重绘使用 infill 这个 action`() {
-        // 只有 infill 会真正读取蒙版：实测把蒙版挂到 img2img 上时被完全忽略
-        // （涂了 3.55% 的区域，出图却有 52.6% 的像素变了）。
-        val json = build(
-            references = listOf(base(), mask()),
-            upstream = fullUpstream,
-            onProfile = ModelCatalog.profileOf(ImageModel.V4_5_FULL),
+    fun `重绘请求使用专用的 inpainting 模型 ID`() {
+        // 官方网页前端反解：重绘不发常规模型 ID，而是对应的 -inpainting 变体。
+        // 这就是此前 "Model nai-diffusion-4-5-curated doesn't support action infill"
+        // 的真正原因 —— 常规模型 ID 本就不接受这个 action。
+        val json = build(listOf(base(), mask()), fullUpstream)
+
+        assertThat(json.getValue("model").jsonPrimitive.content)
+            .isEqualTo("nai-diffusion-4-5-curated-inpainting")
+        assertThat(json.getValue("action").jsonPrimitive.content).isEqualTo("infill")
+    }
+
+    @Test
+    fun `四个模型的重绘模型 ID 映射与官方前端一致`() {
+        // 映射来自官方前端的 switch（原样照搬），且每个目标 ID 都用零成本的
+        // suggest-tags 端点实测存在（无效模型会 400）。
+        val expected = mapOf(
+            ImageModel.V4_5_CURATED to "nai-diffusion-4-5-curated-inpainting",
+            ImageModel.V4_5_FULL to "nai-diffusion-4-5-full-inpainting",
+            // 官方前端的原样行为：V5 Curated 没有自己的重绘模型
+            // （nai-diffusion-5-curated-inpainting 实测 400），回落到 V4.5 的。
+            ImageModel.V5_CURATED to "nai-diffusion-4-5-curated-inpainting",
+            ImageModel.V5_FULL to "nai-diffusion-5-full-inpainting",
+        )
+        expected.forEach { (model, inpaintingId) ->
+            assertThat(model.inpaintingApiModelId).isEqualTo(inpaintingId)
+        }
+    }
+
+    @Test
+    fun `非重绘模式的模型字段不受映射影响`() {
+        val json = NovelAiRequestBuilder.build(
+            profile = profile,
+            request = GenerationRequest(params = params()),
+            upstreamImages = emptyMap(),
         )
 
-        assertThat(json.getValue("action").jsonPrimitive.content).isEqualTo("infill")
-        assertThat(json.getValue("action").jsonPrimitive.content)
-            .isEqualTo(NovelAiRequestBuilder.ACTION_INFILL)
+        assertThat(json.getValue("model").jsonPrimitive.content)
+            .isEqualTo("nai-diffusion-4-5-curated")
     }
+
+    // ---- 字段形态 ----
 
     @Test
     fun `底图与蒙版分别落在 image 与 mask`() {
@@ -108,43 +142,70 @@ class NovelAiRequestBuilderInpaintTest {
     }
 
     @Test
-    fun `强度发在嵌套的 img2img 对象里而不是顶层`() {
-        // OpenAPI 里那个嵌套对象的字段说明是 "used by inpaint"，因此重绘走它。
+    fun `官方恒发的字段原样照发`() {
+        // 官方前端的 infill 请求里固定出现：add_original_image=false、
+        // sm=false、sm_dyn=false、extra_noise_seed=seed-1（带底图时的官方取值）。
         val parameters = parameters(build(listOf(base(), mask()), fullUpstream))
+
+        assertThat(parameters.getValue("add_original_image").jsonPrimitive.boolean).isFalse()
+        assertThat(parameters.getValue("sm").jsonPrimitive.boolean).isFalse()
+        assertThat(parameters.getValue("sm_dyn").jsonPrimitive.boolean).isFalse()
+        assertThat(parameters.getValue("extra_noise_seed").jsonPrimitive.long)
+            .isEqualTo(parameters.getValue("seed").jsonPrimitive.long - 1)
+    }
+
+    @Test
+    fun `默认强度 1_0 时不发嵌套 img2img 对象`() {
+        // 官方重绘面板的滑块初值是 1，且等于 1 时请求里没有 img2img 字段。
+        val parameters = parameters(
+            build(listOf(base(strength = 1.0), mask()), fullUpstream),
+        )
+
+        assertThat(parameters).doesNotContainKey("img2img")
+        assertThat(parameters).doesNotContainKey("strength")
+    }
+
+    @Test
+    fun `未设置 strength 时按官方默认 1_0 处理`() {
+        val parameters = parameters(
+            build(listOf(base(strength = null), mask()), fullUpstream),
+        )
+
+        assertThat(parameters).doesNotContainKey("img2img")
+    }
+
+    @Test
+    fun `非默认强度发嵌套 img2img 且 color_correct 为 true`() {
+        // 官方：inpaintImg2ImgStrength != 1 时发 img2img={strength, color_correct:true}。
+        // 注意 color_correct 是 true，与图生图顶层的 false 相反，两处都是官方原样行为。
+        val parameters = parameters(build(listOf(base(strength = 0.5), mask()), fullUpstream))
 
         assertThat(parameters).doesNotContainKey("strength")
         val nested = parameters.getValue("img2img").jsonObject
-        assertThat(nested.getValue("strength").jsonPrimitive.double).isEqualTo(0.7)
+        assertThat(nested.getValue("strength").jsonPrimitive.double).isEqualTo(0.5)
+        assertThat(nested.getValue("color_correct").jsonPrimitive.boolean).isTrue()
     }
 
     @Test
-    fun `嵌套对象里不擅自发默认值未知的字段`() {
-        val nested = parameters(build(listOf(base(), mask()), fullUpstream))
-            .getValue("img2img").jsonObject
+    fun `嵌套对象里不发 noise 与 extra_noise_seed`() {
+        val parameters = parameters(build(listOf(base(strength = 0.5), mask()), fullUpstream))
+        val nested = parameters.getValue("img2img").jsonObject
 
-        listOf("noise", "extra_noise_seed", "color_correct").forEach { field ->
-            assertThat(nested).doesNotContainKey(field)
-        }
+        assertThat(nested).doesNotContainKey("noise")
+        assertThat(nested).doesNotContainKey("extra_noise_seed")
     }
 
     @Test
-    fun `未设置 strength 时用模型默认值`() {
-        val parameters = parameters(
-            build(listOf(base().copy(strength = null), mask()), fullUpstream),
-        )
+    fun `越界的 strength 先夹取再按官方规则取舍`() {
+        // 9.0 夹取到 1.0 = 官方默认 → 嵌套对象整个不发；
+        // -0.5 夹取到 0.0 → 发 {strength: 0.0, color_correct: true}。
+        val high = parameters(build(listOf(base(strength = 9.0), mask()), fullUpstream))
+        assertThat(high).doesNotContainKey("img2img")
 
-        assertThat(parameters.getValue("img2img").jsonObject.getValue("strength").jsonPrimitive.double)
-            .isEqualTo(profile.defaultImg2ImgStrength)
-    }
-
-    @Test
-    fun `越界的 strength 被夹取`() {
-        val parameters = parameters(
-            build(listOf(base().copy(strength = 9.0), mask()), fullUpstream),
-        )
-
-        assertThat(parameters.getValue("img2img").jsonObject.getValue("strength").jsonPrimitive.double)
-            .isEqualTo(1.0)
+        val low = parameters(build(listOf(base(strength = -0.5), mask()), fullUpstream))
+        assertThat(
+            low.getValue("img2img").jsonObject.getValue("strength").jsonPrimitive.double,
+        ).isEqualTo(0.0)
     }
 
     // ---- 缺一不可 ----
@@ -160,9 +221,11 @@ class NovelAiRequestBuilderInpaintTest {
 
         assertThat(parameters).doesNotContainKey("mask")
         assertThat(parameters).doesNotContainKey("image")
-        // action 仍按模式标明意图（校验会在更早的环节拦下并给出明确原因）。
-        assertThat(json.getValue("action").jsonPrimitive.content)
-            .isEqualTo(NovelAiRequestBuilder.ACTION_INFILL)
+        // 残缺请求按载荷退化，action 与 model 保持同一个判定：
+        // 蒙版缺失由 validate 用 MissingInpaintMask 在更早的环节拦下。
+        assertThat(json.getValue("action").jsonPrimitive.content).isEqualTo("generate")
+        assertThat(json.getValue("model").jsonPrimitive.content)
+            .isEqualTo("nai-diffusion-5-full")
     }
 
     @Test
@@ -173,6 +236,29 @@ class NovelAiRequestBuilderInpaintTest {
 
         assertThat(parameters).doesNotContainKey("image")
         assertThat(parameters).doesNotContainKey("mask")
+    }
+
+    @Test
+    fun `有蒙版没底图时绝不能发出 常规模型ID加infill 的自相矛盾请求`() {
+        // 2026-09-14 用户实测踩中的 bug：移除底图后蒙版残留，请求带着
+        // infill 却用了常规模型 ID，服务端回 "doesn't support action infill"。
+        // 两道闸：validate 用 MissingInpaintBase 拦下；构造器按载荷退化为普通生成。
+        val maskOnly = listOf(mask())
+        val request = GenerationRequest(
+            params = params(),
+            mode = GenerationMode.INPAINT,
+            references = maskOnly,
+        )
+        assertThat(request.validate(profile))
+            .contains(ReferenceViolation.MissingInpaintBase)
+
+        val json = build(
+            maskOnly,
+            mapOf(ReferenceRole.INPAINT_MASK to listOf("MASK64")),
+        )
+        assertThat(json.getValue("action").jsonPrimitive.content).isNotEqualTo("infill")
+        assertThat(json.getValue("model").jsonPrimitive.content)
+            .isEqualTo(profile.model.apiModelId)
     }
 
     // ---- 校验 ----
@@ -197,9 +283,9 @@ class NovelAiRequestBuilderInpaintTest {
             references = listOf(base(), mask()),
         )
 
-        // 唯一的问题是能力位（接口未开放）；底图/蒙版/参数本身都合法。
-        assertThat(request.validate(fullProfile))
-            .containsExactly(ReferenceViolation.ModeUnsupported(GenerationMode.INPAINT))
+        // 能力位已实测开放（技术决策记录第十八节），
+        // 底图/蒙版/参数合法的请求不应有任何校验问题。
+        assertThat(request.validate(fullProfile)).isEmpty()
     }
 
     @Test
@@ -216,16 +302,15 @@ class NovelAiRequestBuilderInpaintTest {
             .contains(ReferenceViolation.ConflictingWithMode(GenerationMode.INPAINT))
     }
 
-    // ---- 模型能力：重绘属于 Image2Img 家族 ----
+    // ---- 模型能力位 ----
 
     @Test
-    fun `公开 API 目前一律不支持局部重绘`() {
-        // 服务端对 V4.5 的 Curated 与 Full 都回 "doesn't support action infill"，
-        // 因此在接口开放之前，四个模型的入口都是关闭的 —— 免得给用户一个
-        // 必然失败（在未核实的模型上还可能真扣费）的按钮。
+    fun `四个模型的重绘入口都开放`() {
+        // 真机实测通过（2026-09-14，技术决策记录第十八节）：
+        // 专用 -inpainting 模型 ID + infill 被服务端接受，蒙版约定 PAINTED_IS_WHITE 确认。
         ImageModel.entries.forEach { model ->
             val modelProfile = ModelCatalog.profileOf(model)
-            assertThat(modelProfile.supportsInpaint).isFalse()
+            assertThat(modelProfile.supportsInpaint).isTrue()
 
             val request = GenerationRequest(
                 params = params().copy(model = model),
@@ -233,13 +318,13 @@ class NovelAiRequestBuilderInpaintTest {
                 references = listOf(base(), mask()),
             )
             assertThat(request.validate(modelProfile))
-                .contains(ReferenceViolation.ModeUnsupported(GenerationMode.INPAINT))
+                .doesNotContain(ReferenceViolation.ModeUnsupported(GenerationMode.INPAINT))
         }
     }
 
     @Test
-    fun `接口开放后只需改能力位即可启用`() {
-        // 请求构造本身是按 OpenAPI 写好的：把 supportsInpaint 打开后，
+    fun `验证通过后只需改能力位即可启用`() {
+        // 请求构造本身已按官方前端对齐：把 supportsInpaint 打开后，
         // 校验通过、字段齐全 —— 这条断言锁住"代码已就绪"这件事。
         val fullProfile = ModelCatalog.profileOf(ImageModel.V5_FULL)
         val request = GenerationRequest(
@@ -257,6 +342,8 @@ class NovelAiRequestBuilderInpaintTest {
             upstream = fullUpstream,
             onProfile = fullProfile,
         )
+        assertThat(json.getValue("model").jsonPrimitive.content)
+            .isEqualTo("nai-diffusion-5-full-inpainting")
         assertThat(json.getValue("action").jsonPrimitive.content).isEqualTo("infill")
         assertThat(parameters(json)).containsKey("mask")
     }
@@ -264,14 +351,16 @@ class NovelAiRequestBuilderInpaintTest {
     // ---- 不影响其它模式 ----
 
     @Test
-    fun `纯文生图仍然使用 generate`() {
+    fun `纯文生图仍然使用 generate 且不携带任何重绘字段`() {
         val json = NovelAiRequestBuilder.build(
             profile = profile,
             request = GenerationRequest(params = params()),
             upstreamImages = emptyMap(),
         )
+        val parameters = parameters(json)
 
         assertThat(json.getValue("action").jsonPrimitive.content).isEqualTo("generate")
-        assertThat(parameters(json)).doesNotContainKey("mask")
+        listOf("mask", "add_original_image", "sm", "sm_dyn", "extra_noise_seed", "img2img")
+            .forEach { field -> assertThat(parameters).doesNotContainKey(field) }
     }
 }

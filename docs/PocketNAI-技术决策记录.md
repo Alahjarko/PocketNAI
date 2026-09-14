@@ -1438,3 +1438,371 @@ V1–V3 才是 autoSmea），而我们的请求**不发这两个字段**。
 
 **这不需要在代码里"解决"** —— 工具如实读、如实显示，用户可以在设置页手动纠正。
 但它是所有"报价和官网不一样"问题的第一嫌疑，排查时先看余额弹层里的原始读数。
+
+---
+
+## 十七、局部重绘的真正原因：重绘要换专用的 `-inpainting` 模型 ID（2026-09-14 下午）
+
+### 17.1 第十五节的结论是错的，错在模型 ID
+
+第十五节把"两次 `doesn't support action infill`"读成了"公开 API 不提供局部重绘"。
+同一件事换一个角度看：**服务端拒绝的是"常规模型 ID + infill"这个组合**，
+而不是 infill 本身。用第十六节反解计价矩阵的同一个方法（下载官方网页
+`novelai.net/image` 的 43 个 JS chunk 直接读），找到了网页端重绘的真实请求形态：
+
+- 网页端做局部重绘时调用 `generateInfill`，它的 `model` 字段先经过映射函数
+  （bundle 里的 `tM:()=>u`）——**常规模型 ID 换成对应的 `-inpainting` 变体**；
+- 然后与图生图共用同一条分发链，POST 到同一个
+  `https://image.novelai.net/ai/generate-image`，`action: "infill"`。
+
+也就是说我们此前的请求等于"拿 `nai-diffusion-4-5-curated` 去问它能不能 infill"，
+服务端如实回答"这个模型不行"。**答案一直是对的，是我们问错了模型。**
+
+### 17.2 模型映射（官方前端原样照搬）
+
+| 界面选的模型 | 重绘时实际发出的 `model` |
+|---|---|
+| `nai-diffusion-4-5-curated` | `nai-diffusion-4-5-curated-inpainting` |
+| `nai-diffusion-4-5-full` | `nai-diffusion-4-5-full-inpainting` |
+| `nai-diffusion-5-curated` | **`nai-diffusion-4-5-curated-inpainting`**（官方前端就是这样回落的） |
+| `nai-diffusion-5-full` | `nai-diffusion-5-full-inpainting` |
+
+代码落点：`ImageModel.inpaintingApiModelId`（枚举上一列，构造请求时按模式取用）。
+
+### 17.3 零成本交叉验证：suggest-tags 实测每个 ID
+
+`GET /ai/generate-image/suggest-tags?prompt=x&model=<ID>` 不需要鉴权、不消耗 Anlas，
+且会校验模型 ID（无效返回 400）。实测（2026-09-14）：
+
+| 模型 ID | 结果 |
+|---|---|
+| `nai-diffusion-4-5-curated-inpainting` | 200 ✅ |
+| `nai-diffusion-4-5-full-inpainting` | 200 ✅ |
+| `nai-diffusion-5-full-inpainting` | 200 ✅ |
+| `nai-diffusion-5-curated-inpainting` | **400 ❌（不存在）** |
+| `nai-diffusion-4-curated-inpainting` / `4-full-inpainting` / `3-inpainting` | 200 ✅ |
+
+`5-curated-inpainting` 不存在这件事与前端映射（V5 Curated 回落到
+4-5-curated-inpainting）**严丝合缝**：前端作者显然也知道它不存在。
+这是"反解结果可信"的强证据，不是巧合能解释的。
+
+### 17.4 官方 infill 请求的完整字段集合（与我们实现的差异）
+
+网页端发出的 infill 请求体（`{input, model, action, parameters, use_new_shared_trial}`），
+其中 `parameters` 在常规字段之外：
+
+| 字段 | 官方行为 | 我们此前 | 现在 |
+|---|---|---|---|
+| `model`（顶层） | `-inpainting` 变体 | 常规模型 ID ❌ | 变体 ✅ |
+| `image` / `mask` | 底图 / 蒙版 base64 | 同 ✅ | 同 |
+| `add_original_image` | 恒发 `false` | 不发 | 照发 `false` |
+| `sm` / `sm_dyn` | 带底图时恒发 `false` | 不发 | 照发（仅重绘路径） |
+| `extra_noise_seed` | 带底图且未显式设置时发 `seed - 1` | 不发 | 照发（仅重绘路径） |
+| 嵌套 `img2img` | **仅当** `inpaintImg2ImgStrength ≠ 1` 时发 `{strength, color_correct: true}` | 恒发 `{strength: 0.7}` | 按官方规则 |
+| 顶层 `strength` | 重绘请求里没有 | 没有 ✅ | 没有 |
+| 重绘强度默认值 | **1.0**（滑块初值；计价函数也读它） | 沿用图生图的 0.7 | 1.0 |
+| `use_new_shared_trial` | 恒发 `true` | 不发 | **仍不发**（语义不明，与试用账户有关；文生图不带它也能跑） |
+
+注意嵌套对象里 `color_correct: true` 与图生图顶层的 `color_correct: false` **相反**，
+两处都是官方前端的原样行为，不是笔误。图生图路径保持原样不动
+（字节不变，有测试钉死），上述"恒发字段"只落在重绘分支。
+
+### 17.5 蒙版形态：从"赌约定"变成"有官方实现背书"
+
+官方前端的蒙版管线（全部在客户端完成，bundle 里可读）：
+
+1. 编辑器导出蒙版 PNG（涂抹处为亮色、未涂抹为透明）；
+2. 最近邻缩到 **1/8 分辨率**（隐空间对齐：8 是 VAE 下采样倍数），按 155 阈值二值化；
+3. 提交前再拉伸回**生成尺寸**并合成到**黑色背景**上 —— 线上的蒙版就是
+   "与底图同尺寸、不透明、白=涂抹、黑=保留"的 PNG；
+4. 生成后客户端合成链 `replaceTransparent(→黑) → dilate → ×8 → blur → alphaMatchRed`
+   把返回图贴回原图，同样以"白=重画区域"工作。
+
+因此 `MaskConvention.CURRENT = PAINTED_IS_WHITE` 不再是"SD 系常见约定"的猜测，
+而是有官方实现背书。我们的蒙版（同尺寸、硬边二值、白涂抹/黑背景、无抗锯齿）
+与该形态一致；官方的 1/8 量化只是对齐隐空间下采样的优化，不改变语义，
+我们没有照搬（我们的蒙版本来就是硬边二值，服务端自己也会做同样的下采样）。
+
+B1 判别性探针仍然保留为上线前的最后一步（前端证据 ≠ 服务端语义），
+但它现在只负责"确认"，不再负责"二选一"。
+
+### 17.6 计价的相应修正
+
+官方计价函数里：`strength = mask ? (inpaintImg2ImgStrength ?? 1) : (image ? strength : 1)`。
+即**重绘的费用乘数是重绘强度而不是图生图强度**。代码落点：
+进入重绘时底图的默认强度改为 1.0（`ModelProfile.defaultInpaintStrength`），
+费用上下文按模式取对应默认值（`GenerateViewModel.pricingContextOf`）。
+由于乘数始终跟随"实际发出去的强度值"，其余计价逻辑不需要动。
+
+### 17.7 现状与重新启用的条件
+
+`supportsInpaint` 仍为 `false`：**换了模型 ID 之后服务端是否接受 infill 尚未实测**，
+而实测是一次真实生成（可能扣费），按纪律只能由用户手动发起。
+
+与第十五节相比，重新启用从"等服务端开放"变成"等一次用户授权的验证"：
+
+1. 用户手动触发一次重绘生成（建议直接按 B1 探针形态：蒙版只涂左半边 +
+   与底图完全不同的提示词，最小参数：V4.5 Curated + Normal + steps 23 + guidance 7.0 + 单张）；
+2. 出图且左半边变 → `infill` 通了且 `PAINTED_IS_WHITE` 正确，一次请求同时判定两件事；
+   仍回 `doesn't support action infill` → 专用模型 ID 也不接受公开调用，入口继续关闭；
+3. 成功则把 `ModelCatalog.supportsInpaint` 改成 `true`，其余代码都已就绪。
+
+蒙版内容与计费观测（B4）随这一次生成顺带完成（对比生成前后余额即可）。
+
+### 17.8 反解方法备注（日后复核用）
+
+- 素材：`novelai.net/image` 的 43 个 JS chunk（构建 `3102745-production`），
+  本次留档在 `.tooling/webbundle/`；
+- 定位路径：`infill` 全文搜 → `generateInfill` 实现（chunk 2952）→
+  分发函数 `K`（同 chunk）→ 端点常量 `ImageBackendUrl+"/ai/generate-image"`（_app chunk）→
+  模型映射 `tM:()=>u` 与模型枚举（_app chunk）→ 能力位 switch（含
+  `img2imgInpainting` / `charRefInpainting`，_app chunk）→
+  计价函数的 mask 分支（chunk 1601，§16 的同一个函数）；
+- 能力位表（前端视角）：V4.5 家族（含两个 `-inpainting` 变体）
+  `inpainting=T, img2imgInpainting=T, characterReferences=T, charRefInpainting=T`；
+  V5 家族 `charRef=F`（与我们"Vibe/PR 只有 V4.5"的既有结论一致）；
+- 顺带发现：官方有个 `POST /ai/generate-image/request-price` 端点（前端计价是本地的，
+  该端点用途未查），日后若要做服务端报价核对可以从它入手。
+
+---
+
+## 十八、局部重绘真机验证通过（2026-09-14 晚，用户授权的一次生成）
+
+### 18.1 探针设计
+
+用户授权一次真实生成，并在应用内备好前置状态（底图已挂、蒙版已涂、V4.5 Curated）。
+探针按 §17.7 的建议形态执行，一个请求同时判定两件事：
+
+| 项 | 值 |
+|---|---|
+| 模型 | `nai-diffusion-4-5-curated`（线上发 `nai-diffusion-4-5-curated-inpainting`） |
+| action | `infill` |
+| 尺寸 / 步数 / Guidance / 张数 | 832×1216（Normal）/ 23 / 7.0 / 1 |
+| 强度 | 1.0（官方默认 → 未发嵌套 `img2img` 对象） |
+| 蒙版 | 用户涂抹的底部条带，覆盖 **3.91%** 像素，横跨左右两半 |
+| 提示词 | 换成与底图完全不同的 `cyberpunk city street at night, neon signs, rain, no humans` |
+| 账号 | Opus 订阅生效中，预估 **免费** |
+
+这个蒙版形状比"涂左半边"更狠：两种约定分别预测"3.91% 的区域变"与
+"其余 96.09% 的区域变"，一眼可分。
+
+### 18.2 结果：两个问题一次判完
+
+**服务端接受了请求并出图**（状态 SUCCEEDED，无 400）。对底图 / 蒙版 / 出图
+做逐像素比对（任通道差值 >10 记为"变化"）：
+
+| 指标 | 数值 | 对照：上午 img2img+蒙版那次 |
+|---|---|---|
+| 蒙版覆盖 | 3.91% | 3.55% |
+| 蒙版内像素变化率 | **98.9%** | （蒙版内几乎没变） |
+| 蒙版外像素变化率 | **0.74%** | 52.6% 全图变 |
+| 变化总量占全图 | 4.58% | 52.6% |
+| 变化落在蒙版内 / 外 | **84.6% / 15.4%** | 3.3% / 96.7% |
+
+蒙版外那 0.74% 是边缘羽化级别的零散点，与上午"整图重画"是两个数量级的差别。
+出图目视：蒙版条带（鞋的位置）变成霓虹灯牌，人物其余部分与底图一致。
+
+**结论 1：`infill` + 专用 `-inpainting` 模型 ID 在公开 API 上走通。**
+上午的 `doesn't support action infill` 确认是模型 ID 用错，不是功能缺失。
+
+**结论 2：蒙版约定是 `PAINTED_IS_WHITE`（白=重画、黑=保留）。**
+若约定相反，变化的应是那 96%。`MaskConvention.CURRENT` 从"有前端背书"升级为"实测确认"。
+
+**结论 3（B4 计费）：这次重绘没有扣费**（余额刷新前后都是 400 Anlas），
+与本地计算器按官方规则给出的"免费"一致 —— Opus 免费单张对重绘生效
+（面积 ≤ 1024²、steps ≤ 28、单张、有订阅权益；强度乘数 1.0）。
+
+### 18.3 随之固化的实现事实
+
+- 请求里实际发出的字段组合（含 `add_original_image=false`、`sm=false`、
+  `sm_dyn=false`、`extra_noise_seed=seed-1`、无嵌套 `img2img`）被服务端接受，
+  这就是重绘路径的已验证基线；
+- 历史记录正确：`generations.mode = INPAINT`，`reference_images` 同时落
+  IMG2IMG（strength 1.0）与 INPAINT_MASK 两行；
+- 底图导入时的 Cover 裁切保证编辑器坐标与提交像素一一对应（本次探针的
+  蒙版位置与出图变化区域吻合，没有错位）。
+
+### 18.4 代码状态
+
+`ModelCatalog.supportsInpaint = true`（四个模型全部开放；V5 Curated 的重绘
+按官方前端映射回落到 `nai-diffusion-4-5-curated-inpainting`）。
+局部重绘从"代码就绪、能力位 false"转为**正式可用**。
+蒙版 1/8 量化那一步官方优化我们没有照搬（我们的蒙版本来就是硬边二值，
+服务端会自己做隐空间下采样）—— 本次出图边缘没有可见问题，维持现状。
+
+### 18.5 跟进修复：移除底图后残留的蒙版导致 400（用户实测踩中）
+
+验证通过后用户第一次正常使用就踩中一个状态管理 bug：在重绘状态下点掉底图（X），
+再切到 V4.5 Full 想普通生图，结果收到
+`HTTP 400: Model nai-diffusion-4-5-full doesn't support action infill`。
+
+**根因是三层判定各说各话**：
+
+1. `onRemoveReference()` 只清底图、不清蒙版 → 状态里只剩蒙版；
+2. 模式判定只看"有没有蒙版" → 仍停在 INPAINT；
+3. 请求构造里 action 看模式（INPAINT 就发 infill）、model 却看载荷是否齐备
+   （缺底图 → 用常规模型 ID）→ 发出"常规模型 ID + infill"的自相矛盾组合，
+   服务端如实 400。而 `GenerationRequest.validate` 当时只查蒙版、不查底图，
+   全程没有任何一道闸拦住它。
+
+**修复（四层，纵深防御）**：
+
+| 层 | 改动 |
+|---|---|
+| 交互 | `onRemoveReference()` 连坐作废蒙版（与笔画/扩张量一起清空）—— 底图没了，重绘模式即结束 |
+| 校验 | `GenerationRequest.validate` 新增 `MissingInpaintBase`：INPAINT 必须有底图 |
+| 构造 | `action` 与 `model` 改为**同一个判定**（载荷齐备才走 infill/-inpainting ID）；残缺请求只会退化成普通生成，不可能再发出自相矛盾的组合 |
+| 状态 | `mode` 判定改为"蒙版与底图同时在场才算 INPAINT"；草稿恢复时丢掉缺底图的残留蒙版（自愈旧版本留下的残缺草稿）；摘要行的"重绘"标记跟随 mode |
+
+有回归测试钉住用户这次的精确场景（`有蒙版没底图时绝不能发出 常规模型ID加infill 的自相矛盾请求`）。
+真机复现验证：旧草稿冷启动后蒙版被自愈丢弃，摘要行不再挂"重绘"，普通生图恢复可用。
+
+### 18.6 蒙版对齐隐空间网格（8×8），消除"边缘不明材质"（2026-09-14 晚）
+
+用户实测：以 `black pantyhose` 出底图、涂腿部、`white pantyhose` 重绘，
+结果在蒙版边界生成了一圈白色蕾丝状的不明材质。逐像素核对：蒙版内 99.3%
+重画、蒙版外 0.97% —— 蒙版语义没问题，问题出在**边界圈的过渡**。
+
+根因：服务端在隐空间（分辨率的 1/8，即 8×8 像素一格）解释蒙版。
+我们此前提交任意精度的全分辨率硬边蒙版，边界会切穿隐空间格，
+经服务端下采样后产生"半涂半不涂"的边缘格，模型就在那圈里发明过渡材质。
+官方前端的做法是把蒙版先量化到 1/8 再拉伸回来（每个格子都是确定的纯黑/纯白）。
+
+修复：`MaskImageProcessor.render` 落盘前把蒙版最近邻缩到 1/8 再放回
+（`snapToLatentGrid`），与官方管线等价。输入本来就是硬边二值，
+最近邻缩放保持二值，无需阈值化。编辑器的实时预览保持平滑（差距最多半格 4px），
+编辑器提示语补了一句"蒙版边缘会按 8px 网格对齐"。
+
+真机验证（不消耗 Anlas）：在 emulator-5558 上开编辑器画一笔 → 完成 →
+拉出落盘蒙版逐格校验：只有纯黑/纯白两种颜色、全部 15808 个 8×8 格均匀一致。
+
+注意：网格对齐消除的是"边界模糊"这一类瑕疵；蒙版圈得紧贴内容边缘时
+模型仍会在边界发明过渡（这是重绘的固有行为，官方文档的建议是把蒙版扩张一点）。
+扩张滑块（0–24px）就是干这个的。
+
+---
+
+## 十九、图片元数据导入（2026-09-14 晚，用户要求）
+
+### 19.1 需求与结论
+
+用户要求"做一个读取图片 metadata 的功能"：在 Image2Image 选图时，如果这张图是 NovelAI
+生成的，就把里面的提示词与参数导入编辑区。**不联网、不需要订阅、不消耗 Anlas** ——
+纯本地解析。
+
+**结论：可以做，而且我们自己的生成图天然就是样本。**
+`GET /ai/generate-image` 返回的 PNG 里，服务端**已经写好了完整的参数元数据**，
+落盘时没有被破坏（`files/generations/<id>/0001.png`）。因此"从历史选择"这条路径
+导入的正是自家生成的图，元数据完整。
+
+### 19.2 真实文件长什么样（本机实测，不是推测）
+
+拉一张真实生成图，PNG 结构是：
+
+```text
+IHDR → IDAT × N → tEXt(Comment) → tEXt(Title) → tEXt(Description)
+     → tEXt(Software) → tEXt(Source) → tEXt(Generation_time) → pHYs → IEND
+```
+
+| 关键字 | 值示例 | 说明 |
+|---|---|---|
+| `Software` | `NovelAI` | **唯一的"这是不是 NovelAI 图"判据** |
+| `Source` | `NovelAI Diffusion V5 DB276663` | 模型名 + 模型哈希 |
+| `Description` | 提示词全文 | 与 `Comment.prompt` 逐字节相同（已比对） |
+| `Comment` | 5 KB 的 JSON | 全部参数 |
+| `Generation_time` | `1.3046269710175693` | ⚠️ **下划线**；官方 WebP 样本里写的是 `Generation time` |
+| `Title` | `AI generated image` | 无信息量 |
+
+`Comment` JSON 的关键字段（真实值）：
+
+```json
+{"prompt": "...", "steps": 23, "width": 832, "height": 1216, "scale": 7.0,
+ "cfg_rescale": 0.0, "seed": 495204733, "n_samples": 1, "sampler": "k_euler_ancestral",
+ "noise_schedule": "karras", "sm": false, "sm_dyn": false, "uc": "",
+ "v4_prompt": {"caption": {"base_caption": "...", "char_captions": []},
+               "use_coords": null, "use_order": null, "legacy_uc": null},
+ "v4_negative_prompt": {"caption": {"base_caption": "", "char_captions": []}},
+ "reference_strength_multiple": [], "director_reference_strengths": null,
+ "model_name": "NovelAI Diffusion V5", "model_hash": "DB276663", "version": 1}
+```
+
+两代接口的差别：**V5 的 Comment 里有 `model_name`/`model_hash`，V4.5 的没有** ——
+所以模型识别不能只靠 Comment，必须以 `Source` 为准。
+
+### 19.3 官方前端怎么做的（反解，2026-09-14）
+
+官方 `image2image` 上传后的那个面板（用户提供的截图）由 `pages/image` 的 chunk 实现，
+关键语义全部反解出来并对齐：
+
+| 项 | 官方行为 | 我们的实现 |
+|---|---|---|
+| 判定"有元数据" | `Software` 含 `NovelAI` 且 `Comment` 可解析 | 同（`Comment` 坏了也认，只是没有参数） |
+| 提示词来源 | `Description`（勾 Actual Prompt 时用 `actual_prompts.prompt.base_caption`） | 同（`Description` → `Comment.prompt` → v4 caption 回退） |
+| 参数来源 | `Comment` 经**白名单**过滤：19 个键（`scale/seed/steps/strength/noise/sampler/sm/sm_dyn/uc/dynamic_thresholding/cfg_rescale/noise_schedule/legacy_v3_extend/width/height/skip_cfg_above_sigma/extra_passthrough_testing/v4_prompt/v4_negative_prompt`） | 我们只取自己认识的字段，同样是白名单；`prompt`/`n_samples` 官方都不取 |
+| 质量标签 | 按 `\|` 切块，要求**每一块**都以候选后缀结尾才剥离，并设对应预设；都不匹配则 `qualityPresetId="none"` | 同（用我们自己的后缀表：Standard / Light） |
+| Clean Imports | `.replace(/[[\]{}]/g,"").replace(/,(?=[^ ])/g,", ").replace(/ ,/g,",")` | 逐字符照抄 |
+| 模型 | `Source` 的哈希查表；V5 只有 `657484A5`/`0ADF9AB7` 是 Full，其余 V5 一律 Curated | 同（表已用本机数据库交叉验证） |
+| 尺寸 | 按预设匹配 | 同；**不是预设就明确说"不改"，不做"最接近"** |
+| Seed / Clean Imports | 默认不勾 | 同 |
+
+### 19.4 模型哈希表（已用本机数据验证）
+
+`Source` 里的人话部分**分不出 Curated 与 Full**（两者名字相同），只有哈希不同。
+反解出的表与本机 11 张生成图的 `Source` × 数据库 `modelApiId` **完全一致**：
+
+| 数据库 modelApiId | Source 哈希 |
+|---|---|
+| `nai-diffusion-4-5-full` | `4BDE2A90`、`1229B44F`（+ `B9F340FD`、`F3D95188`） |
+| `nai-diffusion-4-5-curated` | `C02D4F98`、`5AB81C7C`、`B5A2A797` |
+| `nai-diffusion-5-full` | `0ADF9AB7`（+ `657484A5`） |
+| `nai-diffusion-5-curated` | 其余 V5 哈希（官方 default 分支） |
+
+认不出的 `Source`（V3 / SDXL / 更早）**保持当前模型不变**并显示原文 ——
+绝不静默映射成 V4.5，那会让用户以为参数对上了。
+
+### 19.5 三条守住的边界
+
+1. **必须从用户选择的原始文件读，不能从归一化后的参考图读。**
+   `ReferenceImageProcessor` 会解码再重新编码 PNG，`tEXt` 全部丢失。
+   因此 `onReferencePicked` 里先 `metadataInspector.inspect(source)`，再
+   `referenceImporter.import(source)`。顺序反了功能就永远不生效（且不会报错）。
+2. **只导入明确认识的字段。** 解析器不认识的值一律留空并记录原文，
+   由规划器逐项降级成"跳过 + 说明"，绝不反射进请求。
+3. **Characters 只报告数量，不导入。** 多角色提示词还没实现，把角色词拼进基础
+   提示词会丢掉角色的独立反向词、位置坐标、数组顺序与 `use_coords` ——
+   那比不支持更糟。官方面板里的 `Characters` / `Append` 我们也**不显示**。
+
+### 19.6 实现
+
+| 层 | 文件 | 职责 |
+|---|---|---|
+| 纯 Kotlin | `domain/metadata/PngTextChunks.kt` | 流式读 `tEXt`/`iTXt`/`zTXt`，带全套限额（单块 1 MiB、解压 1 MiB、总量 2 MiB、chunk 长度上限 64 MiB） |
+| 纯 Kotlin | `domain/metadata/NovelAiMetadataParser.kt` | 关键字归一（`Generation_time` ≡ `Generation time`）→ 领域模型；`NovelAiModelHashes` 模型表 |
+| 纯 Kotlin | `domain/metadata/MetadataImportPlanner.kt` | 逐项降级 + 质量标签去重 + Clean Imports + `MetadataImportNote` 清单 |
+| Android | `data/image/AndroidImageMetadataInspector.kt` | `ReferenceSource` → 流；magic 识别 JPEG/WebP 并如实报"格式不支持" |
+| UI | `ui/generate/MetadataImportDialog.kt` | 勾选项 + 将改动清单 + 逐条说明 |
+| 接线 | `GenerateViewModel.onReferencePicked` / `confirmMetadataImport` | 探查在归一化之前；导入在一个 `_state.update` 里原子应用 |
+
+## 19.7 真机验证（2026-09-14 晚）
+
+在 MuMu 上走了一遍真实流程：图生图 → 从历史选择 → 选一张自家生成的 V5 图 →
+弹出"这张图带 NovelAI 元数据"（模型、耗时、五个勾选项）→ 导入。
+
+结果：提示词变成元数据里的提示词、质量标签被剥离并设为 Standard、尺寸/Steps/Guidance/
+采样器按元数据设置、参考图正常挂上、**没有自动生成**。
+
+**过程中抓到一个真 bug**：一开始把 `promptTemplate` 设成了元数据里的**原始**提示词
+（含质量标签），而 `params.prompt` 是剥掉标签的版本 —— 编辑器显示的是 `promptTemplate`，
+于是界面看起来"标签还在"，而生成时又会追加一次，等于**标签翻倍**。
+修法：模板与提交值保持一致（勾了"实际提示词"时官方网页也是把展开值写进输入框）。
+这条只有真机跑一遍才会发现，纯单测覆盖不到"编辑器绑定的是哪个字段"。
+
+### 19.8 没做的事（明确的边界）
+
+- **JPEG / WebP**：只识别格式并说明"首版仅支持 NovelAI 原始 PNG"。相册里的照片
+  大多是 JPEG，直接被判为不支持 —— 而不是含糊地说"这张图没有元数据"。
+- **Vibe / Precise Reference 的原始素材**：不在图片里，无法恢复，只提示"检测到用过"。
+  绝不建一条空引用冒充恢复。
+- **图生图 / 重绘的原始底图**：同上。
+- **从画廊详情页直接导入**：目前入口在选图流程里（官方也是这样）。
+- **多角色（Characters / Append）**：等多角色提示词功能落地后再开。

@@ -149,10 +149,10 @@ fun ReferenceImageSection(
                     onRemove = viewModel::onRemoveReference,
                 )
 
-                // 局部重绘入口：底图就绪才出现。重绘属于 Image2Img 家族，
-                // 因此这里不额外做模型判断。
+                // 局部重绘入口：底图就绪才出现。
                 if (!state.supportsInpaint) {
-                    // 不支持的档位说清楚原因与下一步（切到 Full），而不是只把按钮藏起来。
+                    // 不支持的模型说清楚原因，而不是只把按钮藏起来。
+                    // （当前四个模型都支持，这个分支留给将来可能出现的不支持模型。）
                     Text(
                         text = stringResource(
                             R.string.inpaint_needs_base,

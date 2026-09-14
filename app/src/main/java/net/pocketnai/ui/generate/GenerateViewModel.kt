@@ -42,6 +42,12 @@ import net.pocketnai.data.image.MaskImageProcessor
 import net.pocketnai.domain.image.PreparedReference
 import net.pocketnai.domain.image.ReferenceImageImporter
 import net.pocketnai.domain.image.ReferenceSource
+import net.pocketnai.domain.metadata.ImageMetadataInspector
+import net.pocketnai.domain.metadata.MetadataImportPlan
+import net.pocketnai.domain.metadata.MetadataImportPlanner
+import net.pocketnai.domain.metadata.MetadataImportSelection
+import net.pocketnai.domain.metadata.MetadataProbeResult
+import net.pocketnai.domain.metadata.NovelAiImageMetadata
 import net.pocketnai.domain.model.DirectorReferenceKind
 import net.pocketnai.domain.model.GenerationDraft
 import net.pocketnai.domain.model.GenerationMode
@@ -80,6 +86,7 @@ class GenerateViewModel(
     private val draftPreferences: GenerationDraftPreferences,
     private val tagSuggestionSource: TagSuggestionSource,
     private val referenceImporter: ReferenceImageImporter,
+    private val metadataInspector: ImageMetadataInspector,
     private val accountBalanceRepository: AccountBalanceRepository,
     private val settingsStore: SettingsStore,
     private val costCalculator: AnlasCostCalculator = AnlasCostCalculator(),
@@ -153,7 +160,20 @@ class GenerateViewModel(
          * 与自己刚打的字不匹配的建议。
          */
         val suggestionQuery: String = "",
+        /**
+         * 选图时读到的 NovelAI 元数据。非空时界面弹"要不要导入这张图的参数"。
+         *
+         * 它只影响提示词与参数，**不会自动开始生成**：导入完成后仍要用户自己点生成，
+         * 因为同 Seed 同参数很容易再产出一张几乎一样的图，而那是要花 Anlas 的。
+         */
+        val metadataCandidate: MetadataCandidate? = null,
     ) {
+        /** 待导入的元数据 + 当前勾选。 */
+        data class MetadataCandidate(
+            val metadata: NovelAiImageMetadata,
+            val selection: MetadataImportSelection = MetadataImportSelection(),
+        )
+
         val profile: ModelProfile get() = ModelCatalog.profileOf(params.model)
 
         val randomizerCombinations: Long get() = PromptRandomizer.estimateCombinations(promptTemplate)
@@ -192,12 +212,17 @@ class GenerateViewModel(
         /** 蒙版是否已经在编辑器里画过（用于界面提示与生成按钮的可用性）。 */
         val hasInpaintMask: Boolean get() = inpaintMask != null
 
+        /** 剩余的 Vibe 槽位。 */
+
         val remainingVibeSlots: Int
             get() = (profile.maxVibeReferences - vibeReferences.size).coerceAtLeast(0)
 
         val mode: GenerationMode
             get() = when {
-                hasInpaintMask -> GenerationMode.INPAINT
+                // 重绘要求底图与蒙版同时在场：只有蒙版没有底图是残缺状态
+                // （旧版本曾允许移除底图后蒙版残留），绝不能按 INPAINT 提交 ——
+                // 那会发出"常规模型 ID + infill"的自相矛盾请求被服务端 400。
+                hasInpaintMask && inpaintBase != null -> GenerationMode.INPAINT
                 directorReferences.isNotEmpty() -> GenerationMode.PRECISE_REFERENCE
                 referenceSource != null -> GenerationMode.IMG2IMG
                 else -> GenerationMode.TXT2IMG
@@ -230,14 +255,23 @@ class GenerateViewModel(
 
     private fun restoreDraft(): UiState {
         val draft = draftPreferences.load() ?: GenerationDraft.defaults()
+        val restoredBase = draft.references.firstOrNull { it.role == ReferenceRole.IMG2IMG }
+        // 只有蒙版没有底图的草稿是残缺状态（旧版本允许移除底图后蒙版残留，
+        // 直接提交会被服务端 400）。恢复时自愈：蒙版失去底图就没有意义，
+        // 丢掉它，而不是把它带进一次必然失败的生成。
+        val restoredMasks = if (restoredBase != null) {
+            draft.references.filter { it.role == ReferenceRole.INPAINT_MASK }
+        } else {
+            emptyList()
+        }
         return UiState(
             params = draft.params,
             promptTemplate = draft.promptTemplate,
             negativeTemplate = draft.negativeTemplate,
-            referenceSource = draft.references.firstOrNull { it.role == ReferenceRole.IMG2IMG },
+            referenceSource = restoredBase,
             directorReferences = draft.references.filter { it.role == ReferenceRole.DIRECTOR },
             vibeReferences = draft.references.filter { it.role == ReferenceRole.VIBE },
-            inpaintReferences = draft.references.filter { it.role == ReferenceRole.INPAINT_MASK },
+            inpaintReferences = restoredMasks,
         )
     }
 
@@ -332,9 +366,13 @@ class GenerateViewModel(
             },
             vibeCount = vibes.size,
             uncachedVibeCount = uncachedVibes,
-            // 官方式子把 Strength 当作基础费用的乘数；图生图/重绘用的是请求里真正发出去的那个值。
+            // 官方式子把 Strength 当作基础费用的乘数；图生图/重绘用的是请求里真正发出去的那个值：
+            // 图生图是顶层 strength（默认 0.7），重绘是 inpaintImg2ImgStrength（默认 1.0）。
             strengthMultiplier = if (state.referenceSource != null) {
-                state.referenceSource?.strength ?: state.profile.defaultImg2ImgStrength
+                state.referenceSource?.strength ?: when (state.mode) {
+                    GenerationMode.INPAINT -> state.profile.defaultInpaintStrength
+                    else -> state.profile.defaultImg2ImgStrength
+                }
             } else {
                 1.0
             },
@@ -578,6 +616,10 @@ class GenerateViewModel(
         _state.update { it.copy(referenceBusy = true, referenceError = null) }
 
         viewModelScope.launch {
+            // 元数据必须在**归一化之前**从原始文件读：参考图落盘时会重新编码 PNG，
+            // 那时 tEXt 文本块已经没了（见 ImageMetadataInspector 的说明）。
+            val probed = metadataInspector.inspect(source)
+
             when (val outcome = referenceImporter.import(source)) {
                 is Outcome.Success -> {
                     val prepared = outcome.value
@@ -596,6 +638,9 @@ class GenerateViewModel(
                             // 换底图必须作废旧蒙版：蒙版是按上一张底图的尺寸裁的，留着就会错位。
                             inpaintReferences = emptyList(),
                             params = current.params.copy(size = sizeForSource(profile, prepared)),
+                            // 只有确认是 NovelAI 图片才弹导入框：普通照片弹一个"没有元数据"是噪音。
+                            metadataCandidate = (probed as? MetadataProbeResult.Found)
+                                ?.let { UiState.MetadataCandidate(it.metadata) },
                         )
                     }
                 }
@@ -607,8 +652,94 @@ class GenerateViewModel(
         }
     }
 
+    /** 用户在导入对话框里改了勾选。 */
+    fun onMetadataSelectionChange(selection: MetadataImportSelection) {
+        _state.update { current ->
+            val candidate = current.metadataCandidate ?: return@update current
+            current.copy(metadataCandidate = candidate.copy(selection = selection))
+        }
+    }
+
+    /**
+     * 当前勾选会导入什么、会跳过什么。
+     *
+     * 纯函数、按需计算（不塞进 UiState）：勾选一变界面就要立刻显示新的预览，
+     * 而把它放进状态流意味着每次勾选写一遍状态、多一次重组。
+     */
+    fun currentMetadataPlan(): MetadataImportPlan? {
+        val current = _state.value
+        val candidate = current.metadataCandidate ?: return null
+        return MetadataImportPlanner.plan(candidate.metadata, current.params, candidate.selection)
+    }
+
+    /** 关闭导入对话框：图片照常留作参考图，只是不导入参数。 */
+    fun dismissMetadataImport() {
+        _state.update { it.copy(metadataCandidate = null) }
+    }
+
+    /**
+     * 按当前勾选把元数据写进编辑区。
+     *
+     * **一次性原子应用**：模型、尺寸、采样器之间互相约束（采样器可能不被新模型支持、
+     * 尺寸必须在合法区间内），分几次 update 会出现短暂的非法中间态，
+     * 草稿也会被连续写盘好几次。
+     *
+     * 导入后**不生成、不聚焦生成按钮**：由用户自己决定什么时候点。
+     */
+    fun confirmMetadataImport() {
+        val current = _state.value
+        val candidate = current.metadataCandidate ?: return
+        val plan = MetadataImportPlanner.plan(candidate.metadata, current.params, candidate.selection)
+
+        _state.update { state ->
+            val targetModel = plan.model ?: state.params.model
+            val profile = ModelCatalog.profileOf(targetModel)
+            val updated = state.params.copy(
+                model = targetModel,
+                prompt = plan.prompt ?: state.params.prompt,
+                negativePrompt = plan.negativePrompt ?: state.params.negativePrompt,
+                size = plan.size ?: state.params.size,
+                steps = plan.steps ?: state.params.steps,
+                guidance = plan.guidance ?: state.params.guidance,
+                cfgRescale = plan.cfgRescale ?: state.params.cfgRescale,
+                sampler = plan.sampler ?: state.params.sampler,
+                noiseSchedule = plan.noiseSchedule ?: state.params.noiseSchedule,
+                qualityTags = plan.qualityTags ?: state.params.qualityTags,
+                seedMode = if (plan.seed != null) SeedMode.FIXED else state.params.seedMode,
+                baseSeed = plan.seed ?: state.params.baseSeed,
+            )
+            state.copy(
+                // 采样器/调度/尺寸都按新模型再过一遍，避免导入出的组合服务端不认。
+                params = profile.normalize(updated),
+                // 模板与提交值保持一致：勾了"实际提示词"时官方网页也是把展开值写进输入框
+                // （模板原文不再保留），否则那个勾选项在我们这里等于没有作用 ——
+                // 提交时提示词会从模板重新抽选一遍。
+                promptTemplate = plan.prompt ?: state.promptTemplate,
+                metadataCandidate = null,
+                // 导入的参数是"这张图的",与上一次的模型切换提示无关。
+                modelSwitchNotice = null,
+            )
+        }
+    }
+
+    /**
+     * 移除图生图起点图。
+     *
+     * 必须**连坐作废蒙版**：蒙版是"在这张底图上涂的"，底图没了，重绘模式也就没了。
+     * 否则状态里只剩蒙版，模式判定仍停在 INPAINT，提交时会发出一个没有底图的
+     * infill 请求被服务端拒绝 —— 2026-09-14 用户实测踩中
+     * （`Model ... doesn't support action infill`，见技术决策记录第十八节）。
+     */
     fun onRemoveReference() {
-        _state.update { it.copy(referenceSource = null, referenceError = null) }
+        _state.update {
+            it.copy(
+                referenceSource = null,
+                inpaintReferences = emptyList(),
+                referenceError = null,
+            )
+        }
+        _inpaintStrokes.value = emptyList()
+        _inpaintDilation.value = 0f
     }
 
     // ---- 局部重绘 ----
@@ -643,9 +774,11 @@ class GenerateViewModel(
                     _state.update { state ->
                         state.copy(
                             referenceBusy = false,
+                            // 重绘的默认强度是 1.0（蒙版内完全重画），与图生图的 0.7 不同；
+                            // 这是官方重绘面板的滑块初值（技术决策记录第十七节）。
                             referenceSource = ReferenceImage.img2imgSource(
                                 prepared = prepared,
-                                strength = state.profile.defaultImg2ImgStrength,
+                                strength = state.profile.defaultInpaintStrength,
                                 id = idGenerator(),
                                 createdAt = clock(),
                             ),

@@ -60,6 +60,14 @@ object ModelCatalog {
      */
     private const val DEFAULT_IMG2IMG_STRENGTH = 0.7
 
+    /**
+     * 局部重绘的 Strength 默认值：**1.0**（蒙版内完全重画）。
+     *
+     * 来源：官方网页前端 bundle（技术决策记录第十七节）——重绘面板的
+     * `inpaintImg2ImgStrength` 滑块初值是 1，且等于 1 时请求里不发送强度字段。
+     */
+    private const val DEFAULT_INPAINT_STRENGTH = 1.0
+
     /** Image2Img 的 Strength 区间。官方滑块是 0–1。 */
     private val IMG2IMG_STRENGTH_RANGE = NumericRange(min = 0.0, max = 1.0, step = 0.01)
 
@@ -179,15 +187,15 @@ object ModelCatalog {
         // 参考条件类功能目前只有 V4.5 能用，V5 不支持（账号所有者确认）。
         supportsVibeTransfer = model.family == GenerationFamily.V4_5,
         supportsDirectorReference = model.family == GenerationFamily.V4_5,
-        // 局部重绘：**公开 API 目前不接受** infill（V4.5 的 Curated 与 Full 都已实测被拒，
-        // 详见技术决策记录第十五节）。因此四个模型一律关闭入口 ——
-        // 一个必然失败、或（在未核实的模型上）可能真扣费的按钮没有存在价值。
-        // 服务端哪天开放这个 action，把这里改回按档位判定即可，其余代码都已就绪。
-        supportsInpaint = false,
+        // 局部重绘：四个模型都开放（真机实测通过，2026-09-14，技术决策记录第十八节）。
+        // 关键前提是请求侧的配合：model 字段必须换成 `ImageModel.inpaintingApiModelId`
+        // （专用的 `-inpainting` 模型 ID），用常规模型 ID 发 infill 必然 400。
+        supportsInpaint = true,
         maxVibeReferences = MAX_VIBE_REFERENCES,
         maxDirectorReferences = MAX_DIRECTOR_REFERENCES,
         img2imgStrengthRange = IMG2IMG_STRENGTH_RANGE,
         defaultImg2ImgStrength = DEFAULT_IMG2IMG_STRENGTH,
+        defaultInpaintStrength = DEFAULT_INPAINT_STRENGTH,
         directorReferenceRange = DIRECTOR_REFERENCE_RANGE,
         defaultDirectorStrength = DEFAULT_DIRECTOR_STRENGTH,
         defaultDirectorFidelity = DEFAULT_DIRECTOR_FIDELITY,

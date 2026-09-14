@@ -89,60 +89,79 @@
 
 ### 局部重绘（Inpaint）
 
-**一句话：功能已经完全实现，但入口被关掉了，因为公开 API 不接受它。**
-这是本仓库目前唯一一处"代码就绪、能力位为 false"的功能，改动前请先读完这一节。
+**一句话：功能已完成并真机验证通过（2026-09-14 晚），四个模型全部开放。**
+请求形态已与官方网页前端对齐且被服务端接受，别再重新设计。
 
-**请求形态（已实现，别再重新设计）**
+**请求形态（已实测验证，技术决策记录第十七、十八节）**
 
-- `action` 用 `infill`，底图放 `parameters.image`、蒙版放 `parameters.mask`，
-  强度放在**嵌套的** `parameters.img2img.strength`（OpenAPI 对它的说明是 `used by inpaint`）。
-- 蒙版必须与底图**同尺寸**、**硬边（关抗锯齿）**，且是二值语义。
-  约定（白色 vs 透明 = 重画区域）关在 `MaskConvention` 里，**尚未用真实生成验证**。
+- `action` 用 `infill`；**`model` 必须换成专用的 `-inpainting` 模型 ID**
+  （`ImageModel.inpaintingApiModelId`，例如 `nai-diffusion-4-5-curated` →
+  `nai-diffusion-4-5-curated-inpainting`）。用常规模型 ID 发 infill 必然 400
+  （`doesn't support action infill`）—— 历史上的拒绝全是这个原因。
+  映射含一条反直觉项：V5 Curated 回落到 `nai-diffusion-4-5-curated-inpainting`
+  （`5-curated-inpainting` 服务端不存在，suggest-tags 实测 400）。
+- 底图放 `parameters.image`、蒙版放 `parameters.mask`；重绘路径还按官方恒发
+  `add_original_image=false`、`sm=false`、`sm_dyn=false`、`extra_noise_seed=seed-1`。
+- 重绘强度默认 **1.0**（官方滑块初值，计价乘数也读它）：等于 1 时**不发**嵌套
+  `img2img` 对象；不等于 1 时发 `img2img={strength, color_correct: true}`。
+- 蒙版与底图**同尺寸**、**硬边（关抗锯齿）**、二值语义，约定 `PAINTED_IS_WHITE`
+  （白=重画、黑=保留、不透明 PNG）—— **已实测确认**：蒙版涂 3.91%，出图蒙版内
+  98.9% 重画、蒙版外仅 0.74% 变动。翻转点在 `MaskConvention`。
+- **落盘前必须做 8×8 隐空间网格对齐**（`MaskImageProcessor.snapToLatentGrid`，
+  最近邻缩 1/8 再放回，与官方前端管线等价）：任意精度的边界经服务端下采样会产生
+  "半涂半不涂"的边缘格，模型会在那里发明过渡材质（用户实测的"白色不明材质边界"）。
+  编辑器实时预览保持平滑（差距最多半格），网格对齐只作用于落盘的提交图。
 - 扩张用"笔刷半径加 N"实现（Minkowski 和），**不要**改成对位图做形态学卷积 ——
   那样会毁掉实时预览。橡皮不参与扩张。
-- 重绘与参考条件（Precise Reference / Vibe）互斥；换底图必须作废旧蒙版。
+- 重绘与参考条件（Precise Reference / Vibe）互斥；换底图必须作废旧蒙版，
+  **移除底图同理**（`onRemoveReference` 连坐清蒙版）。蒙版与底图必须同时在场：
+  缺底图的残留蒙版曾经漏过校验，发出"常规模型 ID + infill"的自相矛盾请求被
+  服务端 400（技术决策记录 §18.5）。校验侧有 `MissingInpaintBase` 兜底，
+  构造侧 action 与 model 共用同一个"载荷是否齐备"的判定，不许再脱钩。
+- 计费：Opus 免费单张对重绘同样生效（已实测：余额 400 → 400），
+  计算器按官方规则（强度乘数 = 重绘强度）即可，无附加费。
 
-**窘境：官方网页能做，公开 API 不做**
-
-官方文档、官方网页都有 Inpaint（网页上还能"大图零 Anlas 重绘"），但公开 API 的行为不同。
-2026-09-14 实测了三条路径，全部堵死（详见技术决策记录第十五节）：
+**历史教训：三条死路（别再试）**
 
 | 试过的路径 | 结果 |
 |---|---|
-| `action: "infill"` + `nai-diffusion-4-5-curated` | `HTTP 400 Model nai-diffusion-4-5-curated doesn't support action infill`（响应里还跟了一段 `500 Internal Server Error`） |
-| `action: "infill"` + `nai-diffusion-4-5-full` | `HTTP 400 Model nai-diffusion-4-5-full doesn't support action infill`（同样跟一段 500，看起来这个 action 在服务端的处理链本身就不完整） |
-| `action: "img2img"` + 蒙版 | **请求成功、出图，但蒙版被完全忽略** |
+| `infill` + 常规模型 ID（Curated 与 Full 都试过） | `HTTP 400 Model ... doesn't support action infill` —— 模型 ID 错了，不是功能没了 |
+| `img2img` + 蒙版 | **请求成功、出图，但蒙版被完全忽略**（定量证据：蒙版覆盖 3.55%，输出却变了 52.6%、96.7% 的变化在蒙版外） |
+| 无鉴权探测 action 是否开放 | 401 先于模型校验，学不到东西 |
 
-第三条的结论是**定量**得出的，不是"看起来没生效"：蒙版只覆盖 3.55% 的像素，
-而输出有 52.6% 的像素发生变化、变化区域的包围盒是整张图，且 96.7% 的变化落在蒙版外。
-也就是说 `img2img` 会把蒙版字段当空气，用户会得到"整张图被重画"的结果 ——
-比没有这个按钮更糟，因为它看起来是成功的。
-
-**为什么保留实现而不是删掉**
-
-- 编辑器（画笔/橡皮/撤销重做/清空二次确认/扩张实时预览）、蒙版渲染、请求构造、
-  存储与入口都已完成，删掉等于把"接口一开放就能用"变成"要重新做一遍"；
-- 但**留着入口**是有害的：用户会以为点了能生效，在未核实的模型上还可能真扣费。
-  因此收敛为一个常量：`ModelCatalog` 里四个模型的 `supportsInpaint = false`，
-  界面据此隐藏入口并说明原因。
-
-**重新启用的条件（三条都要满足）**
-
-1. 服务端开放 `infill`（或明确给出替代 action）。验证方式是先发一次请求看是否还回
-   `doesn't support action infill`，**不要**靠推断；
-2. 蒙版约定必须先用判别性探针确认（`PAINTED_IS_WHITE` vs `PAINTED_IS_TRANSPARENT`，
-   探针方法写在 `MaskConvention` 的注释里）。这一步之前**不允许**打开入口 ——
-   约定猜错的后果是"涂的区域没变、没涂的区域全变了"；
-3. 由用户明确授权，且一次只发一个请求、用已知免费的最小参数
-   （V4.5 Curated + Normal + steps 23 + guidance 7.0 + 单张）。
+第三条尤其危险：`img2img` 会把蒙版字段当空气，用户会得到"整张图被重画"的结果 ——
+比没有按钮更糟，因为它看起来是成功的。
 
 **不要做的事**
 
-- 不要因为它"属于 Image2Img 家族、V5 也能用"就以为换个模型就能跑 ——
-  两个档位都实测被拒；
-- 不要在未授权时为了"验证一下"发真实请求（上一次就是这么被叫停的：
-  账号余额有限，用户明确说"停"）；
-- 不要删除编辑器与蒙版渲染的代码，也不要把它标记成"未实现"。
+- 不要绕过 `ImageModel.inpaintingApiModelId` 给 `infill` 发常规模型 ID；
+- 不要把 `img2img` + 蒙版当作重绘的"降级路径"（蒙版会被静默忽略）；
+- 不要删除编辑器与蒙版渲染的代码。
+
+### 图片元数据导入（选图时读参数）
+
+- **必须在图片归一化之前读原始文件**：`ReferenceImageProcessor` 会解码再重新编码 PNG，
+  `tEXt` 文本块在那一步全丢。正确顺序是 `onReferencePicked` 里先
+  `metadataInspector.inspect(source)` 再 `referenceImporter.import(source)`；
+  反过来功能会**静默失效**（不报错，永远没有元数据）。
+- 只有 `Software` 含 `NovelAI` 才算元数据（与官方一致）。`Comment` 解析失败不算致命：
+  仍给出"这是 NovelAI 图"，只是没有参数。
+- **字段白名单**，只取我们认识的：`prompt/uc/width/height/steps/scale/cfg_rescale/
+  sampler/noise_schedule/seed`。不认识的值留空 + 逐项说明，**绝不反射进请求**。
+- 模型靠 `Source` 的哈希查表（`NovelAiModelHashes`，已用本机数据验证）——
+  `Source` 的可读名字分不出 Curated/Full。认不出的 `Source` 保持当前模型不变。
+- **尺寸不是内置预设时不改成"最接近的"**：尺寸一变，同 Seed 也复现不出原图。
+- **质量标签去重**：按 `|` 分块，每块都以候选后缀结尾才剥离并沿用对应预设；
+  都不匹配就保留原文并把质量标签设为 `None`（否则会重复追加一次）。
+  用我们自己的后缀表（`QualityTagsOption.appendedText`），不要用官方那张表 ——
+  V4.5 Curated 的官方后缀与我们不同。
+- **导入后模板与提交值必须一致**：编辑器绑定的是 `promptTemplate`，
+  而质量标签是在提交时追加到 `params.prompt` 的。只改一个会让标签翻倍。
+- **Characters 只报告数量，不导入**，界面也不显示官方的 `Characters` / `Append`：
+  多角色提示词没实现，硬拼会丢角色的独立反向词、位置与顺序。
+- 导入**不自动生成**（同 Seed 同参数很容易再产出一张几乎一样的图，而那要花 Anlas）。
+- 元数据是外部输入：读取有限额（单块 1 MiB、解压 1 MiB、总量 2 MiB），
+  且**不把 `Comment` 原文写进日志**（AGENTS.md 的安全约束）。
 
 ### 参考图的文件存储
 
@@ -266,6 +285,9 @@
   「不被滚走、展开收起都可见、不占额外高度」。详见技术决策记录 5.1。
 - 状态显示（未连接 / 生成中 / 失败 / 提示词为空 / 拖动提示）在头部第三行，
   由 `SheetStatusLine` 按优先级择一显示，收起态可见。
+- 悬浮层内容区的顺序是**提示词在前、参考图三个区块（图生图 / Precise Reference /
+  Vibe Transfer）在最底部**（2026-09-14 用户明确要求）：提示词是每次进来都要写的东西，
+  参考图只在需要时用。不要把参考图挪回顶部 —— 那会把提示词压到首屏之外。
 - 悬浮层的内部滚动只在展开时挂载（见 `GenerateSheet` 的 `expanded` 参数），
   否则手指在表单上往上拖只会滚内容、永远拉不开悬浮层。
 

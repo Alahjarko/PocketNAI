@@ -359,6 +359,9 @@ fun renderMask(strokes: List<MaskStroke>, size: PixelSize, convention: MaskConve
 
 ### 9.3 结论：只支持 Full 档位
 
+> ⚠️ **本节已被 §9.5 推翻**：真正的原因是请求用了常规模型 ID（应换用专用
+> `-inpainting` 模型），不是档位差异。本节留作历史记录。
+
 账号所有者确认：官方网页上 Curated 确实能重绘，但**公开 API 只在 Full 档位接受 `infl`
 （Curated 会被服务端拒绝），并且 Curated 走 `img2img` + 蒙版时蒙版被完全忽略**
 （定量验证见技术决策记录 §15.8）。因此本功能的适用范围定为：
@@ -377,3 +380,41 @@ fun renderMask(strokes: List<MaskStroke>, size: PixelSize, convention: MaskConve
 
 在此之前，`MaskConvention.CURRENT` 取 `PAINTED_IS_WHITE`（SD 系常见约定），
 `supportsInpaint` 对 Full 返回 true。两处都是一行常量。
+
+### 9.5 反转：不是"API 不做"，是我们发错了模型 ID（2026-09-14 下午）
+
+§9.3 的结论被推翻。反解官方网页前端 bundle（与计费矩阵同一方法）发现：
+**网页端做局部重绘时把 `model` 换成专用的 `-inpainting` 变体**
+（`nai-diffusion-4-5-curated` → `nai-diffusion-4-5-curated-inpainting`，完整映射与
+零成本验证见技术决策记录第十七节）。此前的两次 400 都是"拿常规模型 ID 问它能不能
+infill"，服务端如实回答"这个模型不行" —— 答案没错，是我们问错了模型。
+
+已按官方前端修正的事项：
+
+| 项 | 修正 |
+|---|---|
+| 模型 ID | `ImageModel.inpaintingApiModelId`，构造请求时按模式取用 |
+| `add_original_image=false`、`sm/sm_dyn=false`、`extra_noise_seed=seed-1` | 官方恒发，重绘路径照发（图生图不动） |
+| 嵌套 `img2img` | 仅当重绘强度 ≠ 1 时发 `{strength, color_correct: true}` |
+| 重绘强度默认值 | **1.0**（官方滑块初值；计价乘数也读它），不再是图生图的 0.7 |
+| 蒙版约定 | `PAINTED_IS_WHITE` 从"常见约定"升级为"有官方前端实现背书"（白=涂抹、黑=保留、不透明 PNG） |
+
+能力位仍保持 `false`：换新模型 ID 后服务端是否接受 infill **尚未实测**
+（实测即一次真实生成，只能由用户授权并手动发起）。B1 探针与"链路是否通"
+可以合并在同一次生成里判定：蒙版涂左半边 + 完全不同的提示词，左半边变了即双通过。
+通过后把 `supportsInpaint` 改成 `true` 即可，其余代码都已就绪。
+
+### 9.6 真机验证通过（2026-09-14 晚）
+
+用户授权并执行了那一次生成。结果（详见技术决策记录第十八节）：
+
+- `infill` + `nai-diffusion-4-5-curated-inpainting` 被服务端接受，正常出图；
+- 蒙版只覆盖 3.91% 像素，出图中**蒙版内 98.9% 重画、蒙版外仅 0.74% 变动** ——
+  B1 约定探针判明 `PAINTED_IS_WHITE` 正确；
+- 该次生成**未扣费**（Opus 免费单张对重绘生效，与本地计算器一致）；
+- 历史记录正确落库（`mode = INPAINT` + IMG2IMG/INPAINT_MASK 两行参考图）。
+
+`supportsInpaint` 已置 `true`，功能正式开放。阶段 0–E 至此全部完成，
+§3 的 B 类待核对项（B1 约定、B2 强度位置、B4 计费）全部落定：
+B2 的答案是"强度 =1 时不发嵌套对象、≠1 时发 `img2img:{strength, color_correct:true}`"
+（官方前端原样行为，已随验证请求一同被服务端接受）。

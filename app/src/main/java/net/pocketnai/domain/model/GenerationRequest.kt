@@ -41,6 +41,11 @@ data class GenerationRequest(
             add(ReferenceViolation.ModeUnsupported(GenerationMode.INPAINT))
         }
         if (mode == GenerationMode.INPAINT) {
+            // 底图与蒙版缺一不可：缺底图的重绘请求构造不出有效载荷，
+            // 服务端只会回一句对不上点子的 "doesn't support action infill"。
+            if (referencesOf(ReferenceRole.IMG2IMG).isEmpty()) {
+                add(ReferenceViolation.MissingInpaintBase)
+            }
             // 没有蒙版（或蒙版是空的）时提交等于"整图重画"，语义不明，直接拦下。
             if (referencesOf(ReferenceRole.INPAINT_MASK).isEmpty()) {
                 add(ReferenceViolation.MissingInpaintMask)
@@ -103,6 +108,9 @@ sealed interface ReferenceViolation {
 
     /** 局部重绘缺少蒙版（或蒙版为空）。 */
     data object MissingInpaintMask : ReferenceViolation
+
+    /** 局部重绘缺少底图（蒙版必须画在某张底图上）。 */
+    data object MissingInpaintBase : ReferenceViolation
 
     /**
      * 与该模式冲突的参考图。

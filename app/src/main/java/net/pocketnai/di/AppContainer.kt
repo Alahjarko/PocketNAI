@@ -5,6 +5,7 @@ import kotlinx.serialization.json.Json
 import net.pocketnai.BuildConfig
 import net.pocketnai.data.export.MediaStoreExporter
 import net.pocketnai.data.files.GenerationFileStore
+import net.pocketnai.data.image.AndroidImageMetadataInspector
 import net.pocketnai.data.image.ReferenceImageProcessor
 import net.pocketnai.data.local.PocketNaiDatabase
 import net.pocketnai.data.network.NovelAiApi
@@ -100,6 +101,16 @@ class AppContainer(application: Application) {
     /** 参考图处理管线（解码 / 变换 / 编码 / 落盘）。全部几何计算在 domain 层，见 ImageGeometry。 */
     val referenceImageProcessor: ReferenceImageProcessor by lazy {
         ReferenceImageProcessor(application, fileStore)
+    }
+
+    /**
+     * 图片元数据探针。
+     *
+     * 与参考图处理器共用 [fileStore]，但**必须在它之前调用**：参考图落盘时会重新编码 PNG，
+     * 那一步会把 NovelAI 写在文本块里的参数全部丢掉。
+     */
+    val imageMetadataInspector: AndroidImageMetadataInspector by lazy {
+        AndroidImageMetadataInspector(application, fileStore, json)
     }
 
     val draftStore: GenerationDraftStore = GenerationDraftStore()

@@ -94,9 +94,12 @@ object NovelAiRequestBuilder {
      * - Precise Reference：`parameters.director_reference_*` 五个数组，与上面互不干扰。
      *
      * ## 刻意不发的字段
-     * `noise`、`extra_noise_seed`、`add_original_image`、`color_correct` 一律不发：
-     * 这些字段的官方默认值尚未核对，**留空让服务端用它自己的默认值**，
+     * `noise`、`extra_noise_seed`、`add_original_image`、`color_correct` 对文生图/图生图
+     * 一律不发：这些字段的官方默认值尚未核对，**留空让服务端用它自己的默认值**，
      * 比我们猜一个值更接近官方行为。等阶段 0 核对后再决定是否暴露给用户。
+     *
+     * 唯一的例外是局部重绘：官方前端的 infill 请求形态已经反解确认
+     * （见 [appendInpaint]），那几个字段在重绘里按官方原样照发。
      */
     fun build(
         profile: ModelProfile,
@@ -168,7 +171,7 @@ object NovelAiRequestBuilder {
             }
 
             if (useInpaint) {
-                appendInpaint(profile, baseImage, maskImage, request)
+                appendInpaint(profile, baseImage, maskImage, request, normalized.baseSeed)
             }
 
             if (useDirector) {
@@ -182,8 +185,13 @@ object NovelAiRequestBuilder {
 
         return buildJsonObject {
             put("input", positive)
-            put("model", profile.model.apiModelId)
-            put("action", actionFor(profile, request.mode, img2imgSource != null, useInpaint))
+            // 局部重绘要走专用的 `-inpainting` 模型 ID（官方前端反解结论，
+            // 见 ImageModel.inpaintingApiModelId）；常规模型 ID 不接受 infill。
+            put(
+                "model",
+                if (useInpaint) profile.model.inpaintingApiModelId else profile.model.apiModelId,
+            )
+            put("action", actionFor(img2imgSource != null, useInpaint))
             put("parameters", parameters)
         }
     }
@@ -292,58 +300,75 @@ object NovelAiRequestBuilder {
     }
 
     /**
-     * 局部重绘的字段（`action = "infill"`）。
+     * 局部重绘的字段（`action = "infill"`，模型换成 [ImageModel.inpaintingApiModelId]）。
      *
-     * ## 强度/噪声放在嵌套对象里
-     * OpenAPI 里除了顶层的 `strength`，还有一个嵌套的
-     * `parameters.img2img {strength, noise, extra_noise_seed, color_correct}`，
-     * 它的字段说明写的是 **`used by inpaint`** —— 因此这里发嵌套对象，不发顶层 `strength`。
-     * 真机核对后如果服务端要的是顶层，改这一处即可。
+     * ## 字段集合已按官方前端 bundle 对齐（技术决策记录第十七节，2026-09-14）
+     * 官方网页的 infill 请求里固定出现、而我们此前按"默认值未知就不发"省掉的字段，
+     * 现在有了确切依据，对重绘**一律照发**：
+     * - `add_original_image = false`（官方 infill 恒发）；
+     * - `sm = false`、`sm_dyn = false`（官方对**一切带底图的请求**恒发）；
+     * - `extra_noise_seed = seed - 1`（同上，未显式设置时的官方取值）。
      *
-     * ## 只发 strength
-     * `noise` / `color_correct` / `extra_noise_seed` 的默认值未知，按全项目一致的纪律**不发**，
-     * 让服务端用自己的默认值。
+     * ## 强度：默认 1.0 时整个嵌套对象都不发
+     * 官方重绘的生效强度是 `inpaintImg2ImgStrength`（计价函数也用它）：
+     * 等于 1（官方默认）时请求里**没有** `img2img` 字段；不等于 1 时发
+     * `img2img = {strength, color_correct: true}` —— 注意 `color_correct` 是 **true**，
+     * 与图生图顶层的 `color_correct: false` 相反，两处都是官方前端的原样行为。
+     * `noise` 依然不发（官方重绘请求里没有它）。
      */
     private fun JsonObjectBuilder.appendInpaint(
         profile: ModelProfile,
         baseImageBase64: String,
         maskBase64: String,
         request: GenerationRequest,
+        normalizedSeed: Long,
     ) {
         put("image", baseImageBase64)
         put("mask", maskBase64)
-        put(
-            "img2img",
-            buildJsonObject {
-                put(
-                    "strength",
-                    profile.img2imgStrengthRange.clamp(
-                        request.img2imgSource?.strength ?: profile.defaultImg2ImgStrength,
-                    ),
-                )
-            },
+        put("add_original_image", false)
+        put("sm", false)
+        put("sm_dyn", false)
+        put("extra_noise_seed", normalizedSeed - 1)
+
+        val strength = profile.img2imgStrengthRange.clamp(
+            request.img2imgSource?.strength ?: profile.defaultInpaintStrength,
         )
+        if (strength != profile.defaultInpaintStrength) {
+            put(
+                "img2img",
+                buildJsonObject {
+                    put("strength", strength)
+                    put("color_correct", true)
+                },
+            )
+        }
     }
 
     /**
      * action 取值。
      *
-     * - 图生图：`img2img`（`image` 字段只在那个 action 下被接受，真机验证结论）；
      * - 局部重绘：`infill`。**只有这个 action 会真正读取蒙版** ——
      *   实测把蒙版挂到 `img2img` 上时服务端完全忽略它（涂了 3.55% 的区域，
      *   出图却有 52.6% 的像素变了、包围盒是整张图，即做了一次普通图生图）。
-     *   而 Curated 档位不被 `infill` 接受（`Model nai-diffusion-4-5-curated doesn't
-     *   support action infill`），因此**Curated 上无法通过公开 API 做局部重绘**，
-     *   见 `ModelProfile.supportsInpaint` 与界面文案。
+     *   此前 `infill` 被服务端拒绝（`Model ... doesn't support action infill`）
+     *   的真正原因是**用错了模型 ID**：重绘必须换用 `ImageModel.inpaintingApiModelId`
+     *   （官方前端反解 + 真机验证结论，技术决策记录第十七、十八节），
+     *   见本类 `build` 里的 `model` 字段。
+     * - 图生图：`img2img`（`image` 字段只在那个 action 下被接受，真机验证结论）；
      * - 其余（含 Precise Reference / Vibe）：`generate`。
+     *
+     * ⚠️ **action 与 model 必须用同一个判定**（都只看载荷是否齐备的 [useInpaint]）。
+     * 曾经 action 看模式、model 看载荷，两者在"有蒙版没底图"的残缺状态下脱钩，
+     * 发出"常规模型 ID + infill"的组合，被服务端 400（2026-09-14 用户实测）。
+     * 残缺请求由 `GenerationRequest.validate` 在更早的环节拦下（MissingInpaintBase /
+     * MissingInpaintMask），这里的严格判定是兜底：宁可退化成一次普通生成，
+     * 也不能发出自相矛盾的请求。
      */
     private fun actionFor(
-        profile: ModelProfile,
-        mode: GenerationMode,
         hasImg2ImgImage: Boolean,
         useInpaint: Boolean,
     ): String = when {
-        useInpaint || mode == GenerationMode.INPAINT -> ACTION_INFILL
+        useInpaint -> ACTION_INFILL
         hasImg2ImgImage -> ACTION_IMG2IMG
         else -> ACTION_GENERATE
     }
