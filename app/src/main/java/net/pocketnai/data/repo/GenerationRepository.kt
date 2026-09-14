@@ -475,9 +475,18 @@ class GenerationRepository(
         }
     }
 
+    /**
+     * 这张 Vibe 是否已经有 `.vibe` 产物（缓存命中）。
+     *
+     * 费用预估要用它：官方规则里"编码一张 vibe"是一次性 2 Anlas，
+     * 只有真的还需要编码的图才该计入本次费用。判定条件与 [vibeBase64For] 完全一致
+     * （同一个缓存键），因此不会出现"按钮说免费、实际扣了 2"的偏差。
+     */
+    fun isVibeEncoded(reference: ReferenceImage, model: ImageModel): Boolean =
+        fileStore.resolve(fileStore.vibeRelativePath(vibeCacheKey(reference, model))).isFile
+
     /** 缓存键：模型 + 图片内容 + 信息量，取哈希后当文件名（避免把模型 id 直接拼进路径）。 */
-    private fun vibeCacheKey(reference: ReferenceImage, model: ImageModel): String {
-        val raw = listOf(
+    private fun vibeCacheKey(reference: ReferenceImage, model: ImageModel): String {        val raw = listOf(
             model.apiModelId,
             reference.sha256,
             (reference.informationExtracted ?: DEFAULT_VIBE_INFORMATION_EXTRACTED).toString(),

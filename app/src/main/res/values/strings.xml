@@ -249,6 +249,8 @@
 
     <!-- 余额与费用 -->
     <string name="balance_title">账户余额</string>
+    <string name="balance_subscription_tier">订阅等级</string>
+    <string name="balance_subscription_raw">服务端原始读数：tier %1$s · active %2$s · accountType %3$s · expiresAt %4$s</string>
     <string name="balance_subscription">订阅 Anlas</string>
     <string name="balance_purchased">购买 Anlas</string>
     <string name="balance_total">总余额</string>
@@ -273,6 +275,8 @@
     <string name="cost_estimated_short">预计 %1$d</string>
     <string name="cost_estimated_detail">预计 %1$d Anlas</string>
     <string name="cost_estimated_detail_batch">本次预计 %1$d Anlas，平均约 %2$s/张</string>
+    <string name="cost_estimated_detail_batch_with_free">本次预计 %1$d Anlas（%3$d 张中 %2$d 张由订阅权益免除）</string>
+    <string name="cost_estimated_detail_with_free">预计 %1$d Anlas（生成本身免费，这是参考图附加费）</string>
     <string name="cost_unknown_short">费用待确认</string>
     <string name="cost_unknown_detail">当前组合的费用以 NovelAI 为准</string>
     <string name="cost_insufficient_title">当前显示余额可能不足</string>

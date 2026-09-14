@@ -2,6 +2,7 @@ package net.pocketnai.ui.generate
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import net.pocketnai.core.AppError
 import net.pocketnai.core.ErrorCode
 import net.pocketnai.core.Outcome
@@ -24,13 +26,15 @@ import net.pocketnai.data.repo.BalanceState
 import net.pocketnai.data.repo.GenerationEvent
 import net.pocketnai.data.repo.GenerationRepository
 import net.pocketnai.data.settings.GenerationDraftPreferences
+import net.pocketnai.data.settings.SettingsStore
 import net.pocketnai.domain.billing.AnlasCostCalculator
 import net.pocketnai.domain.billing.AnlasPricingContext
-import net.pocketnai.domain.billing.DefaultSubscriptionTierResolver
 import net.pocketnai.domain.billing.GenerationCostEstimate
 import net.pocketnai.domain.billing.GenerationKind
 import net.pocketnai.domain.billing.ObservedBalanceChange
 import net.pocketnai.domain.billing.SubscriptionBalance
+import net.pocketnai.domain.billing.SubscriptionStatus
+import net.pocketnai.domain.billing.SubscriptionStatusResolver
 import net.pocketnai.domain.image.ImageTransform
 import net.pocketnai.domain.image.toPixelSize
 import net.pocketnai.domain.inpaint.MaskStroke
@@ -77,6 +81,7 @@ class GenerateViewModel(
     private val tagSuggestionSource: TagSuggestionSource,
     private val referenceImporter: ReferenceImageImporter,
     private val accountBalanceRepository: AccountBalanceRepository,
+    private val settingsStore: SettingsStore,
     private val costCalculator: AnlasCostCalculator = AnlasCostCalculator(),
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
     private val clock: () -> Long = System::currentTimeMillis,
@@ -247,45 +252,71 @@ class GenerateViewModel(
     /**
      * 当前参数的费用预估。
      *
-     * 单独一条流而不是塞进 [UiState]：它是 `params + balanceState` 的派生结果，
+     * 单独一条流而不是塞进 [UiState]：它是 `params + balance + 订阅等级` 的派生结果，
      * 由计算器算出来；放回状态里就得在每个改参数的入口都记得重算一遍。
      * 计算是纯函数，参数一变就重算，不发任何网络请求。
+     *
+     * 订阅等级除余额外还要看设置页的手动指定（[SettingsStore.subscriptionOverride]），
+     * 因此这里是三路 combine —— 用户在设置里改了等级，生成按钮上的报价要立刻跟着变。
      */
     val costEstimate: StateFlow<GenerationCostEstimate> = combine(
         _state,
         accountBalanceRepository.state,
-    ) { state, balance ->
-        costCalculator.estimate(pricingContextOf(state, balance))
+        settingsStore.subscriptionOverride,
+    ) { state, balance, override ->
+        // Vibe 是否已编码要查磁盘，挪到 IO 上做；一次最多查 4 个文件。
+        withContext(Dispatchers.IO) {
+            costCalculator.estimate(pricingContextOf(state, balance, override))
+        }
     }
         .distinctUntilChanged()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(COST_SUBSCRIPTION_TIMEOUT_MS),
             initialValue = costCalculator.estimate(
-                pricingContextOf(_state.value, accountBalanceRepository.state.value),
+                pricingContextOf(
+                    _state.value,
+                    accountBalanceRepository.state.value,
+                    settingsStore.subscriptionOverride.value,
+                ),
             ),
         )
 
-    private fun pricingContextOf(state: UiState, balance: BalanceState): AnlasPricingContext {
-        val known = when (balance) {
-            is BalanceState.Available -> balance.balance
-            is BalanceState.Loading -> balance.previous
-            is BalanceState.RefreshFailed -> balance.previous
-            BalanceState.Unavailable -> null
-        }
+    /** 有效订阅状态：服务端读数 + 设置页手动指定。 */
+    fun subscriptionStatusOf(balance: BalanceState): SubscriptionStatus {
+        val known = balance.knownBalance
+        return SubscriptionStatusResolver.resolve(
+            rawTier = known?.rawTier,
+            accountType = known?.accountType,
+            expiresAtEpochSeconds = known?.expiresAtEpochSeconds,
+            nowEpochSeconds = clock() / 1000L,
+            override = settingsStore.subscriptionOverride.value,
+        )
+    }
+
+    private fun pricingContextOf(
+        state: UiState,
+        balance: BalanceState,
+        override: net.pocketnai.domain.billing.SubscriptionOverride,
+    ): AnlasPricingContext {
+        val known = balance.knownBalance
+        val status = SubscriptionStatusResolver.resolve(
+            rawTier = known?.rawTier,
+            accountType = known?.accountType,
+            expiresAtEpochSeconds = known?.expiresAtEpochSeconds,
+            nowEpochSeconds = clock() / 1000L,
+            override = override,
+        )
+        val vibes = state.vibeReferences
+        val uncachedVibes = vibes.count { !repository.isVibeEncoded(it, state.params.model) }
         return AnlasPricingContext(
             params = state.params,
-            subscriptionTier = DefaultSubscriptionTierResolver.resolve(
-                rawTier = known?.rawTier,
-                active = known?.active,
-            ),
+            subscriptionTier = status.tier,
+            hasSubscription = status.subscribed,
             v5UsageLimit = known?.v5UsageLimit,
-            resolutionTier = state.profile.tierOf(state.params.size),
-            // Vibe 的价格未确认，只要挂了它就整单"待确认"（即使同时还有别的参考图）。
-            generationKind = if (state.vibeReferences.isNotEmpty()) {
-                GenerationKind.VIBE_TRANSFER
-            } else {
-                when (state.mode) {
+            generationKind = when {
+                vibes.isNotEmpty() -> GenerationKind.VIBE_TRANSFER
+                else -> when (state.mode) {
                     GenerationMode.TXT2IMG -> GenerationKind.TEXT_TO_IMAGE
                     GenerationMode.IMG2IMG -> GenerationKind.IMAGE_TO_IMAGE
                     GenerationMode.PRECISE_REFERENCE -> GenerationKind.PRECISE_REFERENCE
@@ -293,13 +324,19 @@ class GenerateViewModel(
                 }
             },
             hasBaseImage = state.referenceSource != null,
-            // 只有 Precise Reference 的参考图数量影响价格；图生图的起点图不额外收费。
-            referenceImageCount = when (state.mode) {
-                GenerationMode.PRECISE_REFERENCE -> state.directorReferences.size
-                GenerationMode.IMG2IMG -> 1
-                // 重绘的底图算一张（与图生图同族），蒙版不计费。
-                GenerationMode.INPAINT -> 1
-                GenerationMode.TXT2IMG -> 0
+            // 只有 Precise Reference 的参考图按张收费；图生图的起点图不额外收费。
+            referenceImageCount = if (state.mode == GenerationMode.PRECISE_REFERENCE) {
+                state.directorReferences.size
+            } else {
+                0
+            },
+            vibeCount = vibes.size,
+            uncachedVibeCount = uncachedVibes,
+            // 官方式子把 Strength 当作基础费用的乘数；图生图/重绘用的是请求里真正发出去的那个值。
+            strengthMultiplier = if (state.referenceSource != null) {
+                state.referenceSource?.strength ?: state.profile.defaultImg2ImgStrength
+            } else {
+                1.0
             },
             pricingPolicyVersion = costCalculator.policyVersion,
         )

@@ -16,9 +16,29 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import net.pocketnai.R
 import net.pocketnai.data.repo.BalanceState
+import net.pocketnai.domain.billing.SubscriptionSource
+import net.pocketnai.domain.billing.SubscriptionStatus
+import net.pocketnai.domain.billing.SubscriptionTier
 import net.pocketnai.ui.common.messageRes
 import java.text.DateFormat
 import java.util.Date
+
+/** 订阅状态的一行文字：等级 + 权益 + 出处。界面不显示 `active`，它不参与任何判断。 */
+private fun SubscriptionStatus.displayText(): String {
+    val tierText = when (val current = tier) {
+        SubscriptionTier.None -> "无等级"
+        SubscriptionTier.Tablet -> "Tablet"
+        SubscriptionTier.Scroll -> "Scroll"
+        SubscriptionTier.Opus -> "Opus"
+        is SubscriptionTier.Unknown -> "未知（读数 ${current.rawValue}）"
+    }
+    val benefitText = if (subscribed) "有订阅权益" else "无订阅权益"
+    val sourceText = when (source) {
+        SubscriptionSource.REMOTE -> "服务端"
+        SubscriptionSource.MANUAL -> "本机指定"
+    }
+    return "$tierText · $benefitText · $sourceText"
+}
 
 /**
  * 余额详情弹层（余额规划 §11.2）。
@@ -31,6 +51,7 @@ import java.util.Date
 @Composable
 fun BalanceDetailDialog(
     state: BalanceState,
+    subscriptionStatus: SubscriptionStatus = SubscriptionStatus.Unknown,
     onRefresh: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -44,6 +65,12 @@ fun BalanceDetailDialog(
                 StatusLine(state = state, balanceTime = balance?.fetchedAtMillis)
 
                 if (balance != null) {
+                    // 订阅状态放在余额之前：它决定"这次生成免不免费、怎么计价"，
+                    // 比余额本身更影响用户的判断。
+                    BalanceRow(
+                        label = stringResource(R.string.balance_subscription_tier),
+                        value = subscriptionStatus.displayText(),
+                    )
                     BalanceRow(
                         label = stringResource(R.string.balance_subscription),
                         value = formatAnlas(balance.subscriptionAnlas),
@@ -56,6 +83,19 @@ fun BalanceDetailDialog(
                         label = stringResource(R.string.balance_total),
                         value = formatAnlas(balance.totalAnlas),
                         emphasize = true,
+                    )
+                    // 服务端原始读数照原样给出来：报价不对时，用户能自己看出是
+                    // "服务端说我没订阅"还是"我手动指定错了"。
+                    Text(
+                        text = stringResource(
+                            R.string.balance_subscription_raw,
+                            balance.rawTier?.toString() ?: "—",
+                            balance.active?.toString() ?: "—",
+                            balance.accountType?.toString() ?: "—",
+                            balance.expiresAtEpochSeconds?.takeIf { it > 0 }?.toString() ?: "—",
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
 
                     // 没有 usage 就不显示这一块：0% 会被读成"额度用尽了"。

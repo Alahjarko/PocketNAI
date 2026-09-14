@@ -44,6 +44,7 @@ object SubscriptionBalanceParser {
             SubscriptionBalance(
                 rawTier = root.intOrNull("tier"),
                 active = root.booleanOrNull("active"),
+                accountType = root.intOrNull("accountType"),
                 expiresAtEpochSeconds = root.longOrNull("expiresAt"),
                 isGracePeriod = root.booleanOrNull("isGracePeriod"),
                 subscriptionAnlas = subscription,

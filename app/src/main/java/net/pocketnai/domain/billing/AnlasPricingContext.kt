@@ -1,9 +1,8 @@
 package net.pocketnai.domain.billing
 
 import net.pocketnai.domain.model.GenerationParams
-import net.pocketnai.domain.model.ResolutionTier
 
-/** 这次生成属于哪一类（规划 §5.3）。 */
+/** 这次生成属于哪一类（规划 §5.3）。只用于诊断与文案，费用判定不再按它分支。 */
 enum class GenerationKind {
     TEXT_TO_IMAGE,
     IMAGE_TO_IMAGE,
@@ -15,31 +14,53 @@ enum class GenerationKind {
 }
 
 /**
- * 费用计算的输入（规划 §5.3）。
+ * 费用计算的输入（规划 §5.3，2026-09-14 按官方算法改版）。
  *
- * 第一版只支持 T2I，但仍然显式传入 [generationKind] 与 [hasBaseImage]：
- * 以后加入参考图时，旧计算器不会把"带起点图的生成"误判成普通免费 T2I。
+ * 每一项都对应官方前端计价函数的一个真实入参，而不是我们自己发明的维度：
+ * 尺寸/步数/张数来自参数，[strengthMultiplier] 对应 `cost × strength`，
+ * [smeaMultiplier] 对应 SMEA 的三档倍率，三个"张数"分别对应参考图附加费的三条规则。
  */
 data class AnlasPricingContext(
     val params: GenerationParams,
     val subscriptionTier: SubscriptionTier,
-    val v5UsageLimit: V5UsageLimit?,
     /**
-     * 参数对应哪个尺寸档位。
+     * 是否具备订阅权益。
      *
-     * 允许为空：尺寸不是官方预设之一时（例如来自旧版本历史）就不该被判定为免费。
-     * 规划里写的是非空类型，这里放宽一格是为了让"认不出来的尺寸"有一个安全表达，
-     * 而不是硬塞一个 NORMAL。
+     * **不给默认值**：免费单张与 V5 额度都建立在它之上，忘记传就等于悄悄多报价，
+     * 这类 bug 在界面上只表现为"数字不对"，很难查。
      */
-    val resolutionTier: ResolutionTier?,
+    val hasSubscription: Boolean,
+    val v5UsageLimit: V5UsageLimit?,
     val generationKind: GenerationKind = GenerationKind.TEXT_TO_IMAGE,
     val hasBaseImage: Boolean = false,
     /**
-     * 本次挂了几张参考图（Image2Img 的起点图、Vibe、Precise Reference 都算）。
+     * Precise Reference 的参考图张数（`director_reference_*`）。
      *
-     * 参考图有**独立的附加费**（每张固定 Anlas，与模型无关），
-     * 因此费用计算必须知道张数，而不是只知道"有没有"。
+     * 官方规则：**每张、每张输出图** 5 Anlas，即 `5 × 张数 × 张数`。
+     * 图生图的起点图不计费。
      */
     val referenceImageCount: Int = 0,
+    /** 已启用的 Vibe 张数。官方规则：**超过 4 张时每张 +2 Anlas**。 */
+    val vibeCount: Int = 0,
+    /**
+     * 本次还需要付费编码的 Vibe 张数。
+     *
+     * 官方规则：把一张图编码成 `.vibe` 是一次性 2 Anlas；已经编码过（缓存命中）不再收费。
+     * 因此这里只数"还没有 `.vibe` 产物"的那些。
+     */
+    val uncachedVibeCount: Int = 0,
+    /**
+     * 基础费用的乘数：图生图/重绘的 Strength，纯文生图为 1.0。
+     *
+     * 官方式子最后一步是 `max(ceil(cost × strength), 2)`，所以 Strength 低不但改图少，也**更便宜**。
+     */
+    val strengthMultiplier: Double = 1.0,
+    /**
+     * SMEA 的倍率：关 1.0、`sm` 1.2、`sm + sm_dyn` 1.4。
+     *
+     * 这四个模型的官方默认都是关闭（官方前端默认值里 `sm/sm_dyn` 都是 false），
+     * 我们的请求也不发这两个字段，因此默认 1.0。
+     */
+    val smeaMultiplier: Double = 1.0,
     val pricingPolicyVersion: String,
 )

@@ -13,7 +13,15 @@ package net.pocketnai.domain.billing
 data class SubscriptionBalance(
     /** 服务端原始的 tier 整数。语义由 [SubscriptionTierResolver] 解释，不要在这里判断。 */
     val rawTier: Int?,
+    /**
+     * 服务端原样返回的 `active`。
+     *
+     * ⚠️ **它不参与任何计费判断**：官方前端的订阅判据用的是
+     * `accountType` 与 `expiresAt`（见 [SubscriptionStatusResolver]）。保留这个字段只为诊断展示。
+     */
     val active: Boolean?,
+    /** 账户类型。官方把它当作"内部账号＝有订阅"的判据之一。 */
+    val accountType: Int?,
     val expiresAtEpochSeconds: Long?,
     val isGracePeriod: Boolean?,
     /** 订阅 Anlas。消费时先扣这一池。 */

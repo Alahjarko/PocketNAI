@@ -19,6 +19,7 @@ class ObservedBalanceChangeTest {
     ) = SubscriptionBalance(
         rawTier = 3,
         active = true,
+        accountType = null,
         expiresAtEpochSeconds = null,
         isGracePeriod = false,
         subscriptionAnlas = subscription,

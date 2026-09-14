@@ -3,6 +3,8 @@ package net.pocketnai.ui.settings
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,6 +38,10 @@ import kotlinx.coroutines.launch
 import net.pocketnai.BuildConfig
 import net.pocketnai.R
 import net.pocketnai.data.repo.BalanceRefreshReason
+import net.pocketnai.domain.billing.SubscriptionOverride
+import net.pocketnai.domain.billing.SubscriptionSource
+import net.pocketnai.domain.billing.SubscriptionStatus
+import net.pocketnai.domain.billing.SubscriptionTier
 import net.pocketnai.domain.model.ThemeMode
 import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.billing.BalanceDetailDialog
@@ -52,6 +58,7 @@ fun SettingsScreen(onRequestConnect: () -> Unit) {
                     settingsStore = container.settingsStore,
                     credentialStore = container.credentialStore,
                     sessionState = container.sessionState,
+                    accountBalanceRepository = container.accountBalanceRepository,
                 )
             }
         },
@@ -60,6 +67,8 @@ fun SettingsScreen(onRequestConnect: () -> Unit) {
     val streamingEnabled by viewModel.streamingPreviewEnabled.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val connected by viewModel.connected.collectAsStateWithLifecycle()
+    val subscriptionOverride by viewModel.subscriptionOverride.collectAsStateWithLifecycle()
+    val subscriptionStatus by viewModel.subscriptionStatus.collectAsStateWithLifecycle()
 
     // 余额与生成页共用同一个仓库实例，不另建一份网络状态或缓存（余额规划 §11.4）。
     val balanceState by container.accountBalanceRepository.state.collectAsStateWithLifecycle()
@@ -116,6 +125,7 @@ fun SettingsScreen(onRequestConnect: () -> Unit) {
         BalanceSection(
             state = balanceState,
             connected = connected,
+            subscriptionStatus = subscriptionStatus,
             onRefresh = {
                 // 手动刷新无视缓存；余额刷新失败不影响生成，也不会覆盖生成错误。
                 scope.launch {
@@ -125,6 +135,15 @@ fun SettingsScreen(onRequestConnect: () -> Unit) {
                     )
                 }
             },
+        )
+
+        HorizontalDivider()
+
+        // ---- 订阅等级 ----
+        SubscriptionSection(
+            override = subscriptionOverride,
+            status = subscriptionStatus,
+            onOverrideChange = viewModel::setSubscriptionOverride,
         )
 
         HorizontalDivider()
@@ -253,6 +272,7 @@ private fun formatBytes(bytes: Long): String {
 private fun BalanceSection(
     state: net.pocketnai.data.repo.BalanceState,
     connected: Boolean,
+    subscriptionStatus: SubscriptionStatus,
     onRefresh: () -> Unit,
 ) {
     var dialogOpen by remember { mutableStateOf(false) }
@@ -289,10 +309,80 @@ private fun BalanceSection(
     if (dialogOpen) {
         BalanceDetailDialog(
             state = state,
+            subscriptionStatus = subscriptionStatus,
             onRefresh = onRefresh,
             onDismiss = { dialogOpen = false },
         )
     }
+}
+
+/**
+ * 订阅等级区块。
+ *
+ * 存在的原因：服务端读数不一定与用户实际买到的权益一致（本机账号实测
+ * `tier 0 / active false / accountType RETAIL`），而订阅等级直接决定
+ * "这次生成免不免费、报多少 Anlas"。自动读取是默认，手动指定是兜底 ——
+ * 与其让报价静默算错，不如让用户能一句话纠正它。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SubscriptionSection(
+    override: SubscriptionOverride,
+    status: SubscriptionStatus,
+    onOverrideChange: (SubscriptionOverride) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = "订阅等级",
+            style = MaterialTheme.typography.titleSmall,
+        )
+        Text(
+            text = buildString {
+                append("当前：")
+                append(if (status.subscribed) status.tier.displayName() else "无订阅")
+                append(when (status.source) {
+                    SubscriptionSource.REMOTE -> "（读取自 NovelAI）"
+                    SubscriptionSource.MANUAL -> "（本机手动指定）"
+                })
+                append("。订阅等级决定 Opus 免费单张与计价方式。")
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        // 五个选项在窄屏上一行放不下，用 FlowRow 换行而不是横向滚动：
+        // 全部可见才谈得上"选哪个"，藏起来的选项等于不存在。
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SubscriptionOverride.entries.forEach { option ->
+                FilterChip(
+                    selected = override == option,
+                    onClick = { onOverrideChange(option) },
+                    label = { Text(option.displayName) },
+                )
+            }
+        }
+        Text(
+            text = "默认「自动读取」。只有当服务端读不到、或你确认读数不对时才需要手动指定；" +
+                "手动值会直接决定生成按钮上的报价。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = "关于「20% 优惠」：官方定价页上的 20% 是购买 Anlas 时的折扣" +
+                "（Anlas Purchase Discount：充值时少花美元），" +
+                "不是生成扣费打八折。因此这里的报价不打折 —— " +
+                "打折会把实际扣费报少。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private fun SubscriptionTier.displayName(): String = when (this) {
+    SubscriptionTier.None -> "无订阅"
+    SubscriptionTier.Tablet -> "Tablet"
+    SubscriptionTier.Scroll -> "Scroll"
+    SubscriptionTier.Opus -> "Opus"
+    is SubscriptionTier.Unknown -> "未知（读数 $rawValue）"
 }
 
 @StringRes

@@ -1299,3 +1299,142 @@ HTTP 400: {"statusCode":400,"message":"Model nai-diffusion-4-5-full doesn't supp
 
 后续如果还要验证，必须：由用户明确授权、使用已知免费的最小参数（Normal + steps 23 + guidance 7 + 单张），
 并且一次只发一个请求。
+
+---
+
+## 十六、计费矩阵的确定与订阅状态（2026-09-14，用户要求"重新确认好计费矩阵"）
+
+### 16.1 问题的转折点
+
+《余额与 Anlas 费用系统实施规划》§10 的校准流程假设"官方没有公开报价接口，
+只能人工读网页费用标签"。用户指出"按理来说这个应该是可以读取账号订阅状态的才对"，
+于是做了一件之前没做过的调查：**直接读官方网页前端**。
+
+结论是这个假设不成立 —— 计价公式、免费规则、附加费规则**全都在客户端 JS 里**，
+而且比任何人工校准都精确。§10 的人工矩阵因此没有再执行，改为以反解结果为准。
+
+### 16.2 反解方法与证据链
+
+| 步骤 | 做法 | 结果 |
+|---|---|---|
+| 1 | 拉取官方文档 sitemap（`docs.novelai.net/sitemap-0.xml`） | 确认官方文档只说规则、不给公式 |
+| 2 | 下载 `novelai.net/image` 页面的 40 个 JS chunk | 前端的计价函数就在 `pages/image` 的共享 chunk 里 |
+| 3 | 用公式特征值定位（`15.266497014243718`、`65536`、`1048576`） | 找到计价函数本体 |
+| 4 | 解析导出的辅助函数（`H_0`、`GIT`、`DkU`、`ax`、`t1`） | 得到附加费规则与免费规则 |
+| 5 | 用两个可当场手算的样本交叉验证 | **1024×1024 @28 → 20**、**832×1216 @23 → 17**，后者正好等于社区长期流传的"默认一张约 17 Anlas" |
+
+反解出的关键片段（原样，作为日后复核的凭证）：
+
+```js
+// 基础费用（V4.5 与 V5 家族走这条；V1–V3 另有指数式与查表）
+raw = ceil(2951823174884865e-21 * area + 5753298233447344e-22 * area * steps) * smeaFactor
+if (family === v5) raw *= 1.5
+perImage = max(ceil(raw * strength), 2)
+if (perImage > 140) return -3          // 不给数字
+total = perImage * billableSamples
+
+// 免费单张：注意没有"无底图"这一条，也不是整单免费
+freeEligible = !characterRef && area <= 1048576 && steps <= 28
+freeSample   = freeEligible && tier >= 3 && hasSubscription && !(v5 && usage.isNegative)
+billable     = n_samples - (freeSample ? 1 : 0)
+
+// 附加费
+preciseReference += 5 * 张数 * n_samples
+vibes            += max(0, 张数 - 4) * 2
+vibeEncoding     += 2 * 需编码张数        // 已编码过的 0
+
+// 是否算订阅（完全没用 active 字段）
+hasSubscription = accountType ∈ {B2B, SERVICE, SUPPORT, ADMIN}
+               || (expiresAt > now && tier > 0)
+```
+
+### 16.3 三条被官方文档误导过的地方
+
+| 官方文档的说法 | 前端的真实规则 | 本仓库此前的处理 |
+|---|---|---|
+| 免费条件是"不带任何底图" | 判据里**没有底图这一条** | 早期实测 407 → 407 已印证，但没有写进规则 |
+| "至少 Normal 尺寸" | 只有面积**上界** 1024²，比 Normal 小的图也免费 | 曾经要求 `resolutionTier == NORMAL`（偏严格） |
+| 一次生成多张时"只有一张免费" | 前端就是 `n_samples -= 1`，**只免一张** | 曾经判定"批量一律不免费"（偏严格） |
+
+三处都改为与前端的真实规则一致。前两条把免费区间放宽到**更符合官方行为**，
+第三条把"批量不免费"改成"批量免一张"。
+
+### 16.4 订阅状态：`active` 字段完全不参与判断
+
+官方前端判断"这个账号算不算订阅"用的是：
+
+```js
+accountType ∈ {B2B, SERVICE, SUPPORT, ADMIN} || (expiresAt > now && tier > 0)
+```
+
+`active` **一次都没出现**。此前我们把 `active == false` 直接读成"无订阅"，
+那会把"已取消但仍在付费周期内"的账号误判成未订阅（官方文档明确说权益保留到周期结束）。
+另外，此前用"账户带回 V5 使用额度"当作订阅旁证，那只是 V5 Opus 的功能，额度用尽/
+字段缺失时就会失真 —— 现在被官方判据取代。
+
+`accountType` 的整数含义也是反解出来的：`RETAIL=0, B2B=1, SERVICE=2, SUPPORT=3, ADMIN=4`。
+
+**本机实测账号的读数是 `tier 0 / active false / accountType 0 / expiresAt 0`，
+按官方判据就是"没有订阅"。** 工具能读到，读出来就是"没有" —— 这一点如实告诉用户，
+并且给出手动兜底（§16.5）。
+
+### 16.5 订阅等级的手动指定（用户提出的兜底）
+
+设置页新增"订阅等级"：自动读取（默认）/ 无订阅 / Tablet / Scroll / Opus。
+
+- 手动值**直接取代**服务端读数（连 `subscribed` 一起取代），因为用户是唯一能核对
+  "我到底有没有买"的人；
+- 持久化在 `pocketnai_settings`（`subscription_override`），重启后不会退回另一种算法；
+- 余额弹层里同时显示**服务端原始读数**（`tier` / `accountType` / `expiresAt`），
+  报价不对时用户能一眼看出是"服务端说我没订阅"还是"我手动指定错了"。
+
+### 16.6 关于"订阅打 20% 折扣"：官方原文指的是**买** Anlas，不是生成扣费
+
+用户提出的需求原文是"带有订阅的还要有生成扣费 20% 的积分优惠"。查证结果：
+
+- 官方定价页那一行叫 **Anlas Purchase Discount**，说明文字是
+  `20% off our on-demand Anlas pricing.`；
+- 前端里 `yI(n) = round(2 + n/1111 - 0.01, 2)`，`tT(n)` 是原价：
+  2000 Anlas 原价 $4.79、订阅价 $3.79；5000 原价 $8.19、订阅价 $6.49；
+  10000 原价 $13.99、订阅价 $10.99 —— **都是美元价的 ~79%，即充值时的折扣**；
+- 充值弹层自带说明：`*The discounted Anlas pricing does not apply to accounts with
+  canceled or non-renewing subscriptions.`；
+- **计价函数里没有任何 0.8 系数**，唯一的减免就是上面那张免费单张。
+
+因此**没有**在生成费用上加 8 折：那会把实际扣费报少 20%。设置页里用一句话把这个区别写清楚，
+免得以后再被同一句话说动。
+
+### 16.7 反解带来的唯一未实测项
+
+官方前端**总是显式发送** `sm` / `sm_dyn`（这四个模型的默认值都是 false，
+V1–V3 才是 autoSmea），而我们的请求**不发这两个字段**。
+服务端在字段缺失时是否等于 false，我们没实测过。
+
+代码里的处理：`AnlasPricingContext.smeaMultiplier` 由调用方按"我们实际发出的字段"给出，
+当前恒为 1.0；注释里写明这是唯一未实测项。要消除它有两种办法，都需要用户授权：
+读一次网页端同一参数的费用标签，或发一次最小的付费生成做余额反查（会花 Anlas）。
+
+### 16.8 代码落点
+
+| 变更 | 文件 |
+|---|---|
+| 付费公式（含附加费） | `domain/billing/NovelAiPaidAnlasFormula.kt` |
+| 免费单张规则与四态判定 | `domain/billing/AnlasCostCalculator.kt` |
+| 订阅状态与手动覆盖 | `domain/billing/SubscriptionStatus.kt`、`SubscriptionTier.kt` |
+| `accountType` 解析 | `data/network/SubscriptionBalanceParser.kt` |
+| 手动覆盖持久化 | `data/settings/SettingsStore.kt` |
+| 上下文组装（含"Vibe 是否已编码"） | `ui/generate/GenerateViewModel.kt`、`GenerationRepository.isVibeEncoded` |
+| 设置页与余额弹层 | `ui/settings/SettingsScreen.kt`、`ui/billing/BalanceDialog.kt` |
+
+样本值与规则都有单元测试：`NovelAiPaidAnlasFormulaTest`（含 15 条手算样本）、
+`AnlasCostCalculatorTest`（免费/额度/附加费/订阅解析）。
+
+### 16.9 遗留：账号实际订阅状态与观测不一致
+
+本机账号 2026-09-14 的读数是"无订阅"，但账号所有者此前描述过"V4.5 Curated 免费"、
+并观测到过 `usage`（V5 额度）存在。两种可能：token 换了账号，或订阅已到期
+（官方新政策：订阅结束后 Subscription Anlas 归零并转为 Paid Anlas，与本次读到的
+`订阅池 0 / 购买池 7538` 形状一致）。
+
+**这不需要在代码里"解决"** —— 工具如实读、如实显示，用户可以在设置页手动纠正。
+但它是所有"报价和官网不一样"问题的第一嫌疑，排查时先看余额弹层里的原始读数。

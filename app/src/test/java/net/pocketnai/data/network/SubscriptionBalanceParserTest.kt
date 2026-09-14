@@ -20,6 +20,7 @@ class SubscriptionBalanceParserTest {
         {
           "tier": 3,
           "active": true,
+          "accountType": 0,
           "expiresAt": 1234567890,
           "isGracePeriod": false,
           "trainingStepsLeft": {
@@ -49,6 +50,8 @@ class SubscriptionBalanceParserTest {
         assertThat(balance.totalAnlas).isEqualTo(12_000L)
         assertThat(balance.rawTier).isEqualTo(3)
         assertThat(balance.active).isTrue()
+        // accountType 是官方订阅判据之一（RETAIL=0 / B2B=1 / SERVICE=2 / SUPPORT=3 / ADMIN=4）。
+        assertThat(balance.accountType).isEqualTo(0)
         assertThat(balance.fetchedAtMillis).isEqualTo(1_000L)
     }
 

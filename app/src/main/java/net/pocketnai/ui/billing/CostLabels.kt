@@ -34,14 +34,28 @@ fun GenerationCostEstimate.detailLabel(): String = when (this) {
 
     is GenerationCostEstimate.UsesV5Allowance -> stringResource(R.string.cost_v5_allowance_detail)
 
-    is GenerationCostEstimate.EstimatedAnlas -> if (imageCount > 1) {
-        stringResource(
+    is GenerationCostEstimate.EstimatedAnlas -> when {
+        imageCount > 1 && freeImageCount > 0 -> stringResource(
+            R.string.cost_estimated_detail_batch_with_free,
+            batchTotal,
+            freeImageCount,
+            imageCount,
+        )
+
+        imageCount > 1 -> stringResource(
             R.string.cost_estimated_detail_batch,
             batchTotal,
             formatDecimal(averagePerImage),
         )
-    } else {
-        stringResource(R.string.cost_estimated_detail, batchTotal)
+
+        // 单张、但被参考图附加费顶出一个非零总额：说清楚"免费的是生成，收的是附加费"，
+        // 否则"免费"和"5 Anlas"同时出现会让人以为是 bug（实测 407 → 402 就是这种情况）。
+        freeImageCount > 0 && batchTotal > 0 -> stringResource(
+            R.string.cost_estimated_detail_with_free,
+            batchTotal,
+        )
+
+        else -> stringResource(R.string.cost_estimated_detail, batchTotal)
     }
 
     is GenerationCostEstimate.Unknown -> stringResource(R.string.cost_unknown_detail)

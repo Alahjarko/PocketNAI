@@ -582,6 +582,7 @@ fun GenerateSheet(
     if (balanceDialogOpen) {
         BalanceDetailDialog(
             state = state.balanceState,
+            subscriptionStatus = viewModel.subscriptionStatusOf(state.balanceState),
             onRefresh = viewModel::refreshBalance,
             onDismiss = { balanceDialogOpen = false },
         )

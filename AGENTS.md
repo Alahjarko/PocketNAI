@@ -44,6 +44,14 @@
 - 单元测试与任何自动化流程一律使用 MockWebServer 或假实现，**永不触网**；
 - 免费的那一次生成只用于验证"链路是否通"，不用于探索参数效果。
 
+⚠️ **2026-09-14 补充："免费"是订阅权益，先确认订阅状态再依赖它。**
+当天读 `GET /user/subscription` 得到的原始读数是
+`tier 0 / active false / accountType 0 (RETAIL) / expiresAt 0` —— 按官方判据这**不是**订阅账号，
+生成会正常扣费。上面那张"免费组合"表是账号所有者在订阅有效期内给出的经验值，
+**不是账号的永久属性**。动手前先在设置页（或余额弹层）看订阅等级那一行：
+它显示"本机指定"或"有订阅权益"时才谈得上免费。
+如果读数与用户描述不一致，**不要自己判断谁对**，按上面"费用未知一律不自动发起"处理。
+
 ### 安全
 
 - **Token 绝不进入日志、数据库、图片元数据、剪贴板或崩溃信息。** 日志只允许记录请求方法、路径、状态码与耗时。
@@ -128,16 +136,29 @@
   不写 Room、不写 SharedPreferences —— 否则会把上一个账号的余额显示给下一个账号。
 - 余额读取失败**不得阻止生成**，也不得把界面上的余额清零；能不能生成始终由服务端 402 决定。
 - 费用计算器只能返回四态之一（免费 / V5 额度 / 预计 Anlas / 待确认）。
-  **未用官方网页费用标签校准的付费组合必须返回"待确认"，不允许猜数字。**
-  定价公式的入口是 `PaidAnlasFormula`，默认实现是恒不支持校准的占位实现。
-- **附加费按功能而不是按图数计**：Image2Img 不额外收费（V4.5 / V5 都是，已用余额观测印证），
-  Precise Reference 每张 5 Anlas（同样已印证），Vibe Transfer 未知 → 必须显示"待确认"。
-  常量是 `AnlasCostCalculator.PRECISE_REFERENCE_SURCHARGE_ANLAS`。
-  基础费用未知时**不要只报附加费**，那会让用户以为总共只要 5。
+  定价公式的入口是 `PaidAnlasFormula`，**当前实现是 `NovelAiPaidAnlasFormula`**：
+  式子与免费规则是 2026-09-14 从官方网页前端 bundle 反解出来的（见技术决策记录第十六节），
+  不要再按"社区库公式"或"人工读网页费用标签"的路子重做一遍。
+- **订阅状态**：官方判据是 `accountType ∈ {B2B,SERVICE,SUPPORT,ADMIN} || (expiresAt > now && tier > 0)`，
+  **`active` 字段完全不参与判断**；`tier` 的整数含义是 `0/1/2/3 → 无/Tablet/Scroll/Opus`。
+  服务端读数可能和用户实际买到的权益不一致，因此设置页有**手动覆盖**
+  （`SettingsStore.subscriptionOverride`），手动值直接取代读数。
+  要改订阅判断只改 `SubscriptionStatusResolver` 一处，不要在计算器里再塞第二套。
+- **附加费按功能而不是按图数计**，规则以官方前端为准：Image2Img 不额外收费（已用余额观测印证）；
+  Precise Reference **每张参考图 × 每张输出图 5 Anlas**；Vibe 超出 4 张的部分每张 +2，
+  另加"未编码的 vibe"每张 2 Anlas 的编码费（已编码的不再收，判定入口是
+  `GenerationRepository.isVibeEncoded`，与真正编码用的是同一个缓存键）。
+- **免费单张规则（以官方前端为准）**：`面积 ≤ 1024×1024 && steps ≤ 28 && tier 是 Opus && 有订阅权益`
+  （V5 还要 `usage.isNegative == false`）。**没有"无底图"这一条**（图生图同样免费，已实测印证），
+  **也不是整单免费**（批量只免 1 张）。
+- **"订阅打 20% 折扣"指的是买 Anlas 的美元价，不是生成扣费**：官方定价页那一行叫
+  Anlas Purchase Discount，前端里订阅价是原价的 ~79%（$4.79 → $3.79 等），
+  而计价函数里**没有任何 0.8 系数**。给它加折扣会把实际扣费报少 20%。
+  用户再提这件事时直接引技术决策记录 §16.6。
+- **唯一未实测项**：官方前端总是显式发 `sm` / `sm_dyn`（这四个模型默认 false），我们的请求不发。
+  参数在 `AnlasPricingContext.smeaMultiplier`（当前恒 1.0），要消除它需要用户授权做一次费用核对。
 - 模型能力位：图生图四个模型都支持；**Vibe Transfer 与 Precise Reference 目前只有 V4.5**。
   界面要隐藏 V5 上的入口，`GenerationRequest.validate` 也要在本地拦一次。
-- 实测免费规则只覆盖被观测过的参数（V4.5 Curated + Normal + Steps ≤ 28 + Guidance 7.0 + 至多一张起点图）；
-  **不要**把它放宽到整个 V4.5 家族或 V5，也不要放宽到任意 Guidance。
 
 ### 质量标签
 
