@@ -56,6 +56,7 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import net.pocketnai.R
 import net.pocketnai.data.repo.GenerationRepository
+import net.pocketnai.domain.model.DirectorReferenceKind
 import net.pocketnai.domain.model.GenerationMode
 import net.pocketnai.domain.model.ReferenceImage
 import net.pocketnai.domain.model.ReferenceRole
@@ -179,6 +180,7 @@ fun DetailScreen(
                 stringResource(R.string.common_mode),
                 when (generation.mode) {
                     GenerationMode.IMG2IMG -> stringResource(R.string.generate_mode_img2img)
+                    GenerationMode.PRECISE_REFERENCE -> stringResource(R.string.generate_mode_precise_reference)
                     GenerationMode.TXT2IMG -> stringResource(R.string.generate_mode_txt2img)
                 },
             )
@@ -324,6 +326,26 @@ private fun ReferenceRow(reference: ReferenceImage) {
             reference.strength?.let { strength ->
                 Text(
                     text = stringResource(R.string.generate_reference_strength) + "  $strength",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            reference.secondaryStrength?.let { fidelity ->
+                Text(
+                    text = stringResource(R.string.generate_reference_fidelity) + "  $fidelity",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            reference.directorKind?.let { kind ->
+                Text(
+                    text = stringResource(
+                        when (kind) {
+                            DirectorReferenceKind.CHARACTER -> R.string.generate_reference_kind_character
+                            DirectorReferenceKind.CHARACTER_AND_STYLE ->
+                                R.string.generate_reference_kind_character_style
+                        },
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

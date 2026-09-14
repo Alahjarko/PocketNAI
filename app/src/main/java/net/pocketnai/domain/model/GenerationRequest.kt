@@ -37,6 +37,14 @@ data class GenerationRequest(
         if (profile.supportsImg2Img.not() && mode == GenerationMode.IMG2IMG) {
             add(ReferenceViolation.ModeUnsupported(GenerationMode.IMG2IMG))
         }
+        // Precise Reference 与 Vibe 目前只有 V4.5 能用（账号所有者确认），
+        // V5 上提交这类请求只会得到服务端拒绝，因此在本地就拦下并说明原因。
+        if (mode == GenerationMode.PRECISE_REFERENCE && !profile.supportsDirectorReference) {
+            add(ReferenceViolation.ModeUnsupported(GenerationMode.PRECISE_REFERENCE))
+        }
+        if (referencesOf(ReferenceRole.VIBE).isNotEmpty() && !profile.supportsVibeTransfer) {
+            add(ReferenceViolation.ModeUnsupported(GenerationMode.PRECISE_REFERENCE))
+        }
 
         val vibes = referencesOf(ReferenceRole.VIBE).size
         if (vibes > profile.maxVibeReferences) {

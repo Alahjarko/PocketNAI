@@ -259,7 +259,7 @@ private fun ReferenceSummary(
  * 比先去相册里翻半天自然得多。
  */
 @Composable
-private fun HistoryImagePickerDialog(
+internal fun HistoryImagePickerDialog(
     onPick: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {

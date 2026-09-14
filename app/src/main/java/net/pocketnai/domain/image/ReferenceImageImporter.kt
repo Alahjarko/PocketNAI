@@ -35,5 +35,16 @@ data class PreparedReference(
  */
 interface ReferenceImageImporter {
 
-    suspend fun import(source: ReferenceSource): Outcome<PreparedReference>
+    /**
+     * 导入一张参考图。
+     *
+     * [transform] 为 null 表示**只做归一化**（降采样 + 统一 PNG），几何变换留到提交时按当时的
+     * 输出尺寸再做 —— 图生图的起点图需要这样，因为用户随时可能改 Resolution。
+     * 传入具体变换时（例如 Precise Reference 的黑边补齐），导入结果就是最终提交图，
+     * 界面缩略图与请求里的图因此是同一张。
+     */
+    suspend fun import(
+        source: ReferenceSource,
+        transform: ImageTransform? = null,
+    ): Outcome<PreparedReference>
 }

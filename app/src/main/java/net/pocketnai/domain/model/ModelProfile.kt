@@ -84,6 +84,15 @@ data class ModelProfile(
      * 是为了将来出现不支持的模型时不必回头改调用点。
      */
     val supportsImg2Img: Boolean,
+    /**
+     * 是否支持 Vibe Transfer。
+     *
+     * 账号所有者确认（2026-09-14）：**Vibe Transfer 与 Precise Reference 目前只有 V4.5 能用**，
+     * V5 不支持。界面据此隐藏入口，避免构造出服务端一定拒绝的请求。
+     */
+    val supportsVibeTransfer: Boolean,
+    /** 是否支持 Precise Reference。同上：目前仅 V4.5。 */
+    val supportsDirectorReference: Boolean,
     /** Vibe Transfer 的参考图张数上限。数值集中在 [ModelCatalog]，见那里的待核对说明。 */
     val maxVibeReferences: Int,
     /** Precise Reference 的参考图张数上限。数值集中在 [ModelCatalog]，见那里的待核对说明。 */
@@ -92,6 +101,14 @@ data class ModelProfile(
     val img2imgStrengthRange: NumericRange,
     /** Image2Img 的 Strength 默认值。 */
     val defaultImg2ImgStrength: Double,
+    /** Precise Reference 三个滑块（Strength / Fidelity / Information Extracted）共用的区间。 */
+    val directorReferenceRange: NumericRange,
+    /** Precise Reference 的 Strength 默认值。 */
+    val defaultDirectorStrength: Double,
+    /** Precise Reference 的 Fidelity（API 里的 secondary strength）默认值。 */
+    val defaultDirectorFidelity: Double,
+    /** Precise Reference 的 Information Extracted 默认值。 */
+    val defaultDirectorInfoExtracted: Double,
     val configVersion: String,
 ) {
     val displayName: String get() = model.displayName

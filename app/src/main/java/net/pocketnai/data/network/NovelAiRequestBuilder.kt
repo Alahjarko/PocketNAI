@@ -2,13 +2,17 @@ package net.pocketnai.data.network
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import net.pocketnai.domain.model.DirectorReferenceKind
 import net.pocketnai.domain.model.GenerationMode
 import net.pocketnai.domain.model.GenerationParams
 import net.pocketnai.domain.model.GenerationRequest
 import net.pocketnai.domain.model.ModelProfile
+import net.pocketnai.domain.model.ReferenceImage
+import net.pocketnai.domain.model.ReferenceRole
 import net.pocketnai.domain.model.applyQualityTags
 
 /**
@@ -49,18 +53,26 @@ object NovelAiRequestBuilder {
     fun build(profile: ModelProfile, params: GenerationParams): JsonObject =
         build(profile, GenerationRequest(params = params), sourceImageBase64 = null)
 
+    fun build(
+        profile: ModelProfile,
+        request: GenerationRequest,
+        sourceImageBase64: String?,
+    ): JsonObject = build(
+        profile = profile,
+        request = request,
+        upstreamImages = sourceImageBase64?.let { mapOf(ReferenceRole.IMG2IMG to listOf(it)) }
+            ?: emptyMap(),
+    )
+
     /**
-     * 构造完整请求体（含参考图）。
+     * 构造完整请求体（含各类参考图）。
      *
-     * [sourceImageBase64] 是 Image2Img 起点图的 base64；由调用方在提交前从本地文件编码得到，
+     * [upstreamImages] 按角色给出已经编码好的 base64 列表，由调用方在提交前从本地文件生成，
      * 不进入 [GenerationRequest]，也就不会被写进数据库或长期驻留。
      *
-     * ## 图生图用的是 `parameters` 顶层字段
-     * - `image`：起点图的 base64；
-     * - `strength`：改动幅度。
-     *
-     * OpenAPI 里还有一个嵌套的 `parameters.img2img` 对象，但它的字段说明写的是
-     * `used by inpaint` —— 那是局部重绘的形态，整图图生图不发它（见规划书 3.1）。
+     * ## 各类参考图落在不同字段上
+     * - Image2Img：`parameters.image` + `parameters.strength`，`action` 换成 `img2img`；
+     * - Precise Reference：`parameters.director_reference_*` 五个数组，与上面互不干扰。
      *
      * ## 刻意不发的字段
      * `noise`、`extra_noise_seed`、`add_original_image`、`color_correct` 一律不发：
@@ -70,7 +82,7 @@ object NovelAiRequestBuilder {
     fun build(
         profile: ModelProfile,
         request: GenerationRequest,
-        sourceImageBase64: String?,
+        upstreamImages: Map<ReferenceRole, List<String>>,
     ): JsonObject {
         val params = request.params
         val normalized = profile.normalize(params)
@@ -81,11 +93,14 @@ object NovelAiRequestBuilder {
         val positive = applyQualityTags(normalized.prompt, normalized.qualityTags)
         val negative = normalized.negativePrompt
 
-        // 起点图真的拿到了才算图生图。缺图时按纯文生图提交，并且**连 action 都不换** ——
-        // 换了 action 却没有 image，服务端同样会报参数错误。
-        val img2imgSource = request.img2imgSource?.takeIf {
-            request.mode == GenerationMode.IMG2IMG && !sourceImageBase64.isNullOrEmpty()
-        }
+        val img2imgSource = upstreamImages[ReferenceRole.IMG2IMG]?.firstOrNull()
+            ?.takeIf { request.mode == GenerationMode.IMG2IMG && it.isNotEmpty() }
+        val directorSources = upstreamImages[ReferenceRole.DIRECTOR].orEmpty()
+        val directors = request.referencesOf(ReferenceRole.DIRECTOR)
+        // 数量对不上说明编码环节漏了图：宁可不发这组字段，也不发一个对不齐的数组。
+        val useDirector = request.mode == GenerationMode.PRECISE_REFERENCE &&
+            directorSources.size == directors.size &&
+            directors.isNotEmpty()
 
         val parameters = buildJsonObject {
             put("params_version", profile.paramsVersion)
@@ -108,29 +123,106 @@ object NovelAiRequestBuilder {
             put("qualityToggle", false)
             put("negative_prompt", negative)
 
-            // NovelAI 的 V4.5 / V5 需要结构化 Prompt；首版不做多角色，char_captions 固定为空。
+            // NovelAI 的 V4.5 / V5 需要结构化 Prompt；多角色坐标不在本期范围，char_captions 固定为空。
             put("v4_prompt", captionBlock(text = positive, isNegative = false))
             put("v4_negative_prompt", captionBlock(text = negative, isNegative = true))
 
             if (img2imgSource != null) {
-                put("image", sourceImageBase64)
+                put("image", img2imgSource)
                 // 越界值在这里夹取，与其它数值参数走同一条规则（ModelProfile 是唯一出口）。
                 put(
                     "strength",
                     profile.img2imgStrengthRange.clamp(
-                        img2imgSource.strength ?: profile.defaultImg2ImgStrength,
+                        request.img2imgSource?.strength ?: profile.defaultImg2ImgStrength,
                     ),
                 )
+            }
+
+            if (useDirector) {
+                appendDirectorReferences(profile, directors, directorSources)
             }
         }
 
         return buildJsonObject {
             put("input", positive)
             put("model", profile.model.apiModelId)
-            put("action", if (img2imgSource != null) ACTION_IMG2IMG else ACTION_GENERATE)
+            put("action", actionFor(request.mode, img2imgSource != null))
             put("parameters", parameters)
         }
     }
+
+    /**
+     * Precise Reference 的五个数组（官方 OpenAPI 的 `director_reference_*`）。
+     *
+     * 数组之间**按下标一一对应**，因此任何一项缺失都不能"跳过"，
+     * 否则后面对齐会整体错位。这也是为什么这里逐项都有兜底值而不是 `mapNotNull`。
+     *
+     * `director_reference_descriptions[].caption.base_caption` 用 `character`
+     * 或 `character&style`（官方字段说明给出），前者只取角色、后者连画风一起取。
+     */
+    private fun JsonObjectBuilder.appendDirectorReferences(
+        profile: ModelProfile,
+        references: List<ReferenceImage>,
+        encoded: List<String>,
+    ) {
+        put("director_reference_images", buildJsonArray { encoded.forEach { add(it) } })
+
+        put(
+            "director_reference_descriptions",
+            buildJsonArray {
+                references.forEach { reference ->
+                    add(
+                        buildJsonObject {
+                            put(
+                                "caption",
+                                buildJsonObject {
+                                    put(
+                                        "base_caption",
+                                        (reference.directorKind
+                                            ?: DirectorReferenceKind.CHARACTER).apiValue,
+                                    )
+                                    put("char_captions", buildJsonArray { })
+                                },
+                            )
+                            put("use_coords", false)
+                            put("use_order", true)
+                        },
+                    )
+                }
+            },
+        )
+
+        val strengthRange = profile.directorReferenceRange
+        put(
+            "director_reference_strength_values",
+            buildJsonArray {
+                references.forEach { add(strengthRange.clamp(it.strength ?: profile.defaultDirectorStrength)) }
+            },
+        )
+        put(
+            "director_reference_secondary_strength_values",
+            buildJsonArray {
+                references.forEach {
+                    add(strengthRange.clamp(it.secondaryStrength ?: profile.defaultDirectorFidelity))
+                }
+            },
+        )
+        put(
+            "director_reference_information_extracted",
+            buildJsonArray {
+                references.forEach {
+                    add(strengthRange.clamp(it.informationExtracted ?: profile.defaultDirectorInfoExtracted))
+                }
+            },
+        )
+    }
+
+    /**
+     * Precise Reference 不换 action：它是普通 `generate` 请求加上 `director_reference_*` 字段。
+     * 只有 Image2Img 需要换 `img2img`（`image` 字段只在那个 action 下被接受，真机验证结论）。
+     */
+    private fun actionFor(mode: GenerationMode, hasImg2ImgImage: Boolean): String =
+        if (hasImg2ImgImage) ACTION_IMG2IMG else ACTION_GENERATE
 
     private fun captionBlock(text: String, isNegative: Boolean): JsonObject = buildJsonObject {
         put(

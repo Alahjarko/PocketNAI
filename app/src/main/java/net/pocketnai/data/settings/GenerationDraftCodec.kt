@@ -2,6 +2,7 @@ package net.pocketnai.data.settings
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import net.pocketnai.domain.model.DirectorReferenceKind
 import net.pocketnai.domain.model.GenerationDraft
 import net.pocketnai.domain.model.GenerationParams
 import net.pocketnai.domain.model.ImageModel
@@ -59,11 +60,17 @@ object GenerationDraftCodec {
         val qualityTags: String = "",
         val ucPresetIndex: Int = -1,
         /**
-         * Image2Img 的起点图。
+         * 编辑区里挂着的参考图。
          *
          * 只存本地文件索引与逐条参数，**不存图片数据**：草稿是一个很小的首选项文件，
          * 图片本身已经在 `files/references/` 里内容寻址存着。
-         * 多张参考图（Vibe / Precise Reference）等到那两个功能落地时再改成列表。
+         */
+        val references: List<ReferenceDto> = emptyList(),
+
+        /**
+         * 旧版本（只支持一张图生图起点图时）的字段。
+         *
+         * 保留读取能力：用户升级前保存的草稿里只有这个字段，丢掉它等于让用户重新选一次图。
          */
         val reference: ReferenceDto? = null,
     )
@@ -72,6 +79,7 @@ object GenerationDraftCodec {
     private data class ReferenceDto(
         val id: String = "",
         val role: String = "",
+        val ordinal: Int = 0,
         val relativePath: String = "",
         val width: Int = 0,
         val height: Int = 0,
@@ -79,6 +87,9 @@ object GenerationDraftCodec {
         val sha256: String = "",
         val createdAt: Long = 0L,
         val strength: Double? = null,
+        val informationExtracted: Double? = null,
+        val secondaryStrength: Double? = null,
+        val directorKind: String? = null,
     )
 
     fun encode(draft: GenerationDraft): String {
@@ -102,22 +113,26 @@ object GenerationDraftCodec {
                 baseSeed = params.baseSeed,
                 qualityTags = params.qualityTags.name,
                 ucPresetIndex = params.undesiredContentPresetIndex,
-                reference = draft.referenceSource?.let { reference ->
-                    ReferenceDto(
-                        id = reference.id,
-                        role = reference.role.name,
-                        relativePath = reference.relativePath,
-                        width = reference.width,
-                        height = reference.height,
-                        byteSize = reference.byteSize,
-                        sha256 = reference.sha256,
-                        createdAt = reference.createdAt,
-                        strength = reference.strength,
-                    )
-                },
+                references = draft.references.map { it.toDto() },
             ),
         )
     }
+
+    private fun ReferenceImage.toDto(): ReferenceDto = ReferenceDto(
+        id = id,
+        role = role.name,
+        ordinal = ordinal,
+        relativePath = relativePath,
+        width = width,
+        height = height,
+        byteSize = byteSize,
+        sha256 = sha256,
+        createdAt = createdAt,
+        strength = strength,
+        informationExtracted = informationExtracted,
+        secondaryStrength = secondaryStrength,
+        directorKind = directorKind?.apiValue,
+    )
 
     /** 解码失败或输入为空时返回 null，由调用方使用 [GenerationDraft.defaults]。 */
     fun decode(raw: String?): GenerationDraft? {
@@ -155,12 +170,14 @@ object GenerationDraftCodec {
             params = profile.normalize(rawParams),
             promptTemplate = dto.prompt,
             negativeTemplate = dto.negative,
-            referenceSource = dto.reference?.toDomain(profile),
+            // 旧版本只存了单张起点图，这里一并读回来，不让用户重新选图。
+            references = (dto.references + listOfNotNull(dto.reference))
+                .mapNotNull { it.toDomain(profile) },
         )
     }
 
     /**
-     * 参考图的降级：路径或角色读不出来就当作没有参考图。
+     * 参考图的降级：路径或角色读不出来就丢掉这一条。
      *
      * 这里刻意不检查文件是否存在 —— 编解码器是纯 Kotlin 的，不碰文件系统。
      * 文件真的丢了的话，提交时会被 `GenerationRequest.validate` 拦下并明确提示；
@@ -169,17 +186,25 @@ object GenerationDraftCodec {
     private fun ReferenceDto.toDomain(profile: ModelProfile): ReferenceImage? {
         if (relativePath.isBlank()) return null
         val parsedRole = runCatching { ReferenceRole.valueOf(role) }.getOrNull() ?: return null
+        val range = if (parsedRole == ReferenceRole.DIRECTOR) {
+            profile.directorReferenceRange
+        } else {
+            profile.img2imgStrengthRange
+        }
         return ReferenceImage(
             id = id.ifBlank { relativePath },
             role = parsedRole,
-            ordinal = 0,
+            ordinal = ordinal,
             relativePath = relativePath,
             width = width,
             height = height,
             byteSize = byteSize,
             sha256 = sha256,
             createdAt = createdAt,
-            strength = strength?.let { profile.img2imgStrengthRange.clamp(it) },
+            strength = strength?.let { range.clamp(it) },
+            informationExtracted = informationExtracted?.let { profile.directorReferenceRange.clamp(it) },
+            secondaryStrength = secondaryStrength?.let { profile.directorReferenceRange.clamp(it) },
+            directorKind = directorKind?.let { DirectorReferenceKind.fromApiValueOrDefault(it) },
         )
     }
 }

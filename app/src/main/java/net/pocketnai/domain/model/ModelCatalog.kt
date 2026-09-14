@@ -63,6 +63,27 @@ object ModelCatalog {
     /** Image2Img 的 Strength 区间。官方滑块是 0–1。 */
     private val IMG2IMG_STRENGTH_RANGE = NumericRange(min = 0.0, max = 1.0, step = 0.01)
 
+    /**
+     * Precise Reference 三个滑块共用的区间。
+     *
+     * ⚠️ 官方的 Strength / Fidelity / Information Extracted 都是 0–1 的滑杆
+     * （OpenAPI 对其中两个明确标注了 0–1），但**各自的实际可用区间尚未核对**，
+     * 因此三个共用同一个区间；核对后可以拆成三个。
+     */
+    private val DIRECTOR_REFERENCE_RANGE = NumericRange(min = 0.0, max = 1.0, step = 0.01)
+
+    /**
+     * Precise Reference 三个滑块的默认值。
+     *
+     * ⚠️ **待核对**：官方网页版 Precise Reference 面板的滑块初值尚未记录。
+     * 与 `noise` 那类"可以留空让服务端兜底"的字段不同，这三个值必须由客户端发送
+     * （数组要与图片一一对应），没有留空的余地，因此先取工作值。
+     * 集中在这里，阶段 0 核对后改这三行即可。
+     */
+    private const val DEFAULT_DIRECTOR_STRENGTH = 0.6
+    private const val DEFAULT_DIRECTOR_FIDELITY = 0.5
+    private const val DEFAULT_DIRECTOR_INFO_EXTRACTED = 1.0
+
     /** DPM++ 2S Ancestral 不支持 Karras 调度。 */
     private val NO_KARRAS = linkedSetOf(
         NoiseSchedule.NATIVE,
@@ -153,11 +174,19 @@ object ModelCatalog {
         promptSoftLimitChars = promptSoftLimitChars,
         supportsMultilingualPrompt = supportsMultilingualPrompt,
         paramsVersion = PARAMS_VERSION_V4_V5,
+        // Image2Img 四个模型都能用（账号所有者确认：V4.5 与 V5 都支持）。
         supportsImg2Img = true,
+        // 参考条件类功能目前只有 V4.5 能用，V5 不支持（账号所有者确认）。
+        supportsVibeTransfer = model.family == GenerationFamily.V4_5,
+        supportsDirectorReference = model.family == GenerationFamily.V4_5,
         maxVibeReferences = MAX_VIBE_REFERENCES,
         maxDirectorReferences = MAX_DIRECTOR_REFERENCES,
         img2imgStrengthRange = IMG2IMG_STRENGTH_RANGE,
         defaultImg2ImgStrength = DEFAULT_IMG2IMG_STRENGTH,
+        directorReferenceRange = DIRECTOR_REFERENCE_RANGE,
+        defaultDirectorStrength = DEFAULT_DIRECTOR_STRENGTH,
+        defaultDirectorFidelity = DEFAULT_DIRECTOR_FIDELITY,
+        defaultDirectorInfoExtracted = DEFAULT_DIRECTOR_INFO_EXTRACTED,
         configVersion = CONFIG_VERSION,
     )
 

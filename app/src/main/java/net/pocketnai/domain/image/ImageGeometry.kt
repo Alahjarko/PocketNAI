@@ -45,8 +45,16 @@ sealed interface ImageTransform {
     /** 铺满 [target]，保持比例、裁剪多余边缘。用于 Image2Img。 */
     data class Cover(val target: PixelSize) : ImageTransform
 
-    /** 完整放进 [canvas]，不足处留黑。用于 Precise Reference。 */
+    /** 完整放进 [canvas]，不足处留黑。用于已确定画布尺寸的场合。 */
     data class Letterbox(val canvas: PixelSize) : ImageTransform
+
+    /**
+     * 按官方要求补齐到与源图方向对应的画布（1024×1536 / 1536×1024 / 1472×1472）。
+     *
+     * 单独成一个变体，是因为"选哪块画布"取决于源图的方向，而方向要解码之后才知道 ——
+     * 调用方在导入时还不掌握这个信息，只能把决策交给处理管线。
+     */
+    data object DirectorCanvas : ImageTransform
 }
 
 /**
@@ -83,6 +91,7 @@ object ImageGeometry {
         when (transform) {
             is ImageTransform.Cover -> centerCrop(source, transform.target)
             is ImageTransform.Letterbox -> letterbox(source, transform.canvas)
+            ImageTransform.DirectorCanvas -> letterbox(source, directorCanvas(source))
         }
 
     /**

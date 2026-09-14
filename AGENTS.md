@@ -64,6 +64,15 @@
   （`generations.mode` 就是这么加的：迁移里只 `ADD COLUMN` 不带默认值，再用一次
   `UPDATE` 回填 `TXT2IMG`）。
 
+### 参考图的请求形态
+
+- 图生图：`action` 换成 `img2img`，`parameters.image` + `parameters.strength`。
+- Precise Reference：`action` 保持 `generate`，发 `director_reference_*` **五个数组**。
+  数组按下标一一对应，**任何一项缺失都不能跳过**（必须补默认值），
+  否则"这个角色的强度"会落到"那个角色"上，而服务端不报错。
+- 黑边补齐在**导入时**做（`ImageTransform.DirectorCanvas`），缩略图因此就是提交图；
+  提交时再套一次同样的 Letterbox 是恒等变换，不要"聪明地"跳过。
+
 ### 参考图的文件存储
 
 - 参考图与 encode-vibe 产物是**内容寻址**的：`files/references/<sha256>.png`、
@@ -72,6 +81,9 @@
   `GenerationFileStore.cleanupOrphans` 按"仍被引用的路径集合"回收；
   那个集合必须来自 `GenerationDao.allReferencePaths()` 的完整查询，漏一条就会误删。
 - 不要给参考图做"按生成记录分目录"的改动：那会让重复使用同一张图时磁盘翻倍。
+- 启动清理的存活集合 = 数据库引用 ∪ **草稿里挂着的参考图**（`LiveReferencePathsProvider`）。
+  少了后者，用户"选好图 → 重启应用 → 生成"必然失败并报"参考图已不在本机"。
+  它是 `GenerationRepository` 的必填参数，不要图省事给它默认空集合。
 - **`reference_images` 行的主键是 `"<generationId>:<role>:<ordinal>"`，不是素材的 id。**
   素材（`ReferenceImage.id`）会被草稿与"复用参数"跨生成复用，而插入用的是
   `OnConflictStrategy.IGNORE` —— 拿素材 id 当主键会让第二次生成静默丢掉参考图行。
@@ -98,8 +110,12 @@
 - 费用计算器只能返回四态之一（免费 / V5 额度 / 预计 Anlas / 待确认）。
   **未用官方网页费用标签校准的付费组合必须返回"待确认"，不允许猜数字。**
   定价公式的入口是 `PaidAnlasFormula`，默认实现是恒不支持校准的占位实现。
-- 每张参考图有固定附加费（`AnlasCostCalculator.REFERENCE_IMAGE_SURCHARGE_ANLAS`）；
+- **附加费按功能而不是按图数计**：Image2Img 不额外收费（V4.5 / V5 都是，已用余额观测印证），
+  Precise Reference 每张 5 Anlas（同样已印证），Vibe Transfer 未知 → 必须显示"待确认"。
+  常量是 `AnlasCostCalculator.PRECISE_REFERENCE_SURCHARGE_ANLAS`。
   基础费用未知时**不要只报附加费**，那会让用户以为总共只要 5。
+- 模型能力位：图生图四个模型都支持；**Vibe Transfer 与 Precise Reference 目前只有 V4.5**。
+  界面要隐藏 V5 上的入口，`GenerationRequest.validate` 也要在本地拦一次。
 - 实测免费规则只覆盖被观测过的参数（V4.5 Curated + Normal + Steps ≤ 28 + Guidance 7.0 + 至多一张起点图）；
   **不要**把它放宽到整个 V4.5 家族或 V5，也不要放宽到任意 Guidance。
 

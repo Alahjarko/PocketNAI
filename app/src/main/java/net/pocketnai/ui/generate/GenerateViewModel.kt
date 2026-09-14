@@ -31,9 +31,11 @@ import net.pocketnai.domain.billing.GenerationCostEstimate
 import net.pocketnai.domain.billing.GenerationKind
 import net.pocketnai.domain.billing.ObservedBalanceChange
 import net.pocketnai.domain.billing.SubscriptionBalance
+import net.pocketnai.domain.image.ImageTransform
 import net.pocketnai.domain.image.PreparedReference
 import net.pocketnai.domain.image.ReferenceImageImporter
 import net.pocketnai.domain.image.ReferenceSource
+import net.pocketnai.domain.model.DirectorReferenceKind
 import net.pocketnai.domain.model.GenerationDraft
 import net.pocketnai.domain.model.GenerationMode
 import net.pocketnai.domain.model.GenerationParams
@@ -48,6 +50,7 @@ import net.pocketnai.domain.model.NoiseSchedule
 import net.pocketnai.domain.model.ParamViolation
 import net.pocketnai.domain.model.QualityTagsOption
 import net.pocketnai.domain.model.ReferenceImage
+import net.pocketnai.domain.model.ReferenceRole
 import net.pocketnai.domain.model.ResolutionTier
 import net.pocketnai.domain.model.Sampler
 import net.pocketnai.domain.model.SeedMode
@@ -91,11 +94,19 @@ class GenerateViewModel(
         /** 切换模型时若参数被替换，向用户说明发生了什么。 */
         val modelSwitchNotice: String? = null,
         /**
-         * Image2Img 的起点图。非空即代表当前处于图生图模式 ——
-         * 模式不是一个独立的开关，而是"有没有起点图"的结果，
-         * 这样就不可能出现"选了图生图模式却没有图"这种自相矛盾的状态。
+         * Image2Img 的起点图。非空即代表当前处于图生图模式。
+         *
+         * 模式不是独立开关，而是"挂了哪类参考图"的结果，这样不会出现
+         * "选了图生图模式却没有图"这种自相矛盾的状态。
          */
         val referenceSource: ReferenceImage? = null,
+        /**
+         * Precise Reference 的参考图（角色 / 画风），最多 [ModelProfile.maxDirectorReferences] 张。
+         *
+         * 与 [referenceSource] **互斥**：图生图与 Precise Reference 用不同的 `action`，
+         * 两者同时存在时请求形态没有经过验证，因此界面上一挂上其中一类就清掉另一类。
+         */
+        val directorReferences: List<ReferenceImage> = emptyList(),
         /** 正在导入参考图（解码 + 落盘）。期间不该重复触发导入。 */
         val referenceBusy: Boolean = false,
         /** 参考图导入失败的原因，与生成失败分开：它不影响已经写好的提示词与参数。 */
@@ -137,8 +148,23 @@ class GenerateViewModel(
 
         val canGenerate: Boolean get() = !inFlight && !referenceBusy && promptTemplate.isNotBlank()
 
+        /** 本次会用的全部参考图（图生图起点 + Precise Reference）。 */
+        val allReferences: List<ReferenceImage>
+            get() = listOfNotNull(referenceSource) + directorReferences
+
         val mode: GenerationMode
-            get() = if (referenceSource != null) GenerationMode.IMG2IMG else GenerationMode.TXT2IMG
+            get() = when {
+                directorReferences.isNotEmpty() -> GenerationMode.PRECISE_REFERENCE
+                referenceSource != null -> GenerationMode.IMG2IMG
+                else -> GenerationMode.TXT2IMG
+            }
+
+        /** 当前模型是否支持 Precise Reference（目前仅 V4.5；V5 不支持）。 */
+        val supportsDirectorReference: Boolean get() = profile.supportsDirectorReference
+
+        /** 还能再加几张 Precise Reference。 */
+        val remainingDirectorSlots: Int
+            get() = (profile.maxDirectorReferences - directorReferences.size).coerceAtLeast(0)
 
         /**
          * 提交时会把起点图裁切到的尺寸。
@@ -164,7 +190,8 @@ class GenerateViewModel(
             params = draft.params,
             promptTemplate = draft.promptTemplate,
             negativeTemplate = draft.negativeTemplate,
-            referenceSource = draft.referenceSource,
+            referenceSource = draft.references.firstOrNull { it.role == ReferenceRole.IMG2IMG },
+            directorReferences = draft.references.filter { it.role == ReferenceRole.DIRECTOR },
         )
     }
 
@@ -216,9 +243,15 @@ class GenerateViewModel(
             generationKind = when (state.mode) {
                 GenerationMode.TXT2IMG -> GenerationKind.TEXT_TO_IMAGE
                 GenerationMode.IMG2IMG -> GenerationKind.IMAGE_TO_IMAGE
+                GenerationMode.PRECISE_REFERENCE -> GenerationKind.PRECISE_REFERENCE
             },
             hasBaseImage = state.referenceSource != null,
-            referenceImageCount = state.referenceSource?.let { 1 } ?: 0,
+            // 只有 Precise Reference 的参考图数量影响价格；图生图的起点图不额外收费。
+            referenceImageCount = when (state.mode) {
+                GenerationMode.PRECISE_REFERENCE -> state.directorReferences.size
+                GenerationMode.IMG2IMG -> 1
+                GenerationMode.TXT2IMG -> 0
+            },
             pricingPolicyVersion = costCalculator.policyVersion,
         )
     }
@@ -240,7 +273,7 @@ class GenerateViewModel(
                         params = current.params,
                         promptTemplate = current.promptTemplate,
                         negativeTemplate = current.negativeTemplate,
-                        referenceSource = current.referenceSource,
+                        references = current.allReferences,
                     )
                 }
                 .distinctUntilChanged()
@@ -260,6 +293,7 @@ class GenerateViewModel(
                         promptTemplate = reused.params.prompt,
                         negativeTemplate = reused.params.negativePrompt,
                         referenceSource = reused.img2imgSource,
+                        directorReferences = reused.referencesOf(ReferenceRole.DIRECTOR),
                         error = null,
                         modelSwitchNotice = null,
                         referenceError = null,
@@ -469,6 +503,8 @@ class GenerateViewModel(
                                 id = idGenerator(),
                                 createdAt = clock(),
                             ),
+                            // 图生图与 Precise Reference 互斥：挂上起点图就清掉另一类。
+                            directorReferences = emptyList(),
                             params = current.params.copy(size = sizeForSource(profile, prepared)),
                         )
                     }
@@ -484,6 +520,116 @@ class GenerateViewModel(
     fun onRemoveReference() {
         _state.update { it.copy(referenceSource = null, referenceError = null) }
     }
+
+    // ---- Precise Reference ----
+
+    /**
+     * 添加一张 Precise Reference。
+     *
+     * 导入时**就补齐黑边**（[ImageTransform.Letterbox] 到官方要求的三种画布之一），
+     * 因此缩略图看到的就是实际提交的那张图；提交时再套一次同样的 Letterbox 是恒等变换。
+     */
+    fun onDirectorReferencePicked(source: ReferenceSource) {
+        val current = _state.value
+        if (current.referenceBusy) return
+        if (!current.supportsDirectorReference) {
+            _state.update {
+                it.copy(referenceError = AppError.of(ErrorCode.INVALID_PARAMS, detail = "当前模型不支持 Precise Reference"))
+            }
+            return
+        }
+        if (current.remainingDirectorSlots <= 0) return
+
+        _state.update { it.copy(referenceBusy = true, referenceError = null) }
+        viewModelScope.launch {
+            when (
+                val outcome = referenceImporter.import(
+                    source = source,
+                    // 导入时就按官方要求补齐黑边：缩略图与提交图因此是同一张。
+                    transform = ImageTransform.DirectorCanvas,
+                )
+            ) {
+                is Outcome.Success -> {
+                    val prepared = outcome.value
+                    _state.update { state ->
+                        val profile = state.profile
+                        val ordinal = state.directorReferences.size
+                        val reference = ReferenceImage(
+                            id = idGenerator(),
+                            role = ReferenceRole.DIRECTOR,
+                            ordinal = ordinal,
+                            relativePath = prepared.relativePath,
+                            width = prepared.width,
+                            height = prepared.height,
+                            byteSize = prepared.byteSize,
+                            sha256 = prepared.sha256,
+                            createdAt = clock(),
+                            strength = profile.defaultDirectorStrength,
+                            secondaryStrength = profile.defaultDirectorFidelity,
+                            informationExtracted = profile.defaultDirectorInfoExtracted,
+                            directorKind = DirectorReferenceKind.CHARACTER,
+                        )
+                        state.copy(
+                            referenceBusy = false,
+                            // 与图生图互斥。
+                            referenceSource = null,
+                            directorReferences = state.directorReferences + reference,
+                        )
+                    }
+                }
+
+                is Outcome.Failure -> _state.update {
+                    it.copy(referenceBusy = false, referenceError = outcome.error)
+                }
+            }
+        }
+    }
+
+    fun onDirectorReferenceRemoved(id: String) {
+        _state.update { current ->
+            current.copy(
+                directorReferences = current.directorReferences
+                    .filterNot { it.id == id }
+                    // 顺序号必须连续：它直接对应请求数组的下标。
+                    .mapIndexed { index, reference -> reference.copy(ordinal = index) },
+            )
+        }
+    }
+
+    fun onDirectorKindChanged(id: String, kind: DirectorReferenceKind) {
+        updateDirectorReference(id) { it.copy(directorKind = kind) }
+    }
+
+    fun onDirectorStrengthChanged(id: String, value: Double) {
+        updateDirectorReference(id) { reference ->
+            reference.copy(strength = clampedDirector(value))
+        }
+    }
+
+    fun onDirectorFidelityChanged(id: String, value: Double) {
+        updateDirectorReference(id) { reference ->
+            reference.copy(secondaryStrength = clampedDirector(value))
+        }
+    }
+
+    fun onDirectorInformationExtractedChanged(id: String, value: Double) {
+        updateDirectorReference(id) { reference ->
+            reference.copy(informationExtracted = clampedDirector(value))
+        }
+    }
+
+    private fun updateDirectorReference(id: String, transform: (ReferenceImage) -> ReferenceImage) {
+        _state.update { current ->
+            current.copy(
+                directorReferences = current.directorReferences.map { reference ->
+                    if (reference.id == id) transform(reference) else reference
+                },
+            )
+        }
+    }
+
+    private fun clampedDirector(value: Double): Double =
+        _state.value.profile.directorReferenceRange.clamp(value)
 
     fun onImg2imgStrengthChange(strength: Double) {
         _state.update { current ->
@@ -602,7 +748,7 @@ class GenerateViewModel(
         val request = GenerationRequest(
             params = frozen,
             mode = snapshot.mode,
-            references = listOfNotNull(snapshot.referenceSource),
+            references = snapshot.allReferences,
         )
 
         // 生成前快照：**不等待余额请求**，只取内存里已有的值（规划 §8.1）。

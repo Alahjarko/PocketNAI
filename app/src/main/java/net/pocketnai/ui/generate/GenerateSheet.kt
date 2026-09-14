@@ -187,9 +187,17 @@ fun GenerateSheet(
             // 费用状态的展开态说明（按钮上只有短文案）。
             CostDetailLine(costEstimate = costEstimate)
 
-            // 参考图放在最上面：它是"这次生成用什么模式"的前提，
+            // 参考图放在最上面：它们是"这次生成用什么模式"的前提，
             // 而模式会决定下面的尺寸与计费预期。
+            // 两块互斥（图生图 vs 参考条件），挂上其中一类会清空另一类。
             ReferenceImageSection(
+                state = state,
+                connected = connected,
+                viewModel = viewModel,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            PreciseReferenceSection(
                 state = state,
                 connected = connected,
                 viewModel = viewModel,

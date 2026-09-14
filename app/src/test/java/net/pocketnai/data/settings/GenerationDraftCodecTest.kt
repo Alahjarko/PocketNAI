@@ -1,9 +1,12 @@
 package net.pocketnai.data.settings
 
 import com.google.common.truth.Truth.assertThat
+import net.pocketnai.domain.model.DirectorReferenceKind
 import net.pocketnai.domain.model.GenerationDraft
 import net.pocketnai.domain.model.GenerationParams
 import net.pocketnai.domain.model.ImageModel
+import net.pocketnai.domain.model.ReferenceImage
+import net.pocketnai.domain.model.ReferenceRole
 import net.pocketnai.domain.model.ImageOrientation
 import net.pocketnai.domain.model.ImageSizePreset
 import net.pocketnai.domain.model.ModelCatalog
@@ -185,6 +188,80 @@ class GenerationDraftCodecTest {
         assertThat(restored).isNotNull()
         assertThat(restored!!.params.model).isEqualTo(ImageModel.V4_5_CURATED)
     }
+
+    @Test
+    fun `多张参考图可以往返`() {
+        val draft = draftWith().copy(
+            references = listOf(
+                reference("img", ReferenceRole.IMG2IMG, ordinal = 0),
+                reference("cr-0", ReferenceRole.DIRECTOR, ordinal = 0),
+                reference("cr-1", ReferenceRole.DIRECTOR, ordinal = 1),
+            ),
+        )
+
+        val restored = GenerationDraftCodec.decode(GenerationDraftCodec.encode(draft))
+
+        assertThat(restored?.references?.map { it.id })
+            .containsExactly("img", "cr-0", "cr-1")
+            .inOrder()
+        assertThat(restored?.references?.first { it.id == "cr-1" }?.directorKind)
+            .isEqualTo(DirectorReferenceKind.CHARACTER_AND_STYLE)
+    }
+
+    @Test
+    fun `只存了单张起点图的旧草稿仍能读回`() {
+        // 升级前保存的草稿只有 reference 字段（那时只支持一张图生图起点图），
+        // 读不回来等于让用户重新选一次图。这里直接用一份旧结构的 JSON。
+        val legacy = """
+            {"version":1,"prompt":"1girl","negative":"","modelApiId":"nai-diffusion-4-5-curated",
+             "width":832,"height":1216,"sampleCount":1,"steps":23,"guidance":7.0,"cfgRescale":0.0,
+             "sampler":"k_euler_ancestral","noiseSchedule":"karras","seedMode":"RANDOM","baseSeed":0,
+             "qualityTags":"STANDARD","ucPresetIndex":0,
+             "reference":{"id":"old","role":"IMG2IMG","relativePath":"references/old.png",
+                          "width":2560,"height":1440,"byteSize":100,"sha256":"old",
+                          "createdAt":0,"strength":0.7}}
+        """.trimIndent()
+
+        val restored = GenerationDraftCodec.decode(legacy)
+
+        assertThat(restored?.references?.map { it.id }).containsExactly("old")
+        assertThat(restored?.references?.first()?.strength).isEqualTo(0.7)
+        assertThat(restored?.references?.first()?.role).isEqualTo(ReferenceRole.IMG2IMG)
+    }
+
+    @Test
+    fun `参考图数量不影响参数本身的往返`() {
+        val restored = GenerationDraftCodec.decode(
+            GenerationDraftCodec.encode(draftWith().copy(references = emptyList())),
+        )
+
+        assertThat(restored?.references).isEmpty()
+        assertThat(restored?.params?.model).isEqualTo(ImageModel.V4_5_CURATED)
+    }
+
+    private fun reference(
+        id: String,
+        role: ReferenceRole,
+        ordinal: Int,
+    ) = ReferenceImage(
+        id = id,
+        role = role,
+        ordinal = ordinal,
+        relativePath = "references/$id.png",
+        width = 1024,
+        height = 1536,
+        byteSize = 100,
+        sha256 = id,
+        createdAt = 0L,
+        strength = 0.5,
+        informationExtracted = 0.9,
+        secondaryStrength = 0.4,
+        directorKind = if (role == ReferenceRole.DIRECTOR) {
+            DirectorReferenceKind.CHARACTER_AND_STYLE
+        } else {
+            null
+        },
+    )
 
     @Test
     fun `出厂默认草稿本身可以往返`() {

@@ -107,6 +107,21 @@
     <string name="generate_section_prompt">提示词</string>
     <string name="generate_mode_img2img">图生图</string>
     <string name="generate_mode_txt2img">纯文字</string>
+    <string name="generate_mode_precise_reference">Precise Reference</string>
+    <string name="generate_reference_fidelity">Fidelity</string>
+    <string name="generate_reference_kind_character">参考类型：角色</string>
+    <string name="generate_reference_kind_character_style">参考类型：角色与画风</string>
+    <string name="generate_reference_kind_character_short">角色</string>
+    <string name="generate_reference_kind_character_style_short">角色+画风</string>
+    <string name="generate_reference_information">Information Extracted</string>
+
+    <!-- Precise Reference -->
+    <string name="generate_director_title">参考图 · Precise Reference</string>
+    <string name="generate_director_hint">参考图在这里是条件而不是起点：让模型按参考图里的角色或画风去画，生成仍从空白开始。与上面的图生图互斥，挂上其中一类会清空另一类。</string>
+    <string name="generate_director_unsupported">%1$s 不支持 Precise Reference（目前只有 V4.5 支持），请切换到 V4.5 模型。</string>
+    <string name="generate_director_slots">已添加 %1$d / %2$d 张</string>
+    <string name="generate_director_cost_hint">每张 5 Anlas</string>
+    <string name="generate_director_padded_size">已按官方要求补齐为 %1$d × %2$d</string>
     <string name="common_mode">生成方式</string>
     <string name="detail_reference_img2img">起点图（图生图）</string>
     <string name="detail_reference_vibe">Vibe 参考图</string>
@@ -121,7 +136,7 @@
     <string name="generate_reference_target_size">提交尺寸 %1$s（按源图比例，可在下方 Resolution 里改）</string>
     <string name="generate_reference_strength">Strength</string>
     <string name="generate_reference_strength_hint">越小越接近源图，越大越接近纯文字生成的结果。</string>
-    <string name="generate_reference_billing_hint">图生图的计费方式与纯文字生成不同，额度不足时服务端会拒绝这次请求。</string>
+    <string name="generate_reference_billing_hint">图生图不额外收费（与纯文字生成的费用一致）。</string>
     <string name="generate_reference_history_title">选择历史图片</string>
     <string name="generate_reference_history_empty">还没有可用的历史图片。</string>
 

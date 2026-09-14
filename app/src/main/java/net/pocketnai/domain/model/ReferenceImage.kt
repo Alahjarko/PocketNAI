@@ -9,6 +9,15 @@ package net.pocketnai.domain.model
 enum class GenerationMode {
     TXT2IMG,
     IMG2IMG,
+
+    /**
+     * Precise Reference（API 字段叫 `director_reference_*`）。
+     *
+     * 与图生图的语义完全不同：图生图把源图当作生成的起点，整张图要重新长出来；
+     * Precise Reference 把参考图当作条件（角色或画风），生成仍从空白开始。
+     * 因此它不是一个"带图的文生图"，而是独立的一种模式。
+     */
+    PRECISE_REFERENCE,
     ;
 
     companion object {

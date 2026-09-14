@@ -15,7 +15,10 @@ import net.pocketnai.data.network.NovelAiApi
 import net.pocketnai.data.network.NovelAiRequestBuilder
 import net.pocketnai.data.network.ZipImageExtractor
 import net.pocketnai.data.security.CredentialStore
+import net.pocketnai.domain.image.ImageGeometry
 import net.pocketnai.domain.image.ImageTransform
+import net.pocketnai.domain.image.PixelSize
+import net.pocketnai.domain.image.LiveReferencePathsProvider
 import net.pocketnai.domain.image.ReferenceImageEncoder
 import net.pocketnai.domain.image.toPixelSize
 import net.pocketnai.domain.model.GeneratedImage
@@ -27,6 +30,8 @@ import net.pocketnai.domain.model.GenerationStatus
 import net.pocketnai.domain.model.GenerationSummary
 import net.pocketnai.domain.model.ModelCatalog
 import net.pocketnai.domain.model.ParamViolation
+import net.pocketnai.domain.model.ReferenceImage
+import net.pocketnai.domain.model.ReferenceRole
 import net.pocketnai.domain.model.ReferenceViolation
 import net.pocketnai.domain.model.SeedMode
 import net.pocketnai.domain.prompt.PromptRandomizer
@@ -66,6 +71,13 @@ class GenerationRepository(
     private val referenceEncoder: ReferenceImageEncoder = ReferenceImageEncoder { _, _ ->
         Outcome.Failure(AppError.of(ErrorCode.REFERENCE_DECODE_FAILED))
     },
+    /**
+     * 数据库之外还需要保留的参考图（编辑区草稿里挂着的那几张）。
+     *
+     * 不是可选参数：漏掉它会让"选好图还没生成就重启"的用户丢掉刚选的图，
+     * 而那是一个只在真机上才会发现的静默数据丢失。
+     */
+    private val liveReferencePaths: LiveReferencePathsProvider,
     private val clock: () -> Long = System::currentTimeMillis,
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
     private val random: Random = Random.Default,
@@ -133,16 +145,20 @@ class GenerationRepository(
             emit(GenerationEvent.FatalError(generationId, referenceError(referenceViolations)))
             return@flow
         }
-        val sourceImageBase64 = request.img2imgSource?.let { source ->
-            // 按**归一化后的**尺寸裁切：界面显示什么尺寸，提交的就是什么尺寸。
-            val transform = ImageTransform.Cover(normalized.size.toPixelSize())
-            when (val outcome = referenceEncoder.encodeBase64(source.relativePath, transform)) {
-                is Outcome.Success -> outcome.value
-                is Outcome.Failure -> {
-                    emit(GenerationEvent.FatalError(generationId, outcome.error))
-                    return@flow
+        val encodedImages = mutableMapOf<ReferenceRole, List<String>>()
+        for (role in ReferenceRole.entries) {
+            val group = request.referencesOf(role)
+            if (group.isEmpty()) continue
+            val encoded = group.map { reference ->
+                when (val outcome = referenceEncoder.encodeBase64(reference.relativePath, transformFor(reference, normalized))) {
+                    is Outcome.Success -> outcome.value
+                    is Outcome.Failure -> {
+                        emit(GenerationEvent.FatalError(generationId, outcome.error))
+                        return@flow
+                    }
                 }
             }
+            encodedImages[role] = encoded
         }
 
         val estimatedBytes = normalized.size.totalPixels.toLong() *
@@ -184,7 +200,7 @@ class GenerationRepository(
         val archive = fileStore.newArchiveFile(generationId)
         val transport = api.generateImage(
             token = token,
-            payload = NovelAiRequestBuilder.build(profile, request, sourceImageBase64),
+            payload = NovelAiRequestBuilder.build(profile, request, encodedImages),
             destinationZip = archive,
         )
         if (transport is Outcome.Failure) {
@@ -322,11 +338,15 @@ class GenerationRepository(
      * - 把上次进程被系统回收时卡在 `Generating` 的任务标记为失败，
      *   并按规划书 9.1 的口径说明”服务端可能已经接受任务”；
      * - 识别数据库记录指向但磁盘上已缺失的图片文件。
+     *
+     * 参考图的存活集合由两部分组成：数据库里所有被引用的路径，以及
+     * [LiveReferencePathsProvider] 给出的"还没提交但正在编辑"的那几张。
+     * 两者缺一都会误删用户还在用的文件。
      */
     suspend fun cleanupOnStartup(): StartupReport {
         val knownIds = dao.allGenerationIds().toSet()
         // 参考图的存活集合必须来自完整查询：漏一条就会误删别的历史还在用的文件。
-        val referencedPaths = dao.allReferencePaths().toSet()
+        val referencedPaths = dao.allReferencePaths().toSet() + liveReferencePaths.provide()
         val cleanup = fileStore.cleanupOrphans(knownIds, referencedPaths)
 
         // 标记删除但没能完成清理的记录（例如进程在撤销窗口内被杀）在启动时收尾。
@@ -381,6 +401,28 @@ class GenerationRepository(
 
     private fun describe(violations: List<ParamViolation>): String =
         violations.joinToString(separator = "; ") { it.toString() }
+
+    /**
+     * 每类参考图在提交时要被做成什么形状。
+     *
+     * - 图生图起点图：**铺满**输出尺寸（裁掉多余边缘）；
+     * - Precise Reference：**黑边补齐**到官方要求的三种画布之一。
+     *   导入时已经补过一次，这里再套一次是恒等变换 —— 保持这条路径一致，
+     *   比"导入时补过就跳过"更不容易在将来出错。
+     */
+    private fun transformFor(
+        reference: ReferenceImage,
+        normalized: GenerationParams,
+    ): ImageTransform = when (reference.role) {
+        ReferenceRole.IMG2IMG -> ImageTransform.Cover(normalized.size.toPixelSize())
+        ReferenceRole.DIRECTOR -> ImageTransform.Letterbox(
+            ImageGeometry.directorCanvas(PixelSize(reference.width, reference.height)),
+        )
+        // Vibe 走 encode-vibe 编码，不在这里做几何变换；它还没有实现。
+        ReferenceRole.VIBE -> ImageTransform.Letterbox(
+            PixelSize(reference.width, reference.height),
+        )
+    }
 
     /**
      * 参考图问题 → 错误码。

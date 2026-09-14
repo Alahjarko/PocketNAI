@@ -19,6 +19,7 @@ import net.pocketnai.data.repo.PromptFavoriteRepository
 import net.pocketnai.data.security.CredentialStore
 import net.pocketnai.data.security.KeystoreCredentialStore
 import net.pocketnai.data.security.SessionState
+import net.pocketnai.data.settings.DraftReferencePathsProvider
 import net.pocketnai.data.settings.GenerationDraftPreferences
 import net.pocketnai.domain.auth.AccessKeyDeriver
 import net.pocketnai.domain.auth.NovelAiAccessKeyDeriver
@@ -109,6 +110,7 @@ class AppContainer(application: Application) {
             dao = database.generationDao(),
             fileStore = fileStore,
             referenceEncoder = referenceImageProcessor,
+            liveReferencePaths = DraftReferencePathsProvider(generationDraftPreferences),
         )
     }
 

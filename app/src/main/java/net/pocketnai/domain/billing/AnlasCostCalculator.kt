@@ -34,10 +34,19 @@ class AnlasCostCalculator(
         // 免费判定放在"订阅等级是否已知"之前：实测确认的那条规则只依赖参数，
         // 不依赖订阅等级。这样余额还没读回来时按钮上也不会从"费用待确认"跳成"免费"。
         val freeReason = verifiedFreeReasonOrNull(context)
-        val referenceSurcharge = referenceSurchargeOf(context.referenceImageCount)
 
-        if (referenceSurcharge > 0) {
-            // 参考图附加费是**已知的确定值**，但它建立在"基础生成费用"之上：
+        // Vibe Transfer 自身的价格还没有任何依据（账号所有者只确认了 Precise Reference 的附加费），
+        // 因此它一律"待确认"，不因为基础费用免费就说成免费。
+        if (context.generationKind == GenerationKind.VIBE_TRANSFER) {
+            return GenerationCostEstimate.Unknown(
+                paidFormula.version,
+                UnknownCostReason.PRICING_NOT_CALIBRATED,
+            )
+        }
+
+        val surcharge = referenceSurchargeOf(context)
+        if (surcharge > 0) {
+            // 附加费是**已知的确定值**，但它建立在"基础生成费用"之上：
             // 基础费用未知时不能给出总数（只报那 5 点会让用户以为总共只要 5）。
             val baseTotal = baseBatchTotalOrNull(context, freeReason)
                 ?: return GenerationCostEstimate.Unknown(
@@ -46,7 +55,7 @@ class AnlasCostCalculator(
                 )
             return GenerationCostEstimate.EstimatedAnlas(
                 policyVersion = paidFormula.version,
-                batchTotal = saturatingAdd(baseTotal, referenceSurcharge),
+                batchTotal = saturatingAdd(baseTotal, surcharge),
                 imageCount = context.params.sampleCount,
             )
         }
@@ -122,9 +131,23 @@ class AnlasCostCalculator(
         return total.takeIf { it >= 0 }
     }
 
-    /** 参考图附加费：每张固定值，与模型无关。 */
-    private fun referenceSurchargeOf(count: Int): Long =
-        if (count <= 0) 0L else saturatingMultiply(REFERENCE_IMAGE_SURCHARGE_ANLAS, count.toLong())
+    /**
+     * 参考图附加费：**只有 Precise Reference 收费**，每张固定值。
+     *
+     * 账号所有者确认的规则（2026-09-14 更正）：
+     * - Image2Img **不收费**（V4.5 与 V5 都免费，实测也印证了这一点）；
+     * - Precise Reference 每张 +5 Anlas；
+     * - Vibe Transfer 的价格未确认（调用方在更早的分支把它判成"待确认"）。
+     *
+     * 与"按参考图张数收费"的写法相比，这里刻意按**生成类型**区分：
+     * 加的是"这个功能"的钱，不是"多一张图"的钱 —— 图生图也带图，但它不额外收费。
+     */
+    private fun referenceSurchargeOf(context: AnlasPricingContext): Long {
+        if (context.generationKind != GenerationKind.PRECISE_REFERENCE) return 0L
+        val count = context.referenceImageCount
+        if (count <= 0) return 0L
+        return saturatingMultiply(PRECISE_REFERENCE_SURCHARGE_ANLAS, count.toLong())
+    }
 
     private fun saturatingAdd(left: Long, right: Long): Long =
         if (Long.MAX_VALUE - left < right) Long.MAX_VALUE else left + right
@@ -167,14 +190,17 @@ class AnlasCostCalculator(
             return FreeReason.OPUS_V45_ELIGIBLE
         }
 
-        // 实测规则：只覆盖被观测过的那个组合 —— Curated 模型、Guidance 恰好 7.0、
-        // 至多一张起点图（Vibe / Precise Reference 未被观测过，不在此列）。
+        // 实测规则：只覆盖被观测过的那个组合 —— Curated 模型、Guidance 恰好 7.0。
+        // 基础生成部分对 Image2Img 与 Precise Reference 同样免费（实测印证了图生图免费），
+        // 但 Precise Reference 会另有附加费，由 [referenceSurchargeOf] 单独加上。
         val isVerifiedShape = context.params.model == ImageModel.V4_5_CURATED &&
             context.params.guidance == VERIFIED_FREE_GUIDANCE &&
-            context.referenceImageCount <= 1 &&
             when (context.generationKind) {
                 GenerationKind.TEXT_TO_IMAGE -> true
-                GenerationKind.IMAGE_TO_IMAGE -> true
+                // 起点图只有一张，多于一张说明请求本身不合法，不在此判免费。
+                GenerationKind.IMAGE_TO_IMAGE -> context.referenceImageCount <= 1
+                // 上限由 ModelProfile 保证（V4.5 最多 4 张）。
+                GenerationKind.PRECISE_REFERENCE -> true
                 else -> false
             }
         if (isVerifiedShape) return FreeReason.OTHER_VERIFIED_RULE
@@ -207,16 +233,19 @@ class AnlasCostCalculator(
         const val VERIFIED_FREE_GUIDANCE: Double = 7.0
 
         /**
-         * 每张参考图的固定附加费。
+         * Precise Reference 每张参考图的固定附加费。
          *
-         * 来源：账号所有者确认的规则 —— **每加一张参考图多加 5 Anlas，与模型无关**，
-         * 因此它是一条与基础生成费用正交的加价，加在基础费用之上。
+         * 来源：账号所有者确认 —— **只有 Precise Reference 收费，每张 5 Anlas**。
+         * Image2Img 不收费（V4.5 与 V5 都是），Vibe Transfer 的价格未确认。
          *
          * ⚠️ 这条规则尚未与官方网页的费用标签对照过（余额规划 §10 的校准纪律）。
-         * 它已经被实现并会显示在生成按钮上，因此**必须用余额观测反向验证一次**：
-         * 生成前后各读一次余额，差值应当是 5 的整数倍（单张参考图就是 5）。
-         * 若观测结果不是这样，改这一个常量即可 —— 判定流程不依赖它的具体数值。
+         * 它会被显示在生成按钮上，因此必须用余额观测反向验证一次：
+         * 生成前后各读一次余额，差值应当是 5 的整数倍。改这一个常量即可，
+         * 判定流程不依赖它的数值。
          */
-        const val REFERENCE_IMAGE_SURCHARGE_ANLAS: Long = 5L
+        const val PRECISE_REFERENCE_SURCHARGE_ANLAS: Long = 5L
+
+        /** 与模型无关：附加费按"功能"而不是按"模型"计。 */
+        const val REFERENCE_IMAGE_SURCHARGE_ANLAS: Long = PRECISE_REFERENCE_SURCHARGE_ANLAS
     }
 }

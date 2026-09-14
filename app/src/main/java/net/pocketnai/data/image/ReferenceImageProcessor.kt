@@ -59,23 +59,30 @@ class ReferenceImageProcessor(
 
     private val appContext = context.applicationContext
 
-    override suspend fun import(source: ReferenceSource): Outcome<PreparedReference> =
-        when (source) {
-            is ReferenceSource.PickedUri -> importUri(Uri.parse(source.uri))
-            is ReferenceSource.LocalPath -> importFile(fileStore.resolve(source.relativePath))
-        }
-
-    private suspend fun importUri(uri: Uri): Outcome<PreparedReference> = withContext(Dispatchers.IO) {
-        storeNormalized({ factor -> decodeSampled(uri, factor) })
+    override suspend fun import(
+        source: ReferenceSource,
+        transform: ImageTransform?,
+    ): Outcome<PreparedReference> = when (source) {
+        is ReferenceSource.PickedUri -> importUri(Uri.parse(source.uri), transform)
+        is ReferenceSource.LocalPath -> importFile(fileStore.resolve(source.relativePath), transform)
     }
 
-    private suspend fun importFile(file: File): Outcome<PreparedReference> =
-        withContext(Dispatchers.IO) {
-            if (!file.isFile) {
-                return@withContext Outcome.Failure(AppError.of(ErrorCode.REFERENCE_MISSING))
-            }
-            storeNormalized({ factor -> decodeSampled(file, factor) })
+    private suspend fun importUri(
+        uri: Uri,
+        transform: ImageTransform?,
+    ): Outcome<PreparedReference> = withContext(Dispatchers.IO) {
+        storeNormalized({ factor -> decodeSampled(uri, factor) }, transform)
+    }
+
+    private suspend fun importFile(
+        file: File,
+        transform: ImageTransform?,
+    ): Outcome<PreparedReference> = withContext(Dispatchers.IO) {
+        if (!file.isFile) {
+            return@withContext Outcome.Failure(AppError.of(ErrorCode.REFERENCE_MISSING))
         }
+        storeNormalized({ factor -> decodeSampled(file, factor) }, transform)
+    }
 
     /** 按 [transform] 裁切并编码成请求体里的 base64。 */
     override suspend fun encodeBase64(
@@ -111,32 +118,46 @@ class ReferenceImageProcessor(
     // ---- 导入 ----
 
     /**
-     * 解码 → 统一成 PNG → 落盘。超预算就降采样重来。
+     * 解码 → 变换（可选）→ 统一成 PNG → 落盘。超预算就降采样重来。
      *
      * 降采样重试而不是直接拒绝，是因为用户无法判断"这张图为什么太大"；
      * 多试一次的成本只是一次解码，而重试次数有上界，不会在病态输入上打转。
      */
-    private inline fun storeNormalized(decode: (Int) -> Bitmap?): Outcome<PreparedReference> {
+    private inline fun storeNormalized(
+        decode: (Int) -> Bitmap?,
+        transform: ImageTransform?,
+    ): Outcome<PreparedReference> {
         var factor = 1
         for (attempt in 0..MAX_DOWNSAMPLE_ATTEMPTS) {
             val decoded = decode(factor)
                 ?: return Outcome.Failure(AppError.of(ErrorCode.REFERENCE_DECODE_FAILED))
 
             val result = try {
-                val bytes = encodePng(decoded)
-                    ?: return Outcome.Failure(AppError.of(ErrorCode.REFERENCE_DECODE_FAILED))
-                if (!ImageGeometry.isWithinReferenceBudget(bytes.size.toLong())) {
-                    null
+                val prepared = if (transform == null) {
+                    decoded
                 } else {
-                    val sha256 = Hashing.sha256(bytes)
-                    fileStore.writeReference(sha256, bytes)
-                    PreparedReference(
-                        relativePath = fileStore.referenceRelativePath(sha256),
-                        width = decoded.width,
-                        height = decoded.height,
-                        byteSize = bytes.size.toLong(),
-                        sha256 = sha256,
-                    )
+                    render(decoded, transform)
+                        ?: return Outcome.Failure(AppError.of(ErrorCode.REFERENCE_DECODE_FAILED))
+                }
+                try {
+                    val bytes = encodePng(prepared)
+                        ?: return Outcome.Failure(AppError.of(ErrorCode.REFERENCE_DECODE_FAILED))
+                    if (!ImageGeometry.isWithinReferenceBudget(bytes.size.toLong())) {
+                        null
+                    } else {
+                        val sha256 = Hashing.sha256(bytes)
+                        fileStore.writeReference(sha256, bytes)
+                        PreparedReference(
+                            relativePath = fileStore.referenceRelativePath(sha256),
+                            width = prepared.width,
+                            height = prepared.height,
+                            byteSize = bytes.size.toLong(),
+                            sha256 = sha256,
+                        )
+                    }
+                } finally {
+                    // 变换产出的画布是自己 new 出来的，要显式回收；源图在下面统一回收。
+                    if (prepared !== decoded) prepared.recycle()
                 }
             } catch (e: IOException) {
                 return Outcome.Failure(AppError.of(ErrorCode.STORAGE_FULL))

@@ -169,10 +169,11 @@ class AnlasCostCalculatorTest {
         assertThat(estimate).isNotInstanceOf(GenerationCostEstimate.UsesV5Allowance::class.java)
     }
 
-    // ---- 参考图附加费 ----
+    // ---- 参考图附加费：只有 Precise Reference 收费 ----
 
     @Test
-    fun `免费组合加一张参考图就是 5 Anlas`() {
+    fun `图生图不额外收费`() {
+        // 账号所有者更正：Image2Img 在 V4.5 与 V5 上都是免费的。
         val estimate = calculator.estimate(
             context(
                 kind = GenerationKind.IMAGE_TO_IMAGE,
@@ -181,35 +182,29 @@ class AnlasCostCalculatorTest {
             ),
         )
 
-        assertThat(estimate).isInstanceOf(GenerationCostEstimate.EstimatedAnlas::class.java)
-        assertThat((estimate as GenerationCostEstimate.EstimatedAnlas).batchTotal)
-            .isEqualTo(AnlasCostCalculator.REFERENCE_IMAGE_SURCHARGE_ANLAS)
+        assertThat(estimate).isInstanceOf(GenerationCostEstimate.Free::class.java)
     }
 
     @Test
-    fun `参考图附加费按张数累加`() {
-        // 附加费累加这件事与"基础费用是否免费"无关，因此用一个测试用的已校准公式
-        // 把基础费用固定成 20，验证总数 = 基础 + 张数 × 附加费。
-        val calibrated = AnlasCostCalculator(FixedPriceFormula(base = 20L))
-        val estimate = calibrated.estimate(
-            context(
-                kind = GenerationKind.VIBE_TRANSFER,
-                hasBaseImage = true,
-                referenceImageCount = 3,
-            ),
-        ) as GenerationCostEstimate.EstimatedAnlas
-
-        assertThat(estimate.batchTotal).isEqualTo(20L + 3 * AnlasCostCalculator.REFERENCE_IMAGE_SURCHARGE_ANLAS)
-    }
-
-    @Test
-    fun `V5 额度不覆盖带基础图的生成`() {
-        // 官方的免费条件包含"无基础图片"，因此带起点图的 V5 生成不走进额度分支，
-        // 基础费用未知 → 整单待确认（附加费单独报出来反而会让人以为总共只要 5）。
+    fun `Precise Reference 一张就是 5 Anlas`() {
         val estimate = calculator.estimate(
             context(
-                profile = v5,
-                kind = GenerationKind.IMAGE_TO_IMAGE,
+                kind = GenerationKind.PRECISE_REFERENCE,
+                referenceImageCount = 1,
+            ),
+        )
+
+        assertThat(estimate).isInstanceOf(GenerationCostEstimate.EstimatedAnlas::class.java)
+        assertThat((estimate as GenerationCostEstimate.EstimatedAnlas).batchTotal)
+            .isEqualTo(AnlasCostCalculator.PRECISE_REFERENCE_SURCHARGE_ANLAS)
+    }
+
+    @Test
+    fun `Vibe Transfer 的价格未确认因此待确认`() {
+        // 只确认了 Precise Reference 的附加费，不能顺手把 Vibe 说成免费或 5。
+        val estimate = calculator.estimate(
+            context(
+                kind = GenerationKind.VIBE_TRANSFER,
                 hasBaseImage = true,
                 referenceImageCount = 1,
             ),
@@ -220,23 +215,43 @@ class AnlasCostCalculatorTest {
     }
 
     @Test
-    fun `基础费用未知时参考图也不给总数`() {
-        // 只报那 5 点会让用户以为总共只要 5。
+    fun `Precise Reference 附加费按张数累加`() {
+        // 累加这件事与"基础费用是否免费"无关，因此用测试用的已校准公式把基础固定成 20。
+        // 同时必须避开免费规则（这里用 Large 档位），否则基础会被判成 0，
+        // 测到的就只是附加费本身而不是"基础 + 附加费"。
+        val calibrated = AnlasCostCalculator(FixedPriceFormula(base = 20L))
+        val estimate = calibrated.estimate(
+            context(
+                kind = GenerationKind.PRECISE_REFERENCE,
+                referenceImageCount = 3,
+                resolutionTier = ResolutionTier.LARGE,
+                size = ImageSizePreset(1536, 1024),
+            ),
+        ) as GenerationCostEstimate.EstimatedAnlas
+
+        assertThat(estimate.batchTotal)
+            .isEqualTo(20L + 3 * AnlasCostCalculator.PRECISE_REFERENCE_SURCHARGE_ANLAS)
+    }
+
+    @Test
+    fun `Precise Reference 的基础费用未知时不给总数`() {
+        // 非实测组合（这里是 Large 档位）：
+        // 只报 5 点会让用户以为总共只要 5，因此宁可整单待确认。
         val estimate = calculator.estimate(
             context(
-                kind = GenerationKind.IMAGE_TO_IMAGE,
-                hasBaseImage = true,
+                kind = GenerationKind.PRECISE_REFERENCE,
                 referenceImageCount = 1,
                 resolutionTier = ResolutionTier.LARGE,
                 size = ImageSizePreset(1536, 1024),
             ),
         )
 
-        assertThat(estimate).isInstanceOf(GenerationCostEstimate.Unknown::class.java)
+        assertThat((estimate as GenerationCostEstimate.Unknown).reason)
+            .isEqualTo(UnknownCostReason.PRICING_NOT_CALIBRATED)
     }
 
     @Test
-    fun `参考图不套用 T2I 的免费规则`() {
+    fun `Vibe Transfer 不套用 T2I 的免费规则`() {
         val estimate = calculator.estimate(
             context(
                 kind = GenerationKind.VIBE_TRANSFER,
@@ -292,13 +307,11 @@ class AnlasCostCalculatorTest {
             .isInstanceOf(GenerationCostEstimate.Free::class.java)
         assertThat(calculator.estimate(context(profile = v5)))
             .isInstanceOf(GenerationCostEstimate.UsesV5Allowance::class.java)
+        assertThat(calculator.estimate(context(kind = GenerationKind.IMAGE_TO_IMAGE, hasBaseImage = true, referenceImageCount = 1)))
+            .isInstanceOf(GenerationCostEstimate.Free::class.java)
         assertThat(
             calculator.estimate(
-                context(
-                    kind = GenerationKind.IMAGE_TO_IMAGE,
-                    hasBaseImage = true,
-                    referenceImageCount = 1,
-                ),
+                context(kind = GenerationKind.PRECISE_REFERENCE, referenceImageCount = 1),
             ),
         ).isInstanceOf(GenerationCostEstimate.EstimatedAnlas::class.java)
         assertThat(calculator.estimate(context(steps = 40)))
