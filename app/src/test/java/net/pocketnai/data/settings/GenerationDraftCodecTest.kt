@@ -2,6 +2,7 @@ package net.pocketnai.data.settings
 
 import com.google.common.truth.Truth.assertThat
 import net.pocketnai.domain.model.DirectorReferenceKind
+import net.pocketnai.domain.model.CustomResolution
 import net.pocketnai.domain.model.GenerationDraft
 import net.pocketnai.domain.model.GenerationParams
 import net.pocketnai.domain.model.ImageModel
@@ -262,6 +263,44 @@ class GenerationDraftCodecTest {
             null
         },
     )
+
+    @Test
+    fun `自定义分辨率与最终尺寸都能往返`() {
+        val draft = GenerationDraft(
+            params = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V5_FULL)).copy(
+                // 1920×1080 的目标以 1920×1088 提交：两个尺寸都必须活过重启。
+                size = ImageSizePreset(1920, 1088),
+                outputSize = ImageSizePreset(1920, 1080),
+            ),
+            promptTemplate = "1girl",
+            negativeTemplate = "",
+            customResolution = CustomResolution(width = 1920, height = 1080, exactOutput = true),
+        )
+
+        val restored = GenerationDraftCodec.decode(GenerationDraftCodec.encode(draft))
+
+        assertThat(restored).isNotNull()
+        requireNotNull(restored)
+        assertThat(restored.params.size).isEqualTo(ImageSizePreset(1920, 1088))
+        assertThat(restored.params.outputSize).isEqualTo(ImageSizePreset(1920, 1080))
+        assertThat(restored.params.needsCrop).isTrue()
+        assertThat(restored.customResolution)
+            .isEqualTo(CustomResolution(width = 1920, height = 1080, exactOutput = true))
+    }
+
+    @Test
+    fun `预设尺寸的草稿不会被误判成自定义`() {
+        val draft = GenerationDraft(
+            params = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V4_5_CURATED)),
+            promptTemplate = "",
+            negativeTemplate = "",
+        )
+
+        val restored = GenerationDraftCodec.decode(GenerationDraftCodec.encode(draft))!!
+
+        assertThat(restored.customResolution).isNull()
+        assertThat(restored.params.outputSize).isNull()
+    }
 
     @Test
     fun `出厂默认草稿本身可以往返`() {

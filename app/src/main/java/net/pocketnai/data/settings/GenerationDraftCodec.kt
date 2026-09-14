@@ -2,6 +2,7 @@ package net.pocketnai.data.settings
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import net.pocketnai.domain.model.CustomResolution
 import net.pocketnai.domain.model.DirectorReferenceKind
 import net.pocketnai.domain.model.GenerationDraft
 import net.pocketnai.domain.model.GenerationParams
@@ -49,6 +50,18 @@ object GenerationDraftCodec {
         val modelApiId: String = "",
         val width: Int = 0,
         val height: Int = 0,
+        /**
+         * 最终尺寸（自定义分辨率的裁切目标）。0 表示不裁切。
+         *
+         * 与 `width/height`（提交画布）分开存：`1920×1088` 生成、`1920×1080` 落地，
+         * 两个数都要能恢复，否则重开应用后要么裁错、要么画布对不上。
+         */
+        val outputWidth: Int = 0,
+        val outputHeight: Int = 0,
+        /** 自定义分辨率编辑器状态；0 表示预设模式。 */
+        val customWidth: Int = 0,
+        val customHeight: Int = 0,
+        val customExact: Boolean = false,
         val sampleCount: Int = 0,
         val steps: Int = 0,
         val guidance: Double = 0.0,
@@ -104,6 +117,11 @@ object GenerationDraftCodec {
                 modelApiId = params.model.apiModelId,
                 width = params.size.width,
                 height = params.size.height,
+                outputWidth = params.outputSize?.width ?: 0,
+                outputHeight = params.outputSize?.height ?: 0,
+                customWidth = draft.customResolution?.width ?: 0,
+                customHeight = draft.customResolution?.height ?: 0,
+                customExact = draft.customResolution?.exactOutput ?: false,
                 sampleCount = params.sampleCount,
                 steps = params.steps,
                 guidance = params.guidance,
@@ -151,6 +169,12 @@ object GenerationDraftCodec {
             negativePrompt = dto.negative,
             // 宽高为 0 时交给 normalize 判定为非法并换回默认尺寸。
             size = ImageSizePreset(width = dto.width, height = dto.height),
+            // 只恢复"装得进画布"的最终尺寸；normalize 还会再兜一次底。
+            outputSize = if (dto.outputWidth > 0 && dto.outputHeight > 0) {
+                ImageSizePreset(width = dto.outputWidth, height = dto.outputHeight)
+            } else {
+                null
+            },
             sampleCount = dto.sampleCount,
             steps = dto.steps,
             guidance = dto.guidance,
@@ -175,6 +199,15 @@ object GenerationDraftCodec {
             // 旧版本只存了单张起点图，这里一并读回来，不让用户重新选图。
             references = (dto.references + listOfNotNull(dto.reference))
                 .mapNotNull { it.toDomain(profile) },
+            customResolution = if (dto.customWidth > 0 && dto.customHeight > 0) {
+                CustomResolution(
+                    width = dto.customWidth,
+                    height = dto.customHeight,
+                    exactOutput = dto.customExact,
+                )
+            } else {
+                null
+            },
         )
     }
 

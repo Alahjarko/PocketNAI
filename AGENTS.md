@@ -138,6 +138,28 @@
 - 不要把 `img2img` + 蒙版当作重绘的"降级路径"（蒙版会被静默忽略）；
 - 不要删除编辑器与蒙版渲染的代码。
 
+### 自定义分辨率
+
+- **一个尺寸不能承担三种含义**：`params.size` 是**提交给 NovelAI 的画布**（64 对齐，
+  请求、计费、底图预处理都用它），`params.outputSize` 是**用户要的最终尺寸**
+  （可空；非空才裁切）。`CustomResolution`（编辑器状态）只决定输入框显示什么。
+  写入 `params` 的唯一入口是 `GenerateViewModel.applyCustomResolution`，不要在别处改尺寸。
+- **对齐方向**：精确模式用**向上**取整（`ceilToStep`），不是官方的"取最近" ——
+  用户要 `1050×1050` 时最近值 `1024` 比目标还小，根本没法裁。官方的"取最近"只在
+  仿官方模式（不裁切）里用。
+- **裁切规则只定义一处**：`ResolutionPlanner.centeredCrop`。居中，奇数差值多给右下 1 px。
+  规划器与落盘后处理都调它 —— 两处各写一遍迟早会不一致。
+- **裁切必须在落盘之前**（`OutputImageProcessor`，在 `commitImages` 之前）：
+  历史文件、数据库宽高、缩略图、相册导出都以落盘那一刻为准。
+- **不裁切时一个字节都不动**：预设尺寸的历史不受影响，SHA-256 与体积保持原样。
+- **裁切后必须写回 NovelAI 元数据**：`Bitmap.compress(PNG)` 会丢掉 `tEXt`，不写回去
+  会让元数据导入在"裁过一次"之后静默失效。写回走白名单（见 `PocketNaiOutputMetadata`），
+  另加一条 `pocketnai_output=output=..;generation=..;crop=x,y`；
+  **绝不篡改 NovelAI 的 `Comment` 里的尺寸**（那是生成画布，改掉同 Seed 就复现不出来）。
+- **尺寸约束分两套**：官方（步长 64、面积 3,145,728）与本地护栏（边长 256–2048）。
+  注释里必须写清哪条是谁的，不要把本地限制说成 NovelAI 的限制。
+- 元数据导入遇到"不在预设但合法"的尺寸时**按自定义尺寸接住**，不要悄悄取整。
+
 ### 图片元数据导入（选图时读参数）
 
 - **必须在图片归一化之前读原始文件**：`ReferenceImageProcessor` 会解码再重新编码 PNG，
@@ -306,6 +328,18 @@
 
 模拟器分辨率会在 1080x1920 与 1920x1080 之间变化，`input tap` 前先确认截图尺寸，
 不要复用上一次的坐标。
+
+## 在设备上跑测试之前
+
+- **`:app:connectedDebugAndroidTest` 默认会在结束时卸载被测应用**，
+  而卸载 = 清空应用数据：本机凭据（Keystore 加密）与全部生成历史一起消失。
+  已在 `gradle.properties` 里设 `android.injected.androidTest.leaveApksInstalledAfterRun=true`
+  挡住这个默认行为；**但换机器/换 IDE 时先确认这条还在**。
+- 仪器化测试（`app/src/androidTest`）目前只覆盖三件必须依赖 Android API 的事：
+  生成结果的裁切与元数据保全、Room 迁移、分辨率控件的文案。
+  纯逻辑一律放 JVM 单测，不要往 androidTest 里塞。
+- 真机截图验证需要应用里能连上账号。测试机的应用数据被上面那条清过一次
+  （2026-09-14），遇到"怎么又要重新连"时先想这件事。
 
 ## 待核对清单
 

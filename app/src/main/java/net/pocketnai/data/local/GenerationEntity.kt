@@ -42,8 +42,12 @@ data class GenerationEntity(
     val prompt: String,
     val negativePrompt: String,
     val modelApiId: String,
+    /** **请求画布**宽高（64 对齐）。计费与同 Seed 复现都以它为准。 */
     val width: Int,
     val height: Int,
+    /** 最终尺寸（自定义分辨率裁切后的尺寸）；v4 之前与"未裁切"的记录为 NULL。 */
+    val outputWidth: Int?,
+    val outputHeight: Int?,
     val sampleCount: Int,
     val steps: Int,
     val guidance: Double,

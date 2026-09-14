@@ -267,16 +267,30 @@ class MetadataImportPlannerTest {
     }
 
     @Test
-    fun `尺寸不是预设时不改成最接近的`() {
-        // 1472×1472 是官方的 LargePlus 方形，不在我们的预设里。
+    fun `尺寸不是预设但合法时按自定义尺寸导入`() {
+        // 1472×1472 是官方的 LargePlus 方形，不在我们的预设里，但完全合法：
+        // 原图就是这个画布，因此既不能取整也不能裁切，必须原样接住。
         val plan = MetadataImportPlanner.plan(
             metadata(PngFixture.commentJson(width = 1472, height = 1472)),
             currentParams(),
             MetadataImportSelection(),
         )
 
+        assertThat(plan.size).isEqualTo(ImageSizePreset(1472, 1472))
+        assertThat(plan.notes).contains(MetadataImportNote.SizeImportedAsCustom(1472, 1472))
+    }
+
+    @Test
+    fun `尺寸连合法都算不上时跳过尺寸`() {
+        // 1080 不是 64 的倍数：这种图不可能是四个模型生成的，按"跳过尺寸"处理。
+        val plan = MetadataImportPlanner.plan(
+            metadata(PngFixture.commentJson(width = 1920, height = 1080)),
+            currentParams(),
+            MetadataImportSelection(),
+        )
+
         assertThat(plan.size).isNull()
-        assertThat(plan.notes).contains(MetadataImportNote.SizeNotPreset(1472, 1472))
+        assertThat(plan.notes).contains(MetadataImportNote.SizeNotImportable(1920, 1080))
     }
 
     @Test

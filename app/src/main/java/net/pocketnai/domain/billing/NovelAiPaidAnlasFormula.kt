@@ -112,7 +112,11 @@ class NovelAiPaidAnlasFormula : PaidAnlasFormula {
 
         /** 面积下限与上限（官方前端的 `g<65536→65536` 与参数校验）。 */
         const val MIN_AREA: Long = 65536L
-        const val MAX_AREA: Long = 3145728L
+        /**
+         * 面积上限：与官方面板同源，因此直接引用尺寸约束里的那个常量，
+         * 避免"能提交但不能报价"或反之的错位。
+         */
+        val MAX_AREA: Long = net.pocketnai.domain.model.SizeConstraints.OFFICIAL_MAX_TOTAL_PIXELS
 
         /** 官方前端认为"步数不合理"的边界。 */
         const val MAX_STEPS_PRICED: Int = 50

@@ -34,6 +34,16 @@ object ModelCatalog {
     /** 尺寸边长必须是 64 的倍数。 */
     private const val DIMENSION_STEP = 64
 
+    /**
+     * 自定义尺寸的本地安全下限 / 上限（**不是** NovelAI 的限制）。
+     *
+     * 官方只约束"64 的倍数 + 面积不超 3 × 1024²"，理论上允许极端长条。
+     * 我们不跟：超大画布在解码、缩略图与 GPU 纹理上都可能出问题，而这类问题在本机
+     * 表现为"某张图打不开"，很难归因。2048 足够覆盖 1920×1080 / 1088×1920 这类真实需求。
+     */
+    private const val LOCAL_MIN_DIMENSION = 256
+    private const val LOCAL_MAX_DIMENSION = 2048
+
     /** 官方默认的 Steps 与 Prompt Guidance（用户核对）。 */
     private const val DEFAULT_STEPS = 23
     private const val DEFAULT_GUIDANCE = 7.0
@@ -160,10 +170,12 @@ object ModelCatalog {
         defaultSize = defaultSize,
         sizeOptions = STANDARD_SIZE_OPTIONS,
         sizeConstraints = SizeConstraints(
-            minDimension = 512,
-            maxDimension = 1536,
+            // 官方协议约束：边长 64 的倍数、面积上限 3 × 1024²（反解官方前端 `$d` / `Dk`）。
             dimensionStep = DIMENSION_STEP,
-            maxTotalPixels = 1536 * 1536,
+            maxTotalPixels = SizeConstraints.OFFICIAL_MAX_TOTAL_PIXELS.toInt(),
+            // 下面两条是**我们自己的**护栏，不是 NovelAI 的限制，注释见常量定义处。
+            minDimension = LOCAL_MIN_DIMENSION,
+            maxDimension = LOCAL_MAX_DIMENSION,
         ),
         defaultSampleCount = 1,
         maxSampleCount = 4,

@@ -317,7 +317,8 @@
     <string name="metadata_note_characters">检测到 %1$d 条角色提示词：当前版本还不支持多角色，未导入（硬拼进基础提示词会丢掉角色的独立反向词与位置）。</string>
     <string name="metadata_note_model">模型 %1$s 不在支持范围内，模型保持不变。</string>
     <string name="metadata_note_unknown">未知</string>
-    <string name="metadata_note_size">元数据尺寸 %1$d×%2$d 不是内置预设，尺寸保持不变（不改成"最接近的"，否则同 Seed 也复现不出原图）。</string>
+    <string name="metadata_note_size">元数据尺寸 %1$d×%2$d 按自定义尺寸导入（原图就是这个画布，取整会复现不出原图）。</string>
+    <string name="metadata_note_size_invalid">元数据尺寸 %1$d×%2$d 不是 64 的倍数或超出面积上限，尺寸保持不变。</string>
     <string name="metadata_note_steps">Steps %1$d 超出当前模型范围，已取 %2$d。</string>
     <string name="metadata_note_guidance">Guidance %1$s 超出当前模型范围，已取 %2$s。</string>
     <string name="metadata_note_cfg">CFG Rescale %1$s 超出当前模型范围，已取 %2$s。</string>
@@ -332,4 +333,23 @@
     <string name="metadata_note_actual_prompt">元数据里没有随机提示词的实际值，已改用原始提示词。</string>
     <string name="metadata_note_nothing">这张图没有可导入的参数。</string>
     <string name="metadata_note_uc_preset">反向提示词已导入；服务端的 UC 预设无法从元数据读出，保持当前选择。</string>
+
+    <!-- 自定义分辨率 -->
+    <string name="resolution_custom">自定义</string>
+    <string name="resolution_width">宽度</string>
+    <string name="resolution_height">高度</string>
+    <string name="resolution_swap">交换宽高</string>
+    <string name="resolution_exact">精确最终尺寸</string>
+    <string name="resolution_exact_desc">画布向上补齐到 64 的倍数，收到图后居中裁切到你输入的尺寸。</string>
+    <string name="resolution_final_output">最终输出：%1$d × %2$d</string>
+    <string name="resolution_generation_cropped">NovelAI 生成：%1$d × %2$d，本地居中裁切</string>
+    <string name="resolution_crop_vertical">上下各裁 %1$d px</string>
+    <string name="resolution_crop_horizontal">左右各裁 %1$d px</string>
+    <string name="resolution_crop_both">上下各裁 %1$d px、左右各裁 %2$d px</string>
+    <string name="resolution_generation_native">NovelAI 生成：%1$d × %2$d（不裁切，最终文件就是这个尺寸）</string>
+    <string name="resolution_billing_basis">计费依据：%1$d × %2$d</string>
+    <string name="resolution_native_rounding">你输入的边长不是 %1$d 的倍数，已按官方规则取最近的合法值。</string>
+    <string name="resolution_error_too_small">边长至少 %1$d px。</string>
+    <string name="resolution_error_too_large">边长最多 %1$d px（PocketNAI 的本地限制，比 NovelAI 更保守）。</string>
+    <string name="resolution_error_area">面积超出 NovelAI 的上限 %1$d 像素，请缩小尺寸。</string>
 </resources>

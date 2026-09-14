@@ -39,6 +39,8 @@ object Mappers {
         modelApiId = generation.params.model.apiModelId,
         width = generation.params.size.width,
         height = generation.params.size.height,
+        outputWidth = generation.params.outputSize?.width,
+        outputHeight = generation.params.outputSize?.height,
         sampleCount = generation.params.sampleCount,
         steps = generation.params.steps,
         guidance = generation.params.guidance,
@@ -78,6 +80,12 @@ object Mappers {
                 prompt = entity.prompt,
                 negativePrompt = entity.negativePrompt,
                 size = ImageSizePreset(width = entity.width, height = entity.height),
+                // 两列都为 NULL（v4 之前的记录，或没裁切过）时按"不裁切"降级。
+                outputSize = if (entity.outputWidth != null && entity.outputHeight != null) {
+                    ImageSizePreset(width = entity.outputWidth, height = entity.outputHeight)
+                } else {
+                    null
+                },
                 sampleCount = entity.sampleCount,
                 steps = entity.steps,
                 guidance = entity.guidance,

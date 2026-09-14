@@ -51,7 +51,22 @@ data class GenerationParams(
     val model: ImageModel,
     val prompt: String,
     val negativePrompt: String,
+    /**
+     * **提交给 NovelAI 的画布尺寸**（边长 64 的倍数）。
+     *
+     * 自定义分辨率下它**不等于**用户要的最终尺寸：`1920×1080` 的目标会以
+     * `1920×1088` 提交，最终尺寸记在 [outputSize]。请求构造、计费、底图预处理
+     * 一律用这个值。
+     */
     val size: ImageSizePreset,
+    /**
+     * 用户最终想要的尺寸；为空或与 [size] 相同表示"不裁切"。
+     *
+     * 收到图片后按它居中裁切。之所以要单独存：计费与复现以 [size]（请求画布）为准，
+     * 而用户看到、导出、在瀑布流里浏览的是最终尺寸 ——
+     * 让一个字段同时承担两种含义正是自定义分辨率最容易出错的地方。
+     */
+    val outputSize: ImageSizePreset? = null,
     val sampleCount: Int,
     val steps: Int,
     val guidance: Double,
@@ -63,6 +78,12 @@ data class GenerationParams(
     val qualityTags: QualityTagsOption,
     val undesiredContentPresetIndex: Int,
 ) {
+    /** 用户最终要拿到的尺寸（自定义分辨率下与 [size] 不同）。 */
+    val targetSize: ImageSizePreset get() = outputSize ?: size
+
+    /** 是否需要在收到图片后居中裁切。 */
+    val needsCrop: Boolean get() = outputSize != null && outputSize != size
+
     companion object {
         /** NovelAI 的 seed 是 uint32。 */
         const val MAX_SEED: Long = 0xFFFFFFFFL
@@ -92,17 +113,18 @@ data class GenerationParams(
          */
         fun migrateTo(target: ModelProfile, from: GenerationParams): GenerationParams {
             val supported = target.isCombinationSupported(from.sampler, from.noiseSchedule)
+            val sizeFits = from.size.width <= target.sizeConstraints.maxDimension &&
+                from.size.height <= target.sizeConstraints.maxDimension &&
+                from.size.totalPixels <= target.sizeConstraints.maxTotalPixels
+            val size = if (sizeFits) from.size else target.defaultSize
             return from.copy(
                 model = target.model,
                 sampler = if (supported) from.sampler else target.defaultSampler,
                 noiseSchedule = if (supported) from.noiseSchedule else target.defaultNoiseSchedule,
-                size = if (from.size.width <= target.sizeConstraints.maxDimension &&
-                    from.size.height <= target.sizeConstraints.maxDimension &&
-                    from.size.totalPixels <= target.sizeConstraints.maxTotalPixels
-                ) {
-                    from.size
-                } else {
-                    target.defaultSize
+                size = size,
+                // 换了尺寸之后最终尺寸可能装不下，跟着一起降级（与 normalize 同一条规则）。
+                outputSize = from.outputSize?.takeIf { output ->
+                    output.width <= size.width && output.height <= size.height
                 },
             )
         }

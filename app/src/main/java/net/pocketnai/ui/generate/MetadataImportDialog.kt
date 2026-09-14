@@ -179,8 +179,11 @@ private fun MetadataImportNote.text(): String = when (this) {
     is MetadataImportNote.ModelUnsupported ->
         stringResource(R.string.metadata_note_model, source ?: stringResource(R.string.metadata_note_unknown))
 
-    is MetadataImportNote.SizeNotPreset ->
+    is MetadataImportNote.SizeImportedAsCustom ->
         stringResource(R.string.metadata_note_size, width, height)
+
+    is MetadataImportNote.SizeNotImportable ->
+        stringResource(R.string.metadata_note_size_invalid, width, height)
 
     is MetadataImportNote.StepsClamped ->
         stringResource(R.string.metadata_note_steps, requested, applied)

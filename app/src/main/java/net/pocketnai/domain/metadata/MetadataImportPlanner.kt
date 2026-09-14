@@ -38,8 +38,16 @@ sealed interface MetadataImportNote {
     /** 模型不在我们支持的四个之内；保留原始 `Source` 供界面说明。 */
     data class ModelUnsupported(val source: String?) : MetadataImportNote
 
-    /** 元数据尺寸不是内置预设：不静默改成"最接近的"尺寸。 */
-    data class SizeNotPreset(val width: Int, val height: Int) : MetadataImportNote
+    /**
+     * 元数据尺寸不是内置预设、但合法：按**自定义尺寸**导入（不做任何取整）。
+     *
+     * 那张图本来就是按这个尺寸生成的：改成"最接近的预设"会复现不出原图，
+     * 而它也不需要裁切 —— 复现它就得用完全一样的画布。
+     */
+    data class SizeImportedAsCustom(val width: Int, val height: Int) : MetadataImportNote
+
+    /** 元数据尺寸连合法都算不上（不是 64 倍数 / 超面积 / 边长越界）：跳过尺寸并说明。 */
+    data class SizeNotImportable(val width: Int, val height: Int) : MetadataImportNote
 
     data class StepsClamped(val requested: Int, val applied: Int) : MetadataImportNote
     data class GuidanceClamped(val requested: Double, val applied: Double) : MetadataImportNote
@@ -193,12 +201,16 @@ object MetadataImportPlanner {
             val height = settings.height
             if (width != null && height != null && width > 0 && height > 0) {
                 val candidate = ImageSizePreset(width, height)
-                // 只有"正好是内置预设"才采用。合法但不是预设的尺寸**不改成最接近的**：
-                // 尺寸一变，即使 Seed 相同也复现不出原图，而用户不会知道我们悄悄换过。
-                if (profile.sizeOptions.any { it.size == candidate }) {
-                    size = candidate
-                } else {
-                    notes += MetadataImportNote.SizeNotPreset(width, height)
+                // 三种情况，绝不悄悄改成"最接近的"：尺寸一变，即使 Seed 相同也复现不出原图，
+                // 而用户不会知道我们换过。
+                when {
+                    profile.sizeOptions.any { it.size == candidate } -> size = candidate
+                    profile.sizeConstraints.isValid(width, height) -> {
+                        size = candidate
+                        notes += MetadataImportNote.SizeImportedAsCustom(width, height)
+                    }
+
+                    else -> notes += MetadataImportNote.SizeNotImportable(width, height)
                 }
             }
 

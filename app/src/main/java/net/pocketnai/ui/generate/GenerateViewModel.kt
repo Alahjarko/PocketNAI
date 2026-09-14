@@ -36,6 +36,8 @@ import net.pocketnai.domain.billing.SubscriptionBalance
 import net.pocketnai.domain.billing.SubscriptionStatus
 import net.pocketnai.domain.billing.SubscriptionStatusResolver
 import net.pocketnai.domain.image.ImageTransform
+import net.pocketnai.domain.image.PixelSize
+import net.pocketnai.domain.image.ResolutionPlanner
 import net.pocketnai.domain.image.toPixelSize
 import net.pocketnai.domain.inpaint.MaskStroke
 import net.pocketnai.data.image.MaskImageProcessor
@@ -48,6 +50,7 @@ import net.pocketnai.domain.metadata.MetadataImportPlanner
 import net.pocketnai.domain.metadata.MetadataImportSelection
 import net.pocketnai.domain.metadata.MetadataProbeResult
 import net.pocketnai.domain.metadata.NovelAiImageMetadata
+import net.pocketnai.domain.model.CustomResolution
 import net.pocketnai.domain.model.DirectorReferenceKind
 import net.pocketnai.domain.model.GenerationDraft
 import net.pocketnai.domain.model.GenerationMode
@@ -167,7 +170,26 @@ class GenerateViewModel(
          * 因为同 Seed 同参数很容易再产出一张几乎一样的图，而那是要花 Anlas 的。
          */
         val metadataCandidate: MetadataCandidate? = null,
+        /**
+         * 非空表示分辨率处于自定义模式。
+         *
+         * 与 `params.size/outputSize` 是"编辑器状态 vs 请求事实"的关系：
+         * 前者决定输入框显示什么，后者决定发什么。只有 `applyCustomResolution` 一处写后者，
+         * 因此不会出现两套尺寸互相打架。
+         */
+        val customResolution: CustomResolution? = null,
+        /** 自定义尺寸算不出来时的原因（边长越界、面积超限），显示在输入框下方。 */
+        val customResolutionError: ResolutionPlanner.Reason? = null,
     ) {
+        /** 自定义模式下的规划结果；预设模式或算不出来时为 null。 */
+        val resolutionPlan: ResolutionPlanner.Plan?
+            get() = customResolution?.let { custom ->
+                (ResolutionPlanner.plan(
+                    PixelSize(custom.width, custom.height),
+                    exactOutput = custom.exactOutput,
+                ) as? ResolutionPlanner.Result.Success)?.plan
+            }
+
         /** 待导入的元数据 + 当前勾选。 */
         data class MetadataCandidate(
             val metadata: NovelAiImageMetadata,
@@ -272,6 +294,7 @@ class GenerateViewModel(
             directorReferences = draft.references.filter { it.role == ReferenceRole.DIRECTOR },
             vibeReferences = draft.references.filter { it.role == ReferenceRole.VIBE },
             inpaintReferences = restoredMasks,
+            customResolution = draft.customResolution,
         )
     }
 
@@ -398,6 +421,7 @@ class GenerateViewModel(
                         promptTemplate = current.promptTemplate,
                         negativeTemplate = current.negativeTemplate,
                         references = current.allReferences,
+                        customResolution = current.customResolution,
                     )
                 }
                 .distinctUntilChanged()
@@ -414,6 +438,21 @@ class GenerateViewModel(
                 _state.update {
                     it.copy(
                         params = reused.params,
+                        // 复用历史参数时把分辨率模式一并还原：尺寸不在预设里说明
+                        // 那次用的是自定义尺寸，编辑器要回到自定义模式而不是悄悄换成预设。
+                        customResolution = reused.params.let { params ->
+                            val modelProfile = ModelCatalog.profileOf(params.model)
+                            if (modelProfile.tierOf(params.size) == null) {
+                                CustomResolution(
+                                    width = params.targetSize.width,
+                                    height = params.targetSize.height,
+                                    exactOutput = params.needsCrop,
+                                )
+                            } else {
+                                null
+                            }
+                        },
+                        customResolutionError = null,
                         promptTemplate = reused.params.prompt,
                         negativeTemplate = reused.params.negativePrompt,
                         referenceSource = reused.img2imgSource,
@@ -484,7 +523,12 @@ class GenerateViewModel(
         _state.update { current ->
             val next = current.profile.sizeInTier(tier, current.params.size)
                 ?: return@update current
-            current.copy(params = current.params.copy(size = next))
+            // 选档位即退出自定义模式：同一时刻只能有一套尺寸是"生效的"。
+            current.copy(
+                params = current.params.copy(size = next, outputSize = null),
+                customResolution = null,
+                customResolutionError = null,
+            )
         }
     }
 
@@ -493,7 +537,122 @@ class GenerateViewModel(
         _state.update { current ->
             val tier = current.profile.tierOf(current.params.size) ?: ResolutionTier.NORMAL
             val next = current.profile.sizeFor(tier, orientation) ?: return@update current
-            current.copy(params = current.params.copy(size = next))
+            current.copy(
+                params = current.params.copy(size = next, outputSize = null),
+                customResolution = null,
+                customResolutionError = null,
+            )
+        }
+    }
+
+    /**
+     * 进入自定义分辨率模式。
+     *
+     * 输入框用当前生效的**最终尺寸**做初值（而不是画布尺寸）：用户刚在预设里选了
+     * 1216×832，切到自定义时看到的应该是 1216×832，而不是被对齐过的别的值。
+     */
+    fun onCustomResolutionEnabled() {
+        _state.update { current ->
+            val target = current.params.targetSize
+            applyCustomResolution(
+                current.copy(
+                    customResolution = CustomResolution(
+                        width = target.width,
+                        height = target.height,
+                        // 已经处于裁切状态时保持"精确"勾选，避免切一下模式就丢了意图。
+                        exactOutput = current.params.needsCrop,
+                    ),
+                    customResolutionError = null,
+                ),
+            )
+        }
+    }
+
+    /** 退出自定义模式，回到面积最接近的预设。 */
+    fun onCustomResolutionDisabled() {
+        _state.update { current ->
+            val profile = current.profile
+            val area = current.params.targetSize.totalPixels
+            val nearest = profile.sizeOptions
+                .minByOrNull { kotlin.math.abs(it.size.totalPixels - area) }
+                ?.size
+                ?: profile.defaultSize
+            current.copy(
+                customResolution = null,
+                customResolutionError = null,
+                params = current.params.copy(size = nearest, outputSize = null),
+            )
+        }
+    }
+
+    fun onCustomWidthChange(width: Int) {
+        _state.update { current ->
+            val custom = current.customResolution ?: return@update current
+            applyCustomResolution(current.copy(customResolution = custom.copy(width = width)))
+        }
+    }
+
+    fun onCustomHeightChange(height: Int) {
+        _state.update { current ->
+            val custom = current.customResolution ?: return@update current
+            applyCustomResolution(current.copy(customResolution = custom.copy(height = height)))
+        }
+    }
+
+    /** 交换宽高：竖屏 ↔ 横屏。 */
+    fun onCustomSwapDimensions() {
+        _state.update { current ->
+            val custom = current.customResolution ?: return@update current
+            applyCustomResolution(
+                current.copy(
+                    customResolution = custom.copy(width = custom.height, height = custom.width),
+                ),
+            )
+        }
+    }
+
+    /** 切换"精确最终尺寸"。 */
+    fun onCustomExactOutputChange(exactOutput: Boolean) {
+        _state.update { current ->
+            val custom = current.customResolution ?: return@update current
+            applyCustomResolution(
+                current.copy(customResolution = custom.copy(exactOutput = exactOutput)),
+            )
+        }
+    }
+
+    /**
+     * 把自定义目标尺寸换算成画布尺寸与最终尺寸，写进 `params`。
+     *
+     * **唯一的写入点**：`params.size` 永远是 64 对齐的合法画布（请求与计费都用它），
+     * `params.outputSize` 只在需要裁切时才有值。算不出来时**保留上一次的合法尺寸**
+     * 并把原因记下来显示 —— 输入框被清空或敲成 12 时不该发非法请求，
+     * 也不该把用户正在输入的数值重置掉。
+     */
+    private fun applyCustomResolution(current: UiState): UiState {
+        val custom = current.customResolution ?: return current
+        return when (
+            val result = ResolutionPlanner.plan(
+                PixelSize(custom.width, custom.height),
+                exactOutput = custom.exactOutput,
+            )
+        ) {
+            is ResolutionPlanner.Result.Success -> {
+                val plan = result.plan
+                current.copy(
+                    params = current.params.copy(
+                        size = ImageSizePreset(plan.generationSize.width, plan.generationSize.height),
+                        outputSize = if (plan.needsCrop) {
+                            ImageSizePreset(plan.targetSize.width, plan.targetSize.height)
+                        } else {
+                            null
+                        },
+                    ),
+                    customResolutionError = null,
+                )
+            }
+
+            is ResolutionPlanner.Result.Failure -> current.copy(customResolutionError = result.reason)
         }
     }
 
@@ -637,7 +796,16 @@ class GenerateViewModel(
                             directorReferences = emptyList(),
                             // 换底图必须作废旧蒙版：蒙版是按上一张底图的尺寸裁的，留着就会错位。
                             inpaintReferences = emptyList(),
-                            params = current.params.copy(size = sizeForSource(profile, prepared)),
+                            // 自定义模式下尺寸由用户说了算：底图会被 Cover 到那个画布，
+                            // 而不是反过来把用户的尺寸改掉。
+                            params = if (current.customResolution != null) {
+                                current.params
+                            } else {
+                                current.params.copy(
+                                    size = sizeForSource(profile, prepared),
+                                    outputSize = null,
+                                )
+                            },
                             // 只有确认是 NovelAI 图片才弹导入框：普通照片弹一个"没有元数据"是噪音。
                             metadataCandidate = (probed as? MetadataProbeResult.Found)
                                 ?.let { UiState.MetadataCandidate(it.metadata) },
@@ -708,9 +876,20 @@ class GenerateViewModel(
                 seedMode = if (plan.seed != null) SeedMode.FIXED else state.params.seedMode,
                 baseSeed = plan.seed ?: state.params.baseSeed,
             )
+            val normalized = profile.normalize(updated)
             state.copy(
                 // 采样器/调度/尺寸都按新模型再过一遍，避免导入出的组合服务端不认。
-                params = profile.normalize(updated),
+                params = normalized,
+                // 元数据里的尺寸不在预设里但合法时，把它当作自定义尺寸接住：
+                // 那张图本来就是按这个尺寸生成的，因此不需要裁切（exactOutput = false）。
+                customResolution = plan.size?.let { size ->
+                    if (profile.tierOf(size) == null) {
+                        CustomResolution(size.width, size.height, exactOutput = false)
+                    } else {
+                        null
+                    }
+                },
+                customResolutionError = null,
                 // 模板与提交值保持一致：勾了"实际提示词"时官方网页也是把展开值写进输入框
                 // （模板原文不再保留），否则那个勾选项在我们这里等于没有作用 ——
                 // 提交时提示词会从模板重新抽选一遍。

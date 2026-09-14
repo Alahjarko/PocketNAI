@@ -19,6 +19,16 @@ data class SizeConstraints(
             width % dimensionStep == 0 &&
             height % dimensionStep == 0 &&
             width.toLong() * height.toLong() <= maxTotalPixels
+
+    companion object {
+        /**
+         * 官方面积上限：`3 × 1024²`（反解官方前端 `Dk`：宽高存在、`steps ≤ 50`、面积不超它）。
+         *
+         * 放在约束类上而不是散在目录数据里，是因为**计费公式也要用它** ——
+         * 超出这个面积的请求官方根本不给报价（见 `NovelAiPaidAnlasFormula.MAX_AREA`，同值）。
+         */
+        const val OFFICIAL_MAX_TOTAL_PIXELS: Long = 3_145_728L
+    }
 }
 
 /** Undesired Content 预设，对应 API 的 `ucPreset` 整数。 */
@@ -184,6 +194,11 @@ data class ModelProfile(
             defaultNoiseSchedule in schedules -> defaultNoiseSchedule
             else -> schedules.firstOrNull() ?: defaultNoiseSchedule
         }
+        val normalizedSize = if (sizeConstraints.isValid(params.size.width, params.size.height)) {
+            params.size
+        } else {
+            defaultSize
+        }
         return params.copy(
             model = model,
             steps = stepsRange.clamp(params.steps.toDouble()).toInt(),
@@ -192,10 +207,11 @@ data class ModelProfile(
             sampleCount = params.sampleCount.coerceIn(1, maxSampleCount),
             sampler = sampler,
             noiseSchedule = schedule,
-            size = if (sizeConstraints.isValid(params.size.width, params.size.height)) {
-                params.size
-            } else {
-                defaultSize
+            size = normalizedSize,
+            // 最终尺寸必须**装得进**画布，否则裁切会越界。
+            // 装不下（例如尺寸被换回默认值）就丢掉裁切，宁可输出大图也不能崩在解码上。
+            outputSize = params.outputSize?.takeIf { output ->
+                output.width in 1..normalizedSize.width && output.height in 1..normalizedSize.height
             },
             baseSeed = params.baseSeed.coerceIn(0L, GenerationParams.MAX_SEED),
         )

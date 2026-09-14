@@ -68,6 +68,8 @@ class MappersTest {
         steps = 23,
         guidance = 7.0,
         cfgRescale = 0.0,
+        outputWidth = null,
+        outputHeight = null,
         sampler = Sampler.EULER_ANCESTRAL.apiValue,
         noiseSchedule = NoiseSchedule.KARRAS.apiValue,
         seedMode = SeedMode.FIXED.name,

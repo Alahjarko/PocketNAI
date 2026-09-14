@@ -11,6 +11,7 @@ import net.pocketnai.core.ErrorCode
 import net.pocketnai.core.Hashing
 import net.pocketnai.core.Outcome
 import net.pocketnai.data.files.GenerationFileStore
+import net.pocketnai.data.image.OutputImageProcessor
 import net.pocketnai.data.local.GenerationDao
 import net.pocketnai.data.local.Mappers
 import net.pocketnai.data.network.NovelAiApi
@@ -21,6 +22,7 @@ import net.pocketnai.domain.image.ImageGeometry
 import net.pocketnai.domain.image.ImageTransform
 import net.pocketnai.domain.image.PixelSize
 import net.pocketnai.domain.image.LiveReferencePathsProvider
+import net.pocketnai.domain.image.ResolutionPlanner
 import net.pocketnai.domain.image.ReferenceImageEncoder
 import net.pocketnai.domain.image.toPixelSize
 import net.pocketnai.domain.model.GeneratedImage
@@ -65,6 +67,8 @@ class GenerationRepository(
     private val dao: GenerationDao,
     private val fileStore: GenerationFileStore,
     private val zipExtractor: ZipImageExtractor = ZipImageExtractor(),
+    /** 生成结果的后处理（自定义分辨率的裁切与元数据保全）。 */
+    private val outputImageProcessor: OutputImageProcessor = OutputImageProcessor(),
     /**
      * 参考图 → 请求体 base64 的编码器。
      *
@@ -250,8 +254,26 @@ class GenerationRepository(
         }
 
         val extracted = extraction as ZipImageExtractor.Result.Success
+        // 自定义分辨率：画布是 64 对齐的，用户要的最终尺寸可能不是。
+        // 裁切必须发生在**落盘之前** —— 历史文件、数据库宽高、缩略图与相册导出
+        // 都以落盘那一刻为准，之后再改就要重新保证三者一致。
+        val outputCrop = effectiveParams.outputSize?.let { output ->
+            if (output == effectiveParams.size) {
+                null
+            } else {
+                ResolutionPlanner.centeredCrop(
+                    canvas = PixelSize(effectiveParams.size.width, effectiveParams.size.height),
+                    target = PixelSize(output.width, output.height),
+                )
+            }
+        }
+        val processed = outputImageProcessor.apply(
+            images = extracted.images,
+            crop = outputCrop,
+            canvas = PixelSize(effectiveParams.size.width, effectiveParams.size.height),
+        )
         val committed = try {
-            fileStore.commitImages(generationId, extracted.images)
+            fileStore.commitImages(generationId, processed)
         } catch (e: IOException) {
             archive.delete()
             fileStore.clearIncoming(generationId)

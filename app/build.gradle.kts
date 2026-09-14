@@ -19,6 +19,10 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
+        // 仪器化测试只在本地设备上跑（用于验证必须依赖 Android 位图 API 的图片后处理），
+        // 不参与任何发布产物。
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
         // 首版只在设备本地存储，不使用任何开发者中转服务器。
         //
         // 注意：NovelAI 的 api.novelai.net 已经不再接受第三方工具的 Persistent API Token
@@ -50,6 +54,12 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    // 迁移测试要能读到导出的 schema（`app/schemas`），否则 MigrationTestHelper
+    // 建不出旧版本的库，"迁移是否保住了历史"就只能靠人工装机试。
+    sourceSets {
+        getByName("androidTest").assets.srcDir("$projectDir/schemas")
     }
 
     packaging {
@@ -106,9 +116,19 @@ dependencies {
     implementation(libs.bouncycastle.bcprov)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     testImplementation(libs.junit)
     testImplementation(libs.truth)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
+
+    // 仪器化测试：验证必须用 Android 位图 API 的那部分（生成结果的裁切与 PNG 元数据保全）。
+    androidTestImplementation(libs.androidx.room.testing)
+    // 分辨率控件的界面测试：尺寸对照文案是"不静默调整"的落点，必须能被断言。
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.truth)
 }

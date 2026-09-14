@@ -20,7 +20,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PromptFavoriteEntity::class,
         ReferenceImageEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class PocketNaiDatabase : RoomDatabase() {
@@ -128,13 +128,31 @@ abstract class PocketNaiDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * 自定义分辨率：`generations` 上补两列记录**最终尺寸**。
+         *
+         * - 只 `ADD COLUMN`，**不重建表**（`generated_images` 有级联外键，重建会连带删图）；
+         * - 两列都可空且不带默认值，老记录保持 NULL，读取时按"不裁切"降级；
+         * - `width/height` 仍然是**请求画布**，计费与复现都以它为准；
+         *   `outputWidth/outputHeight` 才是用户要的最终尺寸。
+         *
+         * 刻意不存裁切原点：居中裁切是确定规则（奇数像素固定多给右下 1 px），
+         * 由 `ResolutionPlanner` 从两个尺寸算出来，存下来反而多一个可能与规则不一致的事实源。
+         */
+        val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE generations ADD COLUMN outputWidth INTEGER")
+                db.execSQL("ALTER TABLE generations ADD COLUMN outputHeight INTEGER")
+            }
+        }
+
         fun build(context: Context): PocketNaiDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
                 PocketNaiDatabase::class.java,
                 DATABASE_NAME,
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
     }
 }

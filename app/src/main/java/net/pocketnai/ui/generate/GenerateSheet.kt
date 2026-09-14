@@ -330,6 +330,16 @@ fun GenerateSheet(
                 availableOrientations = profile.availableOrientations(tier),
                 onTierChange = viewModel::onResolutionTierChange,
                 onOrientationChange = viewModel::onOrientationChange,
+                custom = state.customResolution,
+                plan = state.resolutionPlan,
+                customError = state.customResolutionError,
+                constraints = profile.sizeConstraints,
+                onCustomEnabled = viewModel::onCustomResolutionEnabled,
+                onCustomDisabled = viewModel::onCustomResolutionDisabled,
+                onCustomWidthChange = viewModel::onCustomWidthChange,
+                onCustomHeightChange = viewModel::onCustomHeightChange,
+                onCustomSwap = viewModel::onCustomSwapDimensions,
+                onExactOutputChange = viewModel::onCustomExactOutputChange,
                 modifier = Modifier.fillMaxWidth(),
             )
 
