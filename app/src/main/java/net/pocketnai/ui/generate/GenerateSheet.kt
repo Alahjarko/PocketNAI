@@ -1,5 +1,6 @@
 package net.pocketnai.ui.generate
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -19,6 +20,7 @@ import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -64,6 +66,12 @@ import net.pocketnai.domain.prompt.PromptTitle
 import net.pocketnai.core.AppError
 import net.pocketnai.core.ErrorCode
 import net.pocketnai.data.security.CredentialType
+import net.pocketnai.domain.billing.GenerationCostEstimate
+import net.pocketnai.ui.billing.BalanceDetailDialog
+import net.pocketnai.ui.billing.compactLabel
+import net.pocketnai.ui.billing.detailLabel
+import net.pocketnai.ui.billing.shortLabel
+import net.pocketnai.ui.billing.summaryLabel
 import net.pocketnai.ui.common.credentialInvalidMessageRes
 import net.pocketnai.R
 import net.pocketnai.domain.model.ModelCatalog
@@ -148,6 +156,10 @@ fun GenerateSheet(
     // 待保存的收藏内容；非空时弹出命名对话框。
     var saveRequest by remember { mutableStateOf<SaveRequest?>(null) }
     var pickerOpen by remember { mutableStateOf(false) }
+    var balanceDialogOpen by remember { mutableStateOf(false) }
+
+    // 费用预估由 ViewModel 从"参数 + 余额"派生，这里是纯展示。
+    val costEstimate by viewModel.costEstimate.collectAsStateWithLifecycle()
 
     Column(modifier = modifier.fillMaxWidth()) {
         SheetHeader(
@@ -155,8 +167,10 @@ fun GenerateSheet(
             expanded = expanded,
             connected = connected,
             credentialType = credentialType,
+            costEstimate = costEstimate,
             onGenerate = viewModel::generate,
             onRequestConnect = onRequestConnect,
+            onOpenBalance = { balanceDialogOpen = true },
         )
         HorizontalDivider()
 
@@ -169,6 +183,9 @@ fun GenerateSheet(
             if (!connected) {
                 NotConnectedCard(onRequestConnect = onRequestConnect)
             }
+
+            // 费用状态的展开态说明（按钮上只有短文案）。
+            CostDetailLine(costEstimate = costEstimate)
 
             // 参考图放在最上面：它是"这次生成用什么模式"的前提，
             // 而模式会决定下面的尺寸与计费预期。
@@ -491,6 +508,14 @@ fun GenerateSheet(
                 )
             }
 
+            // 生成后核对：只报"观察到的余额变化"，不说成账单（余额规划 §3.2）。
+            state.lastObservedChange?.let { change ->
+                NoticeCard(
+                    text = stringResource(R.string.observed_change_title) + "：" + change.summaryLabel(),
+                    onDismiss = viewModel::dismissObservedChange,
+                )
+            }
+
             Spacer(Modifier.size(8.dp))
         }
     }
@@ -533,6 +558,36 @@ fun GenerateSheet(
             onDelete = favoritesViewModel::delete,
             onDismiss = { pickerOpen = false },
             onDismissNotice = favoritesViewModel::dismissNotice,
+        )
+    }
+
+    if (balanceDialogOpen) {
+        BalanceDetailDialog(
+            state = state.balanceState,
+            onRefresh = viewModel::refreshBalance,
+            onDismiss = { balanceDialogOpen = false },
+        )
+    }
+
+    // 本地预估余额不足时的**非阻断**确认：用户仍可继续（余额规划 §11.3）。
+    // 绝不用本地数字禁用生成 —— 额度是否够用以服务端 402 为准。
+    if (state.pendingCostConfirmation) {
+        val total = (costEstimate as? GenerationCostEstimate.EstimatedAnlas)?.batchTotal ?: 0L
+        val balance = state.balanceState.knownBalance?.totalAnlas ?: 0L
+        AlertDialog(
+            onDismissRequest = viewModel::dismissCostConfirmation,
+            title = { Text(stringResource(R.string.cost_insufficient_title)) },
+            text = { Text(stringResource(R.string.cost_insufficient_message, total, balance)) },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmCostAndGenerate) {
+                    Text(stringResource(R.string.cost_insufficient_continue))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissCostConfirmation) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
         )
     }
 }
@@ -583,8 +638,10 @@ private fun SheetHeader(
     expanded: Boolean,
     connected: Boolean,
     credentialType: CredentialType?,
+    costEstimate: GenerationCostEstimate,
     onGenerate: () -> Unit,
     onRequestConnect: () -> Unit,
+    onOpenBalance: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -629,14 +686,64 @@ private fun SheetHeader(
                 connected = connected,
                 credentialType = credentialType,
             )
+            // 余额与费用独立成行，**不并入状态行**：状态行有自己的错误优先级，
+            // 余额不该把它顶掉（余额规划 §11.1）。点它打开余额详情。
+            BalanceLine(state = state, onClick = onOpenBalance)
         }
 
         GenerateButton(
             inFlight = state.inFlight,
             enabled = connected && state.canGenerate,
+            costLabel = costEstimate.shortLabel(),
+            costDetail = costEstimate.detailLabel(),
             onClick = { if (connected) onGenerate() else onRequestConnect() },
         )
     }
+}
+
+/**
+ * 头部最后一行：余额（点击查看详情）。
+ *
+ * 只放余额：费用已经在生成按钮上，这里再写一遍既重复又会被截断；
+ * 费用的详细说明（批量总价、平均每张、"以 NovelAI 为准"）放在表单顶部的费用行里，
+ * 那里有足够宽度写清楚。
+ */
+@Composable
+private fun BalanceLine(
+    state: GenerateViewModel.UiState,
+    onClick: () -> Unit,
+) {
+    val balanceLabel = state.balanceState.compactLabel()
+    val text = balanceLabel ?: stringResource(R.string.balance_unavailable_short)
+
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.clickable(onClick = onClick),
+    )
+}
+
+/**
+ * 表单顶部的费用说明行。
+ *
+ * 它承担的是费用状态的**展开态说明**：`预计不消耗 Anlas`、`将消耗 V5 免费额度`、
+ * `本次预计 68 Anlas，平均约 17/张`、`当前组合的费用以 NovelAI 为准`。
+ * 按钮上只放得下短文案，解释放在这里。
+ */
+@Composable
+private fun CostDetailLine(costEstimate: GenerationCostEstimate) {
+    Text(
+        text = stringResource(R.string.cost_prefix) + costEstimate.detailLabel(),
+        style = MaterialTheme.typography.bodySmall,
+        color = if (costEstimate is GenerationCostEstimate.Unknown) {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        } else {
+            MaterialTheme.colorScheme.primary
+        },
+    )
 }
 
 /**

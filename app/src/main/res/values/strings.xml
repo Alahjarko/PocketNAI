@@ -191,6 +191,46 @@
     <string name="error_reference_too_large">参考图过大，已停止提交。请换一张分辨率更低的图片。</string>
     <string name="error_reference_missing">参考图已不在本机，请重新选择。</string>
     <string name="error_vibe_encode_failed">这张参考图的 Vibe 编码失败，可以重试或先移除它。</string>
+    <string name="error_account_data_unavailable">余额暂时读取不到，不影响正常生成。</string>
+    <string name="error_account_response_invalid">无法识别 NovelAI 返回的账户信息，余额暂不可用。</string>
+
+    <!-- 余额与费用 -->
+    <string name="balance_title">账户余额</string>
+    <string name="balance_subscription">订阅 Anlas</string>
+    <string name="balance_purchased">购买 Anlas</string>
+    <string name="balance_total">总余额</string>
+    <string name="balance_v5_allowance">V5 免费额度</string>
+    <string name="balance_v5_unavailable">V5 免费额度当前不可用</string>
+    <string name="balance_v5_next_percent">约 %1$s 恢复 1%%</string>
+    <string name="balance_updated_at">最后更新 %1$s</string>
+    <string name="balance_refresh">刷新</string>
+    <string name="balance_refreshing_with_cache">正在刷新，当前显示上次结果</string>
+    <string name="balance_refreshing">正在读取余额…</string>
+    <string name="balance_failed_with_cache">刷新失败，当前显示 %1$s 的结果</string>
+    <string name="balance_never_loaded">余额暂不可用</string>
+    <string name="balance_unavailable_short">余额未知</string>
+    <string name="balance_anlas_short">余额 %1$s Anlas</string>
+    <string name="cost_prefix">费用：</string>
+
+    <!-- 费用预估：四态文案（余额规划 §3.1） -->
+    <string name="cost_free">免费</string>
+    <string name="cost_free_detail">预计不消耗 Anlas</string>
+    <string name="cost_v5_allowance_short">0 Anlas</string>
+    <string name="cost_v5_allowance_detail">将消耗 V5 免费额度</string>
+    <string name="cost_estimated_short">预计 %1$d</string>
+    <string name="cost_estimated_detail">预计 %1$d Anlas</string>
+    <string name="cost_estimated_detail_batch">本次预计 %1$d Anlas，平均约 %2$s/张</string>
+    <string name="cost_unknown_short">费用待确认</string>
+    <string name="cost_unknown_detail">当前组合的费用以 NovelAI 为准</string>
+    <string name="cost_insufficient_title">当前显示余额可能不足</string>
+    <string name="cost_insufficient_message">本次预计需要 %1$d Anlas，最近读取到的余额为 %2$d。最终费用和是否可生成以 NovelAI 返回结果为准。</string>
+    <string name="cost_insufficient_continue">仍然生成</string>
+    <string name="observed_change_title">本次观察到的余额变化</string>
+    <string name="observed_change_anlas">减少 %1$d Anlas（订阅 %2$d，购买 %3$d）</string>
+    <string name="observed_change_anlas_batch">减少 %1$d Anlas；请求 %2$d 张</string>
+    <string name="observed_change_v5">V5 免费额度 %1$d%% → %2$d%%</string>
+    <string name="observed_change_none">暂未观察到余额变化</string>
+    <string name="observed_change_ambiguous">余额变化待确认</string>
     <string name="error_unknown">发生未预期的错误。</string>
     <string name="error_correlation_id">诊断 ID：%1$s</string>
 </resources>

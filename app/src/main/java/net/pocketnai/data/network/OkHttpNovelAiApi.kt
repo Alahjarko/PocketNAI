@@ -11,6 +11,7 @@ import net.pocketnai.core.AppError
 import net.pocketnai.core.ErrorCode
 import net.pocketnai.core.LogRedaction
 import net.pocketnai.core.Outcome
+import net.pocketnai.domain.billing.SubscriptionBalance
 import net.pocketnai.domain.model.ImageModel
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
@@ -60,6 +61,45 @@ class OkHttpNovelAiApi(
                 }
             } catch (e: IOException) {
                 Outcome.Failure(NovelAiErrorMapper.fromTransportError(e))
+            }
+        }
+
+    /**
+     * 读取余额。
+     *
+     * 错误映射走 [AccountReadErrorMapper] 而不是生成用的 [NovelAiErrorMapper]：
+     * 余额查询超时不该被说成"服务端可能已经计费"。
+     */
+    override suspend fun fetchSubscriptionBalance(token: String): Outcome<SubscriptionBalance> =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url("$baseUrl/user/subscription")
+                .get()
+                .header(HEADER_AUTHORIZATION, bearer(token))
+                .header(HEADER_ACCEPT, "application/json")
+                .build()
+
+            try {
+                client.newCall(request).execute().use { response ->
+                    val correlationId = correlationIdOf(response)
+                    val body = response.body?.string().orEmpty()
+                    if (!response.isSuccessful) {
+                        return@withContext Outcome.Failure(
+                            AccountReadErrorMapper.fromHttpStatus(
+                                statusCode = response.code,
+                                body = body,
+                                correlationId = correlationId,
+                            ),
+                        )
+                    }
+                    SubscriptionBalanceParser.parse(
+                        body = body,
+                        json = json,
+                        fetchedAtMillis = System.currentTimeMillis(),
+                    )
+                }
+            } catch (e: IOException) {
+                Outcome.Failure(AccountReadErrorMapper.fromTransportError(e))
             }
         }
 
@@ -121,8 +161,7 @@ class OkHttpNovelAiApi(
         }
     }
 
-    override suspend fun suggestTags(
-        token: String,
+    override suspend fun suggestTags(        token: String,
         model: ImageModel,
         prompt: String,
     ): Outcome<List<String>> = withContext(Dispatchers.IO) {

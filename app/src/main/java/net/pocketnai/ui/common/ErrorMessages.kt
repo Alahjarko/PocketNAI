@@ -35,6 +35,8 @@ fun ErrorCode.messageRes(): Int = when (this) {
     ErrorCode.REFERENCE_TOO_LARGE -> R.string.error_reference_too_large
     ErrorCode.REFERENCE_MISSING -> R.string.error_reference_missing
     ErrorCode.VIBE_ENCODE_FAILED -> R.string.error_vibe_encode_failed
+    ErrorCode.ACCOUNT_DATA_UNAVAILABLE -> R.string.error_account_data_unavailable
+    ErrorCode.ACCOUNT_RESPONSE_INVALID -> R.string.error_account_response_invalid
     ErrorCode.UNKNOWN -> R.string.error_unknown
 }
 

@@ -13,6 +13,7 @@ import net.pocketnai.data.network.NovelAiTagSuggestionSource
 import net.pocketnai.data.network.OkHttpNovelAiAuthApi
 import net.pocketnai.data.network.OkHttpNovelAiApi
 import net.pocketnai.data.network.RedactingHttpLogger
+import net.pocketnai.data.repo.AccountBalanceRepository
 import net.pocketnai.data.repo.GenerationRepository
 import net.pocketnai.data.repo.PromptFavoriteRepository
 import net.pocketnai.data.security.CredentialStore
@@ -21,6 +22,7 @@ import net.pocketnai.data.security.SessionState
 import net.pocketnai.data.settings.GenerationDraftPreferences
 import net.pocketnai.domain.auth.AccessKeyDeriver
 import net.pocketnai.domain.auth.NovelAiAccessKeyDeriver
+import net.pocketnai.domain.billing.AnlasCostCalculator
 import net.pocketnai.domain.prompt.TagSuggestionSource
 import net.pocketnai.data.settings.SettingsStore
 import net.pocketnai.ui.state.GenerationDraftStore
@@ -125,6 +127,21 @@ class AppContainer(application: Application) {
     val promptFavoriteRepository: PromptFavoriteRepository by lazy {
         PromptFavoriteRepository(dao = database.promptFavoriteDao())
     }
+
+    /**
+     * 账户余额。只在内存中缓存，不落库（规划书 §7.4）——
+     * 余额属于"当前会话的账户事实"，跨会话持久化会把上一个账号的余额显示给下一个账号。
+     */
+    val accountBalanceRepository: AccountBalanceRepository = AccountBalanceRepository(
+        api = api,
+        credentialStore = credentialStore,
+    )
+
+    /**
+     * 费用预估。默认用"未校准"的定价策略：在官方网页的费用标签矩阵被记录之前，
+     * 付费组合一律返回"费用待确认"，不给猜测数字（余额规划 §10）。
+     */
+    val anlasCostCalculator: AnlasCostCalculator = AnlasCostCalculator()
 
     /**
      * 标签补全的来源。与生成共用同一个 [api]，但补全失败会静默成"没有建议"，

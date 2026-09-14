@@ -10,10 +10,15 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -70,11 +75,35 @@ fun PocketNaiApp() {
                     draftPreferences = container.generationDraftPreferences,
                     tagSuggestionSource = container.tagSuggestionSource,
                     referenceImporter = container.referenceImageProcessor,
+                    accountBalanceRepository = container.accountBalanceRepository,
+                    costCalculator = container.anlasCostCalculator,
                 )
             }
         },
     )
     val generateState by generateViewModel.state.collectAsStateWithLifecycle()
+
+    // 余额是账户级状态，跟着"是否已连接"走：
+    // 连上就刷新一次，断开就把内存里的余额清掉（绝不把上一个账号的余额留给下一个账号）。
+    LaunchedEffect(connected) {
+        if (connected) {
+            generateViewModel.refreshBalanceOnForeground()
+        } else {
+            container.accountBalanceRepository.clear()
+        }
+    }
+
+    // 回到前台时刷新一次；仓库内部会判断缓存是否还新鲜，不会反复打接口。
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) {
+                generateViewModel.refreshBalanceOnForeground()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route

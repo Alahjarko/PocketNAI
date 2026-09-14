@@ -87,6 +87,17 @@ enum class ErrorCode {
     /** Vibe 编码失败。只影响该张参考图，不阻断其它编辑。 */
     VIBE_ENCODE_FAILED,
 
+    /**
+     * 账户信息（余额）读取失败，但凭据本身未必失效。
+     *
+     * 单独成一类是因为它只影响余额这块辅助信息：界面应显示"余额暂不可用"，
+     * 而不是弹一个让人以为出了大事的错误。
+     */
+    ACCOUNT_DATA_UNAVAILABLE,
+
+    /** 账户信息接口返回了无法识别的结构（畸形 JSON、缺关键字段、字段类型不符）。 */
+    ACCOUNT_RESPONSE_INVALID,
+
     /** 未预期错误。 */
     UNKNOWN,
 }

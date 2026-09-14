@@ -20,6 +20,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -28,10 +32,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import kotlinx.coroutines.launch
 import net.pocketnai.BuildConfig
 import net.pocketnai.R
+import net.pocketnai.data.repo.BalanceRefreshReason
 import net.pocketnai.domain.model.ThemeMode
 import net.pocketnai.ui.LocalAppContainer
+import net.pocketnai.ui.billing.BalanceDetailDialog
+import net.pocketnai.ui.billing.compactLabel
 
 @Composable
 fun SettingsScreen(onRequestConnect: () -> Unit) {
@@ -52,6 +60,10 @@ fun SettingsScreen(onRequestConnect: () -> Unit) {
     val streamingEnabled by viewModel.streamingPreviewEnabled.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val connected by viewModel.connected.collectAsStateWithLifecycle()
+
+    // 余额与生成页共用同一个仓库实例，不另建一份网络状态或缓存（余额规划 §11.4）。
+    val balanceState by container.accountBalanceRepository.state.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -97,6 +109,23 @@ fun SettingsScreen(onRequestConnect: () -> Unit) {
                 }
             }
         }
+
+        HorizontalDivider()
+
+        // ---- 账户余额 ----
+        BalanceSection(
+            state = balanceState,
+            connected = connected,
+            onRefresh = {
+                // 手动刷新无视缓存；余额刷新失败不影响生成，也不会覆盖生成错误。
+                scope.launch {
+                    container.accountBalanceRepository.refresh(
+                        reason = BalanceRefreshReason.USER_REQUESTED,
+                        force = true,
+                    )
+                }
+            },
+        )
 
         HorizontalDivider()
 
@@ -212,6 +241,58 @@ private fun formatBytes(bytes: Long): String {
     val mb = kb / 1024.0
     if (mb < 1024) return "%.1f MB".format(mb)
     return "%.2f GB".format(mb / 1024.0)
+}
+
+/**
+ * 账户余额区块（余额规划 §11.4）。
+ *
+ * 这里是**只读展示 + 手动刷新**：余额是账户级状态，购买与充值都在官方网页完成，
+ * 应用不提供任何花钱的入口。
+ */
+@Composable
+private fun BalanceSection(
+    state: net.pocketnai.data.repo.BalanceState,
+    connected: Boolean,
+    onRefresh: () -> Unit,
+) {
+    var dialogOpen by remember { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = stringResource(R.string.balance_title),
+            style = MaterialTheme.typography.titleSmall,
+        )
+        Text(
+            text = if (!connected) {
+                stringResource(R.string.balance_never_loaded)
+            } else {
+                state.compactLabel() ?: stringResource(R.string.balance_never_loaded)
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { dialogOpen = true }, enabled = connected) {
+                Text(stringResource(R.string.balance_title))
+            }
+            OutlinedButton(onClick = onRefresh, enabled = connected) {
+                Text(stringResource(R.string.balance_refresh))
+            }
+        }
+        Text(
+            text = "余额由 NovelAI 返回，购买与充值请到官方网页操作。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+
+    if (dialogOpen) {
+        BalanceDetailDialog(
+            state = state,
+            onRefresh = onRefresh,
+            onDismiss = { dialogOpen = false },
+        )
+    }
 }
 
 @StringRes

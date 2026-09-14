@@ -2,6 +2,7 @@ package net.pocketnai.data.network
 
 import kotlinx.serialization.json.JsonObject
 import net.pocketnai.core.Outcome
+import net.pocketnai.domain.billing.SubscriptionBalance
 import net.pocketnai.domain.model.ImageModel
 import java.io.File
 
@@ -18,6 +19,17 @@ interface NovelAiApi {
      * 验证失败的 Token 不会被保存。
      */
     suspend fun fetchAccountStatus(token: String): Outcome<AccountStatus>
+
+    /**
+     * 读取账户余额（余额规划 §6.1）。
+     *
+     * 与 [fetchAccountStatus] 职责不同、不能互相替代：
+     * - `/user/data`：验证凭据、读取登录方式；
+     * - `/user/subscription`：读取两个 Anlas 池、订阅状态与 V5 使用额度。
+     *
+     * 失败**不得阻断生成**：余额是辅助信息，能不能生成始终由服务端 402 决定。
+     */
+    suspend fun fetchSubscriptionBalance(token: String): Outcome<SubscriptionBalance>
 
     /**
      * 发起 T2I 生成，把 ZIP 响应流写入 [destinationZip]（规划书 6.2 第 1 步）。

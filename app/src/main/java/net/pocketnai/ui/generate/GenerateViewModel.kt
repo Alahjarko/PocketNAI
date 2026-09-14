@@ -9,16 +9,28 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import net.pocketnai.core.AppError
 import net.pocketnai.core.ErrorCode
 import net.pocketnai.core.Outcome
+import net.pocketnai.data.repo.AccountBalanceRepository
+import net.pocketnai.data.repo.BalanceRefreshReason
+import net.pocketnai.data.repo.BalanceState
 import net.pocketnai.data.repo.GenerationEvent
 import net.pocketnai.data.repo.GenerationRepository
 import net.pocketnai.data.settings.GenerationDraftPreferences
+import net.pocketnai.domain.billing.AnlasCostCalculator
+import net.pocketnai.domain.billing.AnlasPricingContext
+import net.pocketnai.domain.billing.DefaultSubscriptionTierResolver
+import net.pocketnai.domain.billing.GenerationCostEstimate
+import net.pocketnai.domain.billing.GenerationKind
+import net.pocketnai.domain.billing.ObservedBalanceChange
+import net.pocketnai.domain.billing.SubscriptionBalance
 import net.pocketnai.domain.image.PreparedReference
 import net.pocketnai.domain.image.ReferenceImageImporter
 import net.pocketnai.domain.image.ReferenceSource
@@ -26,6 +38,7 @@ import net.pocketnai.domain.model.GenerationDraft
 import net.pocketnai.domain.model.GenerationMode
 import net.pocketnai.domain.model.GenerationParams
 import net.pocketnai.domain.model.GenerationRequest
+import net.pocketnai.domain.model.GenerationStatus
 import net.pocketnai.domain.model.ImageModel
 import net.pocketnai.domain.model.ImageOrientation
 import net.pocketnai.domain.model.ImageSizePreset
@@ -57,6 +70,8 @@ class GenerateViewModel(
     private val draftPreferences: GenerationDraftPreferences,
     private val tagSuggestionSource: TagSuggestionSource,
     private val referenceImporter: ReferenceImageImporter,
+    private val accountBalanceRepository: AccountBalanceRepository,
+    private val costCalculator: AnlasCostCalculator = AnlasCostCalculator(),
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
     private val clock: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
@@ -85,6 +100,17 @@ class GenerateViewModel(
         val referenceBusy: Boolean = false,
         /** 参考图导入失败的原因，与生成失败分开：它不影响已经写好的提示词与参数。 */
         val referenceError: AppError? = null,
+        /** 账户余额状态。只是辅助信息，永远不会阻止生成。 */
+        val balanceState: BalanceState = BalanceState.Unavailable,
+        /** 非空时界面弹"当前显示余额可能不足"的确认框。 */
+        val pendingCostConfirmation: Boolean = false,
+        /**
+         * 生成结束后观察到的余额变化。
+         *
+         * 用词是"观察到的"而不是"本次扣费"：同一账户可能在别处同时消费、
+         * 期间可能充值，服务端更新也可能有延迟。
+         */
+        val lastObservedChange: ObservedBalanceChange? = null,
         /** 当前可点的标签建议；补全失败或不适用时为空。 */
         val suggestions: List<String> = emptyList(),
         /**
@@ -150,7 +176,61 @@ class GenerateViewModel(
      */
     private val suggestionInput = MutableStateFlow("")
 
+    /**
+     * 当前参数的费用预估。
+     *
+     * 单独一条流而不是塞进 [UiState]：它是 `params + balanceState` 的派生结果，
+     * 由计算器算出来；放回状态里就得在每个改参数的入口都记得重算一遍。
+     * 计算是纯函数，参数一变就重算，不发任何网络请求。
+     */
+    val costEstimate: StateFlow<GenerationCostEstimate> = combine(
+        _state,
+        accountBalanceRepository.state,
+    ) { state, balance ->
+        costCalculator.estimate(pricingContextOf(state, balance))
+    }
+        .distinctUntilChanged()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(COST_SUBSCRIPTION_TIMEOUT_MS),
+            initialValue = costCalculator.estimate(
+                pricingContextOf(_state.value, accountBalanceRepository.state.value),
+            ),
+        )
+
+    private fun pricingContextOf(state: UiState, balance: BalanceState): AnlasPricingContext {
+        val known = when (balance) {
+            is BalanceState.Available -> balance.balance
+            is BalanceState.Loading -> balance.previous
+            is BalanceState.RefreshFailed -> balance.previous
+            BalanceState.Unavailable -> null
+        }
+        return AnlasPricingContext(
+            params = state.params,
+            subscriptionTier = DefaultSubscriptionTierResolver.resolve(
+                rawTier = known?.rawTier,
+                active = known?.active,
+            ),
+            v5UsageLimit = known?.v5UsageLimit,
+            resolutionTier = state.profile.tierOf(state.params.size),
+            generationKind = when (state.mode) {
+                GenerationMode.TXT2IMG -> GenerationKind.TEXT_TO_IMAGE
+                GenerationMode.IMG2IMG -> GenerationKind.IMAGE_TO_IMAGE
+            },
+            hasBaseImage = state.referenceSource != null,
+            referenceImageCount = state.referenceSource?.let { 1 } ?: 0,
+            pricingPolicyVersion = costCalculator.policyVersion,
+        )
+    }
+
     init {
+        // 余额状态镜像到 UiState：界面要显示它，但它的来源是账户级的仓库。
+        viewModelScope.launch {
+            accountBalanceRepository.state.collect { balance ->
+                _state.update { it.copy(balanceState = balance) }
+            }
+        }
+
         // 自动记住当前编辑状态。用防抖是因为拖动 Steps / Guidance 滑杆会连续产生几十次
         // 状态变化，逐次写盘既无必要也会卡顿。
         viewModelScope.launch {
@@ -475,6 +555,42 @@ class GenerateViewModel(
             _state.update { it.copy(error = AppError.of(ErrorCode.INVALID_PARAMS)) }
             return
         }
+        // 本地预估余额不足时只弹一次非阻断确认，用户点"仍然生成"就继续。
+        // 永远不因为本地算出来的数字禁用生成 —— 额度不足的权威结论是服务端 402。
+        if (needsCostConfirmation(snapshot)) {
+            _state.update { it.copy(pendingCostConfirmation = true) }
+            return
+        }
+        startGeneration()
+    }
+
+    /** 用户在"当前显示余额可能不足"的确认框里选择继续。 */
+    fun confirmCostAndGenerate() {
+        _state.update { it.copy(pendingCostConfirmation = false) }
+        startGeneration()
+    }
+
+    fun dismissCostConfirmation() {
+        _state.update { it.copy(pendingCostConfirmation = false) }
+    }
+
+    /**
+     * 是否需要那一次确认。
+     *
+     * 三个前提缺一不可：算得出具体金额、余额新鲜、预估超过余额。
+     * 余额过期时不用旧数字吓唬用户（规划 §11.3）。
+     */
+    private fun needsCostConfirmation(snapshot: UiState): Boolean {
+        val estimate = costEstimate.value
+        if (estimate !is GenerationCostEstimate.EstimatedAnlas) return false
+        val balance = snapshot.balanceState.knownBalance ?: return false
+        if (!accountBalanceRepository.isFresh(balance)) return false
+        return estimate.batchTotal > balance.totalAnlas
+    }
+
+    private fun startGeneration() {
+        val snapshot = _state.value
+        if (!snapshot.canGenerate) return
 
         // 规划书 8.3：先固定本次 Randomizer 展开结果，再作为请求快照提交。
         val resolvedPrompt = repository.resolvePromptTemplate(snapshot.promptTemplate)
@@ -489,8 +605,27 @@ class GenerateViewModel(
             references = listOfNotNull(snapshot.referenceSource),
         )
 
+        // 生成前快照：**不等待余额请求**，只取内存里已有的值（规划 §8.1）。
+        val beforeBalance = accountBalanceRepository.latestOrNull()
+        val billingSession = beforeBalance?.let {
+            ObservedBalanceChange.DEFAULT_MAX_PRE_SNAPSHOT_AGE_MS.let { maxAge ->
+                BillingSession(
+                    before = it,
+                    beforeAgeMillis = clock() - it.fetchedAtMillis,
+                    maxPreSnapshotAgeMillis = maxAge,
+                    expectedImageCount = frozen.sampleCount,
+                )
+            }
+        }
+
         _state.update {
-            it.copy(inFlight = true, completedImages = 0, error = null, modelSwitchNotice = null)
+            it.copy(
+                inFlight = true,
+                completedImages = 0,
+                error = null,
+                modelSwitchNotice = null,
+                lastObservedChange = null,
+            )
         }
 
         viewModelScope.launch {
@@ -507,17 +642,88 @@ class GenerateViewModel(
                             it.copy(error = event.error)
                         }
 
-                        is GenerationEvent.FatalError -> _state.update {
-                            it.copy(inFlight = false, error = event.error)
+                        is GenerationEvent.FatalError -> {
+                            _state.update { it.copy(inFlight = false, error = event.error) }
+                            when (event.error.code) {
+                                // 402 之后刷新余额：那是"余额不足"最权威的信号。
+                                ErrorCode.INSUFFICIENT_ANLAS -> refreshBalanceAfterGeneration(
+                                    session = billingSession,
+                                    completionConfirmed = false,
+                                )
+                                // 超时/断流时服务端可能已经计费，但这里不做断言，
+                                // 只把结果标成"待确认"。
+                                ErrorCode.TIMEOUT_UNCERTAIN -> refreshBalanceAfterGeneration(
+                                    session = billingSession,
+                                    completionConfirmed = false,
+                                )
+
+                                else -> Unit
+                            }
                         }
 
-                        is GenerationEvent.Completed -> _state.update {
-                            it.copy(inFlight = false)
+                        is GenerationEvent.Completed -> {
+                            _state.update { it.copy(inFlight = false) }
+                            refreshBalanceAfterGeneration(
+                                session = billingSession,
+                                completionConfirmed = event.status != GenerationStatus.FAILED,
+                            )
                         }
 
                         is GenerationEvent.Intermediate -> Unit
                     }
                 }
+        }
+    }
+
+    /**
+     * 生成结束后强制刷新一次余额，并给出"本次观察到的余额变化"（规划 §8.3）。
+     *
+     * 刷新失败或缺少前快照时不给确定数字 —— 宁可说"待确认"。
+     * 余额刷新无论如何都不会覆盖生成错误。
+     */
+    private suspend fun refreshBalanceAfterGeneration(
+        session: BillingSession?,
+        completionConfirmed: Boolean,
+    ) {
+        val outcome = accountBalanceRepository.refresh(
+            reason = BalanceRefreshReason.GENERATION_COMPLETED,
+            force = true,
+        )
+        val after = (outcome as? Outcome.Success)?.value ?: return
+        val change = ObservedBalanceChange.calculate(
+            before = session?.before,
+            after = after,
+            expectedImageCount = session?.expectedImageCount ?: 0,
+            generationCompleted = completionConfirmed,
+            beforeAgeMillis = session?.beforeAgeMillis,
+            maxPreSnapshotAgeMillis = session?.maxPreSnapshotAgeMillis
+                ?: ObservedBalanceChange.DEFAULT_MAX_PRE_SNAPSHOT_AGE_MS,
+        )
+        _state.update { it.copy(lastObservedChange = change) }
+    }
+
+    fun dismissObservedChange() {
+        _state.update { it.copy(lastObservedChange = null) }
+    }
+
+    /**
+     * 用户手动刷新余额（规划 §7.3）。
+     *
+     * 手动刷新无视缓存；失败只影响余额区域，不会覆盖生成错误，也不会阻止生成。
+     */
+    fun refreshBalance() {
+        viewModelScope.launch {
+            accountBalanceRepository.refresh(
+                reason = BalanceRefreshReason.USER_REQUESTED,
+                force = true,
+            )
+        }
+    }
+
+    /** 应用回到前台时的刷新：仓库内部会判断缓存是否还新鲜，不会反复打接口。 */
+    fun refreshBalanceOnForeground() {
+        viewModelScope.launch {
+            accountBalanceRepository.refresh(reason = BalanceRefreshReason.APP_FOREGROUND)
         }
     }
 
@@ -533,5 +739,16 @@ class GenerateViewModel(
 
         /** 与服务端网页版一致，一次最多展示 5 条。 */
         const val MAX_SUGGESTIONS = 5
+
+        /** 费用预估流的订阅超时，与画廊保持一致。 */
+        const val COST_SUBSCRIPTION_TIMEOUT_MS = 5_000L
     }
+
+    /** 一次生成前后的余额核对上下文（规划 §8.2）。 */
+    private data class BillingSession(
+        val before: SubscriptionBalance,
+        val beforeAgeMillis: Long,
+        val maxPreSnapshotAgeMillis: Long,
+        val expectedImageCount: Int,
+    )
 }

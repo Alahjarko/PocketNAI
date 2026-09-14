@@ -87,6 +87,21 @@
   `strength` 放在 `parameters` 顶层；嵌套的 `parameters.img2img` 是 inpaint 用的，不要发。
 - 默认值未经核对的字段（`noise`、`extra_noise_seed`、`add_original_image`、`color_correct`）
   **一律不发**，让服务端用它自己的默认值，比猜一个更接近官方行为。
+- 余额走 `GET /user/subscription`（只读），错误映射用 `AccountReadErrorMapper`：
+  **余额超时是 `REQUEST_TIMEOUT`，不是 `TIMEOUT_UNCERTAIN`**（后者那句"可能已计费"只适用于生成）。
+
+### 余额与费用
+
+- 余额是服务端事实，费用是本地推算，**两者严格分开**：余额只在内存缓存（5 分钟），
+  不写 Room、不写 SharedPreferences —— 否则会把上一个账号的余额显示给下一个账号。
+- 余额读取失败**不得阻止生成**，也不得把界面上的余额清零；能不能生成始终由服务端 402 决定。
+- 费用计算器只能返回四态之一（免费 / V5 额度 / 预计 Anlas / 待确认）。
+  **未用官方网页费用标签校准的付费组合必须返回"待确认"，不允许猜数字。**
+  定价公式的入口是 `PaidAnlasFormula`，默认实现是恒不支持校准的占位实现。
+- 每张参考图有固定附加费（`AnlasCostCalculator.REFERENCE_IMAGE_SURCHARGE_ANLAS`）；
+  基础费用未知时**不要只报附加费**，那会让用户以为总共只要 5。
+- 实测免费规则只覆盖被观测过的参数（V4.5 Curated + Normal + Steps ≤ 28 + Guidance 7.0 + 至多一张起点图）；
+  **不要**把它放宽到整个 V4.5 家族或 V5，也不要放宽到任意 Guidance。
 
 ### 质量标签
 

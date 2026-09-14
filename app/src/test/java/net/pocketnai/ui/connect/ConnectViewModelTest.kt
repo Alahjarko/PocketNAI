@@ -297,6 +297,11 @@ class ConnectViewModelTest {
             return accountStatusResult
         }
 
+        override suspend fun fetchSubscriptionBalance(
+            token: String,
+        ): Outcome<net.pocketnai.domain.billing.SubscriptionBalance> =
+            error("本测试不涉及余额读取")
+
         override suspend fun generateImage(
             token: String,
             payload: kotlinx.serialization.json.JsonObject,
