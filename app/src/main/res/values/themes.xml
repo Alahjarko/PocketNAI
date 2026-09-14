@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      纯 Compose 应用：XML 主题只负责窗口装饰（状态栏、背景），
+      颜色与排版由 Compose 的 PocketNaiTheme 提供。
+    -->
+    <style name="Theme.PocketNAI" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

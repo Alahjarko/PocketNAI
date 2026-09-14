@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      深色模式下的窗口背景。
+      必须在这里覆盖浅色值，否则启动瞬间会闪一下浅色底（Compose 首帧之前由 XML 主题绘制）。
+    -->
+    <color name="window_background">#FF131318</color>
+</resources>

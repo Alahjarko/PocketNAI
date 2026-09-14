@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  API 30 及以下的备份规则：Token 所在的首选项文件必须排除在自动备份之外，
+  避免 Persistent API Token 通过 Google 云备份离开设备。
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="pocketnai_secure.xml" />
+</full-backup-content>

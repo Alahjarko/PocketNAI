@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PocketNAI</string>
+
+    <!-- 底部导航 -->
+    <string name="nav_generate">生成</string>
+    <string name="nav_gallery">画廊</string>
+    <string name="nav_settings">设置</string>
+
+    <!-- 连接页 -->
+    <string name="connect_title">连接 NovelAI</string>
+    <string name="connect_intro">PocketNAI 使用你自己的 Persistent API Token 直接连接 NovelAI。令牌只保存在本机的 Android Keystore 保护存储中，不会上传到任何第三方服务器。</string>
+    <string name="connect_how_to">在 NovelAI 官方网页的 Account 设置中生成 Persistent API Token，然后粘贴到下方。</string>
+    <string name="connect_token_label">Persistent API Token</string>
+    <string name="connect_action">验证并保存</string>
+    <string name="connect_verifying">正在验证…</string>
+    <string name="connect_connected">已连接</string>
+    <string name="connect_replace">替换令牌</string>
+    <string name="connect_delete">删除令牌</string>
+    <string name="connect_delete_confirm_title">删除令牌？</string>
+    <string name="connect_delete_confirm_message">删除后需要重新粘贴令牌才能继续生成。本机历史与已保存到相册的图片不受影响。</string>
+    <string name="connect_empty_token">请先粘贴 Token。</string>
+    <string name="connect_mode_persistent">Persistent Token</string>
+    <string name="connect_mode_account">账号登录 · 实验</string>
+    <string name="connect_pst_stable">稳定方式，适合长期使用</string>
+    <string name="connect_pst_where">可在 NovelAI 网页的账户设置中创建</string>
+    <string name="connect_pst_replace_warning">新建 Persistent Token 会使旧 Token 失效</string>
+    <string name="connect_account_email">邮箱</string>
+    <string name="connect_account_password">密码</string>
+    <string name="connect_account_login">登录 NovelAI</string>
+    <string name="connect_account_logging_in">正在安全登录…</string>
+    <string name="connect_account_fallback">登录失败？改用 Persistent Token</string>
+    <string name="connect_open_novelai">打开 NovelAI 网页</string>
+    <string name="connect_open_novelai_hint">在账户设置里点 Get Persistent API Token，然后复制回来</string>
+    <string name="connect_account_sso_note">用 Google 等第三方方式登录的账号可能没有 NovelAI 密码，这类账号请改用 Persistent Token。</string>
+    <string name="connect_login_method_sso">检测到该账号使用第三方登录（SSO）</string>
+    <string name="connect_account_disclaimer">密码只用于在本机计算登录凭据，不会保存，也不会发送给 PocketNAI 开发者。账号登录属于实验功能；遇到验证码、SSO 或协议变化时，请改用 Persistent Token。</string>
+    <string name="connect_show_password">显示密码</string>
+    <string name="connect_hide_password">隐藏密码</string>
+    <string name="connect_credential_persistent">连接方式：Persistent Token</string>
+    <string name="connect_credential_session">连接方式：账号会话</string>
+    <string name="connect_credential_unknown">已连接</string>
+    <string name="connect_session_may_expire">账号会话可能需要定期重新登录，到期时间以服务端返回为准。</string>
+    <string name="connect_notice_session_unverified">已取得会话，但连接验证失败，请检查网络后重新登录。为避免保存一个未验证的会话，本次没有写入凭据。</string>
+    <string name="connect_token_hint_never_shown">完整令牌不会再次显示。</string>
+
+    <!-- 生成页 -->
+    <string name="generate_title">生成</string>
+    <string name="generate_sheet_title">生成设置</string>
+    <string name="generate_sheet_no_prompt">请先填写正向提示词</string>
+    <string name="generate_sheet_expand_hint">上拉展开参数</string>
+    <string name="generate_sheet_collapse_hint">下滑收起，看生成结果</string>
+    <string name="generate_prompt_label">正向提示词</string>
+    <!-- 输入框右上角有收藏图标，标签再长会被挤成两行，这里保持简短。 -->
+    <string name="generate_negative_label">Undesired Content（负面）</string>
+    <string name="generate_action">生成</string>
+    <string name="generate_action_busy">生成中</string>
+    <string name="generate_fab_in_progress">生成中 %1$d/%2$d</string>
+    <string name="generate_model">模型</string>
+    <string name="generate_size">尺寸</string>
+    <string name="generate_resolution">Resolution</string>
+    <string name="orientation_landscape">横图</string>
+    <string name="orientation_portrait">竖图</string>
+    <string name="orientation_square">方图</string>
+    <string name="generate_count">张数</string>
+    <string name="generate_steps">Steps</string>
+    <string name="generate_guidance">Prompt Guidance</string>
+    <string name="generate_cfg_rescale">CFG Rescale</string>
+    <string name="generate_sampler">Sampler</string>
+    <string name="generate_noise_schedule">Noise Schedule</string>
+    <string name="generate_seed">Seed</string>
+    <string name="generate_seed_random">随机</string>
+    <string name="generate_seed_fixed">固定</string>
+    <string name="generate_quality_tags">质量标签</string>
+    <string name="generate_quality_tags_hint">按当前模型规则追加到提示词末尾</string>
+    <string name="generate_quality_tags_appended">追加到提示词末尾：%1$s</string>
+    <string name="generate_quality_tags_none">不追加任何内容</string>
+    <string name="generate_advanced">高级参数</string>
+    <string name="generate_restore_model_defaults">恢复模型默认值</string>
+    <string name="generate_no_token">尚未连接 NovelAI</string>
+
+    <!-- 收藏提示词 -->
+    <string name="favorite_button">收藏</string>
+    <string name="favorite_button_hint">收藏选中片段；未选中时收藏整条</string>
+    <string name="favorites_button">收藏夹</string>
+    <string name="favorites_title">收藏夹</string>
+    <string name="favorites_tab_prompts">提示词</string>
+    <string name="favorites_tab_tags">标签</string>
+    <string name="favorites_search">搜索名称、内容或分组</string>
+    <string name="favorites_empty">这里还是空的。在提示词框里选中一段文字点「收藏」就存成标签，不选则收藏整条提示词。</string>
+    <string name="favorites_action_append">填入</string>
+    <string name="favorites_action_replace">替换整条</string>
+    <string name="favorites_action_delete">删除</string>
+    <string name="favorites_hint">点「填入」追加到末尾，右侧菜单可替换整条或删除。</string>
+    <string name="favorite_save_title_prompt">收藏为提示词</string>
+    <string name="favorite_save_title_tag">收藏为标签</string>
+    <string name="favorite_save_name">名称</string>
+    <string name="favorite_save_category">分组（可选）</string>
+    <string name="favorite_save_target_positive">将填入「正向提示词」</string>
+    <string name="favorite_save_target_negative">将填入「Undesired Content」</string>
+    <string name="generate_emphasis_strong">强化</string>
+    <string name="generate_emphasis_weak">弱化</string>
+    <string name="generate_insert">插入标签</string>
+
+    <!-- 画廊 -->
+    <string name="gallery_title">画廊</string>
+    <string name="gallery_empty">还没有生成记录。</string>
+    <string name="gallery_status_generating">生成中</string>
+    <string name="gallery_status_failed">失败</string>
+    <string name="gallery_status_partial">部分成功</string>
+
+    <!-- 长按操作 -->
+    <string name="action_save_to_gallery">保存到系统相册</string>
+    <string name="action_delete">删除本地记录</string>
+    <string name="action_copy_prompt">复制正向提示词</string>
+    <string name="action_reuse_params">复用参数</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_confirm">确定</string>
+    <string name="action_retry">重试</string>
+
+    <!-- 详情页 -->
+    <string name="detail_title">详情</string>
+    <string name="detail_saved_to_gallery">已保存到系统相册</string>
+
+    <!-- 设置 -->
+    <string name="settings_title">设置</string>
+    <string name="settings_appearance">外观</string>
+    <string name="settings_theme_mode">主题</string>
+    <string name="theme_system">跟随系统</string>
+    <string name="theme_light">浅色</string>
+    <string name="theme_dark">深色</string>
+    <string name="settings_theme_desc">默认跟随系统的深色 / 浅色设置，也可以固定使用某一种。</string>
+    <string name="settings_streaming_preview">流式中间预览</string>
+    <string name="settings_streaming_preview_desc">生成过程中显示中间图与进度。连续失败时应用会自动关闭该功能，可在此重新启用。</string>
+    <string name="settings_storage">存储占用</string>
+    <string name="settings_clear_orphans">清理孤立临时文件</string>
+    <string name="settings_version">版本</string>
+
+    <!-- 通用 -->
+    <string name="common_unknown">未知</string>
+    <string name="common_seed">Seed</string>
+    <string name="common_model">模型</string>
+    <string name="common_size">尺寸</string>
+    <string name="common_time">时间</string>
+
+    <!-- 错误提示（对应规划书 9.1 错误映射） -->
+    <string name="error_token_invalid">Token 无效或已失效，请重新连接 NovelAI。</string>
+    <string name="error_login_credentials_invalid">邮箱或密码不正确，或当前账号不支持这种登录方式。可以改用 Persistent Token。</string>
+    <string name="error_login_verification_required">登录需要额外验证（例如人机验证，或账号只支持第三方登录）。请改用 Persistent Token。</string>
+    <string name="error_login_response_invalid">NovelAI 返回了无法识别的登录结果，请更新 PocketNAI 或改用 Persistent Token。</string>
+    <string name="error_request_timeout">请求超时，请稍后手动重试。</string>
+    <!-- 凭据失效时按类型区分引导方向：会话要"重新登录"，PST 要"重新获取"。 -->
+    <string name="error_session_expired">账号会话已失效，请重新登录 NovelAI 账号。</string>
+    <string name="error_persistent_token_invalid">Persistent Token 无效、已被覆盖或已撤销，请重新获取。</string>
+    <string name="action_go_connect">去连接</string>
+    <string name="error_insufficient_anlas">可用额度不足。当前提示词与参数已保留。</string>
+    <string name="error_model_unavailable">当前账户不能使用该模型。</string>
+    <string name="error_invalid_params">请求参数无效，请检查标注的参数。</string>
+    <string name="error_rate_limited">请求过于频繁，请稍后再试。</string>
+    <string name="error_client_update_required">NovelAI 已更新接口，当前版本无法继续使用。请更新 PocketNAI。</string>
+    <string name="error_server">NovelAI 服务端返回错误。</string>
+    <string name="error_network">网络不可用，请检查网络连接。</string>
+    <string name="error_timeout_uncertain">请求超时或连接中断。服务端可能已经接受了这次任务，应用不会自动重试。</string>
+    <string name="error_zip_invalid">返回的图片数据校验失败，已清理临时文件。</string>
+    <string name="error_storage_full">本地存储空间不足，已停止写入。请释放空间后重试。</string>
+    <string name="error_save_to_gallery_failed">保存到系统相册失败，PocketNAI 历史记录未受影响。</string>
+    <string name="error_unknown">发生未预期的错误。</string>
+    <string name="error_correlation_id">诊断 ID：%1$s</string>
+</resources>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  API 31+ 的备份与设备迁移规则：同样排除 Token 首选项文件。
+  私有历史图片首版允许随云备份，后续技术设计再决定是否排除。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="pocketnai_secure.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="pocketnai_secure.xml" />
+    </device-transfer>
+</data-extraction-rules>

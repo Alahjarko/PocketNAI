@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自适应图标前景：108x108 画布，内容保持在中心 72x72 安全区内。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 取景框 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M36,32 h-4 a4,4 0 0 0 -4,4 v4 a2,2 0 0 0 4,0 v-4 h4 a2,2 0 0 0 0,-4 z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M76,32 h-4 a2,2 0 0 0 0,4 h4 v4 a2,2 0 0 0 4,0 v-4 a4,4 0 0 0 -4,-4 z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M36,72 h-4 v-4 a2,2 0 0 0 -4,0 v4 a4,4 0 0 0 4,4 h4 a2,2 0 0 0 0,-4 z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M76,72 h-4 a2,2 0 0 0 0,4 h4 a4,4 0 0 0 4,-4 v-4 a2,2 0 0 0 -4,0 z" />
+
+    <!-- 中心闪光 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,40 L57.4,50.6 L68,54 L57.4,57.4 L54,68 L50.6,57.4 L40,54 L50.6,50.6 Z" />
+</vector>

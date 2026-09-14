@@ -1,0 +1,27 @@
+# Gradle
+.gradle/
+.kotlin/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# 本机配置
+local.properties
+
+# 凭据：绝不能进入版本库
+persistent-api-token.txt
+*.token
+*.secret
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# 本地构建工具链（脚手架阶段下载的临时目录）
+.tooling/
+
+# 系统
+.DS_Store
+Thumbs.db
