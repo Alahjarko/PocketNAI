@@ -2,6 +2,8 @@ package net.pocketnai.ui.generate
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,6 +19,7 @@ import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -56,6 +59,7 @@ import net.pocketnai.domain.model.PromptFavorite
 import net.pocketnai.domain.model.PromptFavoriteKind
 import net.pocketnai.domain.model.PromptTarget
 import net.pocketnai.domain.prompt.PromptComposition
+import net.pocketnai.domain.prompt.PromptTagEditing
 import net.pocketnai.domain.prompt.PromptTitle
 import net.pocketnai.core.AppError
 import net.pocketnai.core.ErrorCode
@@ -101,6 +105,36 @@ fun GenerateSheet(
     // 还是"收藏整条提示词"。负面提示词也同样处理，否则两个长得一样的框行为不一致。
     var promptField by rememberSyncedField(state.promptTemplate)
     var negativeField by rememberSyncedField(state.negativeTemplate)
+
+    // 标签补全只作用于光标所在的那一个标签。有选区时不参与 ——
+    // 此时"当前标签"是哪一个说不清楚，替换目标不明确。
+    val suggestionFragment = if (promptField.selection.collapsed) {
+        PromptTagEditing
+            .tagSpanAt(promptField.text, promptField.selection.end)
+            .textIn(promptField.text)
+            .trim()
+    } else {
+        ""
+    }
+
+    // 刚填入的建议不重复建议。填入后光标正停在这个标签末尾，片段恰好等于建议本身，
+    // 不拦住的话会立刻又弹出同一批。片段变空（例如末尾补了逗号）时这个记录就失效。
+    var filledFragment by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(suggestionFragment) {
+        if (suggestionFragment.isEmpty()) {
+            filledFragment = null
+            viewModel.onSuggestionFragmentChange("")
+            return@LaunchedEffect
+        }
+        if (suggestionFragment == filledFragment) return@LaunchedEffect
+        viewModel.onSuggestionFragmentChange(suggestionFragment)
+    }
+
+    // 只在建议确实对应光标当前所在标签时才显示：请求在途时用户又改了字，
+    // 那批建议已经过期，显示出来只会让人点到一个跟自己刚打的字不匹配的词。
+    val visibleSuggestions = state.suggestions
+        .takeIf { state.suggestionQuery == suggestionFragment }
+        .orEmpty()
 
     val container = LocalAppContainer.current
     val favoritesViewModel: PromptFavoritesViewModel = viewModel(
@@ -152,6 +186,25 @@ fun GenerateSheet(
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
+
+            if (visibleSuggestions.isNotEmpty()) {
+                TagSuggestions(
+                    suggestions = visibleSuggestions,
+                    onPick = { suggestion ->
+                        val span = PromptTagEditing
+                            .tagSpanAt(promptField.text, promptField.selection.end)
+                        val replacement = PromptTagEditing
+                            .applySuggestion(promptField.text, span, suggestion)
+
+                        promptField = TextFieldValue(
+                            text = replacement.text,
+                            selection = TextRange(replacement.cursor),
+                        )
+                        viewModel.onPromptChange(replacement.text)
+                        filledFragment = suggestion
+                    },
+                )
+            }
 
             // 软上限只提示，不阻断提交（规划书 3.1）。
             if (state.exceedsPromptSoftLimit) {
@@ -469,6 +522,37 @@ fun GenerateSheet(
             onDismiss = { pickerOpen = false },
             onDismissNotice = favoritesViewModel::dismissNotice,
         )
+    }
+}
+
+/**
+ * 标签建议。点一下就把光标所在的标签替换成建议的词。
+ *
+ * 用 [FlowRow] 而不是横向滚动：一次最多 5 条，换行能全部看见 ——
+ * 横向滚动会把后面的建议藏在屏幕外，用户不知道还有没有别的。
+ *
+ * 这里没有"关闭"按钮：建议随输入片段自动出现和消失，多一个开关只会多一处状态。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TagSuggestions(
+    suggestions: List<String>,
+    onPick: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = stringResource(R.string.generate_suggestions_hint),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            suggestions.forEach { suggestion ->
+                AssistChip(
+                    onClick = { onPick(suggestion) },
+                    label = { Text(suggestion) },
+                )
+            }
+        }
     }
 }
 

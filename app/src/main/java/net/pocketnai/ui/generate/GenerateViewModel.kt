@@ -3,6 +3,8 @@ package net.pocketnai.ui.generate
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -29,6 +31,7 @@ import net.pocketnai.domain.model.ResolutionTier
 import net.pocketnai.domain.model.Sampler
 import net.pocketnai.domain.model.SeedMode
 import net.pocketnai.domain.prompt.PromptRandomizer
+import net.pocketnai.domain.prompt.TagSuggestionSource
 import net.pocketnai.ui.state.GenerationDraftStore
 
 /**
@@ -43,6 +46,7 @@ class GenerateViewModel(
     private val repository: GenerationRepository,
     private val draftStore: GenerationDraftStore,
     private val draftPreferences: GenerationDraftPreferences,
+    private val tagSuggestionSource: TagSuggestionSource,
 ) : ViewModel() {
 
     data class UiState(
@@ -59,6 +63,16 @@ class GenerateViewModel(
         val error: AppError? = null,
         /** 切换模型时若参数被替换，向用户说明发生了什么。 */
         val modelSwitchNotice: String? = null,
+        /** 当前可点的标签建议；补全失败或不适用时为空。 */
+        val suggestions: List<String> = emptyList(),
+        /**
+         * [suggestions] 对应的是哪个标签片段。
+         *
+         * 界面拿它和当前光标所在的标签对比：不一致说明这批建议已经过期
+         * （请求在途时用户又改了字），此时宁可不显示，也不能让用户点到一个
+         * 与自己刚打的字不匹配的建议。
+         */
+        val suggestionQuery: String = "",
     ) {
         val profile: ModelProfile get() = ModelCatalog.profileOf(params.model)
 
@@ -94,6 +108,14 @@ class GenerateViewModel(
         )
     }
 
+    /**
+     * 界面把"光标所在的标签"推到这里。
+     *
+     * 单独用一个 Flow 而不是塞进 `_state`：补全要等用户停手之后才发请求，
+     * 防抖是"这个输入流怎么处理"的问题，放在这里比散在界面里更容易看清。
+     */
+    private val suggestionInput = MutableStateFlow("")
+
     init {
         // 自动记住当前编辑状态。用防抖是因为拖动 Steps / Guidance 滑杆会连续产生几十次
         // 状态变化，逐次写盘既无必要也会卡顿。
@@ -126,6 +148,18 @@ class GenerateViewModel(
                     )
                 }
             }
+        }
+
+        // 标签补全：停手一小会儿才发请求，期间又改了字就整批作废重来。
+        // 模型一并纳入键，因为建议来自服务端的模型相关标签表，换模型后不该继续显示旧建议。
+        viewModelScope.launch {
+            combine(
+                suggestionInput,
+                _state.map { it.params.model }.distinctUntilChanged(),
+            ) { fragment, model -> fragment to model }
+                .debounce(SUGGEST_DEBOUNCE_MS)
+                .distinctUntilChanged()
+                .collectLatest { (fragment, model) -> refreshSuggestions(fragment, model) }
         }
     }
 
@@ -289,6 +323,39 @@ class GenerateViewModel(
         _state.update { it.copy(modelSwitchNotice = null) }
     }
 
+    /**
+     * 光标移动后由界面调用，告诉这里当前可以补全的标签片段。
+     *
+     * 传空串表示没有可补全的内容（光标不在标签里、或用户正在选择一段文字），
+     * 此时立刻清掉建议，不等防抖 —— 建议留在屏幕上却和输入框对不上更让人困惑。
+     */
+    fun onSuggestionFragmentChange(fragment: String) {
+        if (fragment.isBlank()) {
+            suggestionInput.value = ""
+            clearSuggestions()
+            return
+        }
+        suggestionInput.value = fragment
+    }
+
+    fun clearSuggestions() {
+        if (_state.value.suggestions.isEmpty() && _state.value.suggestionQuery.isEmpty()) return
+        _state.update { it.copy(suggestions = emptyList(), suggestionQuery = "") }
+    }
+
+    private suspend fun refreshSuggestions(fragment: String, model: ImageModel) {
+        val query = fragment.trim()
+        if (query.length < MIN_SUGGESTION_FRAGMENT_CHARS) {
+            clearSuggestions()
+            return
+        }
+
+        val tags = tagSuggestionSource.suggest(query, model)
+            .distinct()
+            .take(MAX_SUGGESTIONS)
+        _state.update { it.copy(suggestions = tags, suggestionQuery = fragment) }
+    }
+
     fun generate() {
         val snapshot = _state.value
         if (!snapshot.canGenerate) return
@@ -339,5 +406,14 @@ class GenerateViewModel(
     private companion object {
         /** 状态停止变化多久之后落盘。太长会在被杀进程时丢改动，太短则拖滑杆时频繁写。 */
         const val DRAFT_SAVE_DEBOUNCE_MS = 600L
+
+        /** 停手多久之后去取标签建议。太短会在连续输入时发出一串利用率很低的请求。 */
+        const val SUGGEST_DEBOUNCE_MS = 350L
+
+        /** 少于两个字符不给建议：一个字母能匹配到的标签太多，建议没有参考价值。 */
+        const val MIN_SUGGESTION_FRAGMENT_CHARS = 2
+
+        /** 与服务端网页版一致，一次最多展示 5 条。 */
+        const val MAX_SUGGESTIONS = 5
     }
 }

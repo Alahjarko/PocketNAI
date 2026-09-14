@@ -101,6 +101,7 @@
     <string name="generate_emphasis_strong">强化</string>
     <string name="generate_emphasis_weak">弱化</string>
     <string name="generate_insert">插入标签</string>
+    <string name="generate_suggestions_hint">标签建议（点击填入）</string>
 
     <!-- 画廊 -->
     <string name="gallery_title">画廊</string>

@@ -8,6 +8,7 @@ import net.pocketnai.data.files.GenerationFileStore
 import net.pocketnai.data.local.PocketNaiDatabase
 import net.pocketnai.data.network.NovelAiApi
 import net.pocketnai.data.network.NovelAiAuthApi
+import net.pocketnai.data.network.NovelAiTagSuggestionSource
 import net.pocketnai.data.network.OkHttpNovelAiAuthApi
 import net.pocketnai.data.network.OkHttpNovelAiApi
 import net.pocketnai.data.network.RedactingHttpLogger
@@ -19,6 +20,7 @@ import net.pocketnai.data.security.SessionState
 import net.pocketnai.data.settings.GenerationDraftPreferences
 import net.pocketnai.domain.auth.AccessKeyDeriver
 import net.pocketnai.domain.auth.NovelAiAccessKeyDeriver
+import net.pocketnai.domain.prompt.TagSuggestionSource
 import net.pocketnai.data.settings.SettingsStore
 import net.pocketnai.ui.state.GenerationDraftStore
 import okhttp3.OkHttpClient
@@ -115,5 +117,13 @@ class AppContainer(application: Application) {
 
     val promptFavoriteRepository: PromptFavoriteRepository by lazy {
         PromptFavoriteRepository(dao = database.promptFavoriteDao())
+    }
+
+    /**
+     * 标签补全的来源。与生成共用同一个 [api]，但补全失败会静默成"没有建议"，
+     * 不会碰生成链路上的任何状态。
+     */
+    val tagSuggestionSource: TagSuggestionSource by lazy {
+        NovelAiTagSuggestionSource(api = api, credentialStore = credentialStore)
     }
 }

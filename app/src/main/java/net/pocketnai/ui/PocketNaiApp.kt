@@ -68,6 +68,7 @@ fun PocketNaiApp() {
                     repository = container.generationRepository,
                     draftStore = container.draftStore,
                     draftPreferences = container.generationDraftPreferences,
+                    tagSuggestionSource = container.tagSuggestionSource,
                 )
             }
         },
