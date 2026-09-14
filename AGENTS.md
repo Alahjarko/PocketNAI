@@ -83,23 +83,66 @@
 - Vibe Transfer：`action` 也保持 `generate`，发 `reference_*_multiple` **三个数组**，
   内容是 `encode-vibe` 的产物 base64（实测服务端收编码产物，不收原图）。
   编码缓存在 `files/vibes/<hash>.vibe`，键含模型 + 图片 sha256 + Information Extracted。
+- **Vibe 与 Precise Reference 不能同时发**：服务端会拒绝
+  （`cannot mix reference and director_reference at the same time`）。界面必须互斥。
+  Vibe 与图生图可以同时发。
+
 ### 局部重绘（Inpaint）
+
+**一句话：功能已经完全实现，但入口被关掉了，因为公开 API 不接受它。**
+这是本仓库目前唯一一处"代码就绪、能力位为 false"的功能，改动前请先读完这一节。
+
+**请求形态（已实现，别再重新设计）**
 
 - `action` 用 `infill`，底图放 `parameters.image`、蒙版放 `parameters.mask`，
   强度放在**嵌套的** `parameters.img2img.strength`（OpenAPI 对它的说明是 `used by inpaint`）。
-- **公开 API 目前不提供这个 action**：V4.5 的 Curated 与 Full 实测都被拒
-  （`Model ... doesn't support action infill`），而把蒙版挂到 `img2img` 上会被完全忽略。
-  因此 `supportsInpaint` 对四个模型一律为 false、入口关闭；**不要**因为它"属于 Image2Img 家族"
-  就以为换个模型就能用。接口开放后改 `ModelCatalog` 一行即可启用。
 - 蒙版必须与底图**同尺寸**、**硬边（关抗锯齿）**，且是二值语义。
   约定（白色 vs 透明 = 重画区域）关在 `MaskConvention` 里，**尚未用真实生成验证**。
 - 扩张用"笔刷半径加 N"实现（Minkowski 和），**不要**改成对位图做形态学卷积 ——
   那样会毁掉实时预览。橡皮不参与扩张。
 - 重绘与参考条件（Precise Reference / Vibe）互斥；换底图必须作废旧蒙版。
 
-- **Vibe 与 Precise Reference 不能同时发**：服务端会拒绝
-  （`cannot mix reference and director_reference at the same time`）。界面必须互斥。
-  Vibe 与图生图可以同时发。
+**窘境：官方网页能做，公开 API 不做**
+
+官方文档、官方网页都有 Inpaint（网页上还能"大图零 Anlas 重绘"），但公开 API 的行为不同。
+2026-09-14 实测了三条路径，全部堵死（详见技术决策记录第十五节）：
+
+| 试过的路径 | 结果 |
+|---|---|
+| `action: "infill"` + `nai-diffusion-4-5-curated` | `HTTP 400 Model nai-diffusion-4-5-curated doesn't support action infill`（响应里还跟了一段 `500 Internal Server Error`） |
+| `action: "infill"` + `nai-diffusion-4-5-full` | `HTTP 400 Model nai-diffusion-4-5-full doesn't support action infill`（同样跟一段 500，看起来这个 action 在服务端的处理链本身就不完整） |
+| `action: "img2img"` + 蒙版 | **请求成功、出图，但蒙版被完全忽略** |
+
+第三条的结论是**定量**得出的，不是"看起来没生效"：蒙版只覆盖 3.55% 的像素，
+而输出有 52.6% 的像素发生变化、变化区域的包围盒是整张图，且 96.7% 的变化落在蒙版外。
+也就是说 `img2img` 会把蒙版字段当空气，用户会得到"整张图被重画"的结果 ——
+比没有这个按钮更糟，因为它看起来是成功的。
+
+**为什么保留实现而不是删掉**
+
+- 编辑器（画笔/橡皮/撤销重做/清空二次确认/扩张实时预览）、蒙版渲染、请求构造、
+  存储与入口都已完成，删掉等于把"接口一开放就能用"变成"要重新做一遍"；
+- 但**留着入口**是有害的：用户会以为点了能生效，在未核实的模型上还可能真扣费。
+  因此收敛为一个常量：`ModelCatalog` 里四个模型的 `supportsInpaint = false`，
+  界面据此隐藏入口并说明原因。
+
+**重新启用的条件（三条都要满足）**
+
+1. 服务端开放 `infill`（或明确给出替代 action）。验证方式是先发一次请求看是否还回
+   `doesn't support action infill`，**不要**靠推断；
+2. 蒙版约定必须先用判别性探针确认（`PAINTED_IS_WHITE` vs `PAINTED_IS_TRANSPARENT`，
+   探针方法写在 `MaskConvention` 的注释里）。这一步之前**不允许**打开入口 ——
+   约定猜错的后果是"涂的区域没变、没涂的区域全变了"；
+3. 由用户明确授权，且一次只发一个请求、用已知免费的最小参数
+   （V4.5 Curated + Normal + steps 23 + guidance 7.0 + 单张）。
+
+**不要做的事**
+
+- 不要因为它"属于 Image2Img 家族、V5 也能用"就以为换个模型就能跑 ——
+  两个档位都实测被拒；
+- 不要在未授权时为了"验证一下"发真实请求（上一次就是这么被叫停的：
+  账号余额有限，用户明确说"停"）；
+- 不要删除编辑器与蒙版渲染的代码，也不要把它标记成"未实现"。
 
 ### 参考图的文件存储
 
@@ -248,10 +291,11 @@
 [docs/PocketNAI-技术决策记录.md](docs/PocketNAI-技术决策记录.md) 第 3.7 节，
 改到相关代码时先看一遍。
 
-局部重绘（Inpaint）的调研与待核对清单见
-[docs/PocketNAI-局部重绘功能规划书.md](docs/PocketNAI-局部重绘功能规划书.md)：
-它最大的未知量是**蒙版约定**（涂抹区域是白色还是透明），必须先做一次判别性探针再实现编码。
-那条探针与其余 B 类项一样，**只能由用户手动发起**。
+局部重绘（Inpaint）的调研与当前状态见
+[docs/PocketNAI-局部重绘功能规划书.md](docs/PocketNAI-局部重绘功能规划书.md)（§9 是实施记录）
+与技术决策记录第十五节。**实现已经完成，卡在服务端不提供 `infill`**，
+因此入口关闭；重新启用前必须先做蒙版约定探针，那条探针与其余 B 类项一样，
+**只能由用户手动发起**。详见上面"局部重绘（Inpaint）"一节。
 
 参考图功能（Image2Img / Vibe Transfer / Precise Reference）另有一份待核对清单，
 见 [docs/PocketNAI-参考图功能规划书.md](docs/PocketNAI-参考图功能规划书.md) 第 3.4 节：
