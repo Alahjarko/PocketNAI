@@ -19,8 +19,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         GeneratedImageEntity::class,
         PromptFavoriteEntity::class,
         ReferenceImageEntity::class,
+        FavoriteImageEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class PocketNaiDatabase : RoomDatabase() {
@@ -28,6 +29,8 @@ abstract class PocketNaiDatabase : RoomDatabase() {
     abstract fun generationDao(): GenerationDao
 
     abstract fun promptFavoriteDao(): PromptFavoriteDao
+
+    abstract fun favoriteImageDao(): FavoriteImageDao
 
     companion object {
         private const val DATABASE_NAME = "pocketnai.db"
@@ -146,13 +149,49 @@ abstract class PocketNaiDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * 画廊收藏：新增收藏图片表。
+         *
+         * 只有 `CREATE TABLE` + `CREATE INDEX`，**不触碰任何既有表** —— 收藏是纯增量功能，
+         * 没有理由让 `generations` / `generated_images` 承担迁移风险
+         * （那两张表被 `ON DELETE CASCADE` 拴在一起，重建父表会连带删掉用户的图片记录）。
+         *
+         * 列定义必须与 [FavoriteImageEntity] 完全一致（列名、类型、NOT NULL、主键、外键），
+         * 否则打开数据库时的 schema 校验会失败。外键的三个属性也不能省：
+         * Room 会把 `onDelete` 一起比对，写成 NO ACTION 就会校验不过。
+         *
+         * 刻意不给 imageId 建额外索引：它是主键，本身已是索引，
+         * 外键的"子列未建索引"检查认主键，多建一个纯属浪费。
+         */
+        val MIGRATION_5_6: Migration = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `favorite_images` (
+                        `imageId` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`imageId`),
+                        FOREIGN KEY(`imageId`) REFERENCES `generated_images`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
         fun build(context: Context): PocketNaiDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
                 PocketNaiDatabase::class.java,
                 DATABASE_NAME,
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                )
                 .build()
     }
 }

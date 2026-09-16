@@ -78,6 +78,81 @@ class MigrationTest {
             }
     }
 
+    /**
+     * v5 → v6：新增收藏图片表。
+     *
+     * 这个迁移只 `CREATE TABLE`，风险比 v4→v5 小得多，但仍然要在这里证明三件事：
+     * 1. 既有历史与图片原样还在（新表没碰到它们）；
+     * 2. 新表结构能被 Room 的校验接受（外键的 `onDelete` 写错就会在这里抛出来）；
+     * 3. `ON DELETE CASCADE` 真的生效 —— 图片被删时收藏行必须跟着走，
+     *    否则会留下一批指向不存在图片的收藏，界面上表现为"收藏里有几张打不开"。
+     */
+    @Test
+    fun migrate5To6AddsFavoriteImagesWithCascade() {
+        helper.createDatabase(TEST_DB, 5).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO generations (
+                    id, createdAt, updatedAt, status, title, promptTemplate, mode,
+                    prompt, negativePrompt, modelApiId, width, height, sampleCount,
+                    steps, guidance, cfgRescale, sampler, noiseSchedule, seedMode,
+                    baseSeed, qualityTags, qualityTagsEnabled, ucPresetIndex,
+                    modelConfigVersion, requestSnapshotVersion,
+                    outputWidth, outputHeight
+                ) VALUES (
+                    'gen-1', 1, 1, 'SUCCEEDED', 'title', '1girl', 'TXT2IMG',
+                    '1girl', '', 'nai-diffusion-4-5-curated', 832, 1216, 1,
+                    23, 7.0, 0.0, 'k_euler_ancestral', 'karras', 'FIXED',
+                    42, 'STANDARD', 1, 0, 'v1', 3, NULL, NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                INSERT INTO generated_images (
+                    id, generationId, ordinal, seed, relativePath, width, height,
+                    byteSize, sha256, metadataJson, createdAt, exportedUri
+                ) VALUES (
+                    'img-1', 'gen-1', 1, 42, 'generations/gen-1/0001.png', 832, 1216,
+                    1024, 'sha', NULL, 1, NULL
+                )
+                """.trimIndent(),
+            )
+        }
+
+        helper.runMigrationsAndValidate(TEST_DB, 6, true, PocketNaiDatabase.MIGRATION_5_6)
+            .use { db ->
+                db.query("SELECT COUNT(*) FROM generations").use { cursor ->
+                    assertThat(cursor.moveToFirst()).isTrue()
+                    assertThat(cursor.getInt(0)).isEqualTo(1)
+                }
+                db.query("SELECT COUNT(*) FROM generated_images").use { cursor ->
+                    assertThat(cursor.moveToFirst()).isTrue()
+                    assertThat(cursor.getInt(0)).isEqualTo(1)
+                }
+
+                db.execSQL("INSERT INTO favorite_images (imageId, createdAt) VALUES ('img-1', 1)")
+                db.query("SELECT COUNT(*) FROM favorite_images").use { cursor ->
+                    assertThat(cursor.moveToFirst()).isTrue()
+                    assertThat(cursor.getInt(0)).isEqualTo(1)
+                }
+
+                // SQLite 默认**不**启用外键约束，而 `MigrationTestHelper` 给的是一个裸数据库。
+                // 应用运行时由 Room 生成的实现在 `onOpen` 里执行 `PRAGMA foreign_keys = ON`
+                // （已核对 `PocketNaiDatabase_Impl`），所以这里要自己打开，
+                // 否则测的不是"级联没生效"而是"开关没开"，断言会误报。
+                db.execSQL("PRAGMA foreign_keys = ON")
+
+                // 删掉图片，收藏行必须被级联清掉 —— 这条断言真正验证的是
+                // 迁移里写的外键动作是 CASCADE 而不是 NO ACTION。
+                db.execSQL("DELETE FROM generated_images WHERE id = 'img-1'")
+                db.query("SELECT COUNT(*) FROM favorite_images").use { cursor ->
+                    assertThat(cursor.moveToFirst()).isTrue()
+                    assertThat(cursor.getInt(0)).isEqualTo(0)
+                }
+            }
+    }
+
     private companion object {
         const val TEST_DB = "migration-test.db"
     }

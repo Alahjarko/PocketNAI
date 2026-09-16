@@ -37,6 +37,7 @@ interface GenerationDao {
             i.exportedUri AS exported_uri,
             i.createdAt AS image_created_at,
             g.status AS status,
+            g.mode AS mode,
             g.title AS title,
             g.modelApiId AS model_api_id,
             g.prompt AS prompt,

@@ -309,9 +309,19 @@ internal fun HistoryImagePickerDialog(
     onDismiss: () -> Unit,
 ) {
     val container = LocalAppContainer.current
+    // 显式给一个 key，让它与画廊那份 GalleryViewModel **不是同一个实例**：
+    // 两者的 ViewModelStoreOwner 默认相同（同一个 NavBackStackEntry），共用实例就意味着
+    // 画廊的筛选条件会作用到这里 —— 而这个对话框**没有任何筛选控件**，
+    // 用户只会看到"我的图少了一大半"却找不到原因。
     val galleryViewModel: GalleryViewModel = viewModel(
+        key = "history-image-picker",
         factory = viewModelFactory {
-            initializer { GalleryViewModel(container.generationRepository) }
+            initializer {
+                GalleryViewModel(
+                    repository = container.generationRepository,
+                    favorites = container.favoriteImageRepository,
+                )
+            }
         },
     )
     val items by galleryViewModel.items.collectAsStateWithLifecycle()

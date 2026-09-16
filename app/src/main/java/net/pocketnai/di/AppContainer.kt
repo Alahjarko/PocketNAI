@@ -15,6 +15,7 @@ import net.pocketnai.data.network.OkHttpNovelAiAuthApi
 import net.pocketnai.data.network.OkHttpNovelAiApi
 import net.pocketnai.data.network.RedactingHttpLogger
 import net.pocketnai.data.repo.AccountBalanceRepository
+import net.pocketnai.data.repo.FavoriteImageRepository
 import net.pocketnai.data.repo.GenerationRepository
 import net.pocketnai.data.repo.PromptFavoriteRepository
 import net.pocketnai.data.security.CredentialStore
@@ -140,6 +141,16 @@ class AppContainer(application: Application) {
 
     val promptFavoriteRepository: PromptFavoriteRepository by lazy {
         PromptFavoriteRepository(dao = database.promptFavoriteDao())
+    }
+
+    /**
+     * 图片收藏。
+     *
+     * 与 [generationRepository] 分开：它只管 `favorite_images` 这一张关联表，
+     * 不参与生成链路，两边没有必要绑在一起（画廊与详情页各自消费）。
+     */
+    val favoriteImageRepository: FavoriteImageRepository by lazy {
+        FavoriteImageRepository(dao = database.favoriteImageDao())
     }
 
     /**

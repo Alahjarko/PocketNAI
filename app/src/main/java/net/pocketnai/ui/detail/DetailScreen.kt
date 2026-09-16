@@ -22,11 +22,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -62,6 +65,7 @@ import net.pocketnai.domain.model.ReferenceImage
 import net.pocketnai.domain.model.ReferenceRole
 import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.common.CenteredHint
+import net.pocketnai.ui.common.labelRes
 import net.pocketnai.ui.common.messageRes
 import java.text.DateFormat
 import java.util.Date
@@ -87,6 +91,7 @@ fun DetailScreen(
                     repository = container.generationRepository,
                     exporter = container.mediaStoreExporter,
                     draftStore = container.draftStore,
+                    favorites = container.favoriteImageRepository,
                 )
             }
         },
@@ -119,6 +124,31 @@ fun DetailScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.action_cancel),
+                        )
+                    }
+                },
+                actions = {
+                    // 收藏放在顶栏：详情页是"这张图我喜不喜欢"的判断现场，
+                    // 而收藏只是个开关，不值得在下面再占一整行按钮。
+                    IconButton(onClick = viewModel::toggleFavorite) {
+                        Icon(
+                            imageVector = if (state.favorite) {
+                                Icons.Filled.Favorite
+                            } else {
+                                Icons.Filled.FavoriteBorder
+                            },
+                            contentDescription = stringResource(
+                                if (state.favorite) {
+                                    R.string.action_unfavorite
+                                } else {
+                                    R.string.action_favorite
+                                },
+                            ),
+                            tint = if (state.favorite) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                LocalContentColor.current
+                            },
                         )
                     }
                 },
@@ -179,12 +209,7 @@ fun DetailScreen(
             // 否则用户回看历史时会以为那次生成的参数配错了。
             DetailRow(
                 stringResource(R.string.common_mode),
-                when (generation.mode) {
-                    GenerationMode.IMG2IMG -> stringResource(R.string.generate_mode_img2img)
-                    GenerationMode.PRECISE_REFERENCE -> stringResource(R.string.generate_mode_precise_reference)
-                    GenerationMode.INPAINT -> stringResource(R.string.generate_mode_inpaint)
-                    GenerationMode.TXT2IMG -> stringResource(R.string.generate_mode_txt2img)
-                },
+                stringResource(generation.mode.labelRes()),
             )
             generation.references.forEach { reference ->
                 ReferenceRow(reference = reference)

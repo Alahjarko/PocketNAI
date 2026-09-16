@@ -25,6 +25,8 @@ data class GalleryImageRow(
     @ColumnInfo(name = "exported_uri") val exportedUri: String?,
     @ColumnInfo(name = "image_created_at") val imageCreatedAt: Long,
     val status: String,
+    /** [net.pocketnai.domain.model.GenerationMode] 的名字；v3 之前的记录为空。 */
+    val mode: String?,
     val title: String,
     @ColumnInfo(name = "model_api_id") val modelApiId: String,
     val prompt: String,

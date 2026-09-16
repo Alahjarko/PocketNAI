@@ -184,9 +184,19 @@
     <string name="gallery_status_generating">生成中</string>
     <string name="gallery_status_failed">失败</string>
     <string name="gallery_status_partial">部分成功</string>
+    <string name="gallery_search_hint">搜索提示词</string>
+    <!-- 筛选 chip 的文案直接就是"当前值"，不做"模型：全部"这种带前缀的写法：
+         三个 chip 加搜索框在 360dp 宽度里横向排不下，会被右边缘裁掉。 -->
+    <string name="gallery_filter_all_models">全部模型</string>
+    <string name="gallery_filter_all_modes">全部模式</string>
+    <string name="gallery_filter_favorites">仅收藏</string>
+    <string name="gallery_filter_clear">清除筛选</string>
+    <string name="gallery_no_match">没有符合当前筛选条件的图片。</string>
 
     <!-- 长按操作 -->
     <string name="action_save_to_gallery">保存到系统相册</string>
+    <string name="action_favorite">收藏</string>
+    <string name="action_unfavorite">取消收藏</string>
     <string name="action_delete">删除本地记录</string>
     <string name="action_copy_prompt">复制正向提示词</string>
     <string name="action_reuse_params">复用参数</string>
