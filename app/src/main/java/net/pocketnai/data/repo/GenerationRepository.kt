@@ -1,6 +1,7 @@
 package net.pocketnai.data.repo
 
 import android.util.Base64
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -10,12 +11,15 @@ import net.pocketnai.core.AppError
 import net.pocketnai.core.ErrorCode
 import net.pocketnai.core.Hashing
 import net.pocketnai.core.Outcome
+import net.pocketnai.BuildConfig
 import net.pocketnai.data.files.GenerationFileStore
 import net.pocketnai.data.image.OutputImageProcessor
 import net.pocketnai.data.local.GenerationDao
 import net.pocketnai.data.local.Mappers
+import net.pocketnai.data.network.GenerationStreamEvent
 import net.pocketnai.data.network.NovelAiApi
 import net.pocketnai.data.network.NovelAiRequestBuilder
+import net.pocketnai.data.network.PngValidator
 import net.pocketnai.data.network.ZipImageExtractor
 import net.pocketnai.data.security.CredentialStore
 import net.pocketnai.domain.image.ImageGeometry
@@ -43,6 +47,7 @@ import net.pocketnai.domain.prompt.PromptRandomizer
 import net.pocketnai.domain.prompt.PromptTitle
 import java.io.File
 import java.io.IOException
+import java.util.Locale
 import java.util.UUID
 import kotlin.random.Random
 
@@ -85,6 +90,19 @@ class GenerationRepository(
      * 而那是一个只在真机上才会发现的静默数据丢失。
      */
     private val liveReferencePaths: LiveReferencePathsProvider,
+    /**
+     * 流式中间预览是否启用（设置页开关；连续失败后由设置层自动关闭）。
+     *
+     * 默认关闭：这个开关只影响"用哪条传输链路"，关掉时一切走已验证的 ZIP 路径。
+     */
+    private val streamingEnabled: () -> Boolean = { false },
+    /**
+     * 报告一次流式失败（设置层据此累计失败次数，达到阈值自动关闭流式）。
+     *
+     * 返回 true 表示本次调用触发了自动关闭 —— 错误文案里会带上这句，
+     * 让用户知道"下次生成会回到普通方式"，而不是以为功能坏了。
+     */
+    private val onStreamingFailure: () -> Boolean = { false },
     private val clock: () -> Long = System::currentTimeMillis,
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
     private val random: Random = Random.Default,
@@ -229,35 +247,110 @@ class GenerationRepository(
         }
         emit(GenerationEvent.Started(generationId))
 
-        val archive = fileStore.newArchiveFile(generationId)
-        val transport = api.generateImage(
-            token = token,
-            payload = NovelAiRequestBuilder.build(
-                profile = profile,
-                request = request.copy(params = effectiveParams),
-                upstreamImages = encodedImages,
-            ),
-            destinationZip = archive,
+        // 两条链路（流式 SSE / 普通 ZIP）在这里分叉，产物统一成
+        // ZipImageExtractor.ExtractedImage —— 后面的裁切、落盘、记账完全共用。
+        val useStreaming = streamingEnabled()
+        val payload = NovelAiRequestBuilder.build(
+            profile = profile,
+            request = request.copy(params = effectiveParams),
+            upstreamImages = encodedImages,
+            streaming = useStreaming,
         )
-        if (transport is Outcome.Failure) {
-            archive.delete()
-            fileStore.clearIncoming(generationId)
-            failGeneration(generationId, transport.error)
-            emit(GenerationEvent.FatalError(generationId, transport.error))
-            return@flow
-        }
 
-        val incomingDir = fileStore.newIncomingDir(generationId)
-        val extraction = archive.inputStream().use { zipExtractor.extract(it, incomingDir) }
-        if (extraction is ZipImageExtractor.Result.Failure) {
-            archive.delete()
-            fileStore.clearIncoming(generationId)
-            failGeneration(generationId, extraction.error)
-            emit(GenerationEvent.FatalError(generationId, extraction.error))
-            return@flow
-        }
+        var archiveToDelete: File? = null
+        val extracted: ZipImageExtractor.Result.Success = if (useStreaming) {
+            var streamFailure: AppError? = null
+            var streamErrorMessage: String? = null
+            var completed: GenerationStreamEvent.Completed? = null
+            val finals = mutableListOf<ZipImageExtractor.ExtractedImage>()
 
-        val extracted = extraction as ZipImageExtractor.Result.Success
+            api.generateImageStream(token, payload).collect { event ->
+                when (event) {
+                    is GenerationStreamEvent.Intermediate -> {
+                        // 中间图只做界面预览：写 cache、同序号覆盖，不落历史。
+                        decodePreviewBase64(event.imageBase64)?.let { bytes ->
+                            val preview = fileStore.writePreview(generationId, PREVIEW_ORDINAL, bytes)
+                            emit(
+                                GenerationEvent.Intermediate(
+                                    generationId = generationId,
+                                    ordinal = PREVIEW_ORDINAL,
+                                    previewPath = preview.absolutePath,
+                                    // 服务端只给 step_ix（不告诉总步数），
+                                    // 百分比用本次请求的 steps 自己算。
+                                    progress = event.step
+                                        ?.let { (it + 1).toDouble() / effectiveParams.steps }
+                                        ?.coerceIn(0.0, 1.0),
+                                ),
+                            )
+                        }
+                    }
+
+                    is GenerationStreamEvent.Final ->
+                        decodePngBase64(event.imageBase64)?.let { bytes ->
+                            finals += storeIncomingImage(generationId, finals.size + 1, bytes)
+                        }
+
+                    is GenerationStreamEvent.StreamError -> streamErrorMessage = event.message
+                    is GenerationStreamEvent.Completed -> completed = event
+                    is GenerationStreamEvent.Failed -> streamFailure = event.error
+                }
+            }
+
+            val streamError = streamFailure
+                ?: streamErrorMessage?.let { AppError.of(ErrorCode.SERVER_ERROR, detail = it) }
+                ?: if (finals.isEmpty()) {
+                    AppError.of(ErrorCode.SERVER_ERROR, detail = describeStreamMismatch(completed))
+                } else {
+                    null
+                }
+
+            if (streamError != null) {
+                fileStore.clearPreviews(generationId)
+                fileStore.clearIncoming(generationId)
+                // 记录一次流式失败：连续失败达到阈值时，设置层会关闭流式预览。
+                val autoDisabled = onStreamingFailure()
+                val error = if (autoDisabled) {
+                    streamError.copy(
+                        detail = listOfNotNull(
+                            streamError.detail,
+                            "流式预览已连续失败并自动关闭；下次生成将使用普通方式。",
+                        ).joinToString(separator = " "),
+                    )
+                } else {
+                    streamError
+                }
+                failGeneration(generationId, error)
+                emit(GenerationEvent.FatalError(generationId, error))
+                return@flow
+            }
+            ZipImageExtractor.Result.Success(finals)
+        } else {
+            val archive = fileStore.newArchiveFile(generationId)
+            val transport = api.generateImage(
+                token = token,
+                payload = payload,
+                destinationZip = archive,
+            )
+            if (transport is Outcome.Failure) {
+                archive.delete()
+                fileStore.clearIncoming(generationId)
+                failGeneration(generationId, transport.error)
+                emit(GenerationEvent.FatalError(generationId, transport.error))
+                return@flow
+            }
+
+            val incomingDir = fileStore.newIncomingDir(generationId)
+            val extraction = archive.inputStream().use { zipExtractor.extract(it, incomingDir) }
+            if (extraction is ZipImageExtractor.Result.Failure) {
+                archive.delete()
+                fileStore.clearIncoming(generationId)
+                failGeneration(generationId, extraction.error)
+                emit(GenerationEvent.FatalError(generationId, extraction.error))
+                return@flow
+            }
+            archiveToDelete = archive
+            extraction as ZipImageExtractor.Result.Success
+        }
         // 自定义分辨率：画布是 64 对齐的，用户要的最终尺寸可能不是。
         // 裁切必须发生在**落盘之前** —— 历史文件、数据库宽高、缩略图与相册导出
         // 都以落盘那一刻为准，之后再改就要重新保证三者一致。
@@ -279,8 +372,9 @@ class GenerationRepository(
         val committed = try {
             fileStore.commitImages(generationId, processed)
         } catch (e: IOException) {
-            archive.delete()
+            archiveToDelete?.delete()
             fileStore.clearIncoming(generationId)
+            fileStore.clearPreviews(generationId)
             val error = AppError.of(ErrorCode.STORAGE_FULL, detail = "写入历史目录失败: ${e.message.orEmpty()}")
             failGeneration(generationId, error)
             emit(GenerationEvent.FatalError(generationId, error))
@@ -324,9 +418,11 @@ class GenerationRepository(
             correlationId = null,
         )
 
-        // 规划书 6.2 第 7 步：数据库提交成功后才删除 ZIP 与中间文件。
-        archive.delete()
+        // 规划书 6.2 第 7 步：数据库提交成功后才删除 ZIP 与中间文件；
+        // 流式路径的预览图到此也完成使命（它只服务于生成期间的界面显示）。
+        archiveToDelete?.delete()
         fileStore.clearIncoming(generationId)
+        fileStore.clearPreviews(generationId)
 
         images.forEach { emit(GenerationEvent.Final(generationId, it)) }
         emit(GenerationEvent.Completed(generationId, status))
@@ -403,6 +499,9 @@ class GenerationRepository(
         // 参考图的存活集合必须来自完整查询：漏一条就会误删别的历史还在用的文件。
         val referencedPaths = dao.allReferencePaths().toSet() + liveReferencePaths.provide()
         val cleanup = fileStore.cleanupOrphans(knownIds, referencedPaths)
+
+        // 流式预览图是纯缓存：上次进程被回收时可能留下几张，直接全部清掉。
+        fileStore.clearAllPreviews()
 
         // 标记删除但没能完成清理的记录（例如进程在撤销窗口内被杀）在启动时收尾。
         // 撤销窗口是有意设计成短暂的，跨重启保留会让“已删除”的记录长期占着磁盘。
@@ -528,6 +627,91 @@ class GenerationRepository(
     }
 
     /**
+     * base64 → 可显示的图片字节（**中间预览专用**）。
+     *
+     * 与 final 图不同，中间图只需要能被界面显示，因此：
+     * - 剥掉可能的 `data:image/...;base64,` 前缀（有的服务端会给）；
+     * - 接受常见图片魔数（PNG / JPEG / WebP / GIF），不要求 PNG ——
+     *   服务端为省带宽常把中间图压成 JPEG，若这里只认 PNG，预览会全部被丢弃；
+     * - 顺手把魔数与长度记进流式诊断日志（DEBUG），这些值不含图片内容。
+     */
+    private fun decodePreviewBase64(raw: String): ByteArray? {
+        val payload = raw.substringAfter("base64,", missingDelimiterValue = raw)
+        val bytes = try {
+            Base64.decode(payload, Base64.DEFAULT)
+        } catch (e: IllegalArgumentException) {
+            return null
+        }
+        if (BuildConfig.DEBUG) {
+            val magic = bytes.take(4).joinToString(separator = "") { "%02x".format(it) }
+            Log.d("PocketNaiStream", "preview magic=$magic bytes=${bytes.size}")
+        }
+        return bytes.takeIf { hasImageSignature(it) }
+    }
+
+    /** 常见图片格式的魔数检测（只看文件头 4–12 字节）。 */
+    private fun hasImageSignature(bytes: ByteArray): Boolean {
+        if (PngValidator.hasSignature(bytes)) return true
+        if (bytes.size > 3 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte()) return true
+        if (bytes.size > 12 &&
+            bytes.copyOfRange(0, 4).decodeToString() == "RIFF" &&
+            bytes.copyOfRange(8, 12).decodeToString() == "WEBP"
+        ) {
+            return true
+        }
+        return bytes.size > 6 && bytes.copyOfRange(0, 3).decodeToString() == "GIF"
+    }
+
+    /** base64 → PNG 字节（**final 图专用**）：不是合法 base64、或没有 PNG 签名时返回 null。 */
+    private fun decodePngBase64(base64: String): ByteArray? {
+        val payload = base64.substringAfter("base64,", missingDelimiterValue = base64)
+        val bytes = try {
+            Base64.decode(payload, Base64.DEFAULT)
+        } catch (e: IllegalArgumentException) {
+            return null
+        }
+        return bytes.takeIf { PngValidator.hasSignature(it) }
+    }
+
+    /**
+     * 把一张流式最终图写进本次任务的中间目录。
+     *
+     * 序号与文件命名跟 ZIP 解包产物保持一致，因此后续的
+     * [GenerationFileStore.commitImages] 与自定义分辨率裁切完全不区分图片来自哪条链路。
+     */
+    private fun storeIncomingImage(
+        generationId: String,
+        ordinal: Int,
+        bytes: ByteArray,
+    ): ZipImageExtractor.ExtractedImage {
+        val file = File(fileStore.newIncomingDir(generationId), "%04d.png".format(Locale.ROOT, ordinal))
+        file.writeBytes(bytes)
+        val dimensions = PngValidator.readDimensions(file)
+        return ZipImageExtractor.ExtractedImage(
+            ordinal = ordinal,
+            file = file,
+            byteSize = bytes.size.toLong(),
+            sha256 = Hashing.sha256(bytes),
+            width = dimensions?.width ?: 0,
+            height = dimensions?.height ?: 0,
+        )
+    }
+
+    /**
+     * 流式收尾但没有可用图片时的诊断文案。
+     *
+     * 只含结构信息（帧数、事件名）—— 首次真机验证就是靠它确认服务端的真实结构，
+     * 记录在技术决策记录 §24。
+     */
+    private fun describeStreamMismatch(completed: GenerationStreamEvent.Completed?): String =
+        if (completed == null) {
+            "流式响应没有产生任何图片（连接提前结束）"
+        } else {
+            "流式响应没有可用的图片（帧数 ${completed.frames}，未识别 ${completed.unknownFrames}，" +
+                "事件：${completed.labels.joinToString(separator = "; ").take(300)}）"
+        }
+
+    /**
      * 每类参考图在提交时要被做成什么形状。
      *
      * - 图生图起点图：**铺满**输出尺寸（裁掉多余边缘）；
@@ -585,5 +769,8 @@ class GenerationRepository(
 
         /** Vibe 的 Information Extracted 缺省值。官方默认值未核对，取"全部提取"。 */
         const val DEFAULT_VIBE_INFORMATION_EXTRACTED = 1.0
+
+        /** 中间预览只有一张：新的预览覆盖旧的，序号固定为 1。 */
+        const val PREVIEW_ORDINAL = 1
     }
 }

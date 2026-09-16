@@ -54,6 +54,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import net.pocketnai.ui.LocalAppContainer
+import net.pocketnai.ui.favorites.CreateFavoriteDialog
 import net.pocketnai.ui.favorites.FavoritePickerDialog
 import net.pocketnai.ui.favorites.PromptFavoritesViewModel
 import net.pocketnai.ui.favorites.SaveFavoriteDialog
@@ -114,8 +115,9 @@ fun GenerateSheet(
 
     // 两个输入框都用 TextFieldValue 跟踪：只有拿到选区，才能判断"收藏选中片段"
     // 还是"收藏整条提示词"。负面提示词也同样处理，否则两个长得一样的框行为不一致。
-    var promptField by rememberSyncedField(state.promptTemplate)
-    var negativeField by rememberSyncedField(state.negativeTemplate)
+    // textRevision 是"外部整体替换过文本"的代数，见 rememberSyncedField 的说明。
+    var promptField by rememberSyncedField(state.promptTemplate, state.textRevision)
+    var negativeField by rememberSyncedField(state.negativeTemplate, state.textRevision)
 
     // 标签补全只作用于光标所在的那一个标签。有选区时不参与 ——
     // 此时"当前标签"是哪一个说不清楚，替换目标不明确。
@@ -158,6 +160,11 @@ fun GenerateSheet(
     // 待保存的收藏内容；非空时弹出命名对话框。
     var saveRequest by remember { mutableStateOf<SaveRequest?>(null) }
     var pickerOpen by remember { mutableStateOf(false) }
+    // 收藏夹填到哪个框由打开它的入口决定（正向 / 负向），而不是收藏自己的 target：
+    // 用户在负向框旁点了「收藏夹」，内容却填进上方的正向框，看起来像"没反应"。
+    var pickerTarget by remember { mutableStateOf(PromptTarget.POSITIVE) }
+    // 从收藏夹里"新建"时弹出的表单。
+    var createFavoriteOpen by remember { mutableStateOf(false) }
     var balanceDialogOpen by remember { mutableStateOf(false) }
 
     // 费用预估由 ViewModel 从"参数 + 余额"派生，这里是纯展示。
@@ -258,7 +265,12 @@ fun GenerateSheet(
                 ) {
                     Text(stringResource(R.string.generate_emphasis_weak))
                 }
-                TextButton(onClick = { pickerOpen = true }) {
+                TextButton(
+                    onClick = {
+                        pickerTarget = PromptTarget.POSITIVE
+                        pickerOpen = true
+                    },
+                ) {
                     Icon(Icons.Default.Bookmarks, contentDescription = null)
                     Text(
                         text = stringResource(R.string.favorites_button) +
@@ -302,6 +314,22 @@ fun GenerateSheet(
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
+
+            // 负向词也要能从收藏夹填充。入口与正向的同一形态（图标 + 计数），
+            // 用户一眼认得出是同一个功能，只是填的目标框不同。
+            TextButton(
+                onClick = {
+                    pickerTarget = PromptTarget.NEGATIVE
+                    pickerOpen = true
+                },
+            ) {
+                Icon(Icons.Default.Bookmarks, contentDescription = null)
+                Text(
+                    text = stringResource(R.string.favorites_button) +
+                        " (${favoritesState.promptCount + favoritesState.tagCount})",
+                    modifier = Modifier.padding(start = 4.dp),
+                )
+            }
 
             // 规划书 3.4：V4.5 对多语言提示词理解较弱，只做非阻断说明。
             if (!profile.supportsMultilingualPrompt) {
@@ -581,16 +609,52 @@ fun GenerateSheet(
             onQueryChange = favoritesViewModel::onQueryChange,
             onKindChange = favoritesViewModel::onKindChange,
             onAppend = { favorite ->
-                applyFavorite(favorite, replace = false, state = state, viewModel = viewModel)
+                applyFavorite(
+                    favorite = favorite,
+                    replace = false,
+                    target = pickerTarget,
+                    state = state,
+                    viewModel = viewModel,
+                )
                 favoritesViewModel.markUsed(favorite)
             },
             onReplace = { favorite ->
-                applyFavorite(favorite, replace = true, state = state, viewModel = viewModel)
+                applyFavorite(
+                    favorite = favorite,
+                    replace = true,
+                    target = pickerTarget,
+                    state = state,
+                    viewModel = viewModel,
+                )
                 favoritesViewModel.markUsed(favorite)
+            },
+            onCreate = {
+                // 两个对话框不叠加显示：先收起收藏夹，建完再摊开（新条目就在列表里）。
+                pickerOpen = false
+                createFavoriteOpen = true
             },
             onDelete = favoritesViewModel::delete,
             onDismiss = { pickerOpen = false },
             onDismissNotice = favoritesViewModel::dismissNotice,
+        )
+    }
+
+    if (createFavoriteOpen) {
+        CreateFavoriteDialog(
+            kind = favoritesState.kind,
+            onConfirm = { name, content, category ->
+                favoritesViewModel.save(
+                    kind = favoritesState.kind,
+                    content = content,
+                    name = name,
+                    category = category,
+                    target = pickerTarget,
+                )
+                createFavoriteOpen = false
+                // 建完立刻回到收藏夹：既确认建成，也能看到刚建的条目。
+                pickerOpen = true
+            },
+            onDismiss = { createFavoriteOpen = false },
         )
     }
 
@@ -998,17 +1062,21 @@ private data class SaveRequest(
  *
  * 需要 `TextFieldValue` 而不是普通字符串，是因为只有它带选区信息 ——
  * 而"有选中就存成标签、没选中就存整条"这条判断完全依赖选区。
+ *
+ * ## 为什么只在 [revision] 变化时重建
+ * 不能"文本一变就同步"：每次按键都会把文本推给 ViewModel，再把它收回来写进输入框，
+ * 就是拿自己刚写出去的东西覆盖自己；而快速输入时收回来的往往是**上一拍**的值。
+ * 2026-09-16 实测到连续退格时 `LaunchedEffect` 带着旧文本执行，输入框被整体重置
+ * ——文本回滚一个字、光标从删除点跳到文末，用户看到的就是"光标跳到别的行"。
+ *
+ * [revision]（`GenerateViewModel.UiState.textRevision`）只在外部**整体替换**文本时
+ * 前进（复用历史参数 / 导入元数据 / 收藏夹填充），打字不会。于是：
+ * - 打字：文本与光标全程留在输入框自己手里，外界一次都不碰；
+ * - 外部替换：代数一变，输入框带着新文本重建，光标落到文末（用户接下来要改的多半是末尾）。
  */
 @Composable
-private fun rememberSyncedField(text: String): MutableState<TextFieldValue> {
-    val state = remember { mutableStateOf(TextFieldValue(text)) }
-    LaunchedEffect(text) {
-        if (state.value.text != text) {
-            state.value = TextFieldValue(text, TextRange(text.length))
-        }
-    }
-    return state
-}
+private fun rememberSyncedField(text: String, revision: Int): MutableState<TextFieldValue> =
+    remember(revision) { mutableStateOf(TextFieldValue(text, TextRange(text.length))) }
 
 /** 输入框右上角的收藏按钮：有选中就存标签，没选中就存整条提示词。 */
 @Composable
@@ -1052,17 +1120,22 @@ private fun FavoriteSaveButton(
 }
 
 /**
- * 把收藏填回对应输入框：默认追加到末尾，[replace] 为真时整条替换。
+ * 把收藏填回输入框：默认追加到末尾，[replace] 为真时整条替换。
  *
  * 追加是默认动作，因为它是"拼装提示词"时最常用的行为，也不会毁掉用户已经写好的内容。
+ *
+ * 填到哪个框由**打开收藏夹的入口**（[target]）决定，而不是收藏自己的 target：
+ * 拿"从哪存的"当"填到哪去"，会出现"在负向框旁点了收藏夹、内容却进了正向框"
+ * 这种看起来像没反应的行为。
  */
 private fun applyFavorite(
     favorite: PromptFavorite,
     replace: Boolean,
+    target: PromptTarget,
     state: GenerateViewModel.UiState,
     viewModel: GenerateViewModel,
 ) {
-    val current = when (favorite.target) {
+    val current = when (target) {
         PromptTarget.POSITIVE -> state.promptTemplate
         PromptTarget.NEGATIVE -> state.negativeTemplate
     }
@@ -1071,8 +1144,7 @@ private fun applyFavorite(
     } else {
         PromptComposition.append(current, favorite.content)
     }
-    when (favorite.target) {
-        PromptTarget.POSITIVE -> viewModel.onPromptChange(next)
-        PromptTarget.NEGATIVE -> viewModel.onNegativePromptChange(next)
-    }
+    // 走 replacePromptText 而不是 onPromptChange：整体替换要 +1 textRevision，
+    // 输入框才会带着新文本重建（见 rememberSyncedField）。
+    viewModel.replacePromptText(target, next)
 }

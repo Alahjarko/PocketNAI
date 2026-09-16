@@ -19,7 +19,10 @@ class SettingsStore(context: Context) {
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private val _streamingPreviewEnabled = MutableStateFlow(
-        prefs.getBoolean(KEY_STREAMING_ENABLED, true),
+        // 默认关闭（2026-09-16）：功能本身已验证可用，但真机观感与官方网页版有明显差距
+        // （网页版对中间图做过平滑处理，我们拿到的是原始采样帧，且生成只要几秒时一闪而过），
+        // 用户决定默认不启用。想试的人可以在设置页手动打开。
+        prefs.getBoolean(KEY_STREAMING_ENABLED, false),
     )
 
     /** 流式中间预览开关，设置页可直接观察。 */

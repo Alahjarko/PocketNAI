@@ -1,6 +1,10 @@
 package net.pocketnai.data.network
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -9,6 +13,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.contentOrNull
+import net.pocketnai.BuildConfig
 import net.pocketnai.core.AppError
 import net.pocketnai.core.ErrorCode
 import net.pocketnai.core.LogRedaction
@@ -163,6 +168,117 @@ class OkHttpNovelAiApi(
         }
     }
 
+    /**
+     * 流式生成（SSE）。
+     *
+     * 逐行读取响应体、按帧解析。**结构不符的帧不打断流** —— 继续往下读，
+     * 由收尾的 [GenerationStreamEvent.Completed] 携带诊断，让"服务端多发了新事件类型"
+     * 这类变化只表现为少一张预览，而不是整次生成失败。
+     *
+     * DEBUG 构建下每个帧输出一条**结构摘要**（事件名 / data 长度 / JSON 顶层键名），
+     * 绝不含字段值 —— 首次真机验证时用它确认服务端的真实结构（技术决策记录 §24）。
+     */
+    override fun generateImageStream(
+        token: String,
+        payload: JsonObject,
+    ): Flow<GenerationStreamEvent> = flow {
+        val request = Request.Builder()
+            .url("$baseUrl/ai/generate-image-stream")
+            .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .header(HEADER_AUTHORIZATION, bearer(token))
+            .header(HEADER_CONTENT_TYPE, "application/json")
+            .header(HEADER_ACCEPT, "text/event-stream")
+            .build()
+
+        val response = try {
+            client.newCall(request).execute()
+        } catch (e: IOException) {
+            emit(GenerationStreamEvent.Failed(NovelAiErrorMapper.fromTransportError(e)))
+            return@flow
+        }
+
+        response.use { resp ->
+            val correlationId = correlationIdOf(resp)
+            if (!resp.isSuccessful) {
+                val body = resp.body?.string().orEmpty()
+                emit(
+                    GenerationStreamEvent.Failed(
+                        NovelAiErrorMapper.fromHttpStatus(resp.code, body, correlationId),
+                    ),
+                )
+                return@use
+            }
+
+            val source = resp.body?.source()
+            if (source == null) {
+                emit(
+                    GenerationStreamEvent.Failed(
+                        AppError.of(ErrorCode.SERVER_ERROR, correlationId, "流式响应体为空"),
+                    ),
+                )
+                return@use
+            }
+
+            val reader = SseFrameReader()
+            var frames = 0
+            var unknownFrames = 0
+            val labels = LinkedHashSet<String>()
+
+            suspend fun handleFrame(frame: SseFrameReader.Frame) {
+                frames++
+                val event = GenerationStreamParser.parse(frame, json)
+                if (BuildConfig.DEBUG) {
+                    Log.d(LOG_TAG, "sse #$frames ${GenerationStreamParser.label(frame, json)}")
+                }
+                when (event) {
+                    is GenerationStreamParser.Event.Intermediate -> {
+                        labels += "intermediate"
+                        emit(
+                            GenerationStreamEvent.Intermediate(
+                                imageBase64 = event.imageBase64,
+                                step = event.step,
+                            ),
+                        )
+                    }
+
+                    is GenerationStreamParser.Event.Final -> {
+                        labels += "final"
+                        emit(GenerationStreamEvent.Final(event.imageBase64))
+                    }
+
+                    is GenerationStreamParser.Event.StreamError -> {
+                        labels += "error"
+                        emit(GenerationStreamEvent.StreamError(event.message))
+                    }
+
+                    is GenerationStreamParser.Event.Unknown -> {
+                        unknownFrames++
+                        if (labels.size < MAX_DIAGNOSTIC_LABELS) labels += event.label
+                    }
+                }
+            }
+
+            try {
+                while (true) {
+                    val line = source.readUtf8Line() ?: break
+                    val frame = reader.feed(line) ?: continue
+                    handleFrame(frame)
+                }
+                // 服务端在关闭连接前来不及补空行时，最后一帧仍然有效。
+                reader.finish()?.let { handleFrame(it) }
+                emit(
+                    GenerationStreamEvent.Completed(
+                        frames = frames,
+                        unknownFrames = unknownFrames,
+                        labels = labels.toList(),
+                    ),
+                )
+            } catch (e: IOException) {
+                emit(GenerationStreamEvent.Failed(NovelAiErrorMapper.fromTransportError(e)))
+            }
+        }
+    }.flowOn(Dispatchers.IO)
+
     override suspend fun suggestTags(        token: String,
         model: ImageModel,
         prompt: String,
@@ -301,5 +417,11 @@ class OkHttpNovelAiApi(
 
         /** `.vibe` 产物的体积上限。编码结果通常是几十 KB，1 MB 已经是很宽的上限。 */
         const val MAX_VIBE_BYTES = 1L * 1024 * 1024
+
+        /** 流式诊断日志的 tag（仅 DEBUG 构建输出，只记结构摘要，不记字段值）。 */
+        const val LOG_TAG = "PocketNaiStream"
+
+        /** 诊断信息里保留的事件摘要条数上限：够定位问题，又不至于把日志淹掉。 */
+        const val MAX_DIAGNOSTIC_LABELS = 8
     }
 }

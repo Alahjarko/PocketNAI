@@ -87,7 +87,7 @@
     <string name="favorites_tab_prompts">提示词</string>
     <string name="favorites_tab_tags">标签</string>
     <string name="favorites_search">搜索名称、内容或分组</string>
-    <string name="favorites_empty">这里还是空的。在提示词框里选中一段文字点「收藏」就存成标签，不选则收藏整条提示词。</string>
+    <string name="favorites_empty">这里还是空的。点右上角「新建」直接创建，或在提示词框里选中一段文字点「收藏」存成标签、不选则收藏整条提示词。</string>
     <string name="favorites_action_append">填入</string>
     <string name="favorites_action_replace">替换整条</string>
     <string name="favorites_action_delete">删除</string>
@@ -96,8 +96,13 @@
     <string name="favorite_save_title_tag">收藏为标签</string>
     <string name="favorite_save_name">名称</string>
     <string name="favorite_save_category">分组（可选）</string>
-    <string name="favorite_save_target_positive">将填入「正向提示词」</string>
-    <string name="favorite_save_target_negative">将填入「Undesired Content」</string>
+    <string name="favorite_save_target_positive">保存自「正向提示词」</string>
+    <string name="favorite_save_target_negative">保存自「Undesired Content」</string>
+    <string name="favorites_action_new">新建</string>
+    <string name="favorite_create_title">新建收藏</string>
+    <string name="favorite_create_content">内容</string>
+    <string name="favorite_create_name_hint">留空则自动从内容提取</string>
+    <string name="favorite_create_kind">将创建为：%1$s</string>
     <string name="generate_emphasis_strong">强化</string>
     <string name="generate_emphasis_weak">弱化</string>
     <string name="generate_insert">插入标签</string>
@@ -216,8 +221,8 @@
     <string name="theme_light">浅色</string>
     <string name="theme_dark">深色</string>
     <string name="settings_theme_desc">默认跟随系统的深色 / 浅色设置，也可以固定使用某一种。</string>
-    <string name="settings_streaming_preview">流式中间预览</string>
-    <string name="settings_streaming_preview_desc">生成过程中显示中间图与进度。连续失败时应用会自动关闭该功能，可在此重新启用。</string>
+    <string name="settings_streaming_preview">流式中间预览（实验性）</string>
+    <string name="settings_streaming_preview_desc">生成过程中显示原始中间图与进度（观感与官方网页版不同，默认关闭）。连续失败时应用会自动关闭该功能，可在此重新启用。</string>
     <string name="settings_storage">存储占用</string>
     <string name="settings_clear_orphans">清理孤立临时文件</string>
     <string name="settings_version">版本</string>

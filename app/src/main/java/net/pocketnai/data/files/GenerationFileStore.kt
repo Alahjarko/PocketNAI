@@ -92,6 +92,39 @@ class GenerationFileStore(context: Context) {
     fun newArchiveFile(generationId: String): File =
         File(newIncomingDir(generationId), ARCHIVE_FILE_NAME)
 
+    /** 中间预览图的目录（cache 下，按生成分组）。 */
+    private fun previewDir(generationId: String): File =
+        File(File(appContext.cacheDir, DIR_PREVIEWS), generationId)
+
+    /**
+     * 写入一张流式中间预览图。
+     *
+     * 预览只服务于界面显示：放 cache 目录、同序号直接覆盖，不进入 files 目录，
+     * 也不参与历史清理的存活集合 —— 它随时可以从流里再来一张。
+     */
+    fun writePreview(generationId: String, ordinal: Int, bytes: ByteArray): File {
+        val dir = previewDir(generationId)
+        dir.mkdirs()
+        val file = File(dir, fileOrdinalName(ordinal))
+        file.writeBytes(bytes)
+        return file
+    }
+
+    /** 一次生成结束后清理它的全部预览图。 */
+    fun clearPreviews(generationId: String) {
+        previewDir(generationId).deleteRecursively()
+    }
+
+    /**
+     * 启动清理：预览图是纯缓存，全部删除。
+     *
+     * 系统自己也会回收 cache 目录，但进程被回收时留下的预览没有价值，
+     * 主动清掉让"下次启动"的状态更干净。
+     */
+    fun clearAllPreviews() {
+        File(appContext.cacheDir, DIR_PREVIEWS).deleteRecursively()
+    }
+
     /**
      * 把解包出来的临时 PNG 迁入正式目录。
      *
@@ -230,6 +263,9 @@ class GenerationFileStore(context: Context) {
         const val DIR_REFERENCES = "references"
         const val DIR_VIBES = "vibes"
         const val DIR_INCOMING = "incoming"
+
+        /** 流式中间预览图（cache 下），只在生成期间存在。 */
+        const val DIR_PREVIEWS = "previews"
         const val ARCHIVE_FILE_NAME = "response.zip"
         const val PNG_SUFFIX = ".png"
         const val VIBE_SUFFIX = ".vibe"

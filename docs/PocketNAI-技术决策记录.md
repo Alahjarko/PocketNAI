@@ -2167,3 +2167,119 @@ schema 5 → 6 只有 `CREATE TABLE`，不触碰任何既有表。真机上验�
 而 Room 默认启用 WAL —— 刚写入的行还在 `pocketnai.db-wal` 里，主库里查不到。
 本次就因此误判了一次"收藏没有持久化"。要查最近写入必须把 `-wal`（必要时 `-shm`）
 一起取回来放在同一目录下再打开，或者让应用自己把结果读出来。
+
+---
+
+## 二十四、流式中间预览（2026-09-16）
+
+### 24.1 协议探针：一次真实生成同时完成探针与验证
+
+规划书 §6.3 要求"开发前先做协议探针"。用户授权用免费组合直接测
+（2026-09-16：模拟器账号读数 **Opus（读取自 NovelAI）**、余额 248 → 生成后仍 248，不扣费），
+于是探针与功能验证合并成一次：请求参数与普通生成完全相同，只多了
+`parameters.stream = "sse"`（OpenAPI 的 `image.StreamingType` 枚举，另一个取值是官方网页在用的 `msgpack`）。
+
+| 项 | 实测结果 |
+|---|---|
+| 端点 | `POST /ai/generate-image-stream`（无鉴权探测返回 401 而非 404，确认路由存在） |
+| 事件名 | SSE 的 `event:` 字段给类型：`intermediate` / `final`（error 帧未出现） |
+| 事件负载 | JSON 键：`event_type, gen_id, image, samp_ix, sigma, step_ix`；final 帧没有 sigma / step_ix |
+| 帧数 | steps=23 → **23 个 intermediate + 1 个 final**，与采样步数一一对应 |
+| 时长 | 同参数约 3–12 秒（随采样波动） |
+| **中间图格式** | **JPEG**（magic `ffd8ffe0`，8–16 KB/帧）—— 不是 PNG |
+| final 图格式 | PNG（与 ZIP 路径一致，进历史前按 PNG 校验） |
+| 进度 | 服务端只给 `step_ix`，**不给总步数**；百分比由客户端用请求里的 steps 自己算 |
+
+### 24.2 实现链路与三个设计决定
+
+`SseFrameReader`（逐行分帧）→ `GenerationStreamParser`（帧 → 事件）→
+`OkHttpNovelAiApi.generateImageStream`（Flow，事件 + Completed/Failed 两种收尾）→
+`GenerationRepository` 的流式分支（与 ZIP 分支产物统一成 `ExtractedImage`，之后的裁切/落盘/记账完全共用）→
+`GenerationPreviewStore`（生成页写入、画廊占位卡读取）→ `GeneratingCard` 预览 + 进度。
+
+1. **中间图宽容解码**：接受 PNG / JPEG / WebP / GIF 魔数，并剥掉可能的
+   `data:image/...;base64,` 前缀。第一版只认 PNG（沿用 final 的校验），
+   结果**预览完全不出现**——中间图被逐帧丢弃，而 final 正常，链路看起来"没坏"。
+   这是本次唯一一个只有真机能发现的错误。
+2. **失败不自动降级到 ZIP**（规划书 §6.3 原文："流式请求失败后不自动发起第二次生成"）。
+   流式失败照常记为一次生成失败，并计入设置层的失败计数；连续 3 次失败自动关闭流式预览
+   （错误文案会说明"下次生成将使用普通方式"）。用户可在设置页重新打开。
+3. **诊断日志只记结构**：DEBUG 构建下每帧输出"事件名 + data 长度 + JSON 顶层键名 +
+   图片 magic"，不含任何字段值。这套日志就是本次探针的取证方式，也是未来协议变化时的第一现场。
+
+### 24.3 真机验证（模拟器 + 免费组合）
+
+- 生成期间：占位卡显示中间图（画面逐渐长出来，早期帧是模糊色块），左下角
+  "生成中 N%" 随 `step_ix` 更新（实测 9%）；
+- 生成结束：预览目录整个清掉，占位卡被正式图替换，历史落盘/落库正常；
+- 余额 248 → 248，**不扣费**；三次测试共消耗 0 Anlas；
+- 预览文件在 `cache/previews/<generationId>/0001.png`（同序号覆盖），
+  启动清理（`clearAllPreviews`）兜底进程被回收时的残留。
+
+### 24.4 决定：默认关闭（2026-09-16 晚）
+
+用户装到手机上体验后判断"跟网页版很不一样"，决定不启用，但**保留实现**（改一个默认值即可恢复）。
+
+差异的来源（反解 webbundle 与本次实测对照）：
+
+| | 官方网页 | 本实现 |
+|---|---|---|
+| 流类型 | **MessagePack**（`parameters.stream = "msgpack"`） | SSE（`"sse"`，有 OpenAPI 文档） |
+| 中间图 | 网页设置里的 `rawIntermediates` **默认关闭**，即默认显示的是**处理过的**中间图 | 服务端给的**原始采样帧**（JPEG） |
+| 显示 | 固定画布区域、按图片比例平滑过渡 | 占位卡是 1:1 方形，竖图被 `Crop` 裁切放大 |
+
+因此本次的观感差距属于**预期之中**，不是实现缺陷。收尾动作：
+
+- `SettingsStore.streamingPreviewEnabled` 默认值改为 `false`（设置页可手动打开，标注"实验性"）；
+- 若将来重启这个功能，先解决上面表格里的后两行：**按图片比例显示**与**过渡/平滑**，
+  其次再考虑是否值得换 MessagePack 流。
+
+## 二十五、提示词输入框删除时跳行（2026-09-16 晚，用户报告）
+
+### 25.1 现象
+
+用户用键盘删除长提示词时，"输入框有概率跳行、跳到不同的行"，例如删掉最后一行时
+光标跳到中间某行。提示词越长越容易遇到。
+
+### 25.2 取证（模拟器 + 临时日志：只记偏移与长度，不记内容）
+
+在 `onValueChange`、`UiState.promptTemplate`、`WeightHighlightedTextField` 三处插桩后，
+用 30 连发退格复现，抓到关键三行：
+
+```
+ime sel=206..206 len=463          ← 输入框删到 463 字符，光标停在 206（正是删除点）
+PnaiSync: RESET old=463 new=464   ← 同步 effect 带着**过期的 464** 执行，判定"外部改了文本"
+pass sel=464..464 len=464         ← 输入框被整体重置：文本回滚一个字，光标被丢到文末
+```
+
+### 25.3 根因：镜像的刷新粒度与逐键输入不匹配
+
+`GenerateSheet.rememberSyncedField` 原本用
+`LaunchedEffect(text) { if (输入框.text != text) 整体重置 }` 把 ViewModel 的文本镜像回输入框。
+问题在 effect 的执行时机：
+
+- 每次按键都会把文本推给 ViewModel，于是 ViewModel 的文本**成了输入框自己的回声**；
+- 而 `LaunchedEffect` 的 body 是派发执行的、**晚一拍**，它捕获的又是启动它那次组合的
+  `text`。连续快速退格时（实测每键 ~13 ms，一帧 ~16 ms），body 拿到的是上一拍的文本；
+- 再与"输入框此刻的文本"比较必然不等 → 判定为外部写入 → 整个 `TextFieldValue` 被换掉：
+  文本回滚 + 光标落到那份旧文本的末尾。用户看到的就是"光标跳到别的行"。
+
+即**删除逐键发生，而镜像一帧才刷新一次**，中间那一拍的空档就是 bug。
+
+### 25.4 修复：文本代数（`UiState.textRevision`）
+
+编辑框的文本与光标**归编辑框自己所有**，外面只在"整体替换"时插手一次：
+
+- `UiState.textRevision` 只由整体替换的写入者 +1：复用历史参数、导入元数据、
+  收藏夹填充（新增 `GenerateViewModel.replacePromptText`）；
+- 打字路径（`onPromptChange` / `onNegativePromptChange`）**绝不**碰它；
+- 输入框改为 `remember(revision) { mutableStateOf(TextFieldValue(text, 文末)) }`：
+  代数不变则文本与光标全程留在输入框手里，代数一变就带着新文本重建。
+  **没有 LaunchedEffect，也就没有竞态**（重建是同步的，与文本在同一次 UiState 更新里）。
+
+### 25.5 顺带修掉一个连带 bug：导入的负面提示词被静默丢弃
+
+`confirmMetadataImport` 只写了 `params.negativePrompt`，没写 `negativeTemplate`；
+而提交时 `startGeneration` 会用模板重新解析一遍并覆盖 `params` —— 于是导入的 UC
+既不在输入框里显示（输入框读的是模板），也不会进入请求。现在两处都写。
+

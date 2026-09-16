@@ -30,6 +30,7 @@ import net.pocketnai.domain.billing.NovelAiPaidAnlasFormula
 import net.pocketnai.domain.prompt.TagSuggestionSource
 import net.pocketnai.data.settings.SettingsStore
 import net.pocketnai.ui.state.GenerationDraftStore
+import net.pocketnai.ui.state.GenerationPreviewStore
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
@@ -116,6 +117,14 @@ class AppContainer(application: Application) {
 
     val draftStore: GenerationDraftStore = GenerationDraftStore()
 
+    /**
+     * 流式中间预览的状态出口：生成页写入、画廊占位卡读取。
+     *
+     * 与 [draftStore] 同层 —— 都是"跨界面共享的一小块内存状态"，
+     * 不需要落盘（预览图本身在 cache 目录，由文件层管）。
+     */
+    val generationPreviewStore: GenerationPreviewStore = GenerationPreviewStore()
+
     val generationRepository: GenerationRepository by lazy {
         GenerationRepository(
             api = api,
@@ -124,6 +133,10 @@ class AppContainer(application: Application) {
             fileStore = fileStore,
             referenceEncoder = referenceImageProcessor,
             liveReferencePaths = DraftReferencePathsProvider(generationDraftPreferences),
+            // 流式预览的开关与失败计数都归设置层：连续失败 3 次会自动关闭，
+            // 那时这里读到的就是 false，生成回到已验证的 ZIP 链路。
+            streamingEnabled = { settingsStore.streamingPreviewEnabled.value },
+            onStreamingFailure = { settingsStore.recordStreamingFailure() },
         )
     }
 

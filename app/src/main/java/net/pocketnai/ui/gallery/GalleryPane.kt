@@ -24,9 +24,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
 import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
@@ -80,6 +82,7 @@ import net.pocketnai.data.export.MediaStoreExporter
 import net.pocketnai.data.repo.GenerationRepository
 import net.pocketnai.domain.model.GalleryFilter
 import net.pocketnai.domain.model.GalleryItem
+import net.pocketnai.domain.model.GalleryTimeline
 import net.pocketnai.domain.model.GenerationMode
 import net.pocketnai.domain.model.ImageModel
 import net.pocketnai.domain.model.ModelCatalog
@@ -88,7 +91,10 @@ import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.common.CenteredHint
 import net.pocketnai.ui.common.labelRes
 import net.pocketnai.ui.common.messageRes
+import net.pocketnai.ui.state.GenerationPreviewStore
 import java.io.File
+import java.time.ZoneId
+import kotlin.math.roundToInt
 
 /**
  * 瀑布流画廊内容（规划书 4.3）。
@@ -126,6 +132,7 @@ fun GalleryPane(
     )
     val items by viewModel.items.collectAsStateWithLifecycle()
     val generating by viewModel.generatingCards.collectAsStateWithLifecycle()
+    val previews by container.generationPreviewStore.previews.collectAsStateWithLifecycle()
     val filter by viewModel.filter.collectAsStateWithLifecycle()
     val undoGenerationId by viewModel.undoGenerationId.collectAsStateWithLifecycle()
 
@@ -173,6 +180,11 @@ fun GalleryPane(
     // 留着会让"仅看收藏"里冒出一张不属于任何收藏的卡片。
     val visibleGenerating = if (filter.isActive) emptyList() else generating
 
+    // 图片按生成日期分组（像系统相册）。顺序契约由 GalleryTimeline 保证，这里只负责画。
+    val sections = remember(items) {
+        GalleryTimeline.group(items, System.currentTimeMillis(), ZoneId.systemDefault())
+    }
+
     Column(modifier = modifier.fillMaxSize()) {
         GalleryFilterBar(
             filter = filter,
@@ -204,19 +216,31 @@ fun GalleryPane(
                         items = visibleGenerating,
                         key = { summary -> "generating-${summary.generation.id}" },
                     ) { summary ->
-                        GeneratingCard(title = summary.generation.title)
+                        GeneratingCard(
+                            title = summary.generation.title,
+                            preview = previews[summary.generation.id],
+                        )
                     }
 
-                    items(
-                        items = items,
-                        key = { item -> item.imageId },
-                    ) { item ->
-                        GalleryCard(
-                            item = item,
-                            imageFile = container.generationRepository.fileOf(item),
-                            onClick = { onOpenImage(item.imageId) },
-                            onLongClick = { actionTarget = item },
-                        )
+                    sections.forEach { section ->
+                        item(
+                            key = "day-${section.epochDay}",
+                            span = StaggeredGridItemSpan.FullLine,
+                        ) {
+                            DayHeader(label = section.label)
+                        }
+
+                        items(
+                            items = section.items,
+                            key = { item -> item.imageId },
+                        ) { item ->
+                            GalleryCard(
+                                item = item,
+                                imageFile = container.generationRepository.fileOf(item),
+                                onClick = { onOpenImage(item.imageId) },
+                                onLongClick = { actionTarget = item },
+                            )
+                        }
                     }
                 }
             }
@@ -489,6 +513,17 @@ private fun <T> FilterMenuChip(
     }
 }
 
+/** 时间轴的日期组头：跨两列（FullLine），像相册那样把图片按天隔开。 */
+@Composable
+private fun DayHeader(label: String) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 4.dp, top = 4.dp),
+    )
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GalleryCard(
@@ -533,39 +568,76 @@ private fun GalleryCard(
     }
 }
 
-/** 生成中的占位卡片：不给进度条造假数据，只用明确的文字状态。 */
+/**
+ * 生成中的占位卡片。
+ *
+ * 有流式预览时显示"正在长出来的画面"（中间图铺满卡片，进度叠在左下角）；
+ * 没有预览（普通传输、预览尚未到达、或流式已失败）时退回纯文字状态 ——
+ * 不编造进度，也不用转圈动画假装正在发生什么。
+ */
 @Composable
-private fun GeneratingCard(title: String) {
+private fun GeneratingCard(
+    title: String,
+    preview: GenerationPreviewStore.Preview?,
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(1f),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    imageVector = Icons.Default.HourglassTop,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (preview != null) {
+                AsyncImage(
+                    model = File(preview.path),
+                    contentDescription = title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
                 )
-                Text(
-                    text = stringResource(R.string.gallery_status_generating),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                )
+                // 状态标签垫一层半透明黑底：图片颜色不可预测，白字直接放可能看不见。
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(6.dp)
+                        .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                ) {
+                    Text(
+                        text = preview.progress?.let { progress ->
+                            stringResource(R.string.gallery_status_generating) +
+                                " ${(progress * 100).roundToInt()}%"
+                        } ?: stringResource(R.string.gallery_status_generating),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.HourglassTop,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = stringResource(R.string.gallery_status_generating),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        )
+                    }
+                }
             }
         }
     }

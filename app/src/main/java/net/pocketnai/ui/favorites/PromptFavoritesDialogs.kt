@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -119,6 +120,83 @@ fun SaveFavoriteDialog(
 }
 
 /**
+ * 从收藏夹直接新建一条收藏。
+ *
+ * 与 [SaveFavoriteDialog] 分开：那个面向"把已有的提示词存下来"（内容固定、只取名字与分组），
+ * 这个面向"凭空写一条"（内容、名字、分组都可填）。类型（提示词 / 标签）跟随收藏夹的
+ * 当前分页，不在这里再选一次 —— 分页本身就是用户的"我现在在整理哪一类"。
+ */
+@Composable
+fun CreateFavoriteDialog(
+    kind: PromptFavoriteKind,
+    onConfirm: (name: String, content: String, category: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var content by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.favorite_create_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = content,
+                    onValueChange = { content = it },
+                    label = { Text(stringResource(R.string.favorite_create_content)) },
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text(stringResource(R.string.favorite_save_name)) },
+                    placeholder = { Text(stringResource(R.string.favorite_create_name_hint)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = category,
+                    onValueChange = { category = it },
+                    label = { Text(stringResource(R.string.favorite_save_category)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    text = stringResource(
+                        R.string.favorite_create_kind,
+                        stringResource(
+                            if (kind == PromptFavoriteKind.TAG) {
+                                R.string.favorites_tab_tags
+                            } else {
+                                R.string.favorites_tab_prompts
+                            },
+                        ),
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(name, content, category) },
+                // 空内容没有可存的（保存侧也会拦，这里先让按钮不可点）。
+                enabled = content.isNotBlank(),
+            ) {
+                Text(stringResource(R.string.action_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        },
+    )
+}
+
+/**
  * 收藏夹选择器：搜索 + 提示词/标签切换 + 分组列表。
  *
  * 点一行是"追加到末尾"，长按用菜单选"替换整条"或"删除" —— 追加是最常用的动作，
@@ -131,13 +209,30 @@ fun FavoritePickerDialog(
     onKindChange: (PromptFavoriteKind) -> Unit,
     onAppend: (PromptFavorite) -> Unit,
     onReplace: (PromptFavorite) -> Unit,
+    onCreate: () -> Unit,
     onDelete: (PromptFavorite) -> Unit,
     onDismiss: () -> Unit,
     onDismissNotice: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.favorites_title)) },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = stringResource(R.string.favorites_title),
+                    modifier = Modifier.weight(1f),
+                )
+                // "新建"放标题右边：创建是"使用已有条目"之外的另一种动作，
+                // 混进列表里会看起来像一条特殊条目。
+                TextButton(onClick = onCreate) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Text(
+                        text = stringResource(R.string.favorites_action_new),
+                        modifier = Modifier.padding(start = 4.dp),
+                    )
+                }
+            }
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(

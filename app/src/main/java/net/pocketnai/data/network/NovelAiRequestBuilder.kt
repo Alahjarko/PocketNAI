@@ -105,6 +105,12 @@ object NovelAiRequestBuilder {
         profile: ModelProfile,
         request: GenerationRequest,
         upstreamImages: Map<ReferenceRole, List<String>>,
+        /**
+         * 流式请求：在 `parameters` 里显式声明 `stream = "sse"`（OpenAPI 的
+         * `image.StreamingType` 枚举是 msgpack / sse）。官方网页用的是 msgpack，
+         * 我们走有文档的 SSE 端点，因此不依赖服务端的默认值。
+         */
+        streaming: Boolean = false,
     ): JsonObject {
         val params = request.params
         val normalized = profile.normalize(params)
@@ -180,6 +186,10 @@ object NovelAiRequestBuilder {
 
             if (useVibe) {
                 appendVibeReferences(profile, vibes, vibeSources)
+            }
+
+            if (streaming) {
+                put("stream", "sse")
             }
         }
 

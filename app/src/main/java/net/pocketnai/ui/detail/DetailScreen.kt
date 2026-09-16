@@ -9,6 +9,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -166,6 +167,9 @@ fun DetailScreen(
             return@Scaffold
         }
 
+        // 点图进入全屏查看（双指缩放 / 拖动），单击或返回键退出。
+        var fullscreen by remember { mutableStateOf(false) }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -182,7 +186,8 @@ fun DetailScreen(
                     .fillMaxWidth()
                     .aspectRatio(
                         if (image.height > 0) image.width.toFloat() / image.height else 1f,
-                    ),
+                    )
+                    .clickable { fullscreen = true },
             )
 
             Text(text = generation.title, style = MaterialTheme.typography.titleMedium)
@@ -318,6 +323,16 @@ fun DetailScreen(
                 text = "删除只影响 PocketNAI 的本地副本与记录；已经保存到系统相册的图片不会被删除。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        if (fullscreen) {
+            FullscreenImageViewer(
+                imageFile = container.generationRepository.fileOfRelativePath(image.privateFilePath),
+                contentDescription = generation.title,
+                imageWidth = image.width,
+                imageHeight = image.height,
+                onDismiss = { fullscreen = false },
             )
         }
     }

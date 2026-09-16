@@ -40,7 +40,9 @@
 - 用这个账号做验证时，必须逐项确认这四个值；不得顺手改参数，不得批量或循环跑图；
 - **费用未知或确定要花钱的调用一律不得自动发起**，只能由用户在界面上手动触发：
   其它三个模型、`Large` 档位、Img2Img / Vibe Transfer / Precise Reference、
-  `/ai/encode-vibe`、`/ai/upscale`、`/ai/augment-image`、`/ai/generate-image-stream`；
+  `/ai/encode-vibe`、`/ai/upscale`、`/ai/augment-image`；
+  （`/ai/generate-image-stream` 已于 2026-09-16 在 V4.5 Curated + 免费组合下实测不扣费，
+  见技术决策记录 §24，不再属于此类）
 - 单元测试与任何自动化流程一律使用 MockWebServer 或假实现，**永不触网**；
 - 免费的那一次生成只用于验证"链路是否通"，不用于探索参数效果。
 
@@ -209,6 +211,27 @@
   `OnConflictStrategy.IGNORE` —— 拿素材 id 当主键会让第二次生成静默丢掉参考图行。
   跨生成判断"是不是同一张图"要用 `sha256`，不要用 id。
 
+### 流式中间预览（技术决策记录 §24）
+
+- **默认关闭**（2026-09-16 用户真机实测后决定）：功能已验证可用，但拿到的是服务端
+  **原始采样帧**，观感与官方网页版（用 MessagePack 流 + 对中间图做过平滑）差距明显，
+  且生成只要几秒时画面一闪而过。`SettingsStore` 的默认值因此是 `false`
+  （设置页标注"实验性"）——**没有明确理由不要改回 `true`**；
+- **协议已实测**（2026-09-16，免费组合）：`POST /ai/generate-image-stream`，
+  请求体与普通生成相同并显式声明 `parameters.stream = "sse"`；SSE 的 `event:` 字段
+  区分 `intermediate` / `final`，负载 JSON 键为 `event_type, gen_id, image, samp_ix, sigma, step_ix`
+  （final 帧没有 sigma / step_ix）；
+- **中间图是 JPEG、final 才是 PNG**：预览解码必须宽容（PNG / JPEG / WebP / GIF 魔数 +
+  剥掉 `data:image/...;base64,` 前缀）。**不要改回只认 PNG** —— 中间图会被逐帧丢弃，
+  而 final 正常、生成照样成功，看起来像"功能没坏"，只有真机能发现；
+- 进度：服务端只给 `step_ix`（**不给总步数**），百分比用本次请求的 steps 自己算；
+- 预览写 `cache/previews/<generationId>/0001.png`（同序号覆盖），生成收尾与启动清理时删除；
+  **预览不进入 files 目录、不参与历史清理的存活集合**；
+- 流式失败**不自动降级**到普通 ZIP（规划书 §6.3："不自动发起第二次生成"），只失败并计数；
+  连续 3 次自动关闭流式预览（`SettingsStore.recordStreamingFailure`），用户可在设置页重开；
+- DEBUG 诊断日志（tag `PocketNaiStream`）**只允许记结构**：事件名、data 长度、
+  JSON 顶层键名、图片 magic —— 不得添加任何字段值。
+
 ### 网络
 
 - **所有请求走 `https://image.novelai.net`。** `api.novelai.net` 已拒绝第三方 Persistent API Token（返回 400 要求改用 image URL）。
@@ -292,6 +315,23 @@
   核对它需要在官方网页版手动验证，属于用户手动发起的项。
 - 目前提示词框"随内容长高、由外层滚动"，底纹才能对齐；给它们加固定高度 + `maxLines`
   会让底纹在内部滚动时错位，那时必须一并处理滚动偏移。
+
+### 提示词输入框的状态（不要镜像文本）
+
+- **输入框的文本与光标归输入框自己所有。** 绝不要写"文本一变就把 ViewModel 的文本
+  同步回输入框"的 effect：每次按键都会把文本推给 ViewModel，那种写法等于把刚写出去的东西
+  再收回来，而 effect 的执行晚一拍、收到的是**上一拍的值**，于是输入框被整体重置、
+  光标跳到别处。2026-09-16 实测：连续退格时"跳行"，根因与取证见技术决策记录 §25。
+- 外部**整体替换**文本只有三条路：复用历史参数、导入元数据、收藏夹填充。它们统一靠
+  `UiState.textRevision`（代数）+1 表达，输入框用 `remember(textRevision)` 重建。
+  写新的"整体替换"入口时**必须 +1**（在 `GenerateViewModel` 里写，别在界面拼）；
+  打字路径 `onPromptChange` / `onNegativePromptChange` **绝不能**动它 ——
+  在那里 +1 会让输入框每次按键都重建、光标永远停在文末。
+- 界面上"由外部塞进输入框"的动作（收藏夹填充）走 `GenerateViewModel.replacePromptText`，
+  不要用 `onPromptChange`：后者不会让输入框知道文本换了，界面会停在旧内容上。
+- 导入元数据时**模板与 `params` 必须同时写**（正向与负向都是）。只写 `params` 的话，
+  提交时 `startGeneration` 会用模板重新解析一遍并覆盖它 —— 导入的值既不显示也不生效
+  （负面提示词曾经如此静默失效，技术决策记录 §25.5）。
 
 ### 画廊检索与收藏
 

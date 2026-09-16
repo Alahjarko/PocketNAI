@@ -270,6 +270,12 @@ class AccountBalanceRepositoryTest {
             imageBase64: String,
             informationExtracted: Double,
         ): Outcome<ByteArray> = error("本测试不涉及 Vibe 编码")
+
+        override fun generateImageStream(
+            token: String,
+            payload: JsonObject,
+        ): kotlinx.coroutines.flow.Flow<net.pocketnai.data.network.GenerationStreamEvent> =
+            error("本测试不涉及流式生成")
     }
 
     private class FakeCredentialStore(var credential: StoredCredential?) : CredentialStore {

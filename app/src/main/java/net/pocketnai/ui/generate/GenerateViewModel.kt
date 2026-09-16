@@ -64,6 +64,7 @@ import net.pocketnai.domain.model.ModelCatalog
 import net.pocketnai.domain.model.ModelProfile
 import net.pocketnai.domain.model.NoiseSchedule
 import net.pocketnai.domain.model.ParamViolation
+import net.pocketnai.domain.model.PromptTarget
 import net.pocketnai.domain.model.QualityTagsOption
 import net.pocketnai.domain.model.ReferenceImage
 import net.pocketnai.domain.model.ReferenceRole
@@ -73,6 +74,7 @@ import net.pocketnai.domain.model.SeedMode
 import net.pocketnai.domain.prompt.PromptRandomizer
 import net.pocketnai.domain.prompt.TagSuggestionSource
 import net.pocketnai.ui.state.GenerationDraftStore
+import net.pocketnai.ui.state.GenerationPreviewStore
 import java.util.UUID
 
 /**
@@ -86,6 +88,8 @@ import java.util.UUID
 class GenerateViewModel(
     private val repository: GenerationRepository,
     private val draftStore: GenerationDraftStore,
+    /** 流式中间预览的落点：这里写入，画廊的占位卡片读取。 */
+    private val previewStore: GenerationPreviewStore,
     private val draftPreferences: GenerationDraftPreferences,
     private val tagSuggestionSource: TagSuggestionSource,
     private val referenceImporter: ReferenceImageImporter,
@@ -101,6 +105,20 @@ class GenerateViewModel(
         val params: GenerationParams,
         val promptTemplate: String = "",
         val negativeTemplate: String = "",
+        /**
+         * 提示词文本被"输入框之外的力量"整体替换过的代数。
+         *
+         * 输入框的文本与光标必须由输入框自己掌握：每次按键都会把文本推过来，
+         * 如果反过来再按这里的文本写回输入框，就成了"写出去、再收回来"——
+         * 快速输入时收回来的往往是上一拍的值。2026-09-16 实测：连续退格时
+         * 输入框被整体重置（文本回滚一个字、光标跳到文末），表现为"跳行"。
+         *
+         * 所以输入框只在**这个代数变化**时重建（见 `GenerateSheet.rememberSyncedField`）。
+         * 只有"整体替换文本"的写入者可以 +1：复用历史参数、导入元数据、收藏夹填充。
+         * 打字走的 [onPromptChange] / [onNegativePromptChange] **不能**碰它 ——
+         * 在那里 +1 会让输入框每次按键都重建，光标永远停在文末。
+         */
+        val textRevision: Int = 0,
         val inFlight: Boolean = false,
         val completedImages: Int = 0,
         /**
@@ -455,6 +473,8 @@ class GenerateViewModel(
                         customResolutionError = null,
                         promptTemplate = reused.params.prompt,
                         negativeTemplate = reused.params.negativePrompt,
+                        // 外部整体替换：让编辑框重建一次（见 textRevision 的说明）。
+                        textRevision = it.textRevision + 1,
                         referenceSource = reused.img2imgSource,
                         directorReferences = reused.referencesOf(ReferenceRole.DIRECTOR),
                         vibeReferences = reused.referencesOf(ReferenceRole.VIBE),
@@ -487,6 +507,29 @@ class GenerateViewModel(
     fun onNegativePromptChange(value: String) {
         _state.update {
             it.copy(negativeTemplate = value, params = it.params.copy(negativePrompt = value))
+        }
+    }
+
+    /**
+     * 由输入框之外的来源整体替换某一侧的提示词（目前是收藏夹填充）。
+     *
+     * 与打字分开：[textRevision] 是输入框"重建自己"的唯一依据，只有这种整体替换
+     * 才该 +1。走 [onPromptChange] 的话输入框不会知道文本换了，界面会停在旧内容上；
+     * 反过来在打字路径上 +1，输入框就会每次按键都重建、光标永远被丢到文末。
+     */
+    fun replacePromptText(target: PromptTarget, text: String) {
+        _state.update { current ->
+            val replaced = when (target) {
+                PromptTarget.POSITIVE ->
+                    current.copy(promptTemplate = text, params = current.params.copy(prompt = text))
+
+                PromptTarget.NEGATIVE ->
+                    current.copy(
+                        negativeTemplate = text,
+                        params = current.params.copy(negativePrompt = text),
+                    )
+            }
+            replaced.copy(textRevision = current.textRevision + 1)
         }
     }
 
@@ -894,6 +937,11 @@ class GenerateViewModel(
                 // （模板原文不再保留），否则那个勾选项在我们这里等于没有作用 ——
                 // 提交时提示词会从模板重新抽选一遍。
                 promptTemplate = plan.prompt ?: state.promptTemplate,
+                // 负向词同理，而且**必须写模板**：提交时 params.negativePrompt 会被
+                // 模板重新解析一遍覆盖掉，只写 params 的话导入的负面词会被静默丢弃。
+                negativeTemplate = plan.negativePrompt ?: state.negativeTemplate,
+                // 外部整体替换：让编辑框重建一次（见 textRevision 的说明）。
+                textRevision = state.textRevision + 1,
                 metadataCandidate = null,
                 // 导入的参数是"这张图的",与上一次的模型切换提示无关。
                 modelSwitchNotice = null,
@@ -1387,6 +1435,8 @@ class GenerateViewModel(
                         }
 
                         is GenerationEvent.FatalError -> {
+                            // 失败时预览文件已被仓库清掉，界面状态同步清，避免显示空白卡片。
+                            previewStore.clear(event.generationId)
                             _state.update { it.copy(inFlight = false, error = event.error) }
                             when (event.error.code) {
                                 // 402 之后刷新余额：那是"余额不足"最权威的信号。
@@ -1406,6 +1456,7 @@ class GenerateViewModel(
                         }
 
                         is GenerationEvent.Completed -> {
+                            previewStore.clear(event.generationId)
                             _state.update { it.copy(inFlight = false) }
                             refreshBalanceAfterGeneration(
                                 session = billingSession,
@@ -1413,7 +1464,14 @@ class GenerateViewModel(
                             )
                         }
 
-                        is GenerationEvent.Intermediate -> Unit
+                        // 流式中间预览：只更新预览落点，不碰生成状态本身。
+                        is GenerationEvent.Intermediate -> previewStore.update(
+                            GenerationPreviewStore.Preview(
+                                generationId = event.generationId,
+                                path = event.previewPath,
+                                progress = event.progress,
+                            ),
+                        )
                     }
                 }
         }

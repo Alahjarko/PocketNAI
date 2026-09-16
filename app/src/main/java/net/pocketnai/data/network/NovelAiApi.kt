@@ -1,10 +1,37 @@
 package net.pocketnai.data.network
 
+import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.JsonObject
+import net.pocketnai.core.AppError
 import net.pocketnai.core.Outcome
 import net.pocketnai.domain.billing.SubscriptionBalance
 import net.pocketnai.domain.model.ImageModel
 import java.io.File
+
+/**
+ * 流式生成对上层暴露的事件（规划书 6.3 的事件模型的传输层形态）。
+ *
+ * [Completed] 与 [Failed] 是流的两种收尾，二者必有其一（取消除外）。
+ * [Completed.labels] 是诊断信息：本次流里出现过的事件名（去重、限量），
+ * 只在结构不符时用于定位 —— 其中不含任何字段值。
+ */
+sealed interface GenerationStreamEvent {
+
+    /** 中间预览图（base64）；[step] 是服务端的 `step_ix`，配合请求的 steps 可算进度。 */
+    data class Intermediate(val imageBase64: String, val step: Int?) : GenerationStreamEvent
+
+    data class Final(val imageBase64: String) : GenerationStreamEvent
+
+    data class StreamError(val message: String) : GenerationStreamEvent
+
+    data class Completed(
+        val frames: Int,
+        val unknownFrames: Int,
+        val labels: List<String>,
+    ) : GenerationStreamEvent
+
+    data class Failed(val error: AppError) : GenerationStreamEvent
+}
 
 /**
  * NovelAI 的接口边界（规划书 6.1）。
@@ -42,6 +69,22 @@ interface NovelAiApi {
         payload: JsonObject,
         destinationZip: File,
     ): Outcome<Unit>
+
+    /**
+     * 流式生成（SSE，规划书 6.3）：请求体与 [generateImage] 相同，
+     * 额外在 `parameters.stream` 里声明 `sse`（OpenAPI 的 `image.StreamingType`）。
+     *
+     * 事件按到达顺序发出，**中间图只用于界面预览**，最终图与普通响应里的图片等价。
+     * 传输层失败（HTTP 错误、连接中断）以 [GenerationStreamEvent.Failed] 事件表达，
+     * 而不是抛异常 —— 调用方需要在同一条流里统一处理"成功 / 失败 / 结束"三种收尾。
+     *
+     * 与它对应的**费用约束**：这也是生成端点，只能由用户动作触发；
+     * 连续失败后关闭流式预览的策略由调用方（设置层）负责。
+     */
+    fun generateImageStream(
+        token: String,
+        payload: JsonObject,
+    ): Flow<GenerationStreamEvent>
 
     /**
      * 标签建议（规划书 8.1）。属于第二层能力，失败不允许影响正常生成。

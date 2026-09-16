@@ -79,6 +79,7 @@ fun PocketNaiApp() {
                 GenerateViewModel(
                     repository = container.generationRepository,
                     draftStore = container.draftStore,
+                    previewStore = container.generationPreviewStore,
                     draftPreferences = container.generationDraftPreferences,
                     tagSuggestionSource = container.tagSuggestionSource,
                     referenceImporter = container.referenceImageProcessor,
