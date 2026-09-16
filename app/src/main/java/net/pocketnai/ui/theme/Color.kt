@@ -40,6 +40,18 @@ private val NeutralOnSurfaceDark = Color(0xFFE4E1E9)
 private val NeutralOnSurfaceVariantDark = Color(0xFFC7C5D0)
 private val OutlineDark = Color(0xFF918F9A)
 
+/**
+ * 提示词权重高亮的底纹色（技术决策记录第 22 节）。
+ *
+ * 用半透明而不是实色：底纹垫在提示词文字**后面**，实色会把字盖掉。
+ * 浅色主题用深一点的绿/红，深色主题用浅一点的 —— 两套的明度方向相反，
+ * 但都是"底色与文字拉开、文字仍清晰"这一条。
+ */
+val WeightWeakerHighlightLight = Color(0x332E7D32)
+val WeightStrongerHighlightLight = Color(0x33C62828)
+val WeightWeakerHighlightDark = Color(0x3D66BB6A)
+val WeightStrongerHighlightDark = Color(0x3DE57373)
+
 val PocketNaiLightColors = lightColorScheme(
     primary = IndigoPrimary,
     onPrimary = IndigoOnPrimary,

@@ -86,6 +86,7 @@ import net.pocketnai.ui.common.DropdownSelector
 import net.pocketnai.ui.common.LabeledSlider
 import net.pocketnai.ui.common.ResolutionSelector
 import net.pocketnai.ui.common.SectionHeader
+import net.pocketnai.ui.common.WeightHighlightedTextField
 import net.pocketnai.ui.common.messageRes
 
 /**
@@ -192,13 +193,14 @@ fun GenerateSheet(
             // 参考图三个区块因此挪到内容区最底部，见下方。
             SectionHeader(stringResource(R.string.generate_section_prompt))
 
-            OutlinedTextField(
+            // 权重高亮：{}/[] 与 `0.9::tag ::` 会被画上绿/红底纹，见 PromptWeightScanner。
+            WeightHighlightedTextField(
                 value = promptField,
                 onValueChange = { newValue ->
                     promptField = newValue
                     viewModel.onPromptChange(newValue.text)
                 },
-                label = { Text(stringResource(R.string.generate_prompt_label)) },
+                label = stringResource(R.string.generate_prompt_label),
                 minLines = 4,
                 trailingIcon = {
                     FavoriteSaveButton(
@@ -283,13 +285,13 @@ fun GenerateSheet(
                 )
             }
 
-            OutlinedTextField(
+            WeightHighlightedTextField(
                 value = negativeField,
                 onValueChange = { newValue ->
                     negativeField = newValue
                     viewModel.onNegativePromptChange(newValue.text)
                 },
-                label = { Text(stringResource(R.string.generate_negative_label)) },
+                label = stringResource(R.string.generate_negative_label),
                 minLines = 2,
                 trailingIcon = {
                     FavoriteSaveButton(
