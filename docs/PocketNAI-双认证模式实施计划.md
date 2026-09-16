@@ -1,6 +1,10 @@
 # PocketNAI 双认证模式实施计划
 
-> **状态：暂停，不得按本文直接实施。** 2026-09-14 补充确认：目标用户的主要 NovelAI 账号使用 Google SSO，未确认存在可用于 Access Key 派生的 NovelAI 独立密码。本文的“邮箱 + 密码”方案不覆盖纯 Google SSO。只有在另行证明账号具有独立密码，或完成 Google SSO 可行性验证并形成替代计划后，才能恢复实施。
+> **状态：已实现（实验性）并暂停推进。** 阶段 A–F 的实现已完成并保留（见技术决策记录第六节）。
+> 2026-09-14 补充确认：目标用户的主要 NovelAI 账号使用 Google SSO，未确认存在可用于
+> Access Key 派生的 NovelAI 独立密码，本文的“邮箱 + 密码”方案不覆盖纯 Google SSO；
+> WebView 走 SSO 的替代路径也已评估为不可行（技术决策记录第七节）。
+> 这类账号请使用 Persistent Token；只有在另行证明账号具有独立密码后，才会继续推进。
 >
 > 目标：在保留 Persistent API Token（PST）连接方式的同时，增加“邮箱 + 密码 → 本地派生 Access Key → 换取短期 Access Token”的实验性账号登录方式。
 >

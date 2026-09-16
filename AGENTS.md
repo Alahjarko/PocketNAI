@@ -62,8 +62,9 @@
 
 ### 数据库
 
-- 当前 schema 版本 **4**。新增表（如 `prompt_favorites`、`reference_images`）用独立 `CREATE TABLE`，
-  不要触碰既有表。v3 → v4 新增了 `reference_images` 表与 `generations.mode` 列（可空，见下）。
+- 当前 schema 版本 **6**。新增表（如 `prompt_favorites`、`reference_images`、`favorite_images`）用独立 `CREATE TABLE`，
+  不要触碰既有表。v3 → v4 新增了 `reference_images` 表与 `generations.mode` 列（可空，见下）；
+  v4 → v5 给 `generations` 加 `outputWidth/outputHeight`；v5 → v6 新增 `favorite_images` 表。
 - **`generations` 表绝不能重建（DROP / RENAME）。** `generated_images` 以 `ON DELETE CASCADE` 引用它，重建会连带删除用户的图片记录。
 - 加列用 `ALTER TABLE ... ADD COLUMN`；删列需要 SQLite 3.35+，`minSdk 26` 不满足，所以宁可保留遗留列。
 - Room 的表校验要求实体列与真实表列**完全一致**，多一列少一列都会失败。因此遗留列必须留在实体里。
@@ -71,6 +72,9 @@
 - 新增的字段如果是给既有表加列，实体侧声明成可空可以避开 Room 的默认值比对陷阱
   （`generations.mode` 就是这么加的：迁移里只 `ADD COLUMN` 不带默认值，再用一次
   `UPDATE` 回填 `TXT2IMG`）。
+- **SQLite 的外键约束默认是关的**，应用里靠 Room 生成的实现执行 `PRAGMA foreign_keys = ON`
+  才生效。因此仪器化迁移测试里要验证 `ON DELETE CASCADE`，必须自己在裸库上再执行一次
+  `PRAGMA foreign_keys = ON`，否则测到的是"开关没开"而不是"级联没生效"（会误报失败）。
 
 ### 参考图的请求形态
 
@@ -269,6 +273,39 @@
   因此两个输入框都必须用 `TextFieldValue` 跟踪，不能退回普通字符串——
   选区信息是这条判断的唯一依据。
 
+### 提示词权重高亮
+
+- 编辑里的绿/红圆角底纹由 `PromptWeightScanner` 算区间、`WeightHighlightedTextField` 画。
+  权重计算一律走 `EmphasisSyntax.strengthOf`，**不要在扫描器里再写一套倍率**。
+- **不要改回 `OutlinedTextField` + `OutlinedTextFieldDefaults.DecorationBox`。**
+  那个 `container` 参数是**边框图层**而不是文字内容，`DecorationBox` 自己会放置输入框；
+  按"内容是 container"的写法会得到**文字画两遍、边框消失**的界面（已实测）。
+  现在的做法是自建边框 + 把 Canvas 与输入框放进同一个 `Box`，用 `matchParentSize` 保证
+  两者同尺寸同原点，**因此不依赖任何 Material 内边距常量**。
+- 输入框必须 `fillMaxWidth()`：底纹的换行位置来自"排版宽度 == Box 宽度"这个等式。
+- **文字颜色必须显式设为主题色**（`textStyle = LocalTextStyle.current.copy(color = onSurface)`）：
+  裸 `BasicTextField` 不像 Material 组件那样解析未指定的颜色，`LocalTextStyle` 的默认颜色是
+  `Unspecified`，底层按黑色渲染 —— 浅色主题下恰好正确，深色主题就是"黑底黑字"
+  （2026-09-16 实测并修复，技术决策记录 §22.6）。改这个输入框时别把这行删了。
+- 数字权重 `0.9::tag ::` 是**用户要求的语法，未经核对服务端是否认**（技术决策记录 §22.4）。
+  它只用于高亮：**不替用户改写提示词，也不要加"插入数字权重"的按钮**。
+  核对它需要在官方网页版手动验证，属于用户手动发起的项。
+- 目前提示词框"随内容长高、由外层滚动"，底纹才能对齐；给它们加固定高度 + `maxLines`
+  会让底纹在内部滚动时错位，那时必须一并处理滚动偏移。
+
+### 画廊检索与收藏
+
+- 筛选规则是纯函数 `GallerySearch.matches`（`domain/model/GalleryFilter.kt`），在
+  `GalleryViewModel` 里用 `combine` 套一层；**不要改写成带可选参数的大 SQL** ——
+  纯函数能在 JVM 单测里断言，而 SQL 只能靠跑起来才知道对不对。
+- 关键词规则：大小写不敏感、`_` 与空格互相等同、多个词是**全部命中**。
+  改这三条中的任何一条都要同步改 `GallerySearchTest`。
+- 收藏单独一张 `favorite_images` 表（主键是**图片 id**），靠外键 `ON DELETE CASCADE`
+  跟着图片消失；**不要**给 `generated_images` 加收藏列。
+- **"从历史选图"对话框必须用自己的 ViewModel 实例**（`viewModel(key = "history-image-picker")`）：
+  它与画廊共用默认的 ViewModelStoreOwner，共用实例会让画廊的筛选条件
+  悄悄作用到那个**没有任何筛选控件**的对话框上。
+
 ### 凭据与认证（双认证模式）
 
 - **绝不允许**把密码、Access Key、PST 或 Access Token 写进日志、数据库、SharedPreferences
@@ -323,6 +360,9 @@
   参考图只在需要时用。不要把参考图挪回顶部 —— 那会把提示词压到首屏之外。
 - 悬浮层的内部滚动只在展开时挂载（见 `GenerateSheet` 的 `expanded` 参数），
   否则手指在表单上往上拖只会滚内容、永远拉不开悬浮层。
+- 画廊顶部是**筛选栏**（关键词搜索 + 仅收藏 + 模型 + 模式），它属于画廊、不属于悬浮层。
+  chip 文案直接是"当前值"（`全部模型`），**不要写成"模型：全部"** —— 四个 chip 在
+  360dp 宽度里排不下，最后那个会被右边缘裁掉；"清除筛选"因此只放图标。
 
 在模拟器上用 `adb shell input swipe` 验证拖拽时，**手势要慢且距离长**（例如
 `input swipe 540 1320 540 200 900`）。太快太短的 swipe 不会触发 Compose 的拖拽识别，
@@ -339,6 +379,12 @@
 
 模拟器分辨率会在 1080x1920 与 1920x1080 之间变化，`input tap` 前先确认截图尺寸，
 不要复用上一次的坐标。
+
+排查数据问题时**不要用 `adb exec-out run-as <pkg> cat databases/pocketnai.db` 直接读主库文件**：
+Room 默认启用 WAL，刚写入的行还在 `pocketnai.db-wal` 里，主库里查不到，
+会让人误判成"这个功能没落库"（本次就误判过一次）。
+要么把 `pocketnai.db` 与 `pocketnai.db-wal`（必要时 `-shm`）一起取回放在同一目录再打开，
+要么让应用自己把结果读出来（界面显示 / 日志长度，注意不要打印内容）。
 
 ## 在设备上跑测试之前
 
@@ -362,13 +408,14 @@
 
 局部重绘（Inpaint）的调研与当前状态见
 [docs/PocketNAI-局部重绘功能规划书.md](docs/PocketNAI-局部重绘功能规划书.md)（§9 是实施记录）
-与技术决策记录第十五节。**实现已经完成，卡在服务端不提供 `infill`**，
-因此入口关闭；重新启用前必须先做蒙版约定探针，那条探针与其余 B 类项一样，
-**只能由用户手动发起**。详见上面"局部重绘（Inpaint）"一节。
+与技术决策记录第十七、十八节。**实现已完成并真机验证通过，四个模型全部开放** ——
+早期"服务端拒绝 infill"的结论是模型 ID 用错所致，别再按那条旧结论处理。详见上面"局部重绘（Inpaint）"一节。
 
-参考图功能（Image2Img / Vibe Transfer / Precise Reference）另有一份待核对清单，
-见 [docs/PocketNAI-参考图功能规划书.md](docs/PocketNAI-参考图功能规划书.md) 第 3.4 节：
-**阶段 0 的 A 类核对（官方网页版的默认值与最大张数）必须先做完**，那些数值不允许按经验猜。
+参考图功能（Image2Img / Vibe Transfer / Precise Reference）的清单见
+[docs/PocketNAI-参考图功能规划书.md](docs/PocketNAI-参考图功能规划书.md) 第 3.4 节。
+最大张数（A2）与计费（A4）已核对；**滑块默认值仍有未核对项** —— Vibe 的 0.6 / 1.0、
+img2img 的 Strength/Noise 初值目前是按经验实现的值（技术决策记录 §14.4），
+不允许当成官方值，核对只能由用户从官方网页界面读出。
 
 低成本的协议探针技巧：`GET /ai/generate-image/suggest-tags?prompt=x&model=<模型ID>` 会校验模型 ID（无效返回 400），
 可以用它零成本核对模型 ID，不必发起真实生成。该端点现在也是**标签补全**的数据来源

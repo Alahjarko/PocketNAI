@@ -1,6 +1,6 @@
 # PocketNAI 参考图功能规划书（Image2Img / Vibe Transfer / Precise Reference）
 
-> **状态：待评审，尚未实施。**
+> **状态：已实现并验证（2026-09-14，各阶段完成情况见 §6 分阶段记录）。**
 >
 > 目标：在现有 T2I 链路上增加三种"以图为输入"的生成方式，对应官方网页版 `Reference Images` 分页里的三张卡片。
 >
@@ -131,10 +131,10 @@ Precise Reference 只用到 `caption.base_caption`，`char_captions` 保持空�
 
 | # | 待核对项 | 为什么要先确认 |
 |---|---|---|
-| A1 | 三个面板各自的滑块**默认值**（Strength、Noise、Information Extracted、Reference Strength、Fidelity） | 规划书 3.2 明确"默认值必须记录后固化，不得凭经验猜"，与本项目对 Steps/Guidance 的处理保持一致 |
+| A1 | 三个面板各自的滑块**默认值**（Strength、Noise、Information Extracted、Reference Strength、Fidelity） | 规划书 3.2 明确"默认值必须记录后固化，不得凭经验猜"。**部分已核对**：Inpaint 强度 1.0 由官方前端反解确认（技术决策记录 §17）；Vibe 两个滑块（0.6 / 1.0）与 img2img 的 Strength/Noise 初值仍是从经验推测的值，待核对（§14.4） |
 | A2 | ~~Vibe 与 Precise Reference 的**最大张数**~~ | **已确认（2026-09-14，用户核对官方网页版）：4**。已固化为 `ModelCatalog` 里两个常量 |
 | A3 | Image2Img 的铅笔图标是否确实进入 Inpaint，以及 Precise Reference 是否支持"从历史选图" | 决定 4.6 的排除范围是否准确 |
-| A4 | 三个功能是否各自有官方标注的 Anlas 加价 | 影响 4.5 的费用提示文案 |
+| A4 | 三个功能是否各自有官方标注的 Anlas 加价 | 影响 4.5 的费用提示文案。**已落地**：完整计费矩阵（含各参考图附加费）已从官方前端反解并实测印证（技术决策记录第十六节） |
 
 **B 类：需要一次真实请求（消耗 Anlas，必须由用户手动触发）**
 

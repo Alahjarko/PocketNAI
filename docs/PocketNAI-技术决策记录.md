@@ -1152,11 +1152,18 @@ You can use the Normalize Reference Strengths toggle to do this automatically wh
 Inpaint 的 Strength/Noise 初值、Vibe 两个滑块的初值、img2img 的 Strength/Noise 初值、
 CFG Rescale 的可用区间。它们只能从官方网页的界面上读出来。
 
+**2026-09-14 下午更新**：Inpaint 的强度初值已由官方前端反解确认（**1.0**，见第十七节），
+不再属于待核对项；其余各项仍待核对。
+
 ---
 
 ## 十五、局部重绘（Inpaint）实现记录
 
 按《局部重绘功能规划书》实现了阶段 0–E。真机验证把一个关键假设推翻了，因此**功能现状是"界面完整、链路待最后一步验证"**。
+
+> ⚠️ 本章记录的是 2026-09-14 当时的状态与三次探针过程；真正的根因与最终验证
+> 在第十七、十八节（换用 `-inpainting` 模型 ID 后链路已跑通、功能已开放）。
+
 
 ### 15.1 已确认：`action` 用 `infill`
 
@@ -1263,6 +1270,10 @@ regular generations`）是同一类问题：**接口的能力边界只能实测�
 两者都需要一次真实生成，只能由用户触发。
 
 ### 15.9 结论：公开 API 目前不提供局部重绘，入口已关闭
+
+> ⚠️ **本节结论已被第十七、十八节推翻**：真正的原因是请求用了常规模型 ID
+> （应换用专用的 `-inpainting` 变体），不是服务端不提供该能力；重绘已实测可用、
+> 入口已开放。本节留作历史记录。
 
 在 15.8 之后又测了一次 **V4.5 Full**，服务端回的是同一句话：
 
@@ -2015,3 +2026,144 @@ payload = NovelAiRequestBuilder.build(profile, request.copy(params = effectivePa
 
 仪器化测试里读 Room 的 Flow 要用 `first()`，**不能写 `toList().first()`**：
 Room 的 Flow 永不结束，`toList()` 会一直等下去，表现为"测试跑到一半卡死"。
+
+## 22. 提示词权重高亮（2026-09-15）
+
+### 22.1 需求
+
+编辑框里把"被加了权重的标签"用底色圈出来：权重 < 1 绿色、> 1 红色，圆角矩形，
+像荧光笔划的底纹；**改底色不改字色** —— 反色文字会让提示词本身变难读，
+而提示词是用户要逐字检查的东西。
+
+### 22.2 认识哪些写法
+
+`PromptWeightScanner`（纯 Kotlin，`domain/prompt`）：
+
+| 写法 | 权重 |
+|---|---|
+| `{tag}` / `{{tag}}` | 1.05 / 1.05²，每层 ×1.05 |
+| `[tag]` / `[[tag]]` | 1/1.05 / (1/1.05)²，每层 ÷1.05 |
+| `0.9::tag ::` | 0.9，字面值 |
+
+- 权重计算**复用 `EmphasisSyntax.strengthOf`**，不另写一套：两个入口各算一遍，
+  迟早会给出不同的数；
+- 按**顶层逗号**切分片段（`{a, b}` 内部的逗号不切），扫出来的区间**含语法符号本身**
+  （`{}`、`0.9::`），底纹因此能把整个片段圈住；
+- 与 1.0 的差小于 1e-9 的片段不产生高亮：`{[tag]}` 在浮点下会是
+  0.9999999999999998 或 1.0000000000000002，直接比大小会画出一层无意义的底色。
+
+### 22.3 渲染：为什么最后是"自己搭输入框"
+
+底纹要画在文字**下面**，就必须拿到文字的排版结果。Material 的 `OutlinedTextField`
+既不暴露内部的 `TextLayoutResult`，也不允许替换内部的输入框。
+
+先试了官方为此留的入口 `BasicTextField` + `OutlinedTextFieldDefaults.DecorationBox`，
+**结果是文字被画了两遍、边框消失**：那个 `container` 参数不是"输入框的内容"，
+而是**边框图层**，`DecorationBox` 自己会放置输入框。这条路依赖 Material 的内部约定，
+而它的参数表在版本之间已经改过（1.3.2 与后续版本的 DecorationBox 参数就不同），
+不值得继续赌。
+
+最终做法（`ui/common/WeightHighlightedTextField`）：
+
+- 边框、圆角、标签（外部标签）都在本文件里画，不依赖任何 Material 内边距常量；
+- 底纹 Canvas 与 `BasicTextField` 放进**同一个 `Box`**，Canvas 用 `matchParentSize`，
+  于是两者严格同尺寸同原点，坐标直接来自输入框自己回调的 `onTextLayout`；
+- 输入框加 `fillMaxWidth()`，保证"排版宽度 == Box 宽度"，换行位置才对得上；
+- 没有加权片段时**连排版都不复算**（不保存 layout）。
+
+代价是标签变成外部标签（在框上方），放弃了 Material 的浮动标签动画。
+这与本应用已有的带标签控件一致（`DropdownSelector`：张数 / 质量标签 / 模型都是这样），
+对"总是有内容的提示词框"来说也更稳定。
+
+**已知限制**：输入框内部滚动时底纹会错位。目前两个提示词框都是"随内容长高、
+由外层 `verticalScroll` 滚动"，没有内部滚动，所以不构成问题；
+若将来给它们加上固定高度与 `maxLines`，这里必须一并处理滚动偏移。
+
+### 22.4 数字权重这一条要说清楚
+
+`0.9::tag ::` 是**用户要求的语法**。`EmphasisSyntax` 里原本写着一句
+"刻意不做数字权重，因为那不是 NovelAI 的语法"，而这一点**至今未经核对**：
+
+- 因此这次只做"把它画出来"，**不替用户改写提示词**，界面上也**不提供插入这种写法的按钮**；
+- 如果服务端不认这种写法，`0.9::ningen mame ::` 会被当成普通文字，
+  用户会得到一张与预期不符的图 —— 这属于"用户自己选择使用"的风险；
+- 要确认只需要在官方网页版粘一段进去看效果，属于**用户手动发起**的核对项，
+  不得由自动化流程代发真实生成请求。
+
+### 22.5 测试与验证
+
+- `PromptWeightScannerTest`（17 项，JVM）：两种语法、嵌套层数、区间覆盖语法符号、
+  顶层逗号、数字前缀优先于包裹语法、权重恰为 1 不高亮、未闭合括号、随机选项语法不误判；
+- 真机截图验证：`{silver hair}` / `{{blue eyes}}` / `1.3::smile::` 红底，
+  `[simple background]`（跨 3 行折行）/ `0.9::ningen mame ::` 绿底，圆角贴合、随换行切分。
+
+### 22.6 深色模式下的黑字（2026-09-16 修复）
+
+用户实测：深色主题下提示词框里是"深色底上的黑字"，几乎没法读；浅色主题下一切正常。
+§22.5 的截图验证当初只在浅色主题做过，这个缺口没被发现。
+
+**根因：裸 `BasicTextField` 不会把未指定的文字颜色解析成主题色。**
+`LocalTextStyle` 在 Material 3 里的默认值是 `TextStyle.Default`（颜色 `Unspecified`），
+而 foundation 的 `CoreTextField` / `TextFieldDelegate` 不做内容色兜底 ——
+已核对 1.7.6 的 aar 字节码：*整个 foundation 里没有任何 `ContentColor` 引用*
+（它也依赖不到 material3，模块层次上不允许）。于是 `Unspecified` 一路到文字渲染层，
+按**黑色**画出来；浅色主题下黑色恰好是对的，所以只有深色主题暴露。
+Material 的 `OutlinedTextField` 之所以正常，是因为它内部显式把
+`focused/unfocusedTextColor`（默认 `onSurface`）merge 进 `textStyle` ——
+自己搭输入框就得自己补这一步。
+
+修法（一行）：`textStyle = LocalTextStyle.current.copy(color = textColor)`，
+其中 `textColor` 取 `colorScheme.onSurface`，禁用态按 Material 惯例
+`copy(alpha = 0.38f)`。光标颜色此前已显式设为 `primary`，边框与标签也一直用主题色，
+因此**只有文字**要补。
+
+真机验证（2026-09-16）：同一段全语法提示词（`{}` / `[]` / `{{}}` / `0.9::` / `1.3::`），
+深色与浅色两种主题各截图一次 —— 文字分别为浅色 / 深色，红绿底纹在两种背景下都清晰。
+
+## 23. 画廊检索与收藏（2026-09-15）
+
+### 23.1 收藏为什么单开一张表
+
+`favorite_images(imageId PRIMARY KEY, createdAt)`，外键指向 `generated_images(id)`
+并带 `ON DELETE CASCADE`。理由：
+
+- **不碰既有表**。加列要动 `generations` / `generated_images`（那两张被级联外键拴着），
+  而收藏是纯增量功能，没有理由让它们承担迁移风险；
+- 外键带级联 ⇒ 图片被物理删除时收藏行自动消失，不需要在启动清理里再补一条
+  "删掉指向已不存在图片的收藏"；
+- 删除生成记录走"先标记 `deletedAt`、确认后才 purge"，标记期间图片行仍在、收藏也仍在，
+  **撤销删除后收藏自然还在** —— 这正是用户期望的语义；
+- 主键是**图片 id** 而不是生成记录 id：瀑布流与详情页都是"一张图"，
+  一批四张里只收藏其中一张是正常需求。
+
+schema 5 → 6 只有 `CREATE TABLE`，不触碰任何既有表。真机上验证过：迁移后
+`user_version = 6`、`favorite_images` 存在且 `pragma foreign_key_list` 报告 `CASCADE`、历史完好。
+
+### 23.2 筛选为什么在内存里做
+
+`GallerySearch.matches(item, filter)` 是**纯函数**，在 ViewModel 里用 `combine` 套一层过滤。
+画廊本来就要把全部卡片取回内存（瀑布流是这样实现的），在这个列表上过滤：
+
+- 能直接写 **JVM 单测**，不需要仪器化测试也不需要真数据库；
+- 换成一条带可选参数的大 SQL（`(:query = '' OR prompt LIKE ...)`），
+  只能靠跑起来才知道对不对，而历史是用户不可再生的数据，值得用更稳的方式写。
+
+代价是每次筛选要点过全部卡片。个人使用的量级（几千条）下字符串比较可以忽略。
+
+**关键词规则**：大小写不敏感；`_` 与空格**互相等同**（NovelAI 标签写 `silver_hair`，
+用户手打会写 "silver hair"，不归一化就永远搜不到）；空格分隔的多个词是**全部命中**（AND）
+而不是当成一句必须原样出现的短语。
+
+### 23.3 两个坑
+
+**（1）历史选图对话框不能和画廊共用 ViewModel 实例。**
+两者默认的 `ViewModelStoreOwner` 相同（同一个 NavBackStackEntry），
+共用实例就意味着画廊的筛选条件会作用到"从历史选图"上 —— 而那个对话框
+**没有任何筛选控件**，用户只会看到"我的图少了一大半"却找不到原因。
+它现在用 `viewModel(key = "history-image-picker", ...)` 拿自己的实例。
+
+**（2）`connectedDebugAndroidTest` 不会清空应用数据，但裸读数据库会漏掉 WAL。**
+排查"收藏没落库"时用 `adb exec-out run-as ... cat databases/pocketnai.db` 读到的是**主库文件**，
+而 Room 默认启用 WAL —— 刚写入的行还在 `pocketnai.db-wal` 里，主库里查不到。
+本次就因此误判了一次"收藏没有持久化"。要查最近写入必须把 `-wal`（必要时 `-shm`）
+一起取回来放在同一目录下再打开，或者让应用自己把结果读出来。
