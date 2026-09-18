@@ -267,6 +267,9 @@
   keystore 文件（2026-09-18 实测：只把文件放 `~/.android/` 不行，构建用了自动生成的新密钥，
   被应用内的签名校验拦下）。`DEBUG_KEYSTORE_BASE64` 存仓库 Secret，CI 日志会打印其 sha256
   供与本机 `sha256sum ~/.android/debug.keystore` 对照。
+- **不能无条件给 `debug.signingConfig` 赋值**（包括赋 `null`）：那会覆盖 AGP 预置的默认
+  debug 签名，本地构建产出 `app-debug-unsigned.apk`（构建成功但没签名，2026-09-18 踩中过）。
+  正确写法是 `signingConfigs.findByName("pinned")?.let { signingConfig = it }`。
 - 版本号：发布时注入 `PNAI_VERSION_CODE` / `PNAI_VERSION_NAME` 环境变量
   （`app/build.gradle.kts` 读取；本地脚本与云端 workflow 都用"已有 Release 里最大编号 + 1"），
   不带变量构建时保持 `1` / `"0.1.0"`。

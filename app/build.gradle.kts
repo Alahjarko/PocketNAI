@@ -59,8 +59,10 @@ android {
     buildTypes {
         debug {
             isMinifyEnabled = false
-            // 未指定时为 null → AGP 用它默认的 debug keystore。
-            signingConfig = signingConfigs.findByName("pinned")
+            // 只在 CI 显式指定了密钥时才覆盖签名配置。**不能无条件赋值**（包括赋 null）：
+            // 那会把 AGP 预置的默认 debug 签名清掉，本地构建直接产出 app-debug-unsigned.apk
+            // （2026-09-18 实测踩中：构建成功、产物却没签名）。
+            signingConfigs.findByName("pinned")?.let { signingConfig = it }
         }
         release {
             isMinifyEnabled = true

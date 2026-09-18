@@ -23,11 +23,30 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-function Invoke-Checked {
-    param([scriptblock]$Command, [string]$What)
-    & $Command
+# Windows 上 pwsh 读取外部程序（git / gh）的输出默认按系统 ANSI 编码解码，
+# 中文会变成乱码（2026-09-18 踩中：Release 说明里的中文成了"鍵?滥…"，应用弹窗可见）。
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+
+# gh 可能不在当前 PATH（刚装完 GitHub CLI 的终端要重开才生效）——显式找一遍常见位置。
+function Resolve-Gh {
+    $cmd = Get-Command gh -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $candidates = @(
+        (Join-Path ${env:ProgramFiles} "GitHub CLI\gh.exe"),
+        (Join-Path ${env:LocalAppData} "Programs\GitHub CLI\gh.exe")
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) { return $candidate }
+    }
+    throw "找不到 gh（GitHub CLI）。安装：winget install GitHub.cli"
+}
+
+function Assert-LastExit([string]$What) {
     if ($LASTEXITCODE -ne 0) { throw "$What 失败（退出码 $LASTEXITCODE）" }
 }
+
+$gh = Resolve-Gh
 
 # ---- 0. 前置检查 ----
 $remote = (git remote get-url origin) -replace '\.git$', '' -replace '^.*github\.com[:/]', ''
@@ -35,8 +54,8 @@ if (-not $remote) { throw "读不到 origin 远端，请确认这是 PocketNAI �
 Write-Host "→ 发布目标：$remote"
 
 # ---- 1. 计算下一个构建号 ----
-$tags = gh release list --limit 100 --json tagName --jq '.[].tagName'
-if ($LASTEXITCODE -ne 0) { throw "读取 Release 列表失败（gh 是否已登录？）" }
+$tags = @(& $gh release list --limit 100 --json tagName --jq '.[].tagName')
+Assert-LastExit "读取 Release 列表"
 $numbers = @($tags | ForEach-Object { if ($_ -match '^build-(\d+)$') { [int]$Matches[1] } })
 $next = if ($numbers.Count -gt 0) { ($numbers | Measure-Object -Maximum).Maximum + 1 } else { 1 }
 Write-Host "→ 本次构建号：$next（版本名 0.1.$next）"
@@ -44,7 +63,8 @@ Write-Host "→ 本次构建号：$next（版本名 0.1.$next）"
 # ---- 2. 单元测试 ----
 if (-not $SkipTests) {
     Write-Host "→ 跑单元测试…"
-    Invoke-Checked { & .\gradlew.bat :app:testDebugUnitTest } "单元测试"
+    & .\gradlew.bat :app:testDebugUnitTest
+    Assert-LastExit "单元测试"
 }
 
 # ---- 3. 构建 ----
@@ -55,7 +75,8 @@ $env:PNAI_KEYSTORE_PATH = $null
 $env:PNAI_VERSION_CODE = "$next"
 $env:PNAI_VERSION_NAME = "0.1.$next"
 try {
-    Invoke-Checked { & .\gradlew.bat :app:assembleDebug } "构建"
+    & .\gradlew.bat :app:assembleDebug
+    Assert-LastExit "构建"
 } finally {
     Remove-Item Env:PNAI_VERSION_CODE -ErrorAction SilentlyContinue
     Remove-Item Env:PNAI_VERSION_NAME -ErrorAction SilentlyContinue
@@ -71,14 +92,18 @@ Copy-Item $apk $stage -Force
 # ---- 4. 发布 ----
 $headline = if ($Message) { $Message } else { (git log -1 --pretty=%s) }
 $notes = "构建 #$next · 本地构建 · $headline"
+# 说明经文件传给 gh（UTF-8）：中文走 Windows 命令行参数容易踩编码坑。
+$notesFile = Join-Path $env:TEMP "pocketnai-release-notes.txt"
+Set-Content -Path $notesFile -Value $notes -Encoding utf8
 Write-Host "→ 创建 Release build-$next…"
-Invoke-Checked { & gh release create "build-$next" $stage --title "0.1.$next" --notes $notes } "创建 Release"
+& $gh release create "build-$next" $stage --title "0.1.$next" --notes-file $notesFile
+Assert-LastExit "创建 Release"
 
 # ---- 5. 只保留最近 3 个构建 ----
 Write-Host "→ 清理旧构建（保留最近 3 个）…"
-$stale = gh release list --limit 100 --json tagName --jq '.[3:][] | .tagName'
+$stale = @(& $gh release list --limit 100 --json tagName --jq '.[3:][] | .tagName')
 foreach ($tag in $stale) {
-    if ($tag) { gh release delete $tag --yes --cleanup-tag | Out-Null }
+    if ($tag) { & $gh release delete $tag --yes --cleanup-tag | Out-Null }
 }
 
 Write-Host ""

@@ -2380,4 +2380,26 @@ GitHub runner 每次自动生成的 debug keystore 是随机的 —— 若用它
 - 实体机（MuMu 之外）上"安装未知应用"授权的跳转与返回行为；
 - GitHub 匿名 API 限流（60 次/小时/IP）：正常使用一次启动最多查一次，不会触及。
 
+### 27.7 补充：本地发布路径（2026-09-18，用户反馈"云端好慢"）
+
+云端每次构建要在队列里等 1–5 分钟，日常迭代改用**本地一键发布**：
+`scripts/publish-release.ps1`（或双击仓库根目录的"发布新版本.bat"）——
+跑单测 → 构建 APK → 建 Release 上传 → 清理旧版本，一条命令完成。
+两条路径**构建号同源**（都取"已有 Release 里最大编号 + 1"），不会撞号；
+云端 workflow 保留为手动触发的备份。
+
+当晚端到端实测（模拟器）：应用从 build-1 检出 build-5 → 下载 22 MB →
+签名校验通过 → 引导授予"安装未知应用" → 覆盖安装成功，历史数据完好
+（设置页从 0.1.0/build 1 变为 0.1.5/build 5）。
+
+踩坑记录（三条都已写进 AGENTS.md 的硬性约定）：
+- **不能无条件给 `debug.signingConfig` 赋值**（包括赋 `null`）：会清掉 AGP 预置的
+  默认 debug 签名，构建"成功"但产物变成 `app-debug-unsigned.apk`；
+- **`~/.android/debug.keystore` 在 GitHub runner 上不可靠**：文件放对了、
+  sha256 与本地一致，但 AGP 没采用它（构建用了自动生成的新密钥，被应用内
+  签名校验拦下）——云端必须用 `PNAI_KEYSTORE_PATH` 显式指定；
+- **Windows 下 pwsh 读取外部程序输出默认按系统 ANSI 解码**：`git log` 的中文
+  在 Release 说明里变成乱码（应用弹窗直接可见）；脚本里固定 UTF-8 输出编码，
+  并把说明改经 `--notes-file` 传给 gh。
+
 
