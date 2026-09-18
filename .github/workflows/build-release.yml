@@ -66,10 +66,15 @@ jobs:
           TAG="build-$RUN_NUMBER"
           FIRST_LINE=$(printf '%s' "$COMMIT_MSG" | head -n 1)
           NOTES="构建 #$RUN_NUMBER · 提交 $(git rev-parse --short HEAD) · $FIRST_LINE"
+          # 附件必须叫 PocketNAI.apk：应用侧的更新检测按这个名字找，
+          # "releases/latest/download/PocketNAI.apk" 这个固定分享链接也认它。
+          # （gh release create 的 `file#name` 改名语法实测不生效 —— build-2 的附件
+          #  仍然叫 app-debug.apk —— 所以先改好文件名再上传。）
+          cp app/build/outputs/apk/debug/app-debug.apk PocketNAI.apk
           gh release create "$TAG" \
             --title "0.1.$RUN_NUMBER" \
             --notes "$NOTES" \
-            "app/build/outputs/apk/debug/app-debug.apk#PocketNAI.apk"
+            PocketNAI.apk
 
       # 只保留最近 3 个构建，避免 Release 列表越堆越长。
       - name: Prune old releases
