@@ -39,9 +39,28 @@ android {
         buildConfigField("String", "UPDATE_REPO", "\"Alahjarko/PocketNAI\"")
     }
 
+    // CI 通过环境变量显式指定签名密钥（必须与用户手机上既有安装是同一把）：
+    // 不再依赖 AGP 对 ~/.android/debug.keystore 的默认查找 —— 2026-09-18 实测
+    // runner 上那个方案没被采用（构建用了自动生成的新密钥，更新包签名校验失败），
+    // 显式指定文件才是可靠的。本地不设这些变量，debug 构建行为不变。
+    val pinnedKeystorePath = System.getenv("PNAI_KEYSTORE_PATH")
+    signingConfigs {
+        if (pinnedKeystorePath != null) {
+            create("pinned") {
+                storeFile = file(pinnedKeystorePath)
+                // debug keystore 的标准密码，非敏感（所有 Android 开发者都知道）。
+                storePassword = System.getenv("PNAI_KEYSTORE_STORE_PASSWORD") ?: "android"
+                keyAlias = System.getenv("PNAI_KEYSTORE_ALIAS") ?: "androiddebugkey"
+                keyPassword = System.getenv("PNAI_KEYSTORE_KEY_PASSWORD") ?: "android"
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
+            // 未指定时为 null → AGP 用它默认的 debug keystore。
+            signingConfig = signingConfigs.findByName("pinned")
         }
         release {
             isMinifyEnabled = true
