@@ -254,15 +254,22 @@
 
 ### 检查更新与发布（GitHub Release）
 
-- 发布链路：**push 到 master 就自动构建并发布**（`.github/workflows/build-release.yml`）——
-  跑单测 → 构建 debug APK → 发布 Release（tag `build-<构建号>`，附件固定叫 `PocketNAI.apk`）
-  → 只保留最近 3 个。固定分享链接（永远指向最新构建，适合直接发给用户）：
+- 发布渠道有两条，**构建号同源**（都取"已有 Release 里最大的 `build-N` 加 1"），因此不会撞号：
+  1. **日常用本地发布**：`scripts/publish-release.ps1`（或双击根目录的"发布新版本.bat"）——
+     跑单测 → 构建 APK（带下一个构建号）→ 建 Release 并上传，一条龙，不用等云端排队；
+  2. 云端 `.github/workflows/build-release.yml` 保留为备份，在 Actions 页面**手动触发**
+     （workflow_dispatch）。之前的"push 即构建"已取消：与本地发布并行会撞号，且云端排队慢。
+  两条路径发布后都只保留最近 3 个 Release。固定分享链接（永远指向最新构建，适合直接发给用户）：
   `https://github.com/Alahjarko/PocketNAI/releases/latest/download/PocketNAI.apk`。
-- **签名密钥绝不能换**：CI 用的是本机那把 debug keystore（base64 存在仓库 Secret
-  `DEBUG_KEYSTORE_BASE64`），与所有既有安装签名一致 —— 换了密钥，新包在用户手机上
-  **无法覆盖安装**，只能卸载重装（丢历史与凭据）。不要"顺手"在 CI 里生成新 keystore。
-- 版本号：CI 用 `github.run_number` 注入 `PNAI_VERSION_CODE` / `PNAI_VERSION_NAME`
-  （`app/build.gradle.kts` 读环境变量），本地构建保持 `1` / `"0.1.0"`。
+- **签名密钥绝不能换**：两条路径都必须用本机那把 debug keystore，与所有既有安装签名一致 ——
+  换了密钥，新包在用户手机上**无法覆盖安装**，只能卸载重装（丢历史与凭据）。
+  本地发布用 AGP 默认路径即可；云端通过 `PNAI_KEYSTORE_PATH` 等环境变量**显式指定**
+  keystore 文件（2026-09-18 实测：只把文件放 `~/.android/` 不行，构建用了自动生成的新密钥，
+  被应用内的签名校验拦下）。`DEBUG_KEYSTORE_BASE64` 存仓库 Secret，CI 日志会打印其 sha256
+  供与本机 `sha256sum ~/.android/debug.keystore` 对照。
+- 版本号：发布时注入 `PNAI_VERSION_CODE` / `PNAI_VERSION_NAME` 环境变量
+  （`app/build.gradle.kts` 读取；本地脚本与云端 workflow 都用"已有 Release 里最大编号 + 1"），
+  不带变量构建时保持 `1` / `"0.1.0"`。
   **Release tag 里的数字与 APK 的 versionCode 必须同源** —— 应用内更新检测就靠这个比较。
 - 应用内检查更新（`domain/update` + `data/update` + `ui/update`）：
   - 判据是**构建号比较**（tag `build-42` → 42 与 `BuildConfig.VERSION_CODE` 比大小），

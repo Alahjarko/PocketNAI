@@ -1,15 +1,24 @@
 name: Build & Release
 
-# 每次 push 到 master：跑单测 → 构建 debug APK → 发布一个新的 Release。
-# tag 形如 build-<构建号>，构建号与 APK 的 versionCode 同源（github.run_number），
+# 发布渠道有两条，**构建号同源**（都取"已有 Release 里最大的 build-N 加 1"），
+# 因此不会互相撞号：
+#   1. 日常：本地 `scripts/publish-release.ps1`（或双击"发布新版本.bat"）——
+#      跑单测、构建、上传一条龙，不用等云端排队（2026-09-18 用户反馈云端慢）；
+#   2. 备份：本 workflow，在 Actions 页面手动触发（workflow_dispatch）。
+# 之前的"push 即构建"已取消：与本地发布并行会产生编号竞态，而且云端排队慢。
+#
+# tag 形如 build-<构建号>，与 APK 的 versionCode 同源 ——
 # 应用内的"检查更新"就是拿已装的 versionCode 与最新 Release 的 tag 数字比较。
 #
 # 固定分享链接（永远指向最新构建）：
 #   https://github.com/<owner>/<repo>/releases/latest/download/PocketNAI.apk
 on:
-  push:
-    branches: [ master ]
   workflow_dispatch:
+    inputs:
+      message:
+        description: 发布说明（留空取默认）
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -55,6 +64,16 @@ jobs:
           ls -l "$RUNNER_TEMP/pocketnai-debug.keystore"
           sha256sum "$RUNNER_TEMP/pocketnai-debug.keystore"
 
+      # 构建号与本地发布脚本同一规则：取已有 Release 里最大的 build-N 加 1。
+      - name: Determine build number
+        id: build_number
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LATEST=$(gh release list --limit 100 --json tagName --jq '.[].tagName' \
+            | sed -n 's/^build-\([0-9]\+\)$/\1/p' | sort -n | tail -1)
+          echo "number=$(( ${LATEST:-0} + 1 ))" >> "$GITHUB_OUTPUT"
+
       - name: Unit tests
         run: ./gradlew :app:testDebugUnitTest
 
@@ -64,19 +83,20 @@ jobs:
           PNAI_KEYSTORE_STORE_PASSWORD: android
           PNAI_KEYSTORE_ALIAS: androiddebugkey
           PNAI_KEYSTORE_KEY_PASSWORD: android
-          PNAI_VERSION_CODE: ${{ github.run_number }}
-          PNAI_VERSION_NAME: 0.1.${{ github.run_number }}
+          PNAI_VERSION_CODE: ${{ steps.build_number.outputs.number }}
+          PNAI_VERSION_NAME: 0.1.${{ steps.build_number.outputs.number }}
         run: ./gradlew :app:assembleDebug
 
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_NUMBER: ${{ github.run_number }}
-          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          RUN_NUMBER: ${{ steps.build_number.outputs.number }}
+          INPUT_MESSAGE: ${{ inputs.message }}
         run: |
           TAG="build-$RUN_NUMBER"
-          FIRST_LINE=$(printf '%s' "$COMMIT_MSG" | head -n 1)
-          NOTES="构建 #$RUN_NUMBER · 提交 $(git rev-parse --short HEAD) · $FIRST_LINE"
+          FIRST_LINE=$(printf '%s' "$INPUT_MESSAGE" | head -n 1)
+          [ -z "$FIRST_LINE" ] && FIRST_LINE="手动触发的云端构建"
+          NOTES="构建 #$RUN_NUMBER · 云端构建 · $FIRST_LINE"
           # 附件必须叫 PocketNAI.apk：应用侧的更新检测按这个名字找，
           # "releases/latest/download/PocketNAI.apk" 这个固定分享链接也认它。
           # （gh release create 的 `file#name` 改名语法实测不生效 —— build-2 的附件
