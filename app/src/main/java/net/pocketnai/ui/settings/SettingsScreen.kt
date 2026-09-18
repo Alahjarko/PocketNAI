@@ -46,9 +46,14 @@ import net.pocketnai.domain.model.ThemeMode
 import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.billing.BalanceDetailDialog
 import net.pocketnai.ui.billing.compactLabel
+import net.pocketnai.ui.common.messageRes
+import net.pocketnai.ui.update.UpdateViewModel
 
 @Composable
-fun SettingsScreen(onRequestConnect: () -> Unit) {
+fun SettingsScreen(
+    onRequestConnect: () -> Unit,
+    updateViewModel: UpdateViewModel,
+) {
     val container = LocalAppContainer.current
     val viewModel: SettingsViewModel = viewModel(
         factory = viewModelFactory {
@@ -72,6 +77,7 @@ fun SettingsScreen(onRequestConnect: () -> Unit) {
 
     // 余额与生成页共用同一个仓库实例，不另建一份网络状态或缓存（余额规划 §11.4）。
     val balanceState by container.accountBalanceRepository.state.collectAsStateWithLifecycle()
+    val updateState by updateViewModel.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     Column(
@@ -238,12 +244,53 @@ fun SettingsScreen(onRequestConnect: () -> Unit) {
 
         HorizontalDivider()
 
-        Text(
-            text = "${stringResource(R.string.settings_version)} ${BuildConfig.VERSION_NAME} " +
-                "(build ${BuildConfig.VERSION_CODE})",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        // ---- 检查更新 ----
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                text = stringResource(R.string.update_section_title),
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Text(
+                text = "${stringResource(R.string.settings_version)} ${BuildConfig.VERSION_NAME} " +
+                    "(build ${BuildConfig.VERSION_CODE})",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = stringResource(R.string.settings_update_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = updateViewModel::checkManually,
+                    enabled = !updateState.checking,
+                ) {
+                    Text(
+                        stringResource(
+                            if (updateState.checking) {
+                                R.string.update_checking
+                            } else {
+                                R.string.update_check_action
+                            },
+                        ),
+                    )
+                }
+            }
+            when {
+                updateState.upToDateNotice -> Text(
+                    text = stringResource(R.string.update_up_to_date),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+
+                updateState.error != null -> Text(
+                    text = stringResource(updateState.error!!.messageRes()),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
     }
 }
 

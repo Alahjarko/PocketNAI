@@ -37,6 +37,9 @@ fun ErrorCode.messageRes(): Int = when (this) {
     ErrorCode.VIBE_ENCODE_FAILED -> R.string.error_vibe_encode_failed
     ErrorCode.ACCOUNT_DATA_UNAVAILABLE -> R.string.error_account_data_unavailable
     ErrorCode.ACCOUNT_RESPONSE_INVALID -> R.string.error_account_response_invalid
+    ErrorCode.UPDATE_CHECK_FAILED -> R.string.error_update_check_failed
+    ErrorCode.UPDATE_DOWNLOAD_FAILED -> R.string.error_update_download_failed
+    ErrorCode.UPDATE_SIGNATURE_MISMATCH -> R.string.error_update_signature_mismatch
     ErrorCode.UNKNOWN -> R.string.error_unknown
 }
 

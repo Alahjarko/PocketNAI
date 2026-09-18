@@ -98,6 +98,19 @@ enum class ErrorCode {
     /** 账户信息接口返回了无法识别的结构（畸形 JSON、缺关键字段、字段类型不符）。 */
     ACCOUNT_RESPONSE_INVALID,
 
+    /** 检查更新失败（网络、服务端，或 Release 结构不认识）。不影响其它功能。 */
+    UPDATE_CHECK_FAILED,
+
+    /** 更新包下载失败。 */
+    UPDATE_DOWNLOAD_FAILED,
+
+    /**
+     * 下载到的更新包与当前应用不是同一签名，已丢弃。
+     *
+     * 单独成一类：这不是"网络问题"，而是"这个包不该装"，文案要明确说清。
+     */
+    UPDATE_SIGNATURE_MISMATCH,
+
     /** 未预期错误。 */
     UNKNOWN,
 }

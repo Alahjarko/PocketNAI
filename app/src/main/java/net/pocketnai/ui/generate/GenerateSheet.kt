@@ -96,8 +96,11 @@ import net.pocketnai.ui.common.messageRes
  * 头部（含生成按钮与状态行）固定在可滚动表单之外，因此表单滚到哪个位置，
  * 按钮与当前状态都停在原地。
  *
- * [expanded] 为 false 时不挂载内部滚动，让拖拽手势交给悬浮层本身去展开 —— 否则
- * 手指在表单上往上拖只会滚动内容，永远拉不开悬浮层。
+ * [expanded] 为 false 时**禁用**内部滚动（而不是不挂载）：收起状态下拖手势要留给
+ * 悬浮层自己展开，否则手指在表单上往上拖只会滚动内容、永远拉不开悬浮层；
+ * 但滚动位置必须一直生效 —— 展开动画期间 [expanded] 还是 false（`SheetState.currentValue`
+ * 要等动画落定才翻转），此时若不挂载滚动，内容会先按顶部排版、动画结束才跳到上次的位置，
+ * 用户看到的就是"先显示最上方、然后页面忽然跳一下"（2026-09-16 用户报告，见技术决策记录 §26）。
  */
 @Composable
 fun GenerateSheet(
@@ -185,8 +188,12 @@ fun GenerateSheet(
 
         Column(
             modifier = Modifier
-                .then(if (expanded) Modifier.verticalScroll(scrollState) else Modifier)
-                .padding(16.dp),
+                // 顶部内边距放在滚动**外面**（其余三边留在里面）：它不随内容滚走，
+                // 于是 peek 下缘那一小条永远是空白 —— 收起态不会露出被截断的一行。
+                // 内边距若留在滚动里面，收起时露出的就是"滚动到一半"的内容（2026-09-16）。
+                .padding(top = 16.dp)
+                .verticalScroll(scrollState, enabled = expanded)
+                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (!connected) {

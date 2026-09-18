@@ -16,8 +16,11 @@ android {
         applicationId = "net.pocketnai"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // CI 注入构建号（github.run_number，单调递增）—— 应用内的"检查更新"就是拿
+        // BuildConfig.VERSION_CODE 与最新 Release 的 tag 数字比较，因此这里的值
+        // 必须与 Release 的 tag 同源。本地构建保持 1 / "0.1.0"。
+        versionCode = System.getenv("PNAI_VERSION_CODE")?.toIntOrNull() ?: 1
+        versionName = System.getenv("PNAI_VERSION_NAME") ?: "0.1.0"
 
         // 仪器化测试只在本地设备上跑（用于验证必须依赖 Android 位图 API 的图片后处理），
         // 不参与任何发布产物。
@@ -30,6 +33,10 @@ android {
         // image URL."）。账户状态与图像生成都必须走 image.novelai.net，因此这里只有一个
         // API 主机常量，避免以后有人再往 api 主机上发请求。
         buildConfigField("String", "NOVELAI_API_BASE_URL", "\"https://image.novelai.net\"")
+
+        // 检查更新读的 GitHub 仓库（owner/name）。CI 把每次提交发布成这里的 Release，
+        // 应用只匿名读取公开的版本信息；换仓库时只改这一处。
+        buildConfigField("String", "UPDATE_REPO", "\"Alahjarko/PocketNAI\"")
     }
 
     buildTypes {

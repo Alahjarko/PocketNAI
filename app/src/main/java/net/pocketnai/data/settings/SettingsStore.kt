@@ -64,6 +64,18 @@ class SettingsStore(context: Context) {
     }
 
     /**
+     * 被"稍后"处理过的更新版本（构建号）。
+     *
+     * 持久化是刻意的：用户在对话框上点了"稍后"，下次启动**不该**为同一个构建
+     * 再弹一次；只有出现更新的构建（构建号更大）才会重新提示。
+     */
+    fun updateDismissedVersionCode(): Int = prefs.getInt(KEY_UPDATE_DISMISSED, 0)
+
+    fun setUpdateDismissedVersionCode(versionCode: Int) {
+        prefs.edit().putInt(KEY_UPDATE_DISMISSED, versionCode).apply()
+    }
+
+    /**
      * 记录一次流式协议失败。
      *
      * 规划书 6.3：连续失败达到阈值后，只关闭**未来任务**的流式预览，
@@ -91,6 +103,7 @@ class SettingsStore(context: Context) {
         const val KEY_STREAMING_FAILURES = "streaming_consecutive_failures"
         const val KEY_THEME_MODE = "theme_mode"
         const val KEY_SUBSCRIPTION_OVERRIDE = "subscription_override"
+        const val KEY_UPDATE_DISMISSED = "update_dismissed_version_code"
 
         /** 连续失败阈值，需在协议探针阶段用真实数据确认（规划书 6.3）。 */
         const val STREAMING_FAILURE_THRESHOLD = 3

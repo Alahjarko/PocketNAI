@@ -23,6 +23,8 @@ import net.pocketnai.data.security.KeystoreCredentialStore
 import net.pocketnai.data.security.SessionState
 import net.pocketnai.data.settings.DraftReferencePathsProvider
 import net.pocketnai.data.settings.GenerationDraftPreferences
+import net.pocketnai.data.update.GitHubReleaseApi
+import net.pocketnai.data.update.UpdateDownloader
 import net.pocketnai.domain.auth.AccessKeyDeriver
 import net.pocketnai.domain.auth.NovelAiAccessKeyDeriver
 import net.pocketnai.domain.billing.AnlasCostCalculator
@@ -189,4 +191,21 @@ class AppContainer(application: Application) {
     val tagSuggestionSource: TagSuggestionSource by lazy {
         NovelAiTagSuggestionSource(api = api, credentialStore = credentialStore)
     }
+
+    /**
+     * 检查更新：读 GitHub 上公开的 Release 信息。
+     *
+     * 与 NovelAI 链路完全无关 —— 匿名 GET、不带凭据、不带任何用户数据。
+     * 用派生客户端（30 秒整体超时）：这是一次快速查询，不该继承生成用的 5 分钟读超时。
+     */
+    val githubReleaseApi: GitHubReleaseApi by lazy {
+        GitHubReleaseApi(
+            repo = BuildConfig.UPDATE_REPO,
+            client = httpClient.newBuilder().callTimeout(30, TimeUnit.SECONDS).build(),
+            json = json,
+        )
+    }
+
+    /** 更新包下载：走基础客户端（几十 MB 的大文件需要长读超时）。 */
+    val updateDownloader: UpdateDownloader by lazy { UpdateDownloader(application, httpClient) }
 }

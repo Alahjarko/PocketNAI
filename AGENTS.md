@@ -252,6 +252,35 @@
 - 余额走 `GET /user/subscription`（只读），错误映射用 `AccountReadErrorMapper`：
   **余额超时是 `REQUEST_TIMEOUT`，不是 `TIMEOUT_UNCERTAIN`**（后者那句"可能已计费"只适用于生成）。
 
+### 检查更新与发布（GitHub Release）
+
+- 发布链路：**push 到 master 就自动构建并发布**（`.github/workflows/build-release.yml`）——
+  跑单测 → 构建 debug APK → 发布 Release（tag `build-<构建号>`，附件固定叫 `PocketNAI.apk`）
+  → 只保留最近 3 个。固定分享链接（永远指向最新构建，适合直接发给用户）：
+  `https://github.com/Alahjarko/PocketNAI/releases/latest/download/PocketNAI.apk`。
+- **签名密钥绝不能换**：CI 用的是本机那把 debug keystore（base64 存在仓库 Secret
+  `DEBUG_KEYSTORE_BASE64`），与所有既有安装签名一致 —— 换了密钥，新包在用户手机上
+  **无法覆盖安装**，只能卸载重装（丢历史与凭据）。不要"顺手"在 CI 里生成新 keystore。
+- 版本号：CI 用 `github.run_number` 注入 `PNAI_VERSION_CODE` / `PNAI_VERSION_NAME`
+  （`app/build.gradle.kts` 读环境变量），本地构建保持 `1` / `"0.1.0"`。
+  **Release tag 里的数字与 APK 的 versionCode 必须同源** —— 应用内更新检测就靠这个比较。
+- 应用内检查更新（`domain/update` + `data/update` + `ui/update`）：
+  - 判据是**构建号比较**（tag `build-42` → 42 与 `BuildConfig.VERSION_CODE` 比大小），
+    不比较版本名字符串；解析与判定都是纯函数（`UpdateEvaluator`），有单测钉住；
+  - 仓库地址在 `BuildConfig.UPDATE_REPO`（`app/build.gradle.kts`），换仓库只改这一处；
+  - **只发匿名 GET**（`releases/latest`），不带凭据、不带任何用户数据；这是应用里
+    唯一会自动发起的网络请求（启动后延迟数秒静默检查，失败不打扰，设置页可手动检查）；
+  - "稍后"记进 `SettingsStore.updateDismissedVersionCode` —— 同一个构建不重复弹，
+    出现更新的构建才再提示；
+  - 下载后**必须做签名校验**（与当前安装比对，不一致就丢弃）：这是"这个包不该装"
+    而不是网络问题，文案要分开；下载与校验失败都不自动重试；
+  - 更新包放 `cache/updates/`（不是用户数据，不进 files/、不参与历史清理），
+    经 FileProvider（只暴露这一条路径）交给系统安装器；
+  - 安装前检查 `canRequestPackageInstalls()`：没有"安装未知应用"授权时先跳系统设置页，
+    用户授权回来后再点一次即可（文件已缓存，不会重新下载）。
+- 更新检查**不受**"费用未知不得自动发起"约束（它不碰 NovelAI、不花 Anlas），
+  但**生成相关的任何自动化仍然一律禁止**。
+
 ### 余额与费用
 
 - 余额是服务端事实，费用是本地推算，**两者严格分开**：余额只在内存缓存（5 分钟），
@@ -398,8 +427,15 @@
 - 悬浮层内容区的顺序是**提示词在前、参考图三个区块（图生图 / Precise Reference /
   Vibe Transfer）在最底部**（2026-09-14 用户明确要求）：提示词是每次进来都要写的东西，
   参考图只在需要时用。不要把参考图挪回顶部 —— 那会把提示词压到首屏之外。
-- 悬浮层的内部滚动只在展开时挂载（见 `GenerateSheet` 的 `expanded` 参数），
-  否则手指在表单上往上拖只会滚内容、永远拉不开悬浮层。
+- 悬浮层的内部滚动**始终挂载**，收起时用 `verticalScroll(scrollState, enabled = expanded)`
+  禁用而已。**不要改回"只在展开时挂载"**（`if (expanded) Modifier.verticalScroll(...)`）：
+  手势确实要留给悬浮层（否则手指在表单上往上拖只会滚内容、永远拉不开），但滚动位置也必须
+  一直生效 —— 展开动画期间 `SheetState.currentValue` 还是 PartiallyExpanded、`expanded` 仍为 false，
+  此时不挂载滚动会让内容先按顶部排版、动画落定才跳到上次的位置，表现为"先看到最上方、
+  然后页面忽然跳一下"（2026-09-16 用户报告，技术决策记录 §26）。
+- 悬浮层内容的**顶部内边距必须放在滚动外面**（`padding(top = 16.dp)` 在 `verticalScroll` 之前，
+  左/右/下留在里面）：收起时 peek 只到头部，peek 比头部高出的那一小条会露出表单顶端 ——
+  内边距留在滚动里会跟着滚走，露出"被截断的一行"。放到外面，那一小条永远是空白。
 - 画廊顶部是**筛选栏**（关键词搜索 + 仅收藏 + 模型 + 模式），它属于画廊、不属于悬浮层。
   chip 文案直接是"当前值"（`全部模型`），**不要写成"模型：全部"** —— 四个 chip 在
   360dp 宽度里排不下，最后那个会被右边缘裁掉；"清除筛选"因此只放图标。

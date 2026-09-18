@@ -1,21 +1,32 @@
 package net.pocketnai.ui
 
+import android.content.Context
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.core.content.FileProvider
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -39,6 +50,9 @@ import net.pocketnai.ui.inpaint.InpaintUnavailable
 import net.pocketnai.ui.generate.GenerateViewModel
 import net.pocketnai.ui.home.HomeScreen
 import net.pocketnai.ui.settings.SettingsScreen
+import net.pocketnai.ui.update.UpdateAvailableDialog
+import net.pocketnai.ui.update.UpdateViewModel
+import java.io.File
 
 /** 导航目的地。用常量而不是字符串字面量，避免路由名拼错只在运行时才发现。 */
 object Routes {
@@ -92,6 +106,50 @@ fun PocketNaiApp() {
         },
     )
     val generateState by generateViewModel.state.collectAsStateWithLifecycle()
+
+    // 更新检查独立于生成链路：它只读 GitHub 上的 Release。
+    // 同样提升到这一层：启动时的那次检查与设置页的手动检查必须共用一份状态。
+    val updateViewModel: UpdateViewModel = viewModel(
+        factory = viewModelFactory {
+            initializer {
+                UpdateViewModel(
+                    api = container.githubReleaseApi,
+                    downloader = container.updateDownloader,
+                    settingsStore = container.settingsStore,
+                )
+            }
+        },
+    )
+    val updateState by updateViewModel.state.collectAsStateWithLifecycle()
+
+    // 启动后静默查一次（失败不打扰；对同一个构建点过"稍后"的不再弹）。
+    LaunchedEffect(Unit) {
+        updateViewModel.checkOnLaunch()
+    }
+
+    // 下载好的 APK 由界面调起系统安装器：需要 Activity context 与 FileProvider，
+    // ViewModel 不碰 Intent。
+    val context = LocalContext.current
+    var installPermissionHint by remember { mutableStateOf(false) }
+    LaunchedEffect(updateState.readyApk) {
+        val apk = updateState.readyApk ?: return@LaunchedEffect
+        if (context.packageManager.canRequestPackageInstalls()) {
+            runCatching { context.startActivity(installApkIntent(context, apk)) }
+        } else {
+            // 没有"安装未知应用"授权：先跳去授权页。文件已缓存在本地，
+            // 用户授权回来后再点一次"下载并安装"即可（不会重新下载）。
+            runCatching {
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        "package:${context.packageName}".toUri(),
+                    ),
+                )
+            }
+            installPermissionHint = true
+        }
+        updateViewModel.onInstallHandled()
+    }
 
     // 余额是账户级状态，跟着"是否已连接"走：
     // 连上就刷新一次，断开就把内存里的余额清掉（绝不把上一个账号的余额留给下一个账号）。
@@ -167,6 +225,7 @@ fun PocketNaiApp() {
             composable(Routes.SETTINGS) {
                 SettingsScreen(
                     onRequestConnect = { navController.navigate(Routes.CONNECT) },
+                    updateViewModel = updateViewModel,
                 )
             }
             composable(Routes.DETAIL) { entry ->
@@ -216,6 +275,33 @@ fun PocketNaiApp() {
             }
         }
     }
+
+    // "发现新版本"对话框：待下载 / 下载中 / 出错重试三种形态共用一个框。
+    updateState.available?.let { release ->
+        UpdateAvailableDialog(
+            release = release,
+            currentVersionName = updateViewModel.currentVersionName,
+            download = updateState.download,
+            errorCode = updateState.error,
+            onDownload = updateViewModel::downloadUpdate,
+            onLater = updateViewModel::dismissAvailable,
+            onDismissError = updateViewModel::dismissError,
+        )
+    }
+
+    // 需要"安装未知应用"授权时的一次性说明（从系统设置页回来时能看到）。
+    if (installPermissionHint) {
+        AlertDialog(
+            onDismissRequest = { installPermissionHint = false },
+            title = { Text(stringResource(R.string.update_title)) },
+            text = { Text(stringResource(R.string.update_install_permission_hint)) },
+            confirmButton = {
+                TextButton(onClick = { installPermissionHint = false }) {
+                    Text(stringResource(R.string.action_confirm))
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -246,5 +332,14 @@ private fun NavHostController.navigateToTab(route: String) {
         popUpTo(graph.findStartDestination().id) { saveState = true }
         launchSingleTop = true
         restoreState = true
+    }
+}
+
+/** 交给系统安装器的 Intent：更新包在 cache 目录，必须经 FileProvider 授权读取。 */
+private fun installApkIntent(context: Context, apk: File): Intent {
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apk)
+    return Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, "application/vnd.android.package-archive")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 }
