@@ -53,6 +53,7 @@ fun BalanceDetailDialog(
     state: BalanceState,
     subscriptionStatus: SubscriptionStatus = SubscriptionStatus.Unknown,
     onRefresh: () -> Unit,
+    onViewLedger: (() -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     val balance = state.knownBalance
@@ -139,8 +140,15 @@ fun BalanceDetailDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onRefresh) {
-                Text(stringResource(R.string.balance_refresh))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (onViewLedger != null) {
+                    TextButton(onClick = onViewLedger) {
+                        Text("消耗流水")
+                    }
+                }
+                TextButton(onClick = onRefresh) {
+                    Text(stringResource(R.string.balance_refresh))
+                }
             }
         },
         dismissButton = {

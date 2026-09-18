@@ -3,6 +3,7 @@ package net.pocketnai.data.repo
 import android.util.Base64
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -32,6 +33,7 @@ import net.pocketnai.domain.image.toPixelSize
 import net.pocketnai.domain.model.GeneratedImage
 import net.pocketnai.domain.model.GalleryItem
 import net.pocketnai.domain.model.Generation
+import net.pocketnai.domain.model.GenerationMode
 import net.pocketnai.domain.model.GenerationParams
 import net.pocketnai.domain.model.GenerationRequest
 import net.pocketnai.domain.model.GenerationStatus
@@ -446,6 +448,149 @@ class GenerationRepository(
         val generation: Generation,
     )
 
+    /**
+     * 图像超分放大。
+     *
+     * 必须且只能由用户在详情页明确确认后触发。
+     * 服务端 `/ai/upscale` 可能会消耗 Anlas，成功后作为一张新图片与记录插入画廊。
+     *
+     * @return 成功时返回新生成的 [GeneratedImage.id]
+     */
+    suspend fun upscaleImage(
+        imageId: String,
+        scale: Int,
+    ): Outcome<String> = withContext(Dispatchers.IO) {
+        val detail = loadDetail(imageId)
+            ?: return@withContext Outcome.Failure(
+                AppError.of(ErrorCode.UNKNOWN, detail = "图片记录不存在"),
+            )
+        val token = credentialStore.load()?.token
+            ?: return@withContext Outcome.Failure(AppError.of(ErrorCode.TOKEN_INVALID))
+
+        val sourceFile = fileOfRelativePath(detail.image.privateFilePath)
+        if (!sourceFile.isFile) {
+            return@withContext Outcome.Failure(
+                AppError.of(ErrorCode.UNKNOWN, detail = "原图文件不存在: ${sourceFile.path}"),
+            )
+        }
+
+        val sourceBytes = try {
+            sourceFile.readBytes()
+        } catch (e: IOException) {
+            return@withContext Outcome.Failure(
+                AppError.of(ErrorCode.STORAGE_FULL, detail = "读取原图失败: ${e.message}"),
+            )
+        }
+        val imageBase64 = Base64.encodeToString(sourceBytes, Base64.NO_WRAP)
+
+        val generationId = idGenerator()
+        val incomingDir = fileStore.newIncomingDir(generationId)
+        val archiveFile = fileStore.newArchiveFile(generationId)
+
+        val callOutcome = api.upscaleImage(
+            token = token,
+            imageBase64 = imageBase64,
+            width = detail.image.width,
+            height = detail.image.height,
+            scale = scale,
+            destinationFile = archiveFile,
+        )
+
+        if (callOutcome is Outcome.Failure) {
+            fileStore.clearIncoming(generationId)
+            return@withContext callOutcome
+        }
+
+        if (!archiveFile.isFile || archiveFile.length() == 0L) {
+            fileStore.clearIncoming(generationId)
+            return@withContext Outcome.Failure(
+                AppError.of(ErrorCode.SERVER_ERROR, detail = "超分响应为空"),
+            )
+        }
+
+        val header = ByteArray(4)
+        archiveFile.inputStream().use { it.read(header) }
+        val isZip = header[0] == 0x50.toByte() && header[1] == 0x4B.toByte()
+        val dimensions = PngValidator.readDimensions(archiveFile)
+
+        val extractedImages: List<ZipImageExtractor.ExtractedImage> = if (isZip) {
+            val extraction = archiveFile.inputStream().use { stream ->
+                zipExtractor.extract(stream, incomingDir)
+            }
+            if (extraction is ZipImageExtractor.Result.Failure) {
+                fileStore.clearIncoming(generationId)
+                return@withContext Outcome.Failure(extraction.error)
+            }
+            (extraction as ZipImageExtractor.Result.Success).images
+        } else if (dimensions != null) {
+            val sha256 = Hashing.sha256(archiveFile)
+            listOf(
+                ZipImageExtractor.ExtractedImage(
+                    ordinal = 1,
+                    file = archiveFile,
+                    byteSize = archiveFile.length(),
+                    sha256 = sha256,
+                    width = dimensions.width,
+                    height = dimensions.height,
+                ),
+            )
+        } else {
+            fileStore.clearIncoming(generationId)
+            return@withContext Outcome.Failure(
+                AppError.of(ErrorCode.ZIP_INVALID, detail = "未知的超分返回格式"),
+            )
+        }
+
+        if (extractedImages.isEmpty()) {
+            fileStore.clearIncoming(generationId)
+            return@withContext Outcome.Failure(
+                AppError.of(ErrorCode.ZIP_INVALID, detail = "未能解出有效图片"),
+            )
+        }
+
+        val committed = try {
+            fileStore.commitImages(generationId, extractedImages)
+        } catch (e: IOException) {
+            fileStore.clearIncoming(generationId)
+            return@withContext Outcome.Failure(
+                AppError.of(ErrorCode.STORAGE_FULL, detail = "写入历史目录失败: ${e.message.orEmpty()}"),
+            )
+        }
+
+        val committedAt = clock()
+        val targetWidth = committed.firstOrNull()?.width ?: (detail.image.width * scale)
+        val targetHeight = committed.firstOrNull()?.height ?: (detail.image.height * scale)
+
+        val newGeneration = detail.generation.copy(
+            id = generationId,
+            title = "${detail.generation.title} (${scale}x)",
+            mode = GenerationMode.UPSCALE,
+            createdAt = committedAt,
+            updatedAt = committedAt,
+            status = GenerationStatus.SUCCEEDED,
+        )
+        dao.upsertGeneration(Mappers.toEntity(newGeneration))
+
+        val newImageId = idGenerator()
+        val newImage = GeneratedImage(
+            id = newImageId,
+            generationId = generationId,
+            ordinal = 1,
+            seed = detail.image.seed,
+            privateFilePath = fileStore.relativePathOf(generationId, 1),
+            width = targetWidth,
+            height = targetHeight,
+            byteSize = committed.firstOrNull()?.byteSize ?: 0L,
+            sha256 = committed.firstOrNull()?.sha256.orEmpty(),
+            metadataJson = detail.image.metadataJson,
+            createdAt = committedAt,
+            exportedUri = null,
+        )
+        dao.upsertImages(listOf(Mappers.toImageEntity(newImage)))
+        fileStore.clearIncoming(generationId)
+        Outcome.Success(newImageId)
+    }
+
     /** 删除第一步：标记删除，界面立即隐藏，可以撤销。 */
     suspend fun markDeleted(generationId: String) {
         dao.markDeleted(generationId, clock())
@@ -480,6 +625,64 @@ class GenerationRepository(
     fun fileOfRelativePath(relativePath: String): File = fileStore.resolve(relativePath)
 
     fun usedBytes(): Long = fileStore.usedBytes()
+
+    data class ImageCleanupReport(
+        val deletedImagesCount: Int,
+        val freedBytes: Long,
+        val retainedFavoritesCount: Int,
+    )
+
+    /**
+     * 清理生成的历史图片（针对大量抽卡图片积压的定制清理）。
+     *
+     * @param deleteFavorites 是否同时清理已收藏的图片。false 时严格保护所有收藏图片。
+     */
+    suspend fun cleanupGeneratedImages(deleteFavorites: Boolean): ImageCleanupReport = withContext(Dispatchers.IO) {
+        val initialBytes = fileStore.usedBytes()
+        if (deleteFavorites) {
+            val allImages = dao.allImages()
+            val totalCount = allImages.size
+            allImages.forEach { image ->
+                val file = fileStore.resolve(image.relativePath)
+                if (file.exists()) file.delete()
+            }
+            dao.purgeAllGenerations()
+            fileStore.clearAllGenerations()
+            cleanupOnStartup()
+            val finalBytes = fileStore.usedBytes()
+            ImageCleanupReport(
+                deletedImagesCount = totalCount,
+                freedBytes = (initialBytes - finalBytes).coerceAtLeast(0L),
+                retainedFavoritesCount = 0,
+            )
+        } else {
+            val unFavorited = dao.allUnfavoritedImages()
+            val allImages = dao.allImages()
+            val favoritesCount = (allImages.size - unFavorited.size).coerceAtLeast(0)
+
+            unFavorited.forEach { image ->
+                val file = fileStore.resolve(image.relativePath)
+                if (file.exists()) file.delete()
+            }
+            unFavorited.map { it.id }.chunked(500).forEach { chunk ->
+                dao.deleteImages(chunk)
+            }
+            val emptyGenIds = dao.findEmptyGenerationIds()
+            emptyGenIds.forEach { genId ->
+                fileStore.deleteGeneration(genId)
+            }
+            emptyGenIds.chunked(500).forEach { chunk ->
+                dao.purgeGenerations(chunk)
+            }
+            cleanupOnStartup()
+            val finalBytes = fileStore.usedBytes()
+            ImageCleanupReport(
+                deletedImagesCount = unFavorited.size,
+                freedBytes = (initialBytes - finalBytes).coerceAtLeast(0L),
+                retainedFavoritesCount = favoritesCount,
+            )
+        }
+    }
 
     /**
      * 启动时恢复与清理（规划书 7.2）。

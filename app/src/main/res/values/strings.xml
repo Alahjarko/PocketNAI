@@ -198,8 +198,10 @@
     <string name="gallery_filter_clear">清除筛选</string>
     <string name="gallery_no_match">没有符合当前筛选条件的图片。</string>
 
-    <!-- 长按操作 -->
+    <!-- 长按操作与分享 -->
     <string name="action_save_to_gallery">保存到系统相册</string>
+    <string name="action_share">分享</string>
+    <string name="action_share_image">分享图片</string>
     <string name="action_favorite">收藏</string>
     <string name="action_unfavorite">取消收藏</string>
     <string name="action_delete">删除本地记录</string>
@@ -209,9 +211,33 @@
     <string name="action_confirm">确定</string>
     <string name="action_retry">重试</string>
 
-    <!-- 详情页 -->
+    <!-- 画廊多选批量操作 -->
+    <string name="action_batch_mode">多选</string>
+    <string name="action_select_all">全选</string>
+    <string name="action_deselect_all">取消全选</string>
+    <string name="action_exit_selection">完成</string>
+    <string name="batch_selected_count">已选 %1$d 项</string>
+    <string name="batch_action_save">保存到相册</string>
+    <string name="batch_action_share">分享</string>
+    <string name="batch_action_favorite">收藏</string>
+    <string name="batch_action_delete">删除</string>
+    <string name="batch_save_success">已保存 %1$d 张图片到系统相册</string>
+    <string name="batch_delete_confirm_title">删除选中的 %1$d 项？</string>
+    <string name="batch_delete_confirm_message">删除只影响 PocketNAI 的本地副本，已经保存到系统相册的图片不会被删除。</string>
+
+    <!-- 详情页与超分 -->
     <string name="detail_title">详情</string>
     <string name="detail_saved_to_gallery">已保存到系统相册</string>
+    <string name="action_upscale">高清放大</string>
+    <string name="generate_mode_upscale">高清放大</string>
+    <string name="upscale_dialog_title">图像高清放大</string>
+    <string name="upscale_source_size">原始尺寸：%1$d × %2$d</string>
+    <string name="upscale_target_size">放大后：%1$d × %2$d</string>
+    <string name="upscale_scale_factor">放大倍数</string>
+    <string name="upscale_warning">高清放大将调用 NovelAI 服务端超分端点 (/ai/upscale)，可能会消耗 Anlas 点数。放大后将作为新图片保存至画廊。</string>
+    <string name="upscale_confirm">确认放大</string>
+    <string name="upscale_in_progress">正在放大处理中，请稍候…</string>
+    <string name="upscale_success">高清放大完成</string>
 
     <!-- 设置 -->
     <string name="settings_title">设置</string>

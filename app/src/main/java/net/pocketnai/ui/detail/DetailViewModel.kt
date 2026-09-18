@@ -11,8 +11,12 @@ import kotlinx.coroutines.launch
 import net.pocketnai.core.ErrorCode
 import net.pocketnai.core.Outcome
 import net.pocketnai.data.export.MediaStoreExporter
+import net.pocketnai.data.repo.AccountBalanceRepository
+import net.pocketnai.data.repo.AnlasLedgerRepository
+import net.pocketnai.data.repo.BalanceRefreshReason
 import net.pocketnai.data.repo.FavoriteImageRepository
 import net.pocketnai.data.repo.GenerationRepository
+import net.pocketnai.data.security.CredentialStore
 import net.pocketnai.domain.model.GeneratedImage
 import net.pocketnai.domain.model.Generation
 import net.pocketnai.domain.model.GenerationRequest
@@ -27,6 +31,9 @@ class DetailViewModel(
     private val exporter: MediaStoreExporter,
     private val draftStore: GenerationDraftStore,
     private val favorites: FavoriteImageRepository,
+    private val accountBalanceRepository: AccountBalanceRepository? = null,
+    private val credentialStore: CredentialStore? = null,
+    private val anlasLedgerRepository: AnlasLedgerRepository? = null,
 ) : ViewModel() {
 
     data class UiState(
@@ -38,6 +45,8 @@ class DetailViewModel(
         val deleted: Boolean = false,
         /** 这一张是否已收藏。它来自 `favorite_images`，不是图片记录自己的字段。 */
         val favorite: Boolean = false,
+        /** 是否正在进行图像超分放大。 */
+        val upscaling: Boolean = false,
     )
 
     private val _state = MutableStateFlow(UiState())
@@ -129,5 +138,40 @@ class DetailViewModel(
 
     fun dismissError() {
         _state.value = _state.value.copy(errorCode = null)
+    }
+
+    fun upscaleImage(scale: Int, onComplete: (newImageId: String) -> Unit) {
+        val image = _state.value.image ?: return
+        if (_state.value.upscaling) return
+        _state.update { it.copy(upscaling = true, errorCode = null) }
+        val beforeBalance = accountBalanceRepository?.latestOrNull()
+        val accountFp = credentialStore?.hint()?.fingerprint ?: "default"
+        viewModelScope.launch {
+            when (val outcome = repository.upscaleImage(image.id, scale)) {
+                is Outcome.Success -> {
+                    _state.update { it.copy(upscaling = false) }
+                    val refreshOutcome = accountBalanceRepository?.refresh(
+                        reason = BalanceRefreshReason.GENERATION_COMPLETED,
+                        force = true,
+                    )
+                    val afterBalance = (refreshOutcome as? Outcome.Success)?.value
+                    val spent = if (beforeBalance != null && afterBalance != null) {
+                        (beforeBalance.totalAnlas - afterBalance.totalAnlas).coerceAtLeast(0L)
+                    } else 0L
+                    anlasLedgerRepository?.record(
+                        accountFingerprint = accountFp,
+                        actionType = "UPSCALE",
+                        anlasSpent = spent,
+                        balanceAfter = afterBalance?.totalAnlas,
+                        description = "图片高清放大 (${scale}x)",
+                        generationId = outcome.value,
+                    )
+                    onComplete(outcome.value)
+                }
+                is Outcome.Failure -> {
+                    _state.update { it.copy(upscaling = false, errorCode = outcome.error.code) }
+                }
+            }
+        }
     }
 }

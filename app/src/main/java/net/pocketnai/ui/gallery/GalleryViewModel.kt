@@ -71,10 +71,81 @@ class GalleryViewModel(
             initialValue = emptyList(),
         )
 
-    private val _undoGenerationId = MutableStateFlow<String?>(null)
+    private val _undoGenerationIds = MutableStateFlow<Set<String>>(emptySet())
 
-    /** 非空时界面展示“已删除，可撤销”。 */
-    val undoGenerationId: StateFlow<String?> = _undoGenerationId.asStateFlow()
+    /** 非空时界面展示“已删除，可撤销”。保持单条引用兼容。 */
+    val undoGenerationId: StateFlow<String?> = _undoGenerationIds
+        .map { it.firstOrNull() }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS),
+            initialValue = null,
+        )
+
+    val undoGenerationIds: StateFlow<Set<String>> = _undoGenerationIds.asStateFlow()
+
+    // ---- 多选模式 ----
+
+    private val _isSelectionMode = MutableStateFlow(false)
+    val isSelectionMode: StateFlow<Boolean> = _isSelectionMode.asStateFlow()
+
+    private val _selectedImageIds = MutableStateFlow<Set<String>>(emptySet())
+    val selectedImageIds: StateFlow<Set<String>> = _selectedImageIds.asStateFlow()
+
+    fun enterSelectionMode(initialSelectedId: String? = null) {
+        _isSelectionMode.value = true
+        _selectedImageIds.value = if (initialSelectedId != null) setOf(initialSelectedId) else emptySet()
+    }
+
+    fun exitSelectionMode() {
+        _isSelectionMode.value = false
+        _selectedImageIds.value = emptySet()
+    }
+
+    fun toggleSelect(imageId: String) {
+        _selectedImageIds.update { current ->
+            if (imageId in current) current - imageId else current + imageId
+        }
+    }
+
+    fun selectAll(imageIds: Collection<String>) {
+        _selectedImageIds.value = imageIds.toSet()
+    }
+
+    fun deselectAll() {
+        _selectedImageIds.value = emptySet()
+    }
+
+    fun batchToggleFavorite(items: List<GalleryItem>) {
+        val selectedIds = _selectedImageIds.value
+        val targets = items.filter { it.imageId in selectedIds }
+        if (targets.isEmpty()) return
+        val allFavorited = targets.all { it.favorite }
+        val targetFavoriteState = !allFavorited
+        viewModelScope.launch {
+            targets.forEach { item ->
+                favorites.setFavorite(item.imageId, favorite = targetFavoriteState)
+            }
+        }
+    }
+
+    fun batchDelete(items: List<GalleryItem>) {
+        val selectedIds = _selectedImageIds.value
+        val targets = items.filter { it.imageId in selectedIds }
+        if (targets.isEmpty()) return
+        val generationIds = targets.map { it.generationId }.toSet()
+        exitSelectionMode()
+        viewModelScope.launch {
+            generationIds.forEach { repository.markDeleted(it) }
+            _undoGenerationIds.value = generationIds
+            purgeJob?.cancel()
+            purgeJob = viewModelScope.launch {
+                delay(UNDO_WINDOW_MS)
+                repository.purgeDeleted()
+                _undoGenerationIds.value = emptySet()
+            }
+        }
+    }
 
     private var purgeJob: Job? = null
 
@@ -114,28 +185,29 @@ class GalleryViewModel(
     fun deleteGeneration(generationId: String) {
         viewModelScope.launch {
             repository.markDeleted(generationId)
-            _undoGenerationId.value = generationId
+            _undoGenerationIds.value = setOf(generationId)
             purgeJob?.cancel()
             purgeJob = viewModelScope.launch {
                 delay(UNDO_WINDOW_MS)
                 repository.purgeDeleted()
-                _undoGenerationId.value = null
+                _undoGenerationIds.value = emptySet()
             }
         }
     }
 
     fun undoDelete() {
-        val generationId = _undoGenerationId.value ?: return
+        val ids = _undoGenerationIds.value
+        if (ids.isEmpty()) return
         purgeJob?.cancel()
         viewModelScope.launch {
-            repository.undoDelete(generationId)
-            _undoGenerationId.value = null
+            ids.forEach { repository.undoDelete(it) }
+            _undoGenerationIds.value = emptySet()
         }
     }
 
     /** Snackbar 消失后调用，避免撤销提示一直挂着。 */
     fun clearUndo() {
-        _undoGenerationId.value = null
+        _undoGenerationIds.value = emptySet()
     }
 
     private companion object {

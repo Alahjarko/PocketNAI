@@ -2,6 +2,7 @@ package net.pocketnai.data.settings
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import net.pocketnai.domain.model.CharacterPrompt
 import net.pocketnai.domain.model.CustomResolution
 import net.pocketnai.domain.model.DirectorReferenceKind
 import net.pocketnai.domain.model.GenerationDraft
@@ -79,6 +80,7 @@ object GenerationDraftCodec {
          * 图片本身已经在 `files/references/` 里内容寻址存着。
          */
         val references: List<ReferenceDto> = emptyList(),
+        val characters: List<CharacterPrompt> = emptyList(),
 
         /**
          * 旧版本（只支持一张图生图起点图时）的字段。
@@ -133,6 +135,7 @@ object GenerationDraftCodec {
                 qualityTags = params.qualityTags.name,
                 ucPresetIndex = params.undesiredContentPresetIndex,
                 references = draft.references.map { it.toDto() },
+                characters = params.characters,
             ),
         )
     }
@@ -189,6 +192,7 @@ object GenerationDraftCodec {
             undesiredContentPresetIndex = dto.ucPresetIndex.takeIf { index ->
                 profile.undesiredContentPresets.any { it.index == index }
             } ?: profile.defaultUndesiredContentPresetIndex,
+            characters = dto.characters,
         )
 
         return GenerationDraft(

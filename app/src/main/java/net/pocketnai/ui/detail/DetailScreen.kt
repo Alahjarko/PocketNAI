@@ -25,6 +25,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.outlined.Share
+import net.pocketnai.ui.common.ImageShareManager
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -93,6 +95,9 @@ fun DetailScreen(
                     exporter = container.mediaStoreExporter,
                     draftStore = container.draftStore,
                     favorites = container.favoriteImageRepository,
+                    accountBalanceRepository = container.accountBalanceRepository,
+                    credentialStore = container.credentialStore,
+                    anlasLedgerRepository = container.anlasLedgerRepository,
                 )
             }
         },
@@ -109,6 +114,7 @@ fun DetailScreen(
 
     val savedMessage = stringResource(R.string.detail_saved_to_gallery)
     var pendingSave by remember { mutableStateOf(false) }
+    var showUpscaleDialog by remember { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -129,6 +135,25 @@ fun DetailScreen(
                     }
                 },
                 actions = {
+                    val currentImage = state.image
+                    val currentGeneration = state.generation
+                    if (currentImage != null && currentGeneration != null) {
+                        IconButton(
+                            onClick = {
+                                val file = container.generationRepository.fileOfRelativePath(currentImage.privateFilePath)
+                                ImageShareManager.shareSingle(
+                                    context = context,
+                                    file = file,
+                                    title = currentGeneration.title,
+                                )
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Share,
+                                contentDescription = stringResource(R.string.action_share),
+                            )
+                        }
+                    }
                     // 收藏放在顶栏：详情页是"这张图我喜不喜欢"的判断现场，
                     // 而收藏只是个开关，不值得在下面再占一整行按钮。
                     IconButton(onClick = viewModel::toggleFavorite) {
@@ -303,13 +328,22 @@ fun DetailScreen(
                 }
             }
 
-            // 局部重绘：官方文档说可以从"任意一张已生成的图片"进入，
-            // 而"这张图某处画坏了"正是用户点进详情页的常见理由。
-            OutlinedButton(
-                onClick = { onInpaint(image.privateFilePath) },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.action_inpaint))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // 局部重绘：官方文档说可以从"任意一张已生成的图片"进入，
+                // 而"这张图某处画坏了"正是用户点进详情页的常见理由。
+                OutlinedButton(
+                    onClick = { onInpaint(image.privateFilePath) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(stringResource(R.string.action_inpaint))
+                }
+
+                OutlinedButton(
+                    onClick = { showUpscaleDialog = true },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(stringResource(R.string.action_upscale))
+                }
             }
 
             OutlinedButton(
@@ -323,6 +357,21 @@ fun DetailScreen(
                 text = "删除只影响 PocketNAI 的本地副本与记录；已经保存到系统相册的图片不会被删除。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        if (showUpscaleDialog) {
+            UpscaleConfirmationDialog(
+                sourceWidth = image.width,
+                sourceHeight = image.height,
+                upscaling = state.upscaling,
+                onConfirm = { scale ->
+                    viewModel.upscaleImage(scale) { newImageId ->
+                        showUpscaleDialog = false
+                        viewModel.load(newImageId)
+                    }
+                },
+                onDismiss = { showUpscaleDialog = false },
             )
         }
 

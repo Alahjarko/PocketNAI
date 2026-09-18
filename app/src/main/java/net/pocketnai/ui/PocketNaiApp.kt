@@ -101,6 +101,8 @@ fun PocketNaiApp() {
                     accountBalanceRepository = container.accountBalanceRepository,
                     settingsStore = container.settingsStore,
                     costCalculator = container.anlasCostCalculator,
+                    anlasLedgerRepository = container.anlasLedgerRepository,
+                    credentialStore = container.credentialStore,
                 )
             }
         },

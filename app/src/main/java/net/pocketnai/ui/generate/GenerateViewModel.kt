@@ -21,10 +21,12 @@ import net.pocketnai.core.AppError
 import net.pocketnai.core.ErrorCode
 import net.pocketnai.core.Outcome
 import net.pocketnai.data.repo.AccountBalanceRepository
+import net.pocketnai.data.repo.AnlasLedgerRepository
 import net.pocketnai.data.repo.BalanceRefreshReason
 import net.pocketnai.data.repo.BalanceState
 import net.pocketnai.data.repo.GenerationEvent
 import net.pocketnai.data.repo.GenerationRepository
+import net.pocketnai.data.security.CredentialStore
 import net.pocketnai.data.settings.GenerationDraftPreferences
 import net.pocketnai.data.settings.SettingsStore
 import net.pocketnai.domain.billing.AnlasCostCalculator
@@ -50,6 +52,7 @@ import net.pocketnai.domain.metadata.MetadataImportPlanner
 import net.pocketnai.domain.metadata.MetadataImportSelection
 import net.pocketnai.domain.metadata.MetadataProbeResult
 import net.pocketnai.domain.metadata.NovelAiImageMetadata
+import net.pocketnai.domain.model.CharacterPrompt
 import net.pocketnai.domain.model.CustomResolution
 import net.pocketnai.domain.model.DirectorReferenceKind
 import net.pocketnai.domain.model.GenerationDraft
@@ -97,6 +100,8 @@ class GenerateViewModel(
     private val accountBalanceRepository: AccountBalanceRepository,
     private val settingsStore: SettingsStore,
     private val costCalculator: AnlasCostCalculator = AnlasCostCalculator(),
+    private val anlasLedgerRepository: AnlasLedgerRepository? = null,
+    private val credentialStore: CredentialStore? = null,
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
     private val clock: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
@@ -396,6 +401,7 @@ class GenerateViewModel(
                     GenerationMode.IMG2IMG -> GenerationKind.IMAGE_TO_IMAGE
                     GenerationMode.PRECISE_REFERENCE -> GenerationKind.PRECISE_REFERENCE
                     GenerationMode.INPAINT -> GenerationKind.INPAINT
+                    GenerationMode.UPSCALE -> GenerationKind.TEXT_TO_IMAGE
                 }
             },
             hasBaseImage = state.referenceSource != null,
@@ -507,6 +513,33 @@ class GenerateViewModel(
     fun onNegativePromptChange(value: String) {
         _state.update {
             it.copy(negativeTemplate = value, params = it.params.copy(negativePrompt = value))
+        }
+    }
+
+    fun addCharacter() {
+        _state.update { current ->
+            if (current.params.characters.size >= 5) return@update current
+            current.copy(params = current.params.copy(characters = current.params.characters + CharacterPrompt()))
+        }
+    }
+
+    fun removeCharacter(index: Int) {
+        _state.update { current ->
+            val list = current.params.characters.toMutableList()
+            if (index in list.indices) {
+                list.removeAt(index)
+                current.copy(params = current.params.copy(characters = list))
+            } else current
+        }
+    }
+
+    fun updateCharacter(index: Int, character: CharacterPrompt) {
+        _state.update { current ->
+            val list = current.params.characters.toMutableList()
+            if (index in list.indices) {
+                list[index] = character
+                current.copy(params = current.params.copy(characters = list))
+            } else current
         }
     }
 
@@ -1461,6 +1494,8 @@ class GenerateViewModel(
                             refreshBalanceAfterGeneration(
                                 session = billingSession,
                                 completionConfirmed = event.status != GenerationStatus.FAILED,
+                                generationId = event.generationId,
+                                description = formatGenerationDescription(_state.value),
                             )
                         }
 
@@ -1477,6 +1512,18 @@ class GenerateViewModel(
         }
     }
 
+    private fun formatGenerationDescription(state: UiState): String {
+        val model = state.params.model.displayName
+        val size = "${state.params.size.width}×${state.params.size.height}"
+        val mode = when {
+            state.inpaintMask != null -> "局部重绘"
+            state.referenceSource != null -> "图生图"
+            else -> "纯文生图"
+        }
+        val count = if (state.params.sampleCount > 1) " (${state.params.sampleCount}张)" else ""
+        return "$model $size $mode$count"
+    }
+
     /**
      * 生成结束后强制刷新一次余额，并给出"本次观察到的余额变化"（规划 §8.3）。
      *
@@ -1486,6 +1533,8 @@ class GenerateViewModel(
     private suspend fun refreshBalanceAfterGeneration(
         session: BillingSession?,
         completionConfirmed: Boolean,
+        generationId: String? = null,
+        description: String? = null,
     ) {
         val outcome = accountBalanceRepository.refresh(
             reason = BalanceRefreshReason.GENERATION_COMPLETED,
@@ -1502,6 +1551,32 @@ class GenerateViewModel(
                 ?: ObservedBalanceChange.DEFAULT_MAX_PRE_SNAPSHOT_AGE_MS,
         )
         _state.update { it.copy(lastObservedChange = change) }
+
+        if (completionConfirmed && anlasLedgerRepository != null) {
+            val spent = when (change) {
+                is ObservedBalanceChange.AnlasDecreased -> change.totalSpent
+                is ObservedBalanceChange.V5AllowanceChanged -> change.anlasSpent
+                is ObservedBalanceChange.NoVisibleChange -> 0L
+                is ObservedBalanceChange.Ambiguous -> {
+                    if (session?.before != null && session.before.totalAnlas >= after.totalAnlas) {
+                        session.before.totalAnlas - after.totalAnlas
+                    } else 0L
+                }
+            }
+            val v5Delta = (change as? ObservedBalanceChange.V5AllowanceChanged)?.let {
+                (it.beforePercent - it.afterPercent).coerceAtLeast(0)
+            }
+            val accountFp = credentialStore?.hint()?.fingerprint ?: "default"
+            anlasLedgerRepository.record(
+                accountFingerprint = accountFp,
+                actionType = if (description?.contains("局部重绘") == true) "INPAINT" else "GENERATE",
+                anlasSpent = spent,
+                v5AllowanceDelta = v5Delta,
+                balanceAfter = after.totalAnlas,
+                description = description ?: "图片生成",
+                generationId = generationId,
+            )
+        }
     }
 
     fun dismissObservedChange() {

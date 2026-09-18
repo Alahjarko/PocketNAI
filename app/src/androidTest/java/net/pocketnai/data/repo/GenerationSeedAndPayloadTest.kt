@@ -104,6 +104,15 @@ class GenerationSeedAndPayloadTest {
             payload: JsonObject,
         ): kotlinx.coroutines.flow.Flow<net.pocketnai.data.network.GenerationStreamEvent> =
             error("本测试不涉及流式生成")
+
+        override suspend fun upscaleImage(
+            token: String,
+            imageBase64: String,
+            width: Int,
+            height: Int,
+            scale: Int,
+            destinationFile: File,
+        ): Outcome<Unit> = Outcome.Success(Unit)
     }
 
     private fun repository(

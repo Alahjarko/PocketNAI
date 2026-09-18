@@ -111,6 +111,21 @@ class SettingsViewModel(
         }
     }
 
+    fun cleanupImages(deleteFavorites: Boolean) {
+        viewModelScope.launch {
+            val report = repository.cleanupGeneratedImages(deleteFavorites)
+            _state.value = _state.value.copy(
+                usedBytes = repository.usedBytes(),
+                maintenanceMessage = buildString {
+                    append("已清理生成图片 ${report.deletedImagesCount} 张，释放 ${formatBytes(report.freedBytes)}")
+                    if (!deleteFavorites) {
+                        append("（保留已收藏图片 ${report.retainedFavoritesCount} 张）")
+                    }
+                },
+            )
+        }
+    }
+
     fun dismissMaintenanceMessage() {
         _state.value = _state.value.copy(maintenanceMessage = null)
     }
@@ -118,6 +133,21 @@ class SettingsViewModel(
     fun disconnect() {
         credentialStore.clear()
         sessionState.update(false)
+        accountBalanceRepository.clear()
+    }
+
+    fun onAccountSwitched() {
+        accountBalanceRepository.clear()
+        val connected = credentialStore.hasCredential()
+        sessionState.update(connected = connected, type = credentialStore.hint()?.type)
+        if (connected) {
+            viewModelScope.launch {
+                accountBalanceRepository.refresh(
+                    reason = net.pocketnai.data.repo.BalanceRefreshReason.USER_REQUESTED,
+                    force = true,
+                )
+            }
+        }
     }
 
     private companion object {

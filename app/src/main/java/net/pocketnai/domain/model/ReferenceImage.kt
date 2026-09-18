@@ -26,6 +26,11 @@ enum class GenerationMode {
      * 因此它四个模型都能用（V4.5 与 V5），也不额外计费。
      */
     INPAINT,
+
+    /**
+     * 图像超分放大（`/ai/upscale`）。
+     */
+    UPSCALE,
     ;
 
     companion object {

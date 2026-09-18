@@ -149,4 +149,27 @@ interface GenerationDao {
 
     @Query("SELECT COUNT(*) FROM generations")
     suspend fun countGenerations(): Int
+
+    @Query("SELECT * FROM generated_images WHERE id NOT IN (SELECT imageId FROM favorite_images)")
+    suspend fun allUnfavoritedImages(): List<GeneratedImageEntity>
+
+    @Query("SELECT * FROM generated_images")
+    suspend fun allImages(): List<GeneratedImageEntity>
+
+    @Query("DELETE FROM generated_images WHERE id IN (:imageIds)")
+    suspend fun deleteImages(imageIds: List<String>)
+
+    @Query(
+        """
+        SELECT g.id FROM generations g
+        WHERE (SELECT COUNT(*) FROM generated_images i WHERE i.generationId = g.id) = 0
+        """,
+    )
+    suspend fun findEmptyGenerationIds(): List<String>
+
+    @Query("DELETE FROM generations WHERE id IN (:generationIds)")
+    suspend fun purgeGenerations(generationIds: List<String>)
+
+    @Query("DELETE FROM generations")
+    suspend fun purgeAllGenerations()
 }

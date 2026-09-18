@@ -77,6 +77,7 @@ data class GenerationParams(
     val baseSeed: Long,
     val qualityTags: QualityTagsOption,
     val undesiredContentPresetIndex: Int,
+    val characters: List<CharacterPrompt> = emptyList(),
 ) {
     /**
      * 把"这一次生成实际使用的 seed"定下来。

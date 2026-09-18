@@ -363,6 +363,58 @@ class OkHttpNovelAiApi(
         }
     }
 
+    override suspend fun upscaleImage(
+        token: String,
+        imageBase64: String,
+        width: Int,
+        height: Int,
+        scale: Int,
+        destinationFile: File,
+    ): Outcome<Unit> = withContext(Dispatchers.IO) {
+        val payload = buildJsonObject {
+            put("image", imageBase64)
+            put("width", width)
+            put("height", height)
+            put("scale", scale)
+        }
+        val request = Request.Builder()
+            .url("$baseUrl/ai/upscale")
+            .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .header(HEADER_AUTHORIZATION, bearer(token))
+            .header(HEADER_CONTENT_TYPE, "application/json")
+            .header(HEADER_ACCEPT, "*/*")
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                val correlationId = correlationIdOf(response)
+                if (!response.isSuccessful) {
+                    val body = response.body?.string().orEmpty()
+                    return@withContext Outcome.Failure(
+                        NovelAiErrorMapper.fromHttpStatus(response.code, body, correlationId),
+                    )
+                }
+                val body = response.body
+                    ?: return@withContext Outcome.Failure(
+                        AppError.of(ErrorCode.SERVER_ERROR, correlationId, "超分响应体为空"),
+                    )
+
+                try {
+                    writeBounded(body.byteStream(), destinationFile, MAX_ARCHIVE_BYTES)
+                } catch (e: ArchiveTooLargeException) {
+                    destinationFile.delete()
+                    return@withContext Outcome.Failure(
+                        AppError.of(ErrorCode.ZIP_INVALID, correlationId, e.message.orEmpty()),
+                    )
+                }
+                Outcome.Success(Unit)
+            }
+        } catch (e: IOException) {
+            destinationFile.delete()
+            Outcome.Failure(NovelAiErrorMapper.fromTransportError(e))
+        }
+    }
+
     private fun parseTags(body: String): List<String> {
         val root = runCatching { json.parseToJsonElement(body) as? JsonObject }.getOrNull()
             ?: return emptyList()

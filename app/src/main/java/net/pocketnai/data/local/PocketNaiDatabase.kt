@@ -20,8 +20,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PromptFavoriteEntity::class,
         ReferenceImageEntity::class,
         FavoriteImageEntity::class,
+        AnlasTransactionEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class PocketNaiDatabase : RoomDatabase() {
@@ -31,6 +32,8 @@ abstract class PocketNaiDatabase : RoomDatabase() {
     abstract fun promptFavoriteDao(): PromptFavoriteDao
 
     abstract fun favoriteImageDao(): FavoriteImageDao
+
+    abstract fun anlasTransactionDao(): AnlasTransactionDao
 
     companion object {
         private const val DATABASE_NAME = "pocketnai.db"
@@ -179,6 +182,37 @@ abstract class PocketNaiDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v6 → v7：新增 Anlas 消耗流水账目表。
+         *
+         * 只 `CREATE TABLE` + `CREATE INDEX`，不触碰任何既有表。
+         * 列定义必须与 [AnlasTransactionEntity] 完全一致。
+         */
+        val MIGRATION_6_7: Migration = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `anlas_transactions` (
+                        `id` TEXT NOT NULL,
+                        `accountFingerprint` TEXT NOT NULL,
+                        `generationId` TEXT,
+                        `actionType` TEXT NOT NULL,
+                        `anlasSpent` INTEGER NOT NULL,
+                        `v5AllowanceDelta` INTEGER,
+                        `balanceAfter` INTEGER,
+                        `description` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_anlas_transactions_createdAt` " +
+                        "ON `anlas_transactions` (`createdAt`)",
+                )
+            }
+        }
+
         fun build(context: Context): PocketNaiDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
@@ -191,6 +225,7 @@ abstract class PocketNaiDatabase : RoomDatabase() {
                     MIGRATION_3_4,
                     MIGRATION_4_5,
                     MIGRATION_5_6,
+                    MIGRATION_6_7,
                 )
                 .build()
     }

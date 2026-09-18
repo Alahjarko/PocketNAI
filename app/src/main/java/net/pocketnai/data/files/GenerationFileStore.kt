@@ -173,6 +173,12 @@ class GenerationFileStore(context: Context) {
         File(incomingRoot, generationId).deleteRecursively()
     }
 
+    /** 清空全部生成历史目录与中间临时文件。 */
+    fun clearAllGenerations() {
+        generationsRoot.listFiles()?.forEach { it.deleteRecursively() }
+        incomingRoot.listFiles()?.forEach { it.deleteRecursively() }
+    }
+
     /**
      * 启动时清理：删除没有任何数据库记录的图片目录、残留的中间文件，
      * 以及不再被任何生成记录引用的参考图与 vibe 文件。

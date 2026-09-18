@@ -11,6 +11,8 @@ local.properties
 persistent-api-token.txt
 *.token
 *.secret
+proxies.txt
+scripts/proxies.txt
 
 # Android Studio / IntelliJ
 .idea/

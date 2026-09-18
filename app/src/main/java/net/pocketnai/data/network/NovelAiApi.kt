@@ -108,6 +108,21 @@ interface NovelAiApi {
         imageBase64: String,
         informationExtracted: Double,
     ): Outcome<ByteArray>
+
+    /**
+     * 图像超分放大（`/ai/upscale`）。
+     *
+     * 响应通常为 ZIP（与普通生成一致）或二进制 PNG。写入 [destinationFile]。
+     * 该端点可能会扣除 Anlas 点数，必须且只能由用户在界面上明确确认后发起。
+     */
+    suspend fun upscaleImage(
+        token: String,
+        imageBase64: String,
+        width: Int,
+        height: Int,
+        scale: Int,
+        destinationFile: File,
+    ): Outcome<Unit>
 }
 
 /**

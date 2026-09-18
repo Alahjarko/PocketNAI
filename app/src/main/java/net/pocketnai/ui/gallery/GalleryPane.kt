@@ -6,10 +6,13 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -31,13 +34,20 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FilterAltOff
 import androidx.compose.material.icons.filled.HourglassTop
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -50,9 +60,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import net.pocketnai.ui.common.ImageShareManager
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -135,12 +147,21 @@ fun GalleryPane(
     val previews by container.generationPreviewStore.previews.collectAsStateWithLifecycle()
     val filter by viewModel.filter.collectAsStateWithLifecycle()
     val undoGenerationId by viewModel.undoGenerationId.collectAsStateWithLifecycle()
+    val undoGenerationIds by viewModel.undoGenerationIds.collectAsStateWithLifecycle()
+    val isSelectionMode by viewModel.isSelectionMode.collectAsStateWithLifecycle()
+    val selectedImageIds by viewModel.selectedImageIds.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var actionTarget by remember { mutableStateOf<GalleryItem?>(null) }
     var pendingSave by remember { mutableStateOf<GalleryItem?>(null) }
+    var pendingBatchSave by remember { mutableStateOf<List<GalleryItem>?>(null) }
+    var confirmBatchDelete by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = isSelectionMode) {
+        viewModel.exitSelectionMode()
+    }
 
     // Android 9 及以下需要写外部存储权限才能保存到相册；Android 10+ 走 MediaStore 不需要。
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -148,24 +169,42 @@ fun GalleryPane(
     ) { granted ->
         val target = pendingSave
         pendingSave = null
-        if (granted && target != null) {
-            saveToSystemGallery(
-                scope = scope,
-                context = context,
-                repository = container.generationRepository,
-                exporter = container.mediaStoreExporter,
-                snackbarHostState = snackbarHostState,
-                item = target,
-            )
+        val batchTargets = pendingBatchSave
+        pendingBatchSave = null
+        if (granted) {
+            if (target != null) {
+                saveToSystemGallery(
+                    scope = scope,
+                    context = context,
+                    repository = container.generationRepository,
+                    exporter = container.mediaStoreExporter,
+                    snackbarHostState = snackbarHostState,
+                    item = target,
+                )
+            } else if (!batchTargets.isNullOrEmpty()) {
+                saveMultipleToSystemGallery(
+                    scope = scope,
+                    context = context,
+                    repository = container.generationRepository,
+                    exporter = container.mediaStoreExporter,
+                    snackbarHostState = snackbarHostState,
+                    items = batchTargets,
+                )
+            }
         }
     }
 
     val deletedMessage = stringResource(R.string.action_delete)
     val undoLabel = stringResource(R.string.action_cancel)
-    LaunchedEffect(undoGenerationId) {
-        if (undoGenerationId == null) return@LaunchedEffect
+    LaunchedEffect(undoGenerationIds) {
+        if (undoGenerationIds.isEmpty()) return@LaunchedEffect
+        val message = if (undoGenerationIds.size > 1) {
+            "已删除 ${undoGenerationIds.size} 项"
+        } else {
+            deletedMessage
+        }
         val result = snackbarHostState.showSnackbar(
-            message = deletedMessage,
+            message = message,
             actionLabel = undoLabel,
             withDismissAction = true,
         )
@@ -178,7 +217,7 @@ fun GalleryPane(
 
     // 筛选生效时不显示"生成中"占位卡：那些任务还没有图片，关键词/收藏筛选对它们没有意义，
     // 留着会让"仅看收藏"里冒出一张不属于任何收藏的卡片。
-    val visibleGenerating = if (filter.isActive) emptyList() else generating
+    val visibleGenerating = if (filter.isActive || isSelectionMode) emptyList() else generating
 
     // 图片按生成日期分组（像系统相册）。顺序契约由 GalleryTimeline 保证，这里只负责画。
     val sections = remember(items) {
@@ -186,14 +225,30 @@ fun GalleryPane(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        GalleryFilterBar(
-            filter = filter,
-            onQueryChange = viewModel::onQueryChange,
-            onModelChange = viewModel::onModelChange,
-            onModeChange = viewModel::onModeChange,
-            onFavoritesOnlyChange = viewModel::onFavoritesOnlyChange,
-            onClearAll = viewModel::clearFilter,
-        )
+        if (isSelectionMode) {
+            GallerySelectionTopBar(
+                selectedCount = selectedImageIds.size,
+                allSelected = items.isNotEmpty() && selectedImageIds.size == items.size,
+                onSelectAllToggle = {
+                    if (selectedImageIds.size == items.size) {
+                        viewModel.deselectAll()
+                    } else {
+                        viewModel.selectAll(items.map { it.imageId })
+                    }
+                },
+                onExit = viewModel::exitSelectionMode,
+            )
+        } else {
+            GalleryFilterBar(
+                filter = filter,
+                onQueryChange = viewModel::onQueryChange,
+                onModelChange = viewModel::onModelChange,
+                onModeChange = viewModel::onModeChange,
+                onFavoritesOnlyChange = viewModel::onFavoritesOnlyChange,
+                onClearAll = viewModel::clearFilter,
+                onEnterSelectionMode = { viewModel.enterSelectionMode() },
+            )
+        }
 
         Box(modifier = Modifier.fillMaxSize()) {
             if (items.isEmpty() && visibleGenerating.isEmpty()) {
@@ -234,20 +289,82 @@ fun GalleryPane(
                             items = section.items,
                             key = { item -> item.imageId },
                         ) { item ->
+                            val isSelected = selectedImageIds.contains(item.imageId)
                             GalleryCard(
                                 item = item,
                                 imageFile = container.generationRepository.fileOf(item),
-                                onClick = { onOpenImage(item.imageId) },
-                                onLongClick = { actionTarget = item },
+                                isSelectionMode = isSelectionMode,
+                                isSelected = isSelected,
+                                onClick = {
+                                    if (isSelectionMode) {
+                                        viewModel.toggleSelect(item.imageId)
+                                    } else {
+                                        onOpenImage(item.imageId)
+                                    }
+                                },
+                                onLongClick = {
+                                    if (isSelectionMode) {
+                                        viewModel.toggleSelect(item.imageId)
+                                    } else {
+                                        actionTarget = item
+                                    }
+                                },
                             )
                         }
                     }
                 }
             }
 
+            if (isSelectionMode) {
+                GallerySelectionBottomBar(
+                    selectedCount = selectedImageIds.size,
+                    onSave = {
+                        val selectedItems = items.filter { it.imageId in selectedImageIds }
+                        if (selectedItems.isNotEmpty()) {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+                                ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                                ) == PackageManager.PERMISSION_GRANTED
+                            ) {
+                                saveMultipleToSystemGallery(
+                                    scope = scope,
+                                    context = context,
+                                    repository = container.generationRepository,
+                                    exporter = container.mediaStoreExporter,
+                                    snackbarHostState = snackbarHostState,
+                                    items = selectedItems,
+                                )
+                            } else {
+                                pendingBatchSave = selectedItems
+                                permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                            }
+                        }
+                    },
+                    onFavorite = {
+                        viewModel.batchToggleFavorite(items)
+                    },
+                    onShare = {
+                        val selectedItems = items.filter { it.imageId in selectedImageIds }
+                        val files = selectedItems.map { container.generationRepository.fileOf(it) }
+                        ImageShareManager.shareMultiple(
+                            context = context,
+                            files = files,
+                            title = "PocketNAI",
+                        )
+                    },
+                    onDelete = {
+                        confirmBatchDelete = true
+                    },
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+            }
+
             SnackbarHost(
                 hostState = snackbarHostState,
-                modifier = Modifier.align(Alignment.BottomCenter),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = if (isSelectionMode) 72.dp else 0.dp),
             )
         }
     }
@@ -304,6 +421,20 @@ fun GalleryPane(
                     TextButton(
                         onClick = {
                             actionTarget = null
+                            val file = container.generationRepository.fileOf(target)
+                            ImageShareManager.shareSingle(
+                                context = context,
+                                file = file,
+                                title = target.title,
+                            )
+                        },
+                    ) {
+                        Text(stringResource(R.string.action_share_image))
+                    }
+
+                    TextButton(
+                        onClick = {
+                            actionTarget = null
                             // 只复制用户看到的正向提示词，绝不复制 Token 或隐藏请求字段（规划书第 10 节）。
                             copyToClipboard(context, target.prompt)
                             scope.launch { snackbarHostState.showSnackbar("已复制提示词") }
@@ -329,10 +460,47 @@ fun GalleryPane(
                     ) {
                         Text(stringResource(R.string.action_delete))
                     }
+
+                    TextButton(
+                        onClick = {
+                            val id = target.imageId
+                            actionTarget = null
+                            viewModel.enterSelectionMode(id)
+                        },
+                    ) {
+                        Text(stringResource(R.string.action_batch_mode))
+                    }
                 }
             },
             confirmButton = {
                 TextButton(onClick = { actionTarget = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+
+    if (confirmBatchDelete) {
+        val count = selectedImageIds.size
+        AlertDialog(
+            onDismissRequest = { confirmBatchDelete = false },
+            title = { Text(stringResource(R.string.batch_delete_confirm_title, count)) },
+            text = { Text(stringResource(R.string.batch_delete_confirm_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmBatchDelete = false
+                        viewModel.batchDelete(items)
+                    },
+                ) {
+                    Text(
+                        stringResource(R.string.action_confirm),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmBatchDelete = false }) {
                     Text(stringResource(R.string.action_cancel))
                 }
             },
@@ -355,6 +523,7 @@ private fun GalleryFilterBar(
     onModeChange: (GenerationMode?) -> Unit,
     onFavoritesOnlyChange: (Boolean) -> Unit,
     onClearAll: () -> Unit,
+    onEnterSelectionMode: () -> Unit,
 ) {
     var queryField by remember { mutableStateOf(TextFieldValue(filter.query)) }
 
@@ -399,6 +568,18 @@ private fun GalleryFilterBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.horizontalScroll(rememberScrollState()),
         ) {
+            AssistChip(
+                onClick = onEnterSelectionMode,
+                label = { Text(stringResource(R.string.action_batch_mode)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Checklist,
+                        contentDescription = null,
+                        modifier = Modifier.size(FilterChipDefaults.IconSize),
+                    )
+                },
+            )
+
             FilterChip(
                 selected = filter.favoritesOnly,
                 onClick = { onFavoritesOnlyChange(!filter.favoritesOnly) },
@@ -529,10 +710,15 @@ private fun DayHeader(label: String) {
 private fun GalleryCard(
     item: GalleryItem,
     imageFile: File,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
     Card(
+        border = if (isSelectionMode && isSelected) {
+            BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        } else null,
         modifier = Modifier
             .fillMaxWidth()
             // 用记录的宽高先占位，图片解码完成前就能排版，避免滚动时跳动。
@@ -551,7 +737,7 @@ private fun GalleryCard(
             if (item.favorite) {
                 Box(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
+                        .align(if (isSelectionMode) Alignment.BottomStart else Alignment.TopEnd)
                         .padding(6.dp)
                         .background(Color.Black.copy(alpha = 0.35f), CircleShape)
                         .padding(4.dp),
@@ -561,6 +747,23 @@ private fun GalleryCard(
                         contentDescription = stringResource(R.string.action_favorite),
                         tint = Color.White,
                         modifier = Modifier.size(12.dp),
+                    )
+                }
+            }
+
+            if (isSelectionMode) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .background(Color.Black.copy(alpha = 0.35f), CircleShape)
+                        .padding(2.dp),
+                ) {
+                    Icon(
+                        imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+                        contentDescription = null,
+                        tint = if (isSelected) MaterialTheme.colorScheme.primary else Color.White,
+                        modifier = Modifier.size(20.dp),
                     )
                 }
             }
@@ -677,4 +880,145 @@ private fun messageFor(context: Context, code: ErrorCode): String =
 private fun copyToClipboard(context: Context, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText("PocketNAI prompt", text))
+}
+
+@Composable
+private fun GallerySelectionTopBar(
+    selectedCount: Int,
+    allSelected: Boolean,
+    onSelectAllToggle: () -> Unit,
+    onExit: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        tonalElevation = 2.dp,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onExit) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = stringResource(R.string.action_exit_selection),
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.batch_selected_count, selectedCount),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+            TextButton(onClick = onSelectAllToggle) {
+                Text(
+                    stringResource(
+                        if (allSelected) R.string.action_deselect_all else R.string.action_select_all
+                    )
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GallerySelectionBottomBar(
+    selectedCount: Int,
+    onSave: () -> Unit,
+    onFavorite: () -> Unit,
+    onShare: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        tonalElevation = 6.dp,
+        shadowElevation = 8.dp,
+        modifier = modifier
+            .padding(horizontal = 24.dp, vertical = 12.dp)
+            .fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp, horizontal = 12.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val enabled = selectedCount > 0
+
+            // 保存到相册
+            IconButton(onClick = onSave, enabled = enabled) {
+                Icon(
+                    imageVector = Icons.Default.Download,
+                    contentDescription = stringResource(R.string.batch_action_save),
+                )
+            }
+
+            // 收藏
+            IconButton(onClick = onFavorite, enabled = enabled) {
+                Icon(
+                    imageVector = Icons.Default.Favorite,
+                    contentDescription = stringResource(R.string.batch_action_favorite),
+                )
+            }
+
+            // 分享
+            IconButton(onClick = onShare, enabled = enabled) {
+                Icon(
+                    imageVector = Icons.Default.Share,
+                    contentDescription = stringResource(R.string.batch_action_share),
+                )
+            }
+
+            // 删除
+            IconButton(
+                onClick = onDelete,
+                enabled = enabled,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = stringResource(R.string.batch_action_delete),
+                    tint = if (enabled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                )
+            }
+        }
+    }
+}
+
+private fun saveMultipleToSystemGallery(
+    scope: CoroutineScope,
+    context: Context,
+    repository: GenerationRepository,
+    exporter: MediaStoreExporter,
+    snackbarHostState: SnackbarHostState,
+    items: List<GalleryItem>,
+) {
+    scope.launch {
+        var successCount = 0
+        for (item in items) {
+            val source = repository.fileOf(item)
+            val displayName = PromptTitle.exportFileName(
+                title = item.title,
+                timestampMillis = item.createdAt,
+                ordinal = item.ordinal,
+            )
+            when (val outcome = exporter.export(source, displayName)) {
+                is Outcome.Success -> {
+                    repository.markExported(item.imageId, outcome.value.toString())
+                    successCount++
+                }
+                is Outcome.Failure -> Unit
+            }
+        }
+        if (successCount > 0) {
+            snackbarHostState.showSnackbar(context.getString(R.string.batch_save_success, successCount))
+        } else {
+            snackbarHostState.showSnackbar(context.getString(R.string.common_unknown))
+        }
+    }
 }

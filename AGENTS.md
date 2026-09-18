@@ -43,6 +43,8 @@
   `/ai/encode-vibe`、`/ai/upscale`、`/ai/augment-image`；
   （`/ai/generate-image-stream` 已于 2026-09-16 在 V4.5 Curated + 免费组合下实测不扣费，
   见技术决策记录 §24，不再属于此类）
+  另有 2026-09-18 新加的两项同样归此类：**多角色 Characters**（是否免单未核对）
+  与详情页的**高清放大**（走 `/ai/upscale`，必须先在确认框里点"确认放大"）；
 - 单元测试与任何自动化流程一律使用 MockWebServer 或假实现，**永不触网**；
 - 免费的那一次生成只用于验证"链路是否通"，不用于探索参数效果。
 
@@ -64,9 +66,10 @@
 
 ### 数据库
 
-- 当前 schema 版本 **6**。新增表（如 `prompt_favorites`、`reference_images`、`favorite_images`）用独立 `CREATE TABLE`，
+- 当前 schema 版本 **7**。新增表（如 `prompt_favorites`、`reference_images`、`favorite_images`）用独立 `CREATE TABLE`，
   不要触碰既有表。v3 → v4 新增了 `reference_images` 表与 `generations.mode` 列（可空，见下）；
-  v4 → v5 给 `generations` 加 `outputWidth/outputHeight`；v5 → v6 新增 `favorite_images` 表。
+  v4 → v5 给 `generations` 加 `outputWidth/outputHeight`；v5 → v6 新增 `favorite_images` 表；
+  v6 → v7 新增 `anlas_transactions` 表（Anlas 消耗流水，2026-09-18）。
 - **`generations` 表绝不能重建（DROP / RENAME）。** `generated_images` 以 `ON DELETE CASCADE` 引用它，重建会连带删除用户的图片记录。
 - 加列用 `ALTER TABLE ... ADD COLUMN`；删列需要 SQLite 3.35+，`minSdk 26` 不满足，所以宁可保留遗留列。
 - Room 的表校验要求实体列与真实表列**完全一致**，多一列少一列都会失败。因此遗留列必须留在实体里。
@@ -320,6 +323,10 @@
   参数在 `AnlasPricingContext.smeaMultiplier`（当前恒 1.0），要消除它需要用户授权做一次费用核对。
 - 模型能力位：图生图四个模型都支持；**Vibe Transfer 与 Precise Reference 目前只有 V4.5**。
   界面要隐藏 V5 上的入口，`GenerationRequest.validate` 也要在本地拦一次。
+- **Anlas 消耗流水**（`anlas_transactions`，v7 新增）：记录的是"本机观察到的"消耗与余额快照 ——
+  **扣费事实仍以服务端为准**，这里只是给用户一个账目参考。写入发生在生成/超分成功之后，
+  写流水失败不得影响生成结果；金额用的是本地计价器的预估（与生成前报价同一套公式），
+  余额是当时内存里的服务端读数。
 
 ### 质量标签
 
@@ -385,6 +392,35 @@
   它与画廊共用默认的 ViewModelStoreOwner，共用实例会让画廊的筛选条件
   悄悄作用到那个**没有任何筛选控件**的对话框上。
 
+### 多角色提示词（Characters，2026-09-18）
+
+- 请求形态：`v4_prompt.caption.char_captions[]`，每项 `{char_caption, centers:[{x,y}]}`；
+  **有角色时 `use_coords` 为 true**；负向走 `v4_negative_prompt` 的同构数组，
+  每角色的负向词取 `character.negativePrompt`（空则发空串）。
+- 位置只有**五档**（左/偏左/居中/偏右/右）映射到 x，没有自由拖拽、没有 y 轴
+  （官方网页是 5×5 网格；我们保持简单）。改坐标换算要同步 `CharacterPrompt` 与请求构造两处。
+- 角色数量上限 **5**。
+- ⚠️ **多角色的计费未核对**：免费组合只验证过普通画面。要用真实账号测多角色生成前，
+  先确认订阅与免费规则是否覆盖多角色（未确认就按"费用未知"处理，只能由用户手动触发）。
+
+### 高清放大（Upscale，2026-09-18）
+
+- 入口在详情页（与"局部重绘"并排）。**必须先弹确认框**，文案写明"会调用 `/ai/upscale`、
+  可能消耗 Anlas"，用户点"确认放大"才发请求 —— 费用未知的调用永远不许自动发起。
+- 结果作为**一张新图片**入库（新 generation 记录，模式标签"高清放大"），原图不动。
+- 2x / 4x 两档；请求在 `OkHttpNovelAiApi.upscaleImage`，响应的 ZIP 与生成链路同构。
+
+### 分享、批量操作与图片清理（2026-09-18）
+
+- 分享走系统 `ACTION_SEND`（多张时 `ACTION_SEND_MULTIPLE`），文件经 FileProvider 的
+  `files/generations/` 路径授权。`res/xml/file_paths.xml` **只允许两条路径**：
+  `cache/updates/`（给安装器）与 `files/generations/`（给分享）——
+  加任何新路径前先确认它不会暴露 Token（`pocketnai_secure`）、数据库或参考图缓存。
+- 画廊"多选"模式的批量删除只删**本地副本与记录**（已存系统相册的副本不动，
+  确认框里已写明）；不要给它加"同时删相册"的行为。
+- **清理生成图片**是破坏性操作：默认勾选"保留已收藏的图片"，只删未收藏的普通生成图。
+  它与启动时的"清理孤儿文件"是两回事（后者只删没有任何引用的目录），不要混在一起。
+
 ### 凭据与认证（双认证模式）
 
 - **绝不允许**把密码、Access Key、PST 或 Access Token 写进日志、数据库、SharedPreferences
@@ -401,6 +437,13 @@
 - 改派生相关代码前先看 `DerivationDiagnosticTest`：它把 preSalt / BLAKE2b salt / Argon2 输出
   分三步与参考实现对账，能立刻定位是哪一步跑偏。
 - 生成链路只认 `credentialStore.load()?.token`，不应该知道邮箱、密码或派生算法的存在。
+- **多账号**（2026-09-18）：每个账号的密文存在 `account_<id>_iv` / `account_<id>_ciphertext` 等键里，
+  但**顶层的 `token_iv` / `token_ciphertext` / `token_type` / `token_hint_*` 必须继续同步维护**
+  （激活账号的镜像）—— 那是兼容层：旧安装升级时靠 `ensureLegacyMigrated` 建索引，
+  新代码读取也不该绕过它。上一条"不得更改"的三个常量在这里依然有效。
+- `CredentialStore` 接口里的多账号方法带有**默认假实现**（如 `switchAccount` 直接返回 false）——
+  不要依赖它们：只有 `KeystoreCredentialStore` 的实现是真的。以后加方法直接写进实现类，
+  别再往接口里塞"默认返回失败"的占位实现（调用方会静默失效，且不会有编译错误提醒）。
 
 ### 参数记忆
 

@@ -15,6 +15,7 @@ import net.pocketnai.data.network.OkHttpNovelAiAuthApi
 import net.pocketnai.data.network.OkHttpNovelAiApi
 import net.pocketnai.data.network.RedactingHttpLogger
 import net.pocketnai.data.repo.AccountBalanceRepository
+import net.pocketnai.data.repo.AnlasLedgerRepository
 import net.pocketnai.data.repo.FavoriteImageRepository
 import net.pocketnai.data.repo.GenerationRepository
 import net.pocketnai.data.repo.PromptFavoriteRepository
@@ -166,6 +167,15 @@ class AppContainer(application: Application) {
      */
     val favoriteImageRepository: FavoriteImageRepository by lazy {
         FavoriteImageRepository(dao = database.favoriteImageDao())
+    }
+
+    /**
+     * Anlas 消耗流水账目仓库。
+     *
+     * 记录每次生图与超分放大等操作观察到的点数变动。
+     */
+    val anlasLedgerRepository: AnlasLedgerRepository by lazy {
+        AnlasLedgerRepository(dao = database.anlasTransactionDao())
     }
 
     /**

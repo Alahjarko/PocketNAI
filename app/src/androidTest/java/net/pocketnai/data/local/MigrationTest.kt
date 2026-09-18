@@ -153,6 +153,30 @@ class MigrationTest {
             }
     }
 
+    @Test
+    fun migrate6To7AddsAnlasTransactionsTable() {
+        helper.createDatabase(TEST_DB, 6).close()
+
+        helper.runMigrationsAndValidate(TEST_DB, 7, true, PocketNaiDatabase.MIGRATION_6_7)
+            .use { db ->
+                db.execSQL(
+                    """
+                    INSERT INTO anlas_transactions (
+                        id, accountFingerprint, generationId, actionType,
+                        anlasSpent, v5AllowanceDelta, balanceAfter, description, createdAt
+                    ) VALUES (
+                        'tx-1', 'fp-1', 'gen-1', 'GENERATE',
+                        0, NULL, 1000, 'Test Tx', 12345
+                    )
+                    """.trimIndent(),
+                )
+                db.query("SELECT COUNT(*) FROM anlas_transactions").use { cursor ->
+                    assertThat(cursor.moveToFirst()).isTrue()
+                    assertThat(cursor.getInt(0)).isEqualTo(1)
+                }
+            }
+    }
+
     private companion object {
         const val TEST_DB = "migration-test.db"
     }

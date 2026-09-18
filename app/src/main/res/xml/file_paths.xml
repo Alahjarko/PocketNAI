@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    FileProvider 只共享"应用内更新"下载的安装包（cache/updates/）。
-    刻意不给 files/ 或数据库任何路径：安装器只需要读到那一个 APK。
+    FileProvider 共享配置：
+    - cache/updates/：供系统安装器安装更新包；
+    - files/generations/：供系统分享发送已生成的图片。
+    数据库与 Token 文件（pocketnai_secure）均不在这些路径下，保持安全。
 -->
 <paths>
     <cache-path
         name="updates"
         path="updates/" />
+    <files-path
+        name="generations"
+        path="generations/" />
 </paths>

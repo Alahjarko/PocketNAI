@@ -17,4 +17,5 @@ fun GenerationMode.labelRes(): Int = when (this) {
     GenerationMode.IMG2IMG -> R.string.generate_mode_img2img
     GenerationMode.PRECISE_REFERENCE -> R.string.generate_mode_precise_reference
     GenerationMode.INPAINT -> R.string.generate_mode_inpaint
+    GenerationMode.UPSCALE -> R.string.generate_mode_upscale
 }

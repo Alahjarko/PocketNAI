@@ -6,6 +6,7 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import net.pocketnai.domain.model.CharacterPrompt
 import net.pocketnai.domain.model.DirectorReferenceKind
 import net.pocketnai.domain.model.GenerationMode
 import net.pocketnai.domain.model.GenerationParams
@@ -161,9 +162,9 @@ object NovelAiRequestBuilder {
             put("qualityToggle", false)
             put("negative_prompt", negative)
 
-            // NovelAI 的 V4.5 / V5 需要结构化 Prompt；多角色坐标不在本期范围，char_captions 固定为空。
-            put("v4_prompt", captionBlock(text = positive, isNegative = false))
-            put("v4_negative_prompt", captionBlock(text = negative, isNegative = true))
+            // NovelAI 的 V4.5 / V5 结构化 Prompt（含多角色支持）。
+            put("v4_prompt", captionBlock(text = positive, characters = normalized.characters, isNegative = false))
+            put("v4_negative_prompt", captionBlock(text = negative, characters = normalized.characters, isNegative = true))
 
             if (img2imgSource != null) {
                 put("image", img2imgSource)
@@ -383,19 +384,51 @@ object NovelAiRequestBuilder {
         else -> ACTION_GENERATE
     }
 
-    private fun captionBlock(text: String, isNegative: Boolean): JsonObject = buildJsonObject {
+    private fun captionBlock(
+        text: String,
+        characters: List<CharacterPrompt> = emptyList(),
+        isNegative: Boolean,
+    ): JsonObject = buildJsonObject {
+        val activeCharacters = characters.filter { !it.isBlank }
+        val hasCharacters = activeCharacters.isNotEmpty()
+
         put(
             "caption",
             buildJsonObject {
                 put("base_caption", text)
-                put("char_captions", buildJsonArray { })
+                put(
+                    "char_captions",
+                    buildJsonArray {
+                        activeCharacters.forEach { character ->
+                            add(
+                                buildJsonObject {
+                                    put(
+                                        "char_caption",
+                                        if (isNegative) character.negativePrompt else character.prompt,
+                                    )
+                                    put(
+                                        "centers",
+                                        buildJsonArray {
+                                            add(
+                                                buildJsonObject {
+                                                    put("x", character.centerX)
+                                                    put("y", character.centerY)
+                                                },
+                                            )
+                                        },
+                                    )
+                                },
+                            )
+                        }
+                    },
+                )
             },
         )
         if (isNegative) {
             // 负向提示词不使用角色坐标，保留 legacy_uc = false 以匹配网页版行为。
             put("legacy_uc", false)
         } else {
-            put("use_coords", false)
+            put("use_coords", hasCharacters)
             put("use_order", true)
         }
     }

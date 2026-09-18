@@ -304,6 +304,13 @@ fun GenerateSheet(
                 )
             }
 
+            MultiCharacterSection(
+                characters = state.params.characters,
+                onAddCharacter = viewModel::addCharacter,
+                onRemoveCharacter = viewModel::removeCharacter,
+                onUpdateCharacter = viewModel::updateCharacter,
+            )
+
             WeightHighlightedTextField(
                 value = negativeField,
                 onValueChange = { newValue ->

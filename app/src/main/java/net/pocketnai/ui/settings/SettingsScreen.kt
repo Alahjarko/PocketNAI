@@ -44,6 +44,7 @@ import net.pocketnai.domain.billing.SubscriptionStatus
 import net.pocketnai.domain.billing.SubscriptionTier
 import net.pocketnai.domain.model.ThemeMode
 import net.pocketnai.ui.LocalAppContainer
+import net.pocketnai.ui.billing.AnlasLedgerDialog
 import net.pocketnai.ui.billing.BalanceDetailDialog
 import net.pocketnai.ui.billing.compactLabel
 import net.pocketnai.ui.common.messageRes
@@ -92,15 +93,37 @@ fun SettingsScreen(
             style = MaterialTheme.typography.headlineSmall,
         )
 
+        var accountSwitchDialogOpen by remember { mutableStateOf(false) }
+        var ledgerDialogOpen by remember { mutableStateOf(false) }
+
+        if (accountSwitchDialogOpen) {
+            AccountSwitchDialog(
+                credentialStore = container.credentialStore,
+                onAccountSwitched = viewModel::onAccountSwitched,
+                onDismiss = { accountSwitchDialogOpen = false },
+            )
+        }
+
+        if (ledgerDialogOpen) {
+            AnlasLedgerDialog(
+                ledgerRepository = container.anlasLedgerRepository,
+                onDismiss = { ledgerDialogOpen = false },
+            )
+        }
+
         // ---- 连接状态 ----
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
+                val activeAccount = remember(connected, accountSwitchDialogOpen) {
+                    container.credentialStore.listAccounts().firstOrNull { it.isActive }
+                }
+
                 Text(
                     text = if (connected) {
-                        stringResource(R.string.connect_connected)
+                        "已连接 ${activeAccount?.let { "· ${it.name} (${it.tokenFingerprint})" }.orEmpty()}"
                     } else {
                         stringResource(R.string.generate_no_token)
                     },
@@ -113,12 +136,16 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onRequestConnect) {
-                        Text(stringResource(R.string.connect_title))
+                    OutlinedButton(onClick = { accountSwitchDialogOpen = true }) {
+                        Text("切换/管理账号")
                     }
                     if (connected) {
                         OutlinedButton(onClick = viewModel::disconnect) {
                             Text(stringResource(R.string.connect_delete))
+                        }
+                    } else {
+                        OutlinedButton(onClick = onRequestConnect) {
+                            Text(stringResource(R.string.connect_title))
                         }
                     }
                 }
@@ -141,6 +168,7 @@ fun SettingsScreen(
                     )
                 }
             },
+            onViewLedger = { ledgerDialogOpen = true },
         )
 
         HorizontalDivider()
@@ -216,9 +244,20 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            var cleanupImagesDialogOpen by remember { mutableStateOf(false) }
+
+            if (cleanupImagesDialogOpen) {
+                CleanupImagesDialog(
+                    onConfirm = { deleteFavorites ->
+                        viewModel.cleanupImages(deleteFavorites)
+                    },
+                    onDismiss = { cleanupImagesDialogOpen = false },
+                )
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = viewModel::runMaintenance) {
-                    Text(stringResource(R.string.settings_clear_orphans))
+                OutlinedButton(onClick = { cleanupImagesDialogOpen = true }) {
+                    Text("清理生成图片")
                 }
                 OutlinedButton(onClick = viewModel::refreshUsage) {
                     Text("刷新占用")
@@ -294,7 +333,7 @@ fun SettingsScreen(
     }
 }
 
-private fun formatBytes(bytes: Long): String {
+internal fun formatBytes(bytes: Long): String {
     if (bytes < 1024) return "$bytes B"
     val kb = bytes / 1024.0
     if (kb < 1024) return "%.1f KB".format(kb)
@@ -315,6 +354,7 @@ private fun BalanceSection(
     connected: Boolean,
     subscriptionStatus: SubscriptionStatus,
     onRefresh: () -> Unit,
+    onViewLedger: () -> Unit,
 ) {
     var dialogOpen by remember { mutableStateOf(false) }
 
@@ -339,6 +379,9 @@ private fun BalanceSection(
             OutlinedButton(onClick = onRefresh, enabled = connected) {
                 Text(stringResource(R.string.balance_refresh))
             }
+            OutlinedButton(onClick = onViewLedger) {
+                Text("消耗流水")
+            }
         }
         Text(
             text = "余额由 NovelAI 返回，购买与充值请到官方网页操作。",
@@ -352,6 +395,10 @@ private fun BalanceSection(
             state = state,
             subscriptionStatus = subscriptionStatus,
             onRefresh = onRefresh,
+            onViewLedger = {
+                dialogOpen = false
+                onViewLedger()
+            },
             onDismiss = { dialogOpen = false },
         )
     }
