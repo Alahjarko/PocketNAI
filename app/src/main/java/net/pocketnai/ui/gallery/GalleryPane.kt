@@ -299,6 +299,8 @@ fun GalleryPane(
                                     if (isSelectionMode) {
                                         viewModel.toggleSelect(item.imageId)
                                     } else {
+                                        // 先记下"这次浏览的顺序"，详情页才能左右滑动切换。
+                                        container.galleryOrderSnapshot.publish(items.map { it.imageId })
                                         onOpenImage(item.imageId)
                                     }
                                 },

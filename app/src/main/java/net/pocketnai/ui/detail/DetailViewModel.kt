@@ -25,7 +25,12 @@ import net.pocketnai.domain.prompt.PromptTitle
 import net.pocketnai.ui.state.GenerationDraftStore
 
 /**
- * 详情页状态：展示单张图片的完整参数，并提供收藏 / 保存 / 删除 / 复制 / 复用参数。
+ * 详情页状态：展示一张图片的完整参数，并提供收藏 / 保存 / 删除 / 复制 / 复用参数。
+ *
+ * 2026-09-18 起支持**左右滑动切换图片**：[UiState.pagerIds] 是进入详情页那一刻
+ * 画廊列表的顺序快照（[net.pocketnai.ui.state.GalleryOrderSnapshot]），每页详情按 id
+ * 缓存在 [UiState.details] 里 —— 滑动时读缓存、不等数据库；顶栏与所有操作按钮
+ * 作用于 [UiState.currentId] 指向的那一页。
  */
 class DetailViewModel(
     private val repository: GenerationRepository,
@@ -38,9 +43,14 @@ class DetailViewModel(
 ) : ViewModel() {
 
     data class UiState(
-        val loading: Boolean = true,
-        val image: GeneratedImage? = null,
-        val generation: Generation? = null,
+        /** 滑动顺序；只有一张时就是 `listOf(那一张)`。 */
+        val pagerIds: List<String> = emptyList(),
+        /** 当前页。顶栏与操作按钮都以它为准。 */
+        val currentId: String? = null,
+        /** 已载入的详情缓存（id → 详情）。 */
+        val details: Map<String, GenerationRepository.ImageDetail> = emptyMap(),
+        /** 载入过但记录不存在的页：显示错误，而不是一直转圈。 */
+        val failedIds: Set<String> = emptySet(),
         val errorCode: ErrorCode? = null,
         val savedToGallery: Boolean = false,
         val deleted: Boolean = false,
@@ -48,27 +58,60 @@ class DetailViewModel(
         val favorite: Boolean = false,
         /** 是否正在进行图像超分放大。 */
         val upscaling: Boolean = false,
-    )
+    ) {
+        val detail: GenerationRepository.ImageDetail?
+            get() = currentId?.let { details[it] }
+
+        val image: GeneratedImage? get() = detail?.image
+
+        val generation: Generation? get() = detail?.generation
+
+        /** 当前页还在等数据库（既没载入成功，也没失败）。 */
+        val loadingCurrent: Boolean
+            get() = currentId != null && currentId !in details && currentId !in failedIds
+    }
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     private var favoriteJob: Job? = null
+    private val inFlight = mutableSetOf<String>()
 
-    fun load(imageId: String) {
+    /** 进入详情页时调用一次：定下滑动顺序并载入当前页。 */
+    fun bind(imageId: String, order: List<String>) {
+        val pagerIds = if (imageId in order) order else listOf(imageId)
+        _state.update { it.copy(pagerIds = pagerIds, currentId = imageId) }
+        ensureLoaded(imageId)
+        observeFavorite(imageId)
+    }
+
+    /** 滑到另一页：换当前页、重置"已保存"提示、按需载入并重新订阅收藏状态。 */
+    fun selectPage(imageId: String) {
+        if (_state.value.currentId == imageId) return
+        _state.update { it.copy(currentId = imageId, savedToGallery = false, errorCode = null) }
+        ensureLoaded(imageId)
+        observeFavorite(imageId)
+    }
+
+    /** 载入某一页的详情；已有缓存、已失败或正在载入时什么都不做。 */
+    fun ensureLoaded(imageId: String) {
+        val state = _state.value
+        if (imageId in state.details || imageId in state.failedIds || imageId in inFlight) return
+        inFlight += imageId
         viewModelScope.launch {
             val detail = repository.loadDetail(imageId)
-            // 用 copy 而不是整体赋值：收藏状态由下面那条流并行写入，整体赋值会把它冲掉。
+            inFlight -= imageId
             _state.update {
-                it.copy(
-                    loading = false,
-                    image = detail?.image,
-                    generation = detail?.generation,
-                    errorCode = if (detail == null) ErrorCode.UNKNOWN else null,
-                )
+                if (detail == null) {
+                    it.copy(failedIds = it.failedIds + imageId)
+                } else {
+                    it.copy(details = it.details + (imageId to detail))
+                }
             }
         }
+    }
 
+    private fun observeFavorite(imageId: String) {
         favoriteJob?.cancel()
         favoriteJob = viewModelScope.launch {
             favorites.observeIsFavorite(imageId).collect { favorite ->
@@ -104,10 +147,10 @@ class DetailViewModel(
             when (val outcome = exporter.export(source, displayName)) {
                 is Outcome.Success -> {
                     repository.markExported(image.id, outcome.value.toString())
-                    _state.value = state.copy(savedToGallery = true, errorCode = null)
+                    _state.update { it.copy(savedToGallery = true, errorCode = null) }
                 }
 
-                is Outcome.Failure -> _state.value = state.copy(errorCode = outcome.error.code)
+                is Outcome.Failure -> _state.update { it.copy(errorCode = outcome.error.code) }
             }
         }
     }
@@ -133,12 +176,39 @@ class DetailViewModel(
         val generationId = _state.value.generation?.id ?: return
         viewModelScope.launch {
             repository.deleteImmediately(generationId)
-            _state.value = _state.value.copy(deleted = true)
+            _state.update { it.copy(deleted = true) }
         }
     }
 
     fun dismissError() {
-        _state.value = _state.value.copy(errorCode = null)
+        _state.update { it.copy(errorCode = null) }
+    }
+
+    /**
+     * 超分产物入库后：插到当前页**后面**并跳过去。
+     *
+     * 不替换整个顺序 —— 用户滑回上一张时应该还是原来那批图，
+     * 只是中间多了一张"放大后的"。
+     */
+    fun showUpscaleResult(newImageId: String) {
+        _state.update { state ->
+            val index = state.pagerIds.indexOf(state.currentId)
+            val pagerIds = if (index < 0) {
+                state.pagerIds + newImageId
+            } else {
+                state.pagerIds.subList(0, index + 1) +
+                    newImageId +
+                    state.pagerIds.subList(index + 1, state.pagerIds.size)
+            }
+            state.copy(
+                pagerIds = pagerIds,
+                currentId = newImageId,
+                savedToGallery = false,
+                errorCode = null,
+            )
+        }
+        ensureLoaded(newImageId)
+        observeFavorite(newImageId)
     }
 
     fun upscaleImage(onComplete: (newImageId: String) -> Unit) {

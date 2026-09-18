@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -44,8 +46,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,11 +61,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
-import kotlinx.coroutines.launch
 import net.pocketnai.R
-import net.pocketnai.data.repo.GenerationRepository
 import net.pocketnai.domain.model.DirectorReferenceKind
-import net.pocketnai.domain.model.GenerationMode
+import net.pocketnai.domain.model.GeneratedImage
+import net.pocketnai.domain.model.Generation
 import net.pocketnai.domain.model.ReferenceImage
 import net.pocketnai.domain.model.ReferenceRole
 import net.pocketnai.ui.LocalAppContainer
@@ -77,6 +78,11 @@ import java.util.Date
  * 图片详情页。
  *
  * 展示完整参数，并提供规划书 4.3 要求的四项操作：保存到相册、复制提示词、删除、复用参数。
+ *
+ * **左右滑动切换图片**：滑动顺序是进入详情页那一刻画廊列表的快照
+ * （[net.pocketnai.ui.state.GalleryOrderSnapshot]），因此"下一张"就是用户在瀑布流里
+ * 看到的下一张；快照只有一张时退化成旧行为（不能滑）。顶栏与操作按钮始终作用于
+ * 当前页，超分产物会插到当前页后面。
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -105,7 +111,9 @@ fun DetailScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    LaunchedEffect(imageId) { viewModel.load(imageId) }
+    // 顺序在打开时定死：详情页里新生成/删除不应让滑动顺序"自己跳走"。
+    val pagerIds = remember(imageId) { container.galleryOrderSnapshot.orderAround(imageId) }
+    LaunchedEffect(imageId) { viewModel.bind(imageId, pagerIds) }
 
     // 删除完成后立刻返回列表，避免停在已经不存在的记录上。
     LaunchedEffect(state.deleted) {
@@ -115,11 +123,31 @@ fun DetailScreen(
     val savedMessage = stringResource(R.string.detail_saved_to_gallery)
     var pendingSave by remember { mutableStateOf(false) }
     var showUpscaleDialog by remember { mutableStateOf(false) }
+    var fullscreen by remember { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted && pendingSave) viewModel.saveToSystemGallery()
         pendingSave = false
+    }
+
+    val pagerState = rememberPagerState(
+        initialPage = pagerIds.indexOf(imageId).coerceAtLeast(0),
+        pageCount = { state.pagerIds.size.coerceAtLeast(1) },
+    )
+
+    // 用户滑动 → 换当前页（顶栏收藏、操作按钮跟着走）。
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }.collect { page ->
+            viewModel.state.value.pagerIds.getOrNull(page)?.let { viewModel.selectPage(it) }
+        }
+    }
+    // 代码换页（超分结果插进来）→ pager 跟过去；用户自己滑时两者已一致，不会重复动。
+    LaunchedEffect(state.currentId) {
+        val target = state.pagerIds.indexOf(state.currentId)
+        if (target >= 0 && target != pagerState.currentPage) {
+            pagerState.animateScrollToPage(target)
+        }
     }
 
     Scaffold(
@@ -181,186 +209,68 @@ fun DetailScreen(
             )
         },
     ) { padding ->
-        val image = state.image
-        val generation = state.generation
-
-        if (image == null || generation == null) {
-            CenteredHint(
-                text = if (state.loading) "正在载入…" else stringResource(R.string.error_unknown),
-                modifier = Modifier.padding(padding),
-            )
+        if (state.pagerIds.isEmpty()) {
+            CenteredHint(text = "正在载入…", modifier = Modifier.padding(padding))
             return@Scaffold
         }
 
-        // 点图进入全屏查看（双指缩放 / 拖动），单击或返回键退出。
-        var fullscreen by remember { mutableStateOf(false) }
-
-        Column(
+        HorizontalPager(
+            state = pagerState,
+            // 预载左右各一页：滑过去时详情已在缓存里，不会闪"正在载入"。
+            beyondViewportPageCount = 1,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            AsyncImage(
-                model = container.generationRepository.fileOfRelativePath(image.privateFilePath),
-                contentDescription = generation.title,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(
-                        if (image.height > 0) image.width.toFloat() / image.height else 1f,
-                    )
-                    .clickable { fullscreen = true },
-            )
-
-            Text(text = generation.title, style = MaterialTheme.typography.titleMedium)
-
-            val time = DateFormat.getDateTimeInstance().format(Date(generation.createdAt))
-            DetailRow(stringResource(R.string.common_time), time)
-            DetailRow(stringResource(R.string.common_model), generation.params.model.displayName)
-            DetailRow(stringResource(R.string.common_size), generation.params.size.label)
-            DetailRow(stringResource(R.string.generate_count), "${generation.params.sampleCount} 张（本张序号 ${image.ordinal}）")
-            DetailRow(stringResource(R.string.generate_steps), generation.params.steps.toString())
-            DetailRow(stringResource(R.string.generate_guidance), generation.params.guidance.toString())
-            DetailRow(stringResource(R.string.generate_cfg_rescale), generation.params.cfgRescale.toString())
-            DetailRow(stringResource(R.string.generate_sampler), generation.params.sampler.displayName)
-            DetailRow(stringResource(R.string.generate_noise_schedule), generation.params.noiseSchedule.displayName)
-            DetailRow(
-                stringResource(R.string.generate_seed),
-                image.seed?.toString() ?: "由 PNG 元数据决定（首版未解析）",
-            )
-            if (generation.errorCode != null) {
-                DetailRow("错误", generation.errorMessage ?: generation.errorCode.name)
-            }
-
-            // 生成模式必须显示：图生图的尺寸、Strength 都只有在"这是一次改图"的前提下才说得通，
-            // 否则用户回看历史时会以为那次生成的参数配错了。
-            DetailRow(
-                stringResource(R.string.common_mode),
-                stringResource(generation.mode.labelRes()),
-            )
-            generation.references.forEach { reference ->
-                ReferenceRow(reference = reference)
-            }
-
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text("正向提示词", style = MaterialTheme.typography.labelMedium)
-                    Text(generation.params.prompt, style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        text = "Undesired Content",
-                        style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                    Text(generation.params.negativePrompt, style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-
-            state.errorCode?.let { code ->
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Row(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            text = stringResource(code.messageRes()),
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.weight(1f),
-                        )
-                        TextButton(onClick = viewModel::dismissError) {
-                            Text(stringResource(R.string.action_confirm))
+                .padding(padding),
+        ) { page ->
+            val pageId = state.pagerIds.getOrElse(page) { imageId }
+            LaunchedEffect(pageId) { viewModel.ensureLoaded(pageId) }
+            val detail = state.details[pageId]
+            when {
+                detail != null -> DetailPageContent(
+                    image = detail.image,
+                    generation = detail.generation,
+                    isCurrentPage = pageId == state.currentId,
+                    errorCode = state.errorCode,
+                    savedToGallery = state.savedToGallery,
+                    savedMessage = savedMessage,
+                    onOpenFullscreen = { fullscreen = true },
+                    onSaveClick = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+                            ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                            ) == PackageManager.PERMISSION_GRANTED
+                        ) {
+                            viewModel.saveToSystemGallery()
+                        } else {
+                            pendingSave = true
+                            permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                         }
-                    }
-                }
-            }
-
-            if (state.savedToGallery) {
-                Text(
-                    text = savedMessage,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-
-            Button(
-                onClick = {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
-                        ContextCompat.checkSelfPermission(
-                            context,
-                            Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                        ) == PackageManager.PERMISSION_GRANTED
-                    ) {
-                        viewModel.saveToSystemGallery()
-                    } else {
-                        pendingSave = true
-                        permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.action_save_to_gallery))
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = { copyToClipboard(context, generation.params.prompt) },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(stringResource(R.string.action_copy_prompt))
-                }
-                OutlinedButton(
-                    onClick = {
+                    },
+                    onCopyPrompt = { copyToClipboard(context, detail.generation.params.prompt) },
+                    onReuseParams = {
                         viewModel.reuseParams()
                         onParamsReused()
                     },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(stringResource(R.string.action_reuse_params))
-                }
+                    onInpaint = { onInpaint(detail.image.privateFilePath) },
+                    onOpenUpscaleDialog = { showUpscaleDialog = true },
+                    onDelete = viewModel::deleteGeneration,
+                    onDismissError = viewModel::dismissError,
+                )
+
+                pageId in state.failedIds -> CenteredHint(
+                    text = stringResource(R.string.error_unknown),
+                    modifier = Modifier.fillMaxSize(),
+                )
+
+                else -> CenteredHint(text = "正在载入…", modifier = Modifier.fillMaxSize())
             }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // 局部重绘：官方文档说可以从"任意一张已生成的图片"进入，
-                // 而"这张图某处画坏了"正是用户点进详情页的常见理由。
-                OutlinedButton(
-                    onClick = { onInpaint(image.privateFilePath) },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(stringResource(R.string.action_inpaint))
-                }
-
-                OutlinedButton(
-                    onClick = { showUpscaleDialog = true },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(stringResource(R.string.action_upscale))
-                }
-            }
-
-            OutlinedButton(
-                onClick = viewModel::deleteGeneration,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.action_delete))
-            }
-
-            Text(
-                text = "删除只影响 PocketNAI 的本地副本与记录；已经保存到系统相册的图片不会被删除。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
 
-        if (showUpscaleDialog) {
+        val image = state.image
+        val generation = state.generation
+
+        if (showUpscaleDialog && image != null) {
             UpscaleConfirmationDialog(
                 sourceWidth = image.width,
                 sourceHeight = image.height,
@@ -368,14 +278,14 @@ fun DetailScreen(
                 onConfirm = {
                     viewModel.upscaleImage { newImageId ->
                         showUpscaleDialog = false
-                        viewModel.load(newImageId)
+                        viewModel.showUpscaleResult(newImageId)
                     }
                 },
                 onDismiss = { showUpscaleDialog = false },
             )
         }
 
-        if (fullscreen) {
+        if (fullscreen && image != null && generation != null) {
             FullscreenImageViewer(
                 imageFile = container.generationRepository.fileOfRelativePath(image.privateFilePath),
                 contentDescription = generation.title,
@@ -384,6 +294,164 @@ fun DetailScreen(
                 onDismiss = { fullscreen = false },
             )
         }
+    }
+}
+
+/**
+ * 一页的正文：图片 + 参数表 + 提示词卡 + 操作按钮。
+ *
+ * [isCurrentPage] 为假的页（滑动时露出的邻页）不显示错误卡与"已保存"提示 ——
+ * 那两条属于当前页的状态，跟着邻页一起画会让用户以为"上一张保存失败了"。
+ */
+@Composable
+private fun DetailPageContent(
+    image: GeneratedImage,
+    generation: Generation,
+    isCurrentPage: Boolean,
+    errorCode: net.pocketnai.core.ErrorCode?,
+    savedToGallery: Boolean,
+    savedMessage: String,
+    onOpenFullscreen: () -> Unit,
+    onSaveClick: () -> Unit,
+    onCopyPrompt: () -> Unit,
+    onReuseParams: () -> Unit,
+    onInpaint: () -> Unit,
+    onOpenUpscaleDialog: () -> Unit,
+    onDelete: () -> Unit,
+    onDismissError: () -> Unit,
+) {
+    val container = LocalAppContainer.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // 点图进入全屏查看（双指缩放 / 拖动），单击或返回键退出。
+        AsyncImage(
+            model = container.generationRepository.fileOfRelativePath(image.privateFilePath),
+            contentDescription = generation.title,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(
+                    if (image.height > 0) image.width.toFloat() / image.height else 1f,
+                )
+                .clickable(onClick = onOpenFullscreen),
+        )
+
+        Text(text = generation.title, style = MaterialTheme.typography.titleMedium)
+
+        val time = DateFormat.getDateTimeInstance().format(Date(generation.createdAt))
+        DetailRow(stringResource(R.string.common_time), time)
+        DetailRow(stringResource(R.string.common_model), generation.params.model.displayName)
+        DetailRow(stringResource(R.string.common_size), generation.params.size.label)
+        DetailRow(stringResource(R.string.generate_count), "${generation.params.sampleCount} 张（本张序号 ${image.ordinal}）")
+        DetailRow(stringResource(R.string.generate_steps), generation.params.steps.toString())
+        DetailRow(stringResource(R.string.generate_guidance), generation.params.guidance.toString())
+        DetailRow(stringResource(R.string.generate_cfg_rescale), generation.params.cfgRescale.toString())
+        DetailRow(stringResource(R.string.generate_sampler), generation.params.sampler.displayName)
+        DetailRow(stringResource(R.string.generate_noise_schedule), generation.params.noiseSchedule.displayName)
+        DetailRow(
+            stringResource(R.string.generate_seed),
+            image.seed?.toString() ?: "由 PNG 元数据决定（首版未解析）",
+        )
+        if (generation.errorCode != null) {
+            DetailRow("错误", generation.errorMessage ?: generation.errorCode.name)
+        }
+
+        // 生成模式必须显示：图生图的尺寸、Strength 都只有在"这是一次改图"的前提下才说得通，
+        // 否则用户回看历史时会以为那次生成的参数配错了。
+        DetailRow(
+            stringResource(R.string.common_mode),
+            stringResource(generation.mode.labelRes()),
+        )
+        generation.references.forEach { reference ->
+            ReferenceRow(reference = reference)
+        }
+
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text("正向提示词", style = MaterialTheme.typography.labelMedium)
+                Text(generation.params.prompt, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    text = "Undesired Content",
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                Text(generation.params.negativePrompt, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+
+        if (isCurrentPage && errorCode != null) {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = stringResource(errorCode.messageRes()),
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = onDismissError) {
+                        Text(stringResource(R.string.action_confirm))
+                    }
+                }
+            }
+        }
+
+        if (isCurrentPage && savedToGallery) {
+            Text(
+                text = savedMessage,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+
+        Button(onClick = onSaveClick, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.action_save_to_gallery))
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onCopyPrompt, modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.action_copy_prompt))
+            }
+            OutlinedButton(onClick = onReuseParams, modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.action_reuse_params))
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // 局部重绘：官方文档说可以从"任意一张已生成的图片"进入，
+            // 而"这张图某处画坏了"正是用户点进详情页的常见理由。
+            OutlinedButton(onClick = onInpaint, modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.action_inpaint))
+            }
+
+            OutlinedButton(onClick = onOpenUpscaleDialog, modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.action_upscale))
+            }
+        }
+
+        OutlinedButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.action_delete))
+        }
+
+        Text(
+            text = "删除只影响 PocketNAI 的本地副本与记录；已经保存到系统相册的图片不会被删除。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

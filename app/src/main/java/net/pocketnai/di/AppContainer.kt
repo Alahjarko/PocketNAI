@@ -41,6 +41,7 @@ import net.pocketnai.domain.prompt.TagSuggestionSource
 import net.pocketnai.data.settings.SettingsStore
 import net.pocketnai.ui.state.GenerationDraftStore
 import net.pocketnai.ui.state.GenerationPreviewStore
+import net.pocketnai.ui.state.GalleryOrderSnapshot
 import okhttp3.OkHttpClient
 import java.net.Authenticator
 import java.util.concurrent.TimeUnit
@@ -171,6 +172,12 @@ class AppContainer(application: Application) {
      * 不需要落盘（预览图本身在 cache 目录，由文件层管）。
      */
     val generationPreviewStore: GenerationPreviewStore = GenerationPreviewStore()
+
+    /**
+     * 画廊列表顺序的快照：用户点进详情页时写入，详情页左右滑动时读取。
+     * 见 [GalleryOrderSnapshot] 的注释 —— 它是快照而不是实时流，故意如此。
+     */
+    val galleryOrderSnapshot: GalleryOrderSnapshot = GalleryOrderSnapshot()
 
     val generationRepository: GenerationRepository by lazy {
         GenerationRepository(
