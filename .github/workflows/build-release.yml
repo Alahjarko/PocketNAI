@@ -26,6 +26,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Windows 检出的仓库里 gradlew 没有可执行位（git 在 Windows 下默认不记录 filemode），
+      # Linux runner 上直接执行会 "Permission denied"（exit 126，2026-09-18 首次运行即踩中）。
+      # 索引里已把 gradlew 修正为 100755，这里再兜底一次，避免以后又被改回去。
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
