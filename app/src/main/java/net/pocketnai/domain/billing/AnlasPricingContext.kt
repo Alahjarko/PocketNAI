@@ -58,8 +58,9 @@ data class AnlasPricingContext(
     /**
      * SMEA 的倍率：关 1.0、`sm` 1.2、`sm + sm_dyn` 1.4。
      *
-     * 这四个模型的官方默认都是关闭（官方前端默认值里 `sm/sm_dyn` 都是 false），
-     * 我们的请求也不发这两个字段，因此默认 1.0。
+     * **对 V4.5 / V5 恒为 1.0，且这一点已核对**（2026-09-18，技术决策记录 §30.3）：
+     * 这四个模型的能力表里没有 smea 能力位，官方前端组装请求时会把 `sm` / `sm_dyn` 删掉，
+     * 倍率自然落在 1。保留这个字段只是为了让公式与官方前端逐行对得上，不是可开的功能。
      */
     val smeaMultiplier: Double = 1.0,
     val pricingPolicyVersion: String,

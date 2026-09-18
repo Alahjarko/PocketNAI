@@ -59,11 +59,10 @@ object ModelCatalog {
     private const val MAX_DIRECTOR_REFERENCES = 4
 
     /**
-     * Image2Img 的 Strength 默认值。
+     * Image2Img 的 Strength 默认值：**0.7**（已核对）。
      *
-     * ⚠️ **待核对**：官方网页版 Image2Img 面板的 Strength 默认值尚未记录，暂用 0.7。
-     * 这是《参考图功能规划书》阶段 0 核对清单里剩下的最后一项数值缺口 ——
-     * 在官方网页版打开 Image2Img 面板读一下滑块初值即可确认，改这一处常量即可。
+     * 来源：官方网页前端 bundle 里每个模型的默认参数对象都是 `strength:.7, noise:0`
+     * （2026-09-18 复核，技术决策记录 §30.7）。`noise` 我们照约定不发，让服务端用它自己的 0。
      *
      * 之所以必须有默认值而不是留空：这个值要显示在界面的滑块上，
      * 用户看到的数就是提交的数，不能靠服务端兜底。
@@ -91,15 +90,18 @@ object ModelCatalog {
     private val DIRECTOR_REFERENCE_RANGE = NumericRange(min = 0.0, max = 1.0, step = 0.01)
 
     /**
-     * Precise Reference 三个滑块的默认值。
+     * Precise Reference 三个滑块的默认值：**全部 1.0**（已核对）。
      *
-     * ⚠️ **待核对**：官方网页版 Precise Reference 面板的滑块初值尚未记录。
+     * 来源：官方前端"添加参考图"时构造的对象原样是
+     * `{description: characterAndStyle, information_extracted:1, fidelity:1, strength:1}`
+     * （2026-09-18 复核，技术决策记录 §30.7）。
+     * 此前的 0.6 / 0.5 是"官方值未知时的工作值"，现已按官方改掉。
+     *
      * 与 `noise` 那类"可以留空让服务端兜底"的字段不同，这三个值必须由客户端发送
-     * （数组要与图片一一对应），没有留空的余地，因此先取工作值。
-     * 集中在这里，阶段 0 核对后改这三行即可。
+     * （数组要与图片一一对应），没有留空的余地。
      */
-    private const val DEFAULT_DIRECTOR_STRENGTH = 0.6
-    private const val DEFAULT_DIRECTOR_FIDELITY = 0.5
+    private const val DEFAULT_DIRECTOR_STRENGTH = 1.0
+    private const val DEFAULT_DIRECTOR_FIDELITY = 1.0
     private const val DEFAULT_DIRECTOR_INFO_EXTRACTED = 1.0
 
     /** DPM++ 2S Ancestral 不支持 Karras 调度。 */

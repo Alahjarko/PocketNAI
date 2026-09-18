@@ -1,6 +1,7 @@
 package net.pocketnai.domain.billing
 
 import com.google.common.truth.Truth.assertThat
+import net.pocketnai.domain.model.CharacterPrompt
 import net.pocketnai.domain.model.GenerationParams
 import net.pocketnai.domain.model.ImageModel
 import net.pocketnai.domain.model.ImageSizePreset
@@ -39,6 +40,7 @@ class AnlasCostCalculatorTest {
         steps: Int = 23,
         sampleCount: Int = 1,
         model: ImageModel? = null,
+        characters: List<CharacterPrompt> = emptyList(),
     ): AnlasPricingContext {
         val base = GenerationParams.defaultsFor(profile)
         return AnlasPricingContext(
@@ -47,6 +49,7 @@ class AnlasCostCalculatorTest {
                 size = size,
                 steps = steps,
                 sampleCount = sampleCount,
+                characters = characters,
             ),
             subscriptionTier = tier,
             hasSubscription = subscribed,
@@ -73,6 +76,20 @@ class AnlasCostCalculatorTest {
         assertThat(estimate).isInstanceOf(GenerationCostEstimate.Free::class.java)
         assertThat((estimate as GenerationCostEstimate.Free).reason)
             .isEqualTo(FreeReason.OPUS_FREE_IMAGE)
+    }
+
+    @Test
+    fun `多角色提示词不破免费也没有附加费`() {
+        // 官方计价组装里只有 Precise Reference（5/张/输出）与 Vibe 两项附加费，
+        // 没有 char_captions 项；免费判定读的 `characterRef` 是个从不被赋值的死字段
+        // （技术决策记录 §30.2）。因此免费组合下的多角色生成同样免费。
+        val estimate = calculator.estimate(
+            context(
+                characters = List(5) { index -> CharacterPrompt(prompt = "1girl, character $index") },
+            ),
+        )
+
+        assertThat(estimate).isInstanceOf(GenerationCostEstimate.Free::class.java)
     }
 
     @Test

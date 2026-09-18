@@ -280,9 +280,6 @@ class AccountBalanceRepositoryTest {
         override suspend fun upscaleImage(
             token: String,
             imageBase64: String,
-            width: Int,
-            height: Int,
-            scale: Int,
             destinationFile: File,
         ): Outcome<Unit> = error("本测试不涉及超分")
     }

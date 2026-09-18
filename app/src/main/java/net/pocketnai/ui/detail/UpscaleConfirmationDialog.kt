@@ -6,37 +6,37 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import net.pocketnai.R
+import net.pocketnai.domain.billing.UpscaleCost
 
+/**
+ * 超分确认框。
+ *
+ * 官方超分是**固定 4 倍**、按源图面积收 1-4 Anlas（`UpscaleCost`，技术决策记录 §30.1），
+ * 所以这里不给倍数选项，而是把确切价格写在确认前 —— 费用已知的调用才谈得上"用户确认"。
+ * 源图超出官方上限（1536×2048）时直接禁用确认，而不是发一个注定失败的请求。
+ */
 @Composable
 fun UpscaleConfirmationDialog(
     sourceWidth: Int,
     sourceHeight: Int,
     upscaling: Boolean,
-    onConfirm: (scale: Int) -> Unit,
+    onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var selectedScale by remember { mutableIntStateOf(2) }
-
-    val targetWidth = sourceWidth * selectedScale
-    val targetHeight = sourceHeight * selectedScale
+    val estimatedAnlas = UpscaleCost.anlas(sourceWidth, sourceHeight)
+    val supported = estimatedAnlas != null
 
     AlertDialog(
         onDismissRequest = { if (!upscaling) onDismiss() },
@@ -48,30 +48,26 @@ fun UpscaleConfirmationDialog(
                     style = MaterialTheme.typography.bodyMedium,
                 )
 
-                Text(
-                    text = stringResource(R.string.upscale_target_size, targetWidth, targetHeight),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(vertical = 4.dp),
-                ) {
+                if (supported) {
                     Text(
-                        text = stringResource(R.string.upscale_scale_factor),
-                        style = MaterialTheme.typography.labelMedium,
+                        text = stringResource(
+                            R.string.upscale_target_size,
+                            sourceWidth * UpscaleCost.SCALE_FACTOR,
+                            sourceHeight * UpscaleCost.SCALE_FACTOR,
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
                     )
-                    FilterChip(
-                        selected = selectedScale == 2,
-                        onClick = { if (!upscaling) selectedScale = 2 },
-                        label = { Text("2x") },
+                    Text(
+                        text = stringResource(R.string.upscale_cost_estimate, estimatedAnlas!!),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
                     )
-                    FilterChip(
-                        selected = selectedScale == 4,
-                        onClick = { if (!upscaling) selectedScale = 4 },
-                        label = { Text("4x") },
+                } else {
+                    Text(
+                        text = stringResource(R.string.upscale_too_large),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
 
@@ -100,8 +96,8 @@ fun UpscaleConfirmationDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(selectedScale) },
-                enabled = !upscaling,
+                onClick = onConfirm,
+                enabled = !upscaling && supported,
             ) {
                 Text(stringResource(R.string.upscale_confirm))
             }

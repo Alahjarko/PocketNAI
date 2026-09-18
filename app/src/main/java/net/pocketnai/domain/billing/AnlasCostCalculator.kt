@@ -93,7 +93,7 @@ class AnlasCostCalculator(
     /**
      * 本次请求里有多少张是"不花 Anlas"的。
      *
-     * ## 官方规则（2026-09-14 从官方前端 bundle 反解）
+     * ## 官方规则（2026-09-14 从官方前端 bundle 反解，2026-09-18 复核）
      * ```js
      * !characterRef && area <= 1024*1024 && steps <= 28
      *   && tier >= 3 && hasSubscription
@@ -104,7 +104,11 @@ class AnlasCostCalculator(
      * - **没有"至少 Normal 尺寸"这一条**，只有面积上界 1024²，因此比 Normal 更小的图也免费；
      * - **不是"整单免费"**：一次生成多张时只免掉 1 张，其余照价（官方前端就是 `n_samples -= 1`）。
      *
-     * 我们不做多角色提示词，所以 `characterRef` 恒为 false，不进入判定。
+     * `characterRef` 看着像"Precise Reference 就不免费"，但它是个**死字段**：整个官方前端
+     * bundle 里只有这一处**读**它，没有任何一处赋值，因此恒为 undefined、从不生效。
+     * 与本机实测一致 —— Precise Reference 那次只扣了 5 Anlas 附加费（407 → 402），
+     * 说明底图那张仍然免费。多角色提示词（`char_captions`）同理不进入判定，
+     * 官方计价组装里也没有它的附加费项（技术决策记录 §30.2）。
      */
     private fun freeImageCount(context: AnlasPricingContext): Int {
         if (!context.hasSubscription) return 0

@@ -112,15 +112,16 @@ interface NovelAiApi {
     /**
      * 图像超分放大（`/ai/upscale`）。
      *
+     * 官方请求体只有 `image` / `model` / `declared_blur_sigma` 三个字段，
+     * **没有倍数也没有目标尺寸** —— 服务端固定放大 4 倍（技术决策记录 §30.1）。
+     *
      * 响应通常为 ZIP（与普通生成一致）或二进制 PNG。写入 [destinationFile]。
-     * 该端点可能会扣除 Anlas 点数，必须且只能由用户在界面上明确确认后发起。
+     * 该端点按源图面积扣 1-4 Anlas（`UpscaleCost`），
+     * 必须且只能由用户在界面上明确确认后发起。
      */
     suspend fun upscaleImage(
         token: String,
         imageBase64: String,
-        width: Int,
-        height: Int,
-        scale: Int,
         destinationFile: File,
     ): Outcome<Unit>
 }

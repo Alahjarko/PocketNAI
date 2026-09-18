@@ -1415,15 +1415,19 @@ accountType ∈ {B2B, SERVICE, SUPPORT, ADMIN} || (expiresAt > now && tier > 0)
 因此**没有**在生成费用上加 8 折：那会把实际扣费报少 20%。设置页里用一句话把这个区别写清楚，
 免得以后再被同一句话说动。
 
-### 16.7 反解带来的唯一未实测项
+### 16.7 反解带来的唯一未实测项（**2026-09-18 已消除，见 §30.3**）
 
 官方前端**总是显式发送** `sm` / `sm_dyn`（这四个模型的默认值都是 false，
 V1–V3 才是 autoSmea），而我们的请求**不发这两个字段**。
 服务端在字段缺失时是否等于 false，我们没实测过。
 
 代码里的处理：`AnlasPricingContext.smeaMultiplier` 由调用方按"我们实际发出的字段"给出，
-当前恒为 1.0；注释里写明这是唯一未实测项。要消除它有两种办法，都需要用户授权：
-读一次网页端同一参数的费用标签，或发一次最小的付费生成做余额反查（会花 Anlas）。
+当前恒为 1.0。
+
+**后续核对结果**：这一项不需要用户授权就能关掉 —— 重新读官方前端发现，
+V4/V4.5/V5 的**模型能力表里根本没有 smea 能力位**，前端在组装请求时会主动
+`delete i.sm; delete i.sm_dyn`。也就是说官方自己在这四个模型上也不发 SMEA，
+倍率恒为 1，`smeaMultiplier = 1.0` 与官方行为一致。证据见 §30.3。
 
 ### 16.8 代码落点
 
@@ -2415,8 +2419,11 @@ GitHub runner 每次自动生成的 debug keystore 是随机的 —— 若用它
 - **多角色 Characters**：请求发 `v4_prompt` / `v4_negative_prompt` 的 `char_captions`，
   有角色时 `use_coords = true`；位置只做五档横排（不跟官方 5×5 网格）。
   **计费未核对** —— 免费组合只验证过普通画面，多角色按"费用未知"处理。
+  （**2026-09-18 晚已核对：免费组合下不收费，官方计价里没有多角色项，见 §30.2**）
 - **高清放大 Upscale**：详情页入口 → 确认框（写明可能消耗 Anlas）→ `/ai/upscale` →
   产物作为新图入库。费用未知，永远不许自动发起。
+  （**2026-09-18 晚已核对：按源图面积 1-4 Anlas；且原请求体的 `width/height/scale`
+  三个字段是臆造的、官方只发 `image/model/declared_blur_sigma`，已修，见 §30.1**）
 - **Anlas 消耗流水**：数据库 v7 新表 `anlas_transactions`，只记录"本机观察值"
   （本地预估金额 + 当时的余额读数）；扣费事实以服务端为准，写流水失败不影响生成。
 - **多账号**：密文存 `account_<id>_*`，但**顶层兼容键继续同步写**
@@ -2430,6 +2437,8 @@ GitHub runner 每次自动生成的 debug keystore 是随机的 —— 若用它
 - 安全项核对：Keystore alias、`token_iv`、`token_ciphertext` 未变，旧凭据有
   `ensureLegacyMigrated` 迁移路径；FileProvider 只新增分享一条路径。
 - 未实测项（费用未知，留给用户手动触发）：多角色生成、`/ai/upscale` 真实调用。
+  （两者的**价格**已于 2026-09-18 晚核对清楚，见 §30；但真实调用至今没跑过，
+  而且按项目红线永远只能由用户在界面上手动触发。）
 
 
 ## 二十九、应用内网络代理（公益节点 + 自定义，2026-09-18）
@@ -2471,5 +2480,139 @@ HTTP 代理协议全部不通）。希望：
   作为可控的对照探针（proxy vs proxySelector、同 client 二次请求）。
 - 模拟器端到端：开启公益节点 → 刷新余额读到 248 Anlas、流量统计 +331 B
   （证明请求确实走代理而非直连）。
+
+
+## 三十、未核对计费项的调研：超分 / 多角色 / SMEA / 导演工具（2026-09-18 晚）
+
+### 30.0 方法与证据源
+
+用户开了 TUN 代理后要求把"还没确认计费量的项目实际消耗多少"查清楚。做法与 §16 相同：
+
+| 步 | 动作 | 结果 |
+|---|---|---|
+| 1 | 抓 `novelai.net/image` 的 40 个 JS chunk（构建号 `d5612fd-production`，8.8 MB，缓存在 `%TEMP%\nai-bundle`） | 计价代码就在里面 |
+| 2 | 按标识符定位（`GIT` → 模块 50464、`tYb`、`H_0`、`t1` → 模块 63509、常量模块 44868） | 拿到基础价、超分价、附加费、免费判定 |
+| 3 | 找 augment/upscale 的请求类与 UI | 导演工具**前端不计价**；超分有明确价格表 |
+
+为什么信它：这与 §16 是同一事实源，而 §16 的结论已被两次余额观测印证（407 → 407、407 → 402）。
+官方文档这条路走不通 —— `docs.novelai.net` 的 Upscale / Enhance / Director Tools / FAQ 四页
+**只讲用法、不给任何价格数字**；公开搜索也没有可用的实测记录。
+
+### 30.1 高清放大（`/ai/upscale`）：按源图面积 1-4 Anlas，Opus 不免费；我们的请求体原来发错了
+
+价格函数（原样，模块 50464）：
+
+```js
+f = [[1048576,1], [1747627,2], [2446678,3], [3145728,4]]
+g = (w, h) => { let n = w*h; if (n === 0) return -3;
+                for ([e,t] of f) if (n <= e) return t;
+                return -3 }
+```
+
+- 命中不了（面积 0 或 > 3145728）返回哨兵 `-3` → 官方前端**禁用按钮**并提示
+  "too large"，上限就是 1536×2048 = 3145728；
+- 价格是**按源图面积查表的固定值**，不看步数、不看模型，Opus 的免费单张也不覆盖它；
+- 换算：≤1024² → 1；≤1747627 → 2；≤2446678 → 3；≤3145728 → 4。
+
+请求体（原样）：
+
+```js
+tq(r, {image: this.image, model: eB.gb, declared_blur_sigma: eB.Kx}, ...)
+// 常量模块 44868：eB.gb = "nai-diffusion-5-curated"，eB.Kx = 0
+```
+
+**没有 `width` / `height` / `scale`**，倍数固定 4 倍（文档也写明 "four times"）。
+
+我们原来的实现（§28 的 Gemini 交接件，从未真机跑过）发的是 `{image,width,height,scale}`：
+四个字段里三个是服务端不认的，这个功能大概率一直 400。本次改为官方三字段，
+去掉 2x/4x 选择，确认框改成显示**确切预计 Anlas**，源图超限时禁用确认而不是发一个注定失败的请求。
+
+顺带从同一批常量里核对到的其它数值：单张报价上限 140（`dZ`，与我们 `MAX_IMAGE_COST` 一致）、
+单张下限 2（`aS`）、`n_samples` 上限按面积查表（≤245760 → 8、≤409600 → 6、其余 → 4）。
+
+### 30.2 多角色 Characters：免费组合下不收费（`characterRef` 是死字段）
+
+免费判定原样：
+
+```js
+function C(e){ return !e.characterRef && e.width*e.height <= 1048576 && e.steps <= 28 }
+```
+
+关键发现：**`characterRef` 在整个 bundle 里只有这一处"读"，没有任何一处"写"** ——
+它恒为 `undefined`，这一项从不生效。所以：
+
+- Precise Reference **不**破免费单张（与 2026-09-14 实测 407 → 402 完全一致：那次只扣了 5 的附加费，
+  说明底图那张仍然免费）。§16 当时把这条读成"Precise Reference 不免费"，是误读；
+- 多角色提示词（`char_captions`）同样不进入判定；
+- 计价组装里的附加费**只有三项**：vibe 编码费（未缓存的每张 2）、vibe 超额（超 4 张每张 2）、
+  Precise Reference（`5 × 张数 × n_samples`）。**没有 `char_captions` 项**。
+
+结论：多角色从"费用未知"名单移出，免费组合下与普通生成同价（免费）。
+代码侧本来就没看 `characters`，无需改动；补一条单测钉住这个结论，
+并把 `AnlasCostCalculator` / `NovelAiPaidAnlasFormula` 里"我们不做多角色"的过期注释更正。
+
+仍建议用户手动出一张多角色图核对余额一次 —— 本机账号的订阅读数存疑（AGENTS.md 的 2026-09-14 补充），
+"免费"的前提是订阅权益确实在。
+
+### 30.3 SMEA（`sm` / `sm_dyn`）：这四个模型不存在附加费，§16.7 的未实测项关闭
+
+倍率在公式里确实存在：`... * (sm_dyn ? 1.4 : sm ? 1.2 : 1)`。但请求组装里有这两行：
+
+```js
+if (!capability(model).smea)    { delete i.sm; delete i.sm_dyn }
+if (!capability(model).smeaDyn)   delete i.sm_dyn
+```
+
+而 V4.5 / V5 的模型能力表里**没有 smea 能力位**（只有 V1–V3 有 `autoSmea`）——
+官方自己在这四个模型上也不发 SMEA，倍率恒为 1。
+因此 `AnlasPricingContext.smeaMultiplier = 1.0` 就是官方行为，不需要用户授权做费用核对了。
+
+### 30.4 概念纠正：Enhance 不是 `/ai/augment-image`
+
+路线图里一直把"Enhance"记成 augment-image 端点，实际是两回事：
+
+- **Enhance** 走**普通生成链路**：把当前图当 img2img 起点、按倍数放大分辨率
+  （对齐到模型步长、上限 3145728），strength/noise 用 Enhance 的两个滑块，
+  然后按普通公式计价（含免费单张判定，但放大后通常超 1024² → 通常要钱）。
+- **`/ai/augment-image`** 挂的是**导演工具**：`bg-removal` / `declutter` /
+  `declutter-keep-bubbles` / `lineart` / `sketch` / `colorize` / `emotion` / `pixel-snap`
+  （枚举里还有 `upscale`，但 UI 文案标着"ダミー"，真正的超分是 §30.1 那个端点）。
+
+影响：将来做 Enhance 比预想简单 —— 复用 img2img + 尺寸放大即可，计费公式已知；
+它不属于"费用未知的 augment 调用"。
+
+### 30.5 导演工具的价格：静态分析到头了
+
+前端对 augment-image **既不计算也不显示价格**（请求类里没有价格字段，工具 UI 里没有 Anlas 文案），
+价格纯由服务端决定；官方文档与 FAQ 也不给数字。
+
+因此若要接入导演工具：确认框只能写"价格由服务端决定（未知）"，
+第一次调用必须用户手动发起，之后用余额差反推单价（我们的 Anlas 流水正好能记这个）。
+工具输入上限同样是 1536×2048。
+
+### 30.6 代码落点
+
+| 变更 | 文件 |
+|---|---|
+| 超分价格表、4 倍常量、面积上限 | `domain/billing/UpscaleCost.kt`（新） |
+| 超分请求体改为官方三字段 | `data/network/OkHttpNovelAiApi.kt`、`data/network/NovelAiApi.kt` |
+| 去掉 `scale` 参数、标题固定 "(4x)" | `data/repo/GenerationRepository.kt`、`ui/detail/DetailViewModel.kt` |
+| 确认框显示确切价格、超限禁用 | `ui/detail/UpscaleConfirmationDialog.kt`、`res/values/strings.xml` |
+| 免费判定与公式注释更正 | `domain/billing/AnlasCostCalculator.kt`、`NovelAiPaidAnlasFormula.kt`、`AnlasPricingContext.kt` |
+| 单测 | `UpscaleCostTest`（新）、`AnlasCostCalculatorTest`、`OkHttpNovelAiApiUpscaleTest` |
+
+### 30.7 附带收获：三个"待核对"的滑块初值也一并确认了
+
+同一批 bundle 里就有官方的默认值，不必再让用户去网页上读：
+
+| 项 | 官方原样 | 我们此前的值 | 处理 |
+|---|---|---|---|
+| Image2Img Strength / Noise | 每个模型的默认参数对象都是 `strength:.7, noise:0` | 0.7（标注"待核对"） | **值本来就对**，只把注释里的 ⚠️ 去掉；`noise` 照旧不发 |
+| Precise Reference 三滑块 | 新增参考图时构造 `{information_extracted:1, fidelity:1, strength:1}` | 0.6 / 0.5 / 1.0（标注"工作值"） | **按官方改为 1.0 / 1.0 / 1.0** |
+| Vibe 两滑块 | `strength` 恒 0.6；`information_extracted`：V4.5 Full = 0.7，其余模型 = 1.0 | 0.6 / 1.0（标注"我们的选择"） | 与官方一致（仅 V4.5 Full 差 0.3），**保持统一值**，注释写明差异 |
+
+Precise Reference 那两个值的改动会影响新加参考图的初始效果（更贴官方、参考更强），
+用户仍可在滑块上调；这是代码里原本就写好的"核对后改这三行"的动作。
+Vibe 的按模型分叉没做 —— 它同时是 `encode-vibe` 的缓存键之一，改动面比收益大。
 
 

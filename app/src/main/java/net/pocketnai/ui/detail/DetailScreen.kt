@@ -365,8 +365,8 @@ fun DetailScreen(
                 sourceWidth = image.width,
                 sourceHeight = image.height,
                 upscaling = state.upscaling,
-                onConfirm = { scale ->
-                    viewModel.upscaleImage(scale) { newImageId ->
+                onConfirm = {
+                    viewModel.upscaleImage { newImageId ->
                         showUpscaleDialog = false
                         viewModel.load(newImageId)
                     }

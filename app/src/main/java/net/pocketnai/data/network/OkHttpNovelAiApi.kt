@@ -369,16 +369,12 @@ class OkHttpNovelAiApi(
     override suspend fun upscaleImage(
         token: String,
         imageBase64: String,
-        width: Int,
-        height: Int,
-        scale: Int,
         destinationFile: File,
     ): Outcome<Unit> = withContext(Dispatchers.IO) {
         val payload = buildJsonObject {
             put("image", imageBase64)
-            put("width", width)
-            put("height", height)
-            put("scale", scale)
+            put("model", UPSCALE_MODEL)
+            put("declared_blur_sigma", UPSCALE_DECLARED_BLUR_SIGMA)
         }
         val request = Request.Builder()
             .url("$baseUrl/ai/upscale")
@@ -478,5 +474,14 @@ class OkHttpNovelAiApi(
 
         /** 诊断信息里保留的事件摘要条数上限：够定位问题，又不至于把日志淹掉。 */
         const val MAX_DIAGNOSTIC_LABELS = 8
+
+        /**
+         * 超分请求里官方前端恒发的模型 —— 它是**超分模型**，与被放大那张图的生成模型无关，
+         * 官方对任何来源的图都发这一个值（技术决策记录 §30.1）。
+         */
+        val UPSCALE_MODEL: String = ImageModel.V5_CURATED.apiModelId
+
+        /** 同上，官方前端恒发 0。 */
+        const val UPSCALE_DECLARED_BLUR_SIGMA = 0
     }
 }

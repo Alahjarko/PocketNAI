@@ -42,16 +42,13 @@ class OkHttpNovelAiApiUpscaleTest {
     }
 
     @Test
-    fun `超分请求路径恰为 ai-upscale 且正确携带请求参数与鉴权头`() = runBlocking {
+    fun `超分请求体与官方一致：只有 image、model 与 declared_blur_sigma`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(200).setBody("dummy-png-or-zip"))
 
         val destFile = tempFolder.newFile("upscaled.bin")
         val outcome = api.upscaleImage(
             token = fakeToken,
             imageBase64 = "aGVsbG8=",
-            width = 832,
-            height = 1216,
-            scale = 2,
             destinationFile = destFile,
         )
 
@@ -65,10 +62,11 @@ class OkHttpNovelAiApiUpscaleTest {
         assertThat(recorded.getHeader("Content-Type")).contains("application/json")
 
         val json = Json.parseToJsonElement(recorded.body.readUtf8()).jsonObject
+        assertThat(json.keys).containsExactly("image", "model", "declared_blur_sigma")
         assertThat(json["image"]?.jsonPrimitive?.content).isEqualTo("aGVsbG8=")
-        assertThat(json["width"]?.jsonPrimitive?.content).isEqualTo("832")
-        assertThat(json["height"]?.jsonPrimitive?.content).isEqualTo("1216")
-        assertThat(json["scale"]?.jsonPrimitive?.content).isEqualTo("2")
+        // 官方前端对任何来源的图都发这个超分模型与 0 的 blur sigma；倍数固定 4 倍、不在请求里。
+        assertThat(json["model"]?.jsonPrimitive?.content).isEqualTo("nai-diffusion-5-curated")
+        assertThat(json["declared_blur_sigma"]?.jsonPrimitive?.content).isEqualTo("0")
     }
 
     @Test
@@ -79,9 +77,6 @@ class OkHttpNovelAiApiUpscaleTest {
         val outcome = api.upscaleImage(
             token = fakeToken,
             imageBase64 = "aGVsbG8=",
-            width = 832,
-            height = 1216,
-            scale = 4,
             destinationFile = destFile,
         )
 

@@ -108,9 +108,6 @@ class GenerationSeedAndPayloadTest {
         override suspend fun upscaleImage(
             token: String,
             imageBase64: String,
-            width: Int,
-            height: Int,
-            scale: Int,
             destinationFile: File,
         ): Outcome<Unit> = Outcome.Success(Unit)
     }

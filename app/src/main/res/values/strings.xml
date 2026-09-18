@@ -232,9 +232,10 @@
     <string name="generate_mode_upscale">高清放大</string>
     <string name="upscale_dialog_title">图像高清放大</string>
     <string name="upscale_source_size">原始尺寸：%1$d × %2$d</string>
-    <string name="upscale_target_size">放大后：%1$d × %2$d</string>
-    <string name="upscale_scale_factor">放大倍数</string>
-    <string name="upscale_warning">高清放大将调用 NovelAI 服务端超分端点 (/ai/upscale)，可能会消耗 Anlas 点数。放大后将作为新图片保存至画廊。</string>
+    <string name="upscale_target_size">放大后：%1$d × %2$d（固定 4 倍）</string>
+    <string name="upscale_cost_estimate">预计消耗：%1$d Anlas</string>
+    <string name="upscale_too_large">原图超出超分上限（1536 × 2048），无法放大。</string>
+    <string name="upscale_warning">将调用 NovelAI 服务端超分端点 (/ai/upscale)。超分按源图面积计价（1–4 Anlas），Opus 的免费单张不覆盖它；结果作为新图片保存至画廊，原图不变。</string>
     <string name="upscale_confirm">确认放大</string>
     <string name="upscale_in_progress">正在放大处理中，请稍候…</string>
     <string name="upscale_success">高清放大完成</string>

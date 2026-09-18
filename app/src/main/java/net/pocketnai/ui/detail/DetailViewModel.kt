@@ -17,6 +17,7 @@ import net.pocketnai.data.repo.BalanceRefreshReason
 import net.pocketnai.data.repo.FavoriteImageRepository
 import net.pocketnai.data.repo.GenerationRepository
 import net.pocketnai.data.security.CredentialStore
+import net.pocketnai.domain.billing.UpscaleCost
 import net.pocketnai.domain.model.GeneratedImage
 import net.pocketnai.domain.model.Generation
 import net.pocketnai.domain.model.GenerationRequest
@@ -140,14 +141,14 @@ class DetailViewModel(
         _state.value = _state.value.copy(errorCode = null)
     }
 
-    fun upscaleImage(scale: Int, onComplete: (newImageId: String) -> Unit) {
+    fun upscaleImage(onComplete: (newImageId: String) -> Unit) {
         val image = _state.value.image ?: return
         if (_state.value.upscaling) return
         _state.update { it.copy(upscaling = true, errorCode = null) }
         val beforeBalance = accountBalanceRepository?.latestOrNull()
         val accountFp = credentialStore?.hint()?.fingerprint ?: "default"
         viewModelScope.launch {
-            when (val outcome = repository.upscaleImage(image.id, scale)) {
+            when (val outcome = repository.upscaleImage(image.id)) {
                 is Outcome.Success -> {
                     _state.update { it.copy(upscaling = false) }
                     val refreshOutcome = accountBalanceRepository?.refresh(
@@ -163,7 +164,7 @@ class DetailViewModel(
                         actionType = "UPSCALE",
                         anlasSpent = spent,
                         balanceAfter = afterBalance?.totalAnlas,
-                        description = "图片高清放大 (${scale}x)",
+                        description = "图片高清放大 (${UpscaleCost.SCALE_FACTOR}x)",
                         generationId = outcome.value,
                     )
                     onComplete(outcome.value)

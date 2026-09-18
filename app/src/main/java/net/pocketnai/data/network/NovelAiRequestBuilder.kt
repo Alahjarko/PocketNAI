@@ -60,10 +60,13 @@ object NovelAiRequestBuilder {
     const val ACTION_INFILL: String = "infill"
 
     /**
-     * Vibe 两个滑块的默认值。
+     * Vibe 两个滑块的默认值（2026-09-18 已核对为官方值，技术决策记录 §30.7）。
      *
-     * ⚠️ 这是**我们的选择，不是官方默认值**：官方文档只给出"所有 vibe 的强度建议合计
-     * 不超过 1.0"这条经验值，网页端的具体初值读不到（用户确认过网页上看不到）。
+     * 官方前端按模型给默认值：`strength` 恒为 **0.6**；`information_extracted`
+     * **V4.5 Full 是 0.7，其余模型（含 V4.5 Curated 与 V5）是 1.0**。
+     * 我们对所有模型统一用 0.6 / 1.0 —— 与官方只差 V4.5 Full 的那 0.3，
+     * 目前没有做按模型分叉（要动的话记得它同时是 encode-vibe 的缓存键之一）。
+     *
      * 这两个值必须由客户端发送（数组要与图片一一对应），没有留空的余地。
      */
     private const val VIBE_DEFAULT_STRENGTH = 0.6

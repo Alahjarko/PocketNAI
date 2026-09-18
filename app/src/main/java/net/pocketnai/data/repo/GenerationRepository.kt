@@ -23,6 +23,7 @@ import net.pocketnai.data.network.NovelAiRequestBuilder
 import net.pocketnai.data.network.PngValidator
 import net.pocketnai.data.network.ZipImageExtractor
 import net.pocketnai.data.security.CredentialStore
+import net.pocketnai.domain.billing.UpscaleCost
 import net.pocketnai.domain.image.ImageGeometry
 import net.pocketnai.domain.image.ImageTransform
 import net.pocketnai.domain.image.PixelSize
@@ -452,13 +453,13 @@ class GenerationRepository(
      * 图像超分放大。
      *
      * 必须且只能由用户在详情页明确确认后触发。
-     * 服务端 `/ai/upscale` 可能会消耗 Anlas，成功后作为一张新图片与记录插入画廊。
+     * 服务端 `/ai/upscale` 按源图面积扣 1-4 Anlas（`UpscaleCost`），
+     * 成功后作为一张新图片与记录插入画廊。
      *
      * @return 成功时返回新生成的 [GeneratedImage.id]
      */
     suspend fun upscaleImage(
         imageId: String,
-        scale: Int,
     ): Outcome<String> = withContext(Dispatchers.IO) {
         val detail = loadDetail(imageId)
             ?: return@withContext Outcome.Failure(
@@ -490,9 +491,6 @@ class GenerationRepository(
         val callOutcome = api.upscaleImage(
             token = token,
             imageBase64 = imageBase64,
-            width = detail.image.width,
-            height = detail.image.height,
-            scale = scale,
             destinationFile = archiveFile,
         )
 
@@ -558,12 +556,15 @@ class GenerationRepository(
         }
 
         val committedAt = clock()
-        val targetWidth = committed.firstOrNull()?.width ?: (detail.image.width * scale)
-        val targetHeight = committed.firstOrNull()?.height ?: (detail.image.height * scale)
+        // 官方超分固定 4 倍；实际尺寸以服务端返回的图为准，这里只是兜底。
+        val targetWidth = committed.firstOrNull()?.width
+            ?: (detail.image.width * UpscaleCost.SCALE_FACTOR)
+        val targetHeight = committed.firstOrNull()?.height
+            ?: (detail.image.height * UpscaleCost.SCALE_FACTOR)
 
         val newGeneration = detail.generation.copy(
             id = generationId,
-            title = "${detail.generation.title} (${scale}x)",
+            title = "${detail.generation.title} (${UpscaleCost.SCALE_FACTOR}x)",
             mode = GenerationMode.UPSCALE,
             createdAt = committedAt,
             updatedAt = committedAt,
