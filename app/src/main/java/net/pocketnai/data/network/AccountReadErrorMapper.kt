@@ -2,6 +2,7 @@ package net.pocketnai.data.network
 
 import net.pocketnai.core.AppError
 import net.pocketnai.core.ErrorCode
+import net.pocketnai.domain.proxy.ProxyQuotaExceededException
 import java.io.IOException
 import java.net.SocketTimeoutException
 
@@ -31,6 +32,7 @@ object AccountReadErrorMapper {
     }
 
     fun fromTransportError(error: IOException): AppError = when (error) {
+        is ProxyQuotaExceededException -> AppError.of(ErrorCode.PROXY_QUOTA_EXCEEDED)
         is SocketTimeoutException -> AppError.of(ErrorCode.REQUEST_TIMEOUT)
         else -> AppError.of(ErrorCode.NETWORK_UNAVAILABLE)
     }

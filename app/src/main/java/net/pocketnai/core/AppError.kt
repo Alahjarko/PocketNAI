@@ -111,6 +111,14 @@ enum class ErrorCode {
      */
     UPDATE_SIGNATURE_MISMATCH,
 
+    /**
+     * 公益代理的当日额度已用完（客户端自律限额）。
+     *
+     * 也单独成一类：不是"网络坏了"，而是"今天的额度用完了"，
+     * 用户能做的事完全不同（等明天、或切到自定义代理）。
+     */
+    PROXY_QUOTA_EXCEEDED,
+
     /** 未预期错误。 */
     UNKNOWN,
 }

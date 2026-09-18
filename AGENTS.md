@@ -255,6 +255,33 @@
 - 余额走 `GET /user/subscription`（只读），错误映射用 `AccountReadErrorMapper`：
   **余额超时是 `REQUEST_TIMEOUT`，不是 `TIMEOUT_UNCERTAIN`**（后者那句"可能已计费"只适用于生成）。
 
+### 网络代理（公益节点 / 自定义，2026-09-18）
+
+- 入口在设置页；**只影响 NovelAI 的请求**（`AppContainer.novelAiClient()`），
+  检查更新与 APK 下载固定直连（省代理流量，用户要求）。
+- **公益节点是加密的 assets**（`public_proxy_nodes.enc`，AES-256-GCM，密钥派生自代码内固定串）：
+  骗得过"随手提取"，**骗不过专业逆向** —— 把这批凭据当**可轮换**的用；
+  换凭据后跑 `node scripts/encrypt-proxy-nodes.mjs <proxies.txt>` 重新生成即可。
+  真正的用量/并发约束请在**代理服务商后台**设置（客户端统计只是自律）。
+- **SOCKS5 认证走全局 `java.net.Authenticator`**，不是 OkHttp 的 `proxyAuthenticator`
+  （后者只管 HTTP 代理的 407）。两个实测坑（2026-09-18）：
+  1. 不注册 Authenticator → `SOCKS : authentication failed`，请求快速失败、流量统计不动；
+  2. **Android 把 SOCKS 认证的 `requestorType` 标成 `SERVER`（不是 JDK 的 `PROXY`）** ——
+     按类型过滤会吞掉凭据；现在按**端口匹配当前端点**回答认证请求。
+- **"3 秒不通就换节点"**：代理 client 的 `connectTimeout = 3s`（含连代理、SOCKS 握手、
+  到目标建连），失败后由 `ProxyFailoverInterceptor` 换节点重试（≤3 次）。
+  实测注意：模拟器/慢网络下建连要 1.8–3.3 秒，3 秒会误杀正常连接 —— 靠重试兜底
+  （首次请求可能要 1–2 次重试才成功；成功后的连接会被 OkHttp 复用）。
+- **重试的安全边界（红线）**：只有"**代理连接失败**（请求未发出）"或"**幂等请求（GET/HEAD）**"
+  才换节点重试；**POST（生成、登录）绝不重发** —— 宁可让用户手动重试，也不重复扣费。
+- 排障工具：`SocksProxyProbeTest`（androidTest，**唯一允许联网的仪器化测试** ——
+  只发 GET 到 NovelAI 首页测 SOCKS 建连，不涉及生成）；运行时诊断看 logcat 的
+  `PocketNai/Proxy` tag（只记结构：模式/类型/端口匹配，**不记端点与凭据**）。
+- 流量：`ProxyTrafficListener`（EventListener body 计数）只挂在代理 client 上；
+  公益模式每日 750 MB 上限（本机统计、跨天重置），超限后 `ProxyQuotaInterceptor`
+  拒绝新请求并映射成 `PROXY_QUOTA_EXCEEDED` —— 文案要指回"今日额度"，
+  绝不能静默当网络错误处理。
+
 ### 检查更新与发布（GitHub Release）
 
 - 发布渠道有两条，**构建号同源**（都取"已有 Release 里最大的 `build-N` 加 1"），因此不会撞号：

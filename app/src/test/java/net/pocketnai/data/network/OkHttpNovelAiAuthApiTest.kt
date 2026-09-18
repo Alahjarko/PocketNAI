@@ -42,7 +42,7 @@ class OkHttpNovelAiAuthApiTest {
             .build()
         api = OkHttpNovelAiAuthApi(
             baseUrl = server.url("/").toString().trimEnd('/'),
-            client = client,
+            clientFactory = { client },
             json = Json { ignoreUnknownKeys = true },
         )
     }

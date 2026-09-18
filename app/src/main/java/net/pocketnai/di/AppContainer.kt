@@ -13,7 +13,14 @@ import net.pocketnai.data.network.NovelAiAuthApi
 import net.pocketnai.data.network.NovelAiTagSuggestionSource
 import net.pocketnai.data.network.OkHttpNovelAiAuthApi
 import net.pocketnai.data.network.OkHttpNovelAiApi
+import net.pocketnai.data.network.ProxyFailoverInterceptor
+import net.pocketnai.data.network.ProxyQuotaInterceptor
+import net.pocketnai.data.network.ProxyTrafficListener
 import net.pocketnai.data.network.RedactingHttpLogger
+import net.pocketnai.data.network.RotatingProxySelector
+import net.pocketnai.data.network.SocksProxyAuthenticator
+import net.pocketnai.data.proxy.ProxyStore
+import net.pocketnai.data.proxy.PublicProxyNodes
 import net.pocketnai.data.repo.AccountBalanceRepository
 import net.pocketnai.data.repo.AnlasLedgerRepository
 import net.pocketnai.data.repo.FavoriteImageRepository
@@ -35,6 +42,7 @@ import net.pocketnai.data.settings.SettingsStore
 import net.pocketnai.ui.state.GenerationDraftStore
 import net.pocketnai.ui.state.GenerationPreviewStore
 import okhttp3.OkHttpClient
+import java.net.Authenticator
 import java.util.concurrent.TimeUnit
 
 /**
@@ -68,15 +76,51 @@ class AppContainer(application: Application) {
         .addInterceptor(RedactingHttpLogger(enabled = BuildConfig.DEBUG))
         .build()
 
+    // ---- 代理（2026-09-18）----
+
+    val proxyStore: ProxyStore by lazy { ProxyStore(application) }
+
+    val publicProxyNodes: PublicProxyNodes by lazy { PublicProxyNodes(application) }
+
+    private val rotatingProxySelector: RotatingProxySelector by lazy {
+        RotatingProxySelector(proxyStore, publicProxyNodes)
+    }
+
     /**
-     * 登录专用客户端：从基客户端派生，但把整体超时收紧到 60 秒。
+     * 代理模式下的客户端。
+     *
+     * - `connectTimeout = 3 秒`：连代理、SOCKS 握手、到目标建连都算在内 ——
+     *   超过即失败，由 [ProxyFailoverInterceptor] 换节点重试（"3 秒不通就换"）；
+     * - 流量统计只挂在这个客户端上（直连不计入公益额度）。
+     */
+    private val proxiedHttpClient: OkHttpClient by lazy {
+        httpClient.newBuilder()
+            .connectTimeout(PROXY_CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .proxySelector(rotatingProxySelector)
+            .addInterceptor(ProxyQuotaInterceptor(proxyStore))
+            .addInterceptor(ProxyFailoverInterceptor(rotatingProxySelector))
+            .eventListener(ProxyTrafficListener(proxyStore))
+            .build()
+    }
+
+    /** NovelAI 请求用哪个客户端：代理实际生效时走代理，否则直连。开关切换无需重建 API。 */
+    private fun novelAiClient(): OkHttpClient =
+        if (proxyStore.settings.value.active) proxiedHttpClient else httpClient
+
+    /**
+     * 登录专用客户端：代理能力继承 [novelAiClient]，只把整体超时收紧到 60 秒。
      *
      * 图片生成需要 5 分钟的读取等待（服务端排队 + 出图），而登录只在一次
      * 快速请求里完成。让登录继承 5 分钟会让"网络不通"表现为长时间无响应。
      */
-    private val authHttpClient: OkHttpClient = httpClient.newBuilder()
-        .callTimeout(60, TimeUnit.SECONDS)
-        .build()
+    private fun authClient(): OkHttpClient =
+        novelAiClient().newBuilder().callTimeout(60, TimeUnit.SECONDS).build()
+
+    init {
+        // SOCKS5 认证不在 OkHttp 层（proxyAuthenticator 只管 HTTP 代理的 407）——
+        // JDK 的 Socket 实现走全局 java.net.Authenticator，不注册它凭据会被代理拒绝。
+        Authenticator.setDefault(SocksProxyAuthenticator(rotatingProxySelector))
+    }
 
     val credentialStore: CredentialStore = KeystoreCredentialStore(application)
 
@@ -87,7 +131,7 @@ class AppContainer(application: Application) {
 
     val api: NovelAiApi = OkHttpNovelAiApi(
         baseUrl = BuildConfig.NOVELAI_API_BASE_URL,
-        client = httpClient,
+        clientFactory = ::novelAiClient,
         json = json,
     )
 
@@ -151,7 +195,7 @@ class AppContainer(application: Application) {
 
     val authApi: NovelAiAuthApi = OkHttpNovelAiAuthApi(
         baseUrl = BuildConfig.NOVELAI_API_BASE_URL,
-        client = authHttpClient,
+        clientFactory = ::authClient,
         json = json,
     )
 
@@ -218,4 +262,9 @@ class AppContainer(application: Application) {
 
     /** 更新包下载：走基础客户端（几十 MB 的大文件需要长读超时）。 */
     val updateDownloader: UpdateDownloader by lazy { UpdateDownloader(application, httpClient) }
+
+    private companion object {
+        /** 代理模式下的连接超时 —— "3 秒不通就换节点"的来源。 */
+        const val PROXY_CONNECT_TIMEOUT_SECONDS = 3L
+    }
 }

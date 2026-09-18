@@ -182,6 +182,18 @@ fun SettingsScreen(
 
         HorizontalDivider()
 
+        // ---- 网络代理（公益节点 / 自定义） ----
+        val proxySettings by container.proxyStore.settings.collectAsStateWithLifecycle()
+        val proxyUsedBytes by container.proxyStore.usedBytesToday.collectAsStateWithLifecycle()
+        ProxySection(
+            settings = proxySettings,
+            usedBytesToday = proxyUsedBytes,
+            nodeCount = container.publicProxyNodes.all().size,
+            onSettingsChange = container.proxyStore::update,
+        )
+
+        HorizontalDivider()
+
         // ---- 外观 ----
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(

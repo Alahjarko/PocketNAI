@@ -40,6 +40,7 @@ fun ErrorCode.messageRes(): Int = when (this) {
     ErrorCode.UPDATE_CHECK_FAILED -> R.string.error_update_check_failed
     ErrorCode.UPDATE_DOWNLOAD_FAILED -> R.string.error_update_download_failed
     ErrorCode.UPDATE_SIGNATURE_MISMATCH -> R.string.error_update_signature_mismatch
+    ErrorCode.PROXY_QUOTA_EXCEEDED -> R.string.error_proxy_quota_exceeded
     ErrorCode.UNKNOWN -> R.string.error_unknown
 }
 

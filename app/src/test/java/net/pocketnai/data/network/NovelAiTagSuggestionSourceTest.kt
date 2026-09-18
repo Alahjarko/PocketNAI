@@ -38,7 +38,7 @@ class NovelAiTagSuggestionSourceTest {
         server.start()
         api = OkHttpNovelAiApi(
             baseUrl = server.url("/").toString().trimEnd('/'),
-            client = OkHttpClient.Builder().retryOnConnectionFailure(false).build(),
+            clientFactory = { OkHttpClient.Builder().retryOnConnectionFailure(false).build() },
             json = Json { ignoreUnknownKeys = true },
         )
     }

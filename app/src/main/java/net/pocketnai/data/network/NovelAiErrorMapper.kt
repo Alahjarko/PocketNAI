@@ -2,6 +2,7 @@ package net.pocketnai.data.network
 
 import net.pocketnai.core.AppError
 import net.pocketnai.core.ErrorCode
+import net.pocketnai.domain.proxy.ProxyQuotaExceededException
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.ConnectException
@@ -64,6 +65,8 @@ object NovelAiErrorMapper {
      */
     fun fromTransportError(cause: Throwable): AppError {
         val code = when (cause) {
+            // 公益代理额度用尽：不是网络故障，文案要指回"今日额度"。
+            is ProxyQuotaExceededException -> ErrorCode.PROXY_QUOTA_EXCEEDED
             is SocketTimeoutException -> ErrorCode.TIMEOUT_UNCERTAIN
             is UnknownHostException -> ErrorCode.NETWORK_UNAVAILABLE
             is ConnectException -> ErrorCode.NETWORK_UNAVAILABLE

@@ -412,4 +412,24 @@
     <string name="error_update_check_failed">检查更新失败，可能是网络问题，稍后再试。</string>
     <string name="error_update_download_failed">更新包下载失败，请检查网络后重试。</string>
     <string name="error_update_signature_mismatch">下载的安装包与当前应用不是同一签名，已停止安装。</string>
+
+    <!-- 网络代理（内置公益节点 + 自定义） -->
+    <string name="proxy_section_title">网络代理</string>
+    <string name="proxy_section_desc">NovelAI 在部分网络下无法直连。可开启内置公益节点（社区提供、每日限额），或填写自己的代理；检查更新与下载不走代理。</string>
+    <string name="proxy_enable">使用代理</string>
+    <string name="proxy_mode_public">公益节点</string>
+    <string name="proxy_mode_custom">自定义</string>
+    <string name="proxy_public_desc">内置节点由社区提供，仅用于连接 NovelAI。按本机统计，每日最多 750 MB；连接失败会在 3 秒后自动切换节点。</string>
+    <string name="proxy_usage_today">今日已用 %1$s（上限 750 MB）</string>
+    <string name="proxy_nodes_available">已内置 %1$d 个节点</string>
+    <string name="proxy_type_label">协议</string>
+    <string name="proxy_host_label">地址</string>
+    <string name="proxy_port_label">端口</string>
+    <string name="proxy_username_label">用户名</string>
+    <string name="proxy_password_label">密码</string>
+    <string name="proxy_paste_import">从剪贴板导入</string>
+    <string name="proxy_paste_failed">剪贴板里没有可识别的一行（期望格式 host:port:user:pass）。</string>
+    <string name="proxy_paste_success">已导入代理配置。</string>
+    <string name="proxy_custom_incomplete">地址和端口还没填完整。</string>
+    <string name="error_proxy_quota_exceeded">公益代理的今日额度（750 MB）已用完，明天恢复；也可以在设置里改用自定义代理。</string>
 </resources>

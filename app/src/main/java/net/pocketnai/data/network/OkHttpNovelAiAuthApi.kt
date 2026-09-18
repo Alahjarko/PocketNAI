@@ -36,9 +36,12 @@ import java.io.IOException
  */
 class OkHttpNovelAiAuthApi(
     private val baseUrl: String,
-    private val client: OkHttpClient,
+    private val clientFactory: () -> OkHttpClient,
     private val json: Json,
 ) : NovelAiAuthApi {
+
+    /** 每次请求时取"当前应该用的客户端"：代理开启走代理、否则直连。 */
+    private val client: OkHttpClient get() = clientFactory()
 
     override suspend fun login(accessKey: String): Outcome<AccountSession> =
         withContext(Dispatchers.IO) {
