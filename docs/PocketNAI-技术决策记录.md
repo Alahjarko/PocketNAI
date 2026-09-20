@@ -2616,3 +2616,39 @@ Precise Reference 那两个值的改动会影响新加参考图的初始效果�
 Vibe 的按模型分叉没做 —— 它同时是 `encode-vibe` 的缓存键之一，改动面比收益大。
 
 
+## 三十二、多账号的"添加账号"支持账号登录（2026-09-19，用户点名）
+
+### 32.1 背景
+
+用户指出：多账号的添加路径**只支持粘贴 Persistent Token**，而账号密码登录这条
+（本地派生 → `/user/login` → `/user/data` 复验）已经单独验证过可用且稳定，
+应当并进多账号。查证属实 —— 添加弹窗把 Token 硬编码成 `PERSISTENT_API_TOKEN` 落盘。
+
+顺带发现一个既有缺口：添加弹窗**不验证**用户粘贴的 Token 就直接保存并切换，
+粘错一个字符会把会话带进"已保存但不可用"的状态，切换之后才暴露。
+连接页一直遵守"先验证、后保存"，多账号这条路径却漏了。
+
+### 32.2 实现
+
+- 新增 `data/account/AccountAdder`：两种来源共用一条纪律 ——
+  **先验证（`/user/data`）、后保存（`saveAccount`）、再切换（`switchAccount`）**。
+  - `addWithToken(name, token)`：PST 直接验证；
+  - `addWithLogin(name, email, password)`：顺序与连接页一致 ——
+    派生 Access Key → `/user/login` → 复验 → 保存；
+  - 登录失败**不触碰**复验接口；复验失败**不落盘、不切换**，错误原样交给界面。
+  - 已有激活账号时 `saveAccount` 默认不激活，因此落盘后显式切换（"添加"的语义是切过去用）。
+- `SettingsViewModel` 增加 `AddAccountUi{submitting, error, lastAddedId}` 与两个提交方法；
+  `lastAddedId` 作成功信号：弹窗观察它变化后刷新列表、关闭弹窗、走统一的
+  `onAccountSwitched()`（该回调负责清余额缓存并刷新订阅状态）。
+- 添加弹窗加"Persistent Token / 账号登录"两个模式 chip；密码只在弹窗状态里，
+  切模式或关弹窗即丢弃，与连接页约定一致。
+- 单测 `AccountAdderTest`（7 例）钉住：验证通过才落盘并切换、验证失败不落盘不切换、
+  空输入不发请求、登录四步全走通、登录失败不碰复验、复验失败不落盘、空邮箱不派生。
+
+### 32.3 不做什么
+
+- 不做"添加时不切换"：现有语义是加完即用，多一个选项反而让用户猜"我加上了吗"。
+- 不把 `AccountAdder` 塞进 `CredentialStore`：存储只管密文，验证要打网络，
+  两者耦合会让 `CredentialStore` 的假实现更难写，也会把网络依赖带进存储层。
+
+

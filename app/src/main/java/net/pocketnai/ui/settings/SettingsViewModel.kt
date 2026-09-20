@@ -8,12 +8,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import net.pocketnai.core.AppError
+import net.pocketnai.core.Outcome
+import net.pocketnai.data.account.AccountAdder
 import net.pocketnai.data.repo.AccountBalanceRepository
 import net.pocketnai.data.repo.GenerationRepository
 import net.pocketnai.data.security.SessionState
 import net.pocketnai.data.security.CredentialStore
 import net.pocketnai.data.settings.SettingsStore
+import net.pocketnai.domain.account.SavedAccount
 import net.pocketnai.domain.billing.SubscriptionOverride
 import net.pocketnai.domain.billing.SubscriptionStatus
 import net.pocketnai.domain.billing.SubscriptionStatusResolver
@@ -25,6 +30,7 @@ class SettingsViewModel(
     private val credentialStore: CredentialStore,
     private val sessionState: SessionState,
     private val accountBalanceRepository: AccountBalanceRepository,
+    private val accountAdder: AccountAdder,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
 
@@ -32,6 +38,49 @@ class SettingsViewModel(
         val usedBytes: Long = 0L,
         val maintenanceMessage: String? = null,
     )
+
+    /**
+     * 添加账号的提交状态。
+     *
+     * [lastAddedId] 是"成功信号"：界面观察它变化后刷新账号列表并关掉添加弹窗。
+     * 用它而不是布尔 success，是因为弹窗可能被反复打开，布尔值需要额外复位。
+     */
+    data class AddAccountUi(
+        val submitting: Boolean = false,
+        val error: AppError? = null,
+        val lastAddedId: String? = null,
+    )
+
+    private val _addAccountUi = MutableStateFlow(AddAccountUi())
+    val addAccountUi: StateFlow<AddAccountUi> = _addAccountUi.asStateFlow()
+
+    fun addAccountWithToken(name: String, token: String) {
+        submitAdd { accountAdder.addWithToken(name, token) }
+    }
+
+    fun addAccountWithLogin(name: String, email: String, password: String) {
+        submitAdd { accountAdder.addWithLogin(name, email, password) }
+    }
+
+    fun dismissAddAccountError() {
+        _addAccountUi.update { it.copy(error = null) }
+    }
+
+    private fun submitAdd(block: suspend () -> Outcome<SavedAccount>) {
+        // 同步置位提交保护：连点两次不能发出两个登录/验证请求。
+        if (_addAccountUi.value.submitting) return
+        _addAccountUi.update { it.copy(submitting = true, error = null) }
+        viewModelScope.launch {
+            when (val outcome = block()) {
+                is Outcome.Success -> _addAccountUi.value =
+                    AddAccountUi(lastAddedId = outcome.value.id)
+
+                is Outcome.Failure -> _addAccountUi.update {
+                    it.copy(submitting = false, error = outcome.error)
+                }
+            }
+        }
+    }
 
     val streamingPreviewEnabled: StateFlow<Boolean> = settingsStore.streamingPreviewEnabled
 

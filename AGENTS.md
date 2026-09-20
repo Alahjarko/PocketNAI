@@ -491,6 +491,11 @@
   但**顶层的 `token_iv` / `token_ciphertext` / `token_type` / `token_hint_*` 必须继续同步维护**
   （激活账号的镜像）—— 那是兼容层：旧安装升级时靠 `ensureLegacyMigrated` 建索引，
   新代码读取也不该绕过它。上一条"不得更改"的三个常量在这里依然有效。
+- **"添加账号"必须走 `data/account/AccountAdder`**（2026-09-19）：两种来源 —— 粘贴 PST、
+  邮箱密码登录 —— **都先过 `/user/data` 验证，再落盘、再切换**。
+  早期实现把粘来的 Token 不验证就保存并切换，粘错会把会话带进"已保存但不可用"的状态；
+  两条路径都别绕过验证。登录路径的顺序与连接页一致：派生 → `/user/login` → 复验 → 保存，
+  登录失败不碰复验接口，复验失败不落盘。有单测钉住（`AccountAdderTest`）。
 - `CredentialStore` 接口里的多账号方法带有**默认假实现**（如 `switchAccount` 直接返回 false）——
   不要依赖它们：只有 `KeystoreCredentialStore` 的实现是真的。以后加方法直接写进实现类，
   别再往接口里塞"默认返回失败"的占位实现（调用方会静默失效，且不会有编译错误提醒）。

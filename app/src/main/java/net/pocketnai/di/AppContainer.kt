@@ -3,6 +3,7 @@ package net.pocketnai.di
 import android.app.Application
 import kotlinx.serialization.json.Json
 import net.pocketnai.BuildConfig
+import net.pocketnai.data.account.AccountAdder
 import net.pocketnai.data.export.MediaStoreExporter
 import net.pocketnai.data.files.GenerationFileStore
 import net.pocketnai.data.image.AndroidImageMetadataInspector
@@ -205,6 +206,16 @@ class AppContainer(application: Application) {
         clientFactory = ::authClient,
         json = json,
     )
+
+    /** 多账号"添加账号"的统一入口：两种来源都先验证再落盘（见 [AccountAdder]）。 */
+    val accountAdder: AccountAdder by lazy {
+        AccountAdder(
+            credentialStore = credentialStore,
+            api = api,
+            authApi = authApi,
+            accessKeyDeriver = accessKeyDeriver,
+        )
+    }
 
     val promptFavoriteRepository: PromptFavoriteRepository by lazy {
         PromptFavoriteRepository(dao = database.promptFavoriteDao())

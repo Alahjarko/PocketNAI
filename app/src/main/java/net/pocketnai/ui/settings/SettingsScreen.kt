@@ -65,11 +65,13 @@ fun SettingsScreen(
                     credentialStore = container.credentialStore,
                     sessionState = container.sessionState,
                     accountBalanceRepository = container.accountBalanceRepository,
+                    accountAdder = container.accountAdder,
                 )
             }
         },
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val addAccountUi by viewModel.addAccountUi.collectAsStateWithLifecycle()
     val streamingEnabled by viewModel.streamingPreviewEnabled.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val connected by viewModel.connected.collectAsStateWithLifecycle()
@@ -99,6 +101,10 @@ fun SettingsScreen(
         if (accountSwitchDialogOpen) {
             AccountSwitchDialog(
                 credentialStore = container.credentialStore,
+                addAccountUi = addAccountUi,
+                onAddWithToken = viewModel::addAccountWithToken,
+                onAddWithLogin = viewModel::addAccountWithLogin,
+                onDismissAddError = viewModel::dismissAddAccountError,
                 onAccountSwitched = viewModel::onAccountSwitched,
                 onDismiss = { accountSwitchDialogOpen = false },
             )

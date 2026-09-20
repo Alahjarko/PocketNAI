@@ -14,10 +14,13 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +31,7 @@ import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,22 +39,43 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import net.pocketnai.R
 import net.pocketnai.data.security.CredentialStore
 import net.pocketnai.data.security.CredentialType
-import net.pocketnai.data.security.StoredCredential
 import net.pocketnai.domain.account.SavedAccount
+import net.pocketnai.ui.common.messageRes
+
+/** 添加账号的两种来源，与连接页的 [net.pocketnai.ui.connect.AuthMode] 同义。 */
+private enum class AddAccountMode {
+    TOKEN,
+    LOGIN,
+}
 
 @Composable
 fun AccountSwitchDialog(
     credentialStore: CredentialStore,
+    addAccountUi: SettingsViewModel.AddAccountUi,
+    onAddWithToken: (name: String, token: String) -> Unit,
+    onAddWithLogin: (name: String, email: String, password: String) -> Unit,
+    onDismissAddError: () -> Unit,
     onAccountSwitched: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var accounts by remember { mutableStateOf(credentialStore.listAccounts()) }
     var addDialogOpen by remember { mutableStateOf(false) }
     var renamingAccount by remember { mutableStateOf<SavedAccount?>(null) }
+
+    // 添加成功（VM 给出新账号 id）→ 刷新列表、关弹窗、走统一的切换后刷新。
+    LaunchedEffect(addAccountUi.lastAddedId) {
+        if (addAccountUi.lastAddedId != null) {
+            accounts = credentialStore.listAccounts()
+            addDialogOpen = false
+            onAccountSwitched()
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -109,15 +134,11 @@ fun AccountSwitchDialog(
     // 添加新账号弹窗
     if (addDialogOpen) {
         AddAccountDialog(
-            onSave = { name, token ->
-                credentialStore.saveAccount(
-                    name = name,
-                    credential = StoredCredential(token = token, type = CredentialType.PERSISTENT_API_TOKEN),
-                )
-                accounts = credentialStore.listAccounts()
-                onAccountSwitched()
-                addDialogOpen = false
-            },
+            submitting = addAccountUi.submitting,
+            error = addAccountUi.error,
+            onDismissError = onDismissAddError,
+            onSaveToken = onAddWithToken,
+            onSaveLogin = onAddWithLogin,
             onDismiss = { addDialogOpen = false },
         )
     }
@@ -219,19 +240,62 @@ private fun AccountItemCard(
     }
 }
 
+/**
+ * 添加账号：粘贴 PST 或邮箱密码登录，两种来源都**先验证再落盘**（[net.pocketnai.data.account.AccountAdder]）。
+ *
+ * 密码只活在这个弹窗的状态里：提交后弹窗关闭、组合离开组合树，状态即丢弃；
+ * 切换模式时也会立刻清掉，与连接页的约定一致。
+ */
 @Composable
 private fun AddAccountDialog(
-    onSave: (name: String, token: String) -> Unit,
+    submitting: Boolean,
+    error: net.pocketnai.core.AppError?,
+    onDismissError: () -> Unit,
+    onSaveToken: (name: String, token: String) -> Unit,
+    onSaveLogin: (name: String, email: String, password: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var mode by remember { mutableStateOf(AddAccountMode.TOKEN) }
     var name by remember { mutableStateOf("") }
     var token by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+
+    val canSubmitToken = !submitting && token.isNotBlank()
+    val canSubmitLogin = !submitting && email.isNotBlank() && password.isNotEmpty()
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!submitting) onDismiss() },
         title = { Text("添加 NovelAI 账号") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = mode == AddAccountMode.TOKEN,
+                        onClick = {
+                            mode = AddAccountMode.TOKEN
+                            password = ""
+                            passwordVisible = false
+                            onDismissError()
+                        },
+                        label = { Text("Persistent Token") },
+                    )
+                    FilterChip(
+                        selected = mode == AddAccountMode.LOGIN,
+                        onClick = {
+                            mode = AddAccountMode.LOGIN
+                            password = ""
+                            passwordVisible = false
+                            onDismissError()
+                        },
+                        label = { Text("账号登录") },
+                    )
+                }
+
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -239,15 +303,60 @@ private fun AddAccountDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(
-                    value = token,
-                    onValueChange = { token = it.trim() },
-                    label = { Text("Persistent API Token") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+
+                if (mode == AddAccountMode.TOKEN) {
+                    OutlinedTextField(
+                        value = token,
+                        onValueChange = { token = it.trim() },
+                        label = { Text("Persistent API Token") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it.trim() },
+                        label = { Text("邮箱") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("密码") },
+                        singleLine = true,
+                        visualTransformation = if (passwordVisible) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
+                        trailingIcon = {
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) {
+                                        Icons.Filled.VisibilityOff
+                                    } else {
+                                        Icons.Filled.Visibility
+                                    },
+                                    contentDescription = if (passwordVisible) "隐藏密码" else "显示密码",
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
+                error?.let { err ->
+                    Text(
+                        text = stringResource(err.code.messageRes()),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+
                 Text(
-                    text = "Token 由本机 Keystore 独立加密，绝不进入日志或普通存储。",
+                    text = "添加前会先用该凭据请求一次 /user/data 验证；验证失败不会保存。" +
+                        "凭据由本机 Keystore 独立加密，绝不进入日志或普通存储。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -255,14 +364,19 @@ private fun AddAccountDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onSave(name, token) },
-                enabled = token.isNotBlank(),
+                onClick = {
+                    when (mode) {
+                        AddAccountMode.TOKEN -> onSaveToken(name, token)
+                        AddAccountMode.LOGIN -> onSaveLogin(name, email, password)
+                    }
+                },
+                enabled = if (mode == AddAccountMode.TOKEN) canSubmitToken else canSubmitLogin,
             ) {
-                Text("保存并切换")
+                Text(if (submitting) "验证中…" else "保存并切换")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss, enabled = !submitting) {
                 Text(stringResource(R.string.action_cancel))
             }
         },
