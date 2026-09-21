@@ -55,9 +55,10 @@ fun HomeScreen(
 
     BottomSheetScaffold(
         scaffoldState = scaffoldState,
-        // 收起时必须能完整显示头部（标题 / 参数摘要 / 状态行 / 余额与费用行 / 生成按钮）
-        // 与自带的拖拽横条，否则摘要或余额会被裁掉，用户不知道当前参数与花费。
-        sheetPeekHeight = 146.dp,
+        // 收起时必须能完整显示头部（标题 + 参数摘要一行、状态/余额一行、生成按钮）
+        // 与自带的拖拽横条。头部两行化（2026-09-21）后从 146dp 降下来，
+        // 否则会多露一截表单空白。
+        sheetPeekHeight = 112.dp,
         sheetContent = {
             GenerateSheet(
                 viewModel = generateViewModel,

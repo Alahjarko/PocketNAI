@@ -3,6 +3,9 @@ package net.pocketnai.ui
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Image
@@ -11,6 +14,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -25,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
@@ -177,23 +183,35 @@ fun PocketNaiApp() {
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    Scaffold(
-        bottomBar = {
-            // 底部只剩导航栏。生成按钮在首页生成悬浮层的头部里（GenerateButton），
-            // 不再占用任何一条独立的底部栏。
-            if (currentRoute in Routes.tabs) {
-                PocketNaiBottomBar(
+
+    // 宽屏（横屏 / 平板，≥600dp）把导航挪到最左侧的 NavigationRail，
+    // 内容区原样占满右侧 —— 布局本身不变（2026-09-21 用户点名的双栏方案）。
+    BoxWithConstraints {
+        val useNavigationRail = maxWidth >= 600.dp
+        Row(modifier = Modifier.fillMaxSize()) {
+            if (useNavigationRail && currentRoute in Routes.tabs) {
+                PocketNaiNavRail(
                     navController = navController,
                     currentRoute = currentRoute,
                 )
             }
-        },
-    ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = if (connected) Routes.HOME else Routes.CONNECT,
-            modifier = Modifier.padding(innerPadding),
-        ) {
+            Scaffold(
+                bottomBar = {
+                    // 底部只剩导航栏。生成按钮在首页生成悬浮层的头部里（GenerateButton），
+                    // 不再占用任何一条独立的底部栏。宽屏时导航在左侧 Rail，底部栏不渲染。
+                    if (!useNavigationRail && currentRoute in Routes.tabs) {
+                        PocketNaiBottomBar(
+                            navController = navController,
+                            currentRoute = currentRoute,
+                        )
+                    }
+                },
+            ) { innerPadding ->
+                NavHost(
+                    navController = navController,
+                    startDestination = if (connected) Routes.HOME else Routes.CONNECT,
+                    modifier = Modifier.padding(innerPadding),
+                ) {
             composable(Routes.CONNECT) {
                 ConnectScreen(
                     onConnected = {
@@ -275,6 +293,8 @@ fun PocketNaiApp() {
                     else -> InpaintPreparing(onCancel = { navController.popBackStack() })
                 }
             }
+                }
+            }
         }
     }
 
@@ -319,6 +339,29 @@ private fun PocketNaiBottomBar(
     NavigationBar {
         specs.forEach { spec ->
             NavigationBarItem(
+                selected = currentRoute == spec.route,
+                onClick = { navController.navigateToTab(spec.route) },
+                icon = { Icon(spec.icon, contentDescription = null) },
+                label = { Text(stringResource(spec.labelRes)) },
+            )
+        }
+    }
+}
+
+/** 宽屏形态下的左侧导航栏：与底部栏同样的两个 Tab，只是挪到左边。 */
+@Composable
+private fun PocketNaiNavRail(
+    navController: NavHostController,
+    currentRoute: String?,
+) {
+    val specs = listOf(
+        TabSpec(Routes.HOME, Icons.Default.Image, R.string.nav_gallery),
+        TabSpec(Routes.SETTINGS, Icons.Default.Settings, R.string.nav_settings),
+    )
+
+    NavigationRail {
+        specs.forEach { spec ->
+            NavigationRailItem(
                 selected = currentRoute == spec.route,
                 onClick = { navController.navigateToTab(spec.route) },
                 icon = { Icon(spec.icon, contentDescription = null) },

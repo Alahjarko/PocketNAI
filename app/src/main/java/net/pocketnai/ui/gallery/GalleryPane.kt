@@ -261,7 +261,8 @@ fun GalleryPane(
                 )
             } else {
                 LazyVerticalStaggeredGrid(
-                    columns = StaggeredGridCells.Fixed(2),
+                    // 自适应列数：手机上约两列，横屏/平板自然变成三四列（规划书 4.3 允许两者）。
+                    columns = StaggeredGridCells.Adaptive(160.dp),
                     contentPadding = PaddingValues(8.dp),
                     verticalItemSpacing = 8.dp,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
