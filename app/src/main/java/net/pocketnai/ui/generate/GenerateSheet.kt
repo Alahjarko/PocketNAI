@@ -84,6 +84,7 @@ import net.pocketnai.domain.model.SeedMode
 import net.pocketnai.domain.model.shortDisplayName
 import net.pocketnai.domain.prompt.EmphasisSyntax
 import net.pocketnai.ui.common.DropdownSelector
+import net.pocketnai.ui.common.InfoButton
 import net.pocketnai.ui.common.LabeledSlider
 import net.pocketnai.ui.common.ResolutionSelector
 import net.pocketnai.ui.common.SectionHeader
@@ -204,8 +205,17 @@ fun GenerateSheet(
             CostDetailLine(costEstimate = costEstimate)
 
             // 提示词在最上面：它是每次进来都要写的东西（用户明确要求）。
-            // 参考图三个区块因此挪到内容区最底部，见下方。
-            SectionHeader(stringResource(R.string.generate_section_prompt))
+            // 参考图区块因此挪到内容区最底部，见下方。
+            // V4.5 的多语言说明（规划书 3.4 的非阻断提示）收进标题旁的 ⓘ，不常年占行。
+            SectionHeader(
+                text = stringResource(R.string.generate_section_prompt),
+                infoText = if (!profile.supportsMultilingualPrompt) {
+                    "${profile.displayName} 对非英语提示词的理解弱于 V5，" +
+                        "可以继续输入，但英文标签通常更稳定。"
+                } else {
+                    null
+                },
+            )
 
             // 权重高亮：{}/[] 与 `0.9::tag ::` 会被画上绿/红底纹，见 PromptWeightScanner。
             WeightHighlightedTextField(
@@ -255,7 +265,10 @@ fun GenerateSheet(
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 OutlinedButton(
                     onClick = {
                         promptField = applyEmphasis(promptField, viewModel, EmphasisSyntax::strengthen)
@@ -285,14 +298,8 @@ fun GenerateSheet(
                         modifier = Modifier.padding(start = 4.dp),
                     )
                 }
-            }
-            if (promptField.selection.collapsed) {
-                Text(
-                    text = "选中一段文字后：可用上面两个按钮包裹 NovelAI 的 {} / [] 语法，" +
-                        "或点输入框右上角的书签把它收藏成标签；不选中则收藏整条提示词。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                // 用法说明（选中才能强化/弱化、书签收藏两种粒度）收进 ⓘ，不再常驻一行散文。
+                InfoButton(dialogText = stringResource(R.string.prompt_tools_info))
             }
 
             if (state.randomizerCombinations > 1) {
@@ -330,7 +337,7 @@ fun GenerateSheet(
             )
 
             // 负向词也要能从收藏夹填充。入口与正向的同一形态（图标 + 计数），
-            // 用户一眼认得出是同一个功能，只是填的目标框不同。
+            // 但名字点明目标框，两个入口不再长得一模一样分不清。
             TextButton(
                 onClick = {
                     pickerTarget = PromptTarget.NEGATIVE
@@ -339,32 +346,34 @@ fun GenerateSheet(
             ) {
                 Icon(Icons.Default.Bookmarks, contentDescription = null)
                 Text(
-                    text = stringResource(R.string.favorites_button) +
+                    text = stringResource(R.string.favorites_button_negative) +
                         " (${favoritesState.promptCount + favoritesState.tagCount})",
                     modifier = Modifier.padding(start = 4.dp),
                 )
             }
 
-            // 规划书 3.4：V4.5 对多语言提示词理解较弱，只做非阻断说明。
-            if (!profile.supportsMultilingualPrompt) {
+            SectionHeader(stringResource(R.string.generate_section_params))
+
+            // 模型：标签与控件同一行。它曾是"区块标题 + 字段标签"两个一样的"模型"叠着。
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 Text(
-                    text = "${profile.displayName} 对非英语提示词的理解弱于 V5，" +
-                        "可以继续输入，但英文标签通常更稳定。",
-                    style = MaterialTheme.typography.bodySmall,
+                    text = stringResource(R.string.generate_model),
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                DropdownSelector(
+                    label = null,
+                    selectedText = profile.displayName,
+                    options = ModelCatalog.models,
+                    optionLabel = { ModelCatalog.profileOf(it).displayName },
+                    onSelect = viewModel::onModelSelected,
+                    modifier = Modifier.weight(1f),
+                )
             }
-
-            SectionHeader(stringResource(R.string.generate_model))
-
-            DropdownSelector(
-                label = stringResource(R.string.generate_model),
-                selectedText = profile.displayName,
-                options = ModelCatalog.models,
-                optionLabel = { ModelCatalog.profileOf(it).displayName },
-                onSelect = viewModel::onModelSelected,
-                modifier = Modifier.fillMaxWidth(),
-            )
 
             val tier = profile.tierOf(state.params.size) ?: ResolutionTier.NORMAL
             ResolutionSelector(
@@ -387,42 +396,55 @@ fun GenerateSheet(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            DropdownSelector(
-                label = stringResource(R.string.generate_count),
-                selectedText = state.params.sampleCount.toString(),
-                options = (1..profile.maxSampleCount).toList(),
-                optionLabel = { "$it 张" },
-                onSelect = viewModel::onSampleCountChange,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            // 张数：上限只有 4（见 ModelProfile.maxSampleCount），直接平铺成 chip，
+            // 比下拉少点一次、一眼看全所有选择。
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.generate_count),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                (1..profile.maxSampleCount).forEach { count ->
+                    FilterChip(
+                        selected = state.params.sampleCount == count,
+                        onClick = { viewModel.onSampleCountChange(count) },
+                        label = { Text(count.toString()) },
+                    )
+                }
+            }
 
-            // 质量标签：官方是三档下拉，并把实际追加的文本明确告诉用户。
-            DropdownSelector(
-                label = stringResource(R.string.generate_quality_tags),
-                selectedText = state.params.qualityTags.displayName,
-                options = QualityTagsOption.selectable,
-                optionLabel = { it.displayName },
-                onSelect = viewModel::onQualityTagsChange,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            // 质量标签与负面预设并排：两者都是短文本下拉，半宽放得下。
+            // 质量标签实际追加的文本仍写在下方（官方网页版同样把它明确告诉用户）。
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DropdownSelector(
+                    label = stringResource(R.string.generate_quality_tags),
+                    selectedText = state.params.qualityTags.displayName,
+                    options = QualityTagsOption.selectable,
+                    optionLabel = { it.displayName },
+                    onSelect = viewModel::onQualityTagsChange,
+                    modifier = Modifier.weight(1f),
+                )
+                DropdownSelector(
+                    label = stringResource(R.string.generate_uc_preset),
+                    selectedText = profile.undesiredContentPresets
+                        .firstOrNull { it.index == state.params.undesiredContentPresetIndex }
+                        ?.displayName
+                        ?: "Heavy",
+                    options = profile.undesiredContentPresets,
+                    optionLabel = { it.displayName },
+                    onSelect = { viewModel.onUndesiredContentPresetChange(it.index) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
             Text(
                 text = state.params.qualityTags.appendedText?.let {
                     stringResource(R.string.generate_quality_tags_appended, it)
                 } ?: stringResource(R.string.generate_quality_tags_none),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            DropdownSelector(
-                label = "Undesired Content 预设",
-                selectedText = profile.undesiredContentPresets
-                    .firstOrNull { it.index == state.params.undesiredContentPresetIndex }
-                    ?.displayName
-                    ?: "Heavy",
-                options = profile.undesiredContentPresets,
-                optionLabel = { it.displayName },
-                onSelect = { viewModel.onUndesiredContentPresetChange(it.index) },
-                modifier = Modifier.fillMaxWidth(),
             )
 
             // ---- 高级参数 ----
@@ -564,30 +586,14 @@ fun GenerateSheet(
                 )
             }
 
-            // 参考图三个区块放在内容区最底部：它们只在需要图生图/参考条件时才用，
-            // 不该挡在每次都要写的提示词前面。模式仍由它们驱动（挂上底图即图生图等），
-            // 只是位置挪了 —— 头部摘要行的模式标记与费用预估不受顺序影响。
-            // 两块互斥（图生图 vs 参考条件），挂上其中一类会清空另一类。
-            ReferenceImageSection(
+            // 参考图放在内容区最底部：它只在需要图生图/参考条件时才用，
+            // 不该挡在每次都要写的提示词前面。三个面板合并成一张带页签的卡片
+            // （2026-09-21 界面减负），互斥清理仍由 ViewModel 在挂图时做。
+            ReferenceTabsSection(
                 state = state,
                 connected = connected,
                 viewModel = viewModel,
                 onOpenInpaintEditor = onOpenInpaintEditor,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            PreciseReferenceSection(
-                state = state,
-                connected = connected,
-                viewModel = viewModel,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            // Vibe 是叠加的风格条件，与前两者不互斥。
-            VibeTransferSection(
-                state = state,
-                connected = connected,
-                viewModel = viewModel,
                 modifier = Modifier.fillMaxWidth(),
             )
 

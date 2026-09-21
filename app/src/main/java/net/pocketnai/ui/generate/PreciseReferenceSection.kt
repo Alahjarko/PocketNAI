@@ -17,8 +17,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,17 +40,16 @@ import net.pocketnai.domain.image.ReferenceSource
 import net.pocketnai.domain.model.DirectorReferenceKind
 import net.pocketnai.domain.model.ReferenceImage
 import net.pocketnai.ui.LocalAppContainer
-import net.pocketnai.ui.common.DropdownSelector
 import net.pocketnai.ui.common.LabeledSlider
-import net.pocketnai.ui.common.SectionHeader
 
 /**
  * Precise Reference 面板（官方界面里的 Precise Reference）。
+ * 作为「参考图」卡片的一个页签，由 [ReferenceTabsSection] 承载，不再自带标题与卡片。
  *
- * ## 与图生图的区别必须写在界面上
+ * ## 与图生图的区别
  * 图生图把源图当作**起点**（整张图重新长出来），Precise Reference 把参考图当作**条件**
  * （角色或画风），生成仍从空白开始。两者用不同的请求字段、甚至不同的 `action`，
- * 因此界面上一挂上其中一类就清掉另一类 —— 一个标题下混着两种语义最容易让人误解。
+ * 因此界面上一挂上其中一类就清掉另一类。
  *
  * ## 缩略图就是提交图
  * 导入时已经按官方要求补齐黑边（1024×1536 / 1536×1024 / 1472×1472），
@@ -63,7 +60,7 @@ import net.pocketnai.ui.common.SectionHeader
  * 收到服务端拒绝，不如在本地就说明白。
  */
 @Composable
-fun PreciseReferenceSection(
+fun PreciseReferencePanel(
     state: GenerateViewModel.UiState,
     connected: Boolean,
     viewModel: GenerateViewModel,
@@ -80,97 +77,83 @@ fun PreciseReferenceSection(
         }
     }
 
-    SectionHeader(stringResource(R.string.generate_director_title), modifier = modifier)
-
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
-        modifier = Modifier.fillMaxWidth(),
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
+
+        if (!state.supportsDirectorReference) {
+            // 不支持时只说明原因，不放任何会失败的操作入口。
             Text(
-                text = stringResource(R.string.generate_director_hint),
+                text = stringResource(
+                    R.string.generate_director_unsupported,
+                    state.profile.displayName,
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+        } else {
+            state.directorReferences.forEach { reference ->
+                DirectorEntry(
+                    reference = reference,
+                    range = state.profile.directorReferenceRange.let { it.min..it.max },
+                    onKindChange = { viewModel.onDirectorKindChanged(reference.id, it) },
+                    onStrengthChange = { viewModel.onDirectorStrengthChanged(reference.id, it) },
+                    onFidelityChange = { viewModel.onDirectorFidelityChanged(reference.id, it) },
+                    onInformationChange = {
+                        viewModel.onDirectorInformationExtractedChanged(reference.id, it)
+                    },
+                    onRemove = { viewModel.onDirectorReferenceRemoved(reference.id) },
+                )
+                HorizontalDivider()
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        pickImage.launch(
+                            PickVisualMediaRequest(
+                                ActivityResultContracts.PickVisualMedia.ImageOnly,
+                            ),
+                        )
+                    },
+                    enabled = connected && !state.referenceBusy && state.remainingDirectorSlots > 0,
+                ) {
+                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
+                    Text(
+                        text = stringResource(R.string.generate_reference_pick),
+                        modifier = Modifier.padding(start = 4.dp),
+                    )
+                }
+                OutlinedButton(
+                    onClick = { historyPickerOpen = true },
+                    enabled = connected && !state.referenceBusy && state.remainingDirectorSlots > 0,
+                ) {
+                    Icon(Icons.Default.History, contentDescription = null)
+                    Text(
+                        text = stringResource(R.string.generate_reference_from_history),
+                        modifier = Modifier.padding(start = 4.dp),
+                    )
+                }
+            }
+
+            Text(
+                text = stringResource(
+                    R.string.generate_director_slots,
+                    state.directorReferences.size,
+                    state.profile.maxDirectorReferences,
+                ) + " · " + stringResource(R.string.generate_director_cost_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
 
-            if (!state.supportsDirectorReference) {
-                // 不支持时只说明原因，不放任何会失败的操作入口。
-                Text(
-                    text = stringResource(
-                        R.string.generate_director_unsupported,
-                        state.profile.displayName,
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            } else {
-                state.directorReferences.forEach { reference ->
-                    DirectorEntry(
-                        reference = reference,
-                        range = state.profile.directorReferenceRange.let { it.min..it.max },
-                        onKindChange = { viewModel.onDirectorKindChanged(reference.id, it) },
-                        onStrengthChange = { viewModel.onDirectorStrengthChanged(reference.id, it) },
-                        onFidelityChange = { viewModel.onDirectorFidelityChanged(reference.id, it) },
-                        onInformationChange = {
-                            viewModel.onDirectorInformationExtractedChanged(reference.id, it)
-                        },
-                        onRemove = { viewModel.onDirectorReferenceRemoved(reference.id) },
-                    )
-                    HorizontalDivider()
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = {
-                            pickImage.launch(
-                                PickVisualMediaRequest(
-                                    ActivityResultContracts.PickVisualMedia.ImageOnly,
-                                ),
-                            )
-                        },
-                        enabled = connected && !state.referenceBusy && state.remainingDirectorSlots > 0,
-                    ) {
-                        Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
-                        Text(
-                            text = stringResource(R.string.generate_reference_pick),
-                            modifier = Modifier.padding(start = 4.dp),
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = { historyPickerOpen = true },
-                        enabled = connected && !state.referenceBusy && state.remainingDirectorSlots > 0,
-                    ) {
-                        Icon(Icons.Default.History, contentDescription = null)
-                        Text(
-                            text = stringResource(R.string.generate_reference_from_history),
-                            modifier = Modifier.padding(start = 4.dp),
-                        )
-                    }
-                }
-
-                Text(
-                    text = stringResource(
-                        R.string.generate_director_slots,
-                        state.directorReferences.size,
-                        state.profile.maxDirectorReferences,
-                    ) + " · " + stringResource(R.string.generate_director_cost_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            if (state.referenceBusy) {
-                Text(
-                    text = stringResource(R.string.generate_reference_importing),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+        if (state.referenceBusy) {
+            Text(
+                text = stringResource(R.string.generate_reference_importing),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 

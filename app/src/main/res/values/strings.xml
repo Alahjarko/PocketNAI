@@ -58,7 +58,7 @@
     <string name="generate_fab_in_progress">生成中 %1$d/%2$d</string>
     <string name="generate_model">模型</string>
     <string name="generate_size">尺寸</string>
-    <string name="generate_resolution">Resolution</string>
+    <string name="generate_resolution">尺寸</string>
     <string name="orientation_landscape">横图</string>
     <string name="orientation_portrait">竖图</string>
     <string name="orientation_square">方图</string>
@@ -110,6 +110,13 @@
 
     <!-- 参考图（Image2Img） -->
     <string name="generate_section_prompt">提示词</string>
+    <string name="generate_section_params">参数</string>
+    <string name="generate_uc_preset">负面内容预设</string>
+    <string name="favorites_button_negative">负向收藏夹</string>
+    <string name="info_button_hint">查看说明</string>
+    <string name="prompt_tools_info">选中一段文字后：「强化 / 弱化」可为它包裹 NovelAI 的 {} / [] 语法；点输入框右上角的书签可把选中片段存成标签，不选中则收藏整条提示词。收藏夹里的内容可追加或整条替换到当前输入框。</string>
+    <string name="generate_reference_section">参考图</string>
+    <string name="generate_img2img_info">图生图把图片当作起点：模型在它的基础上重新生成，挂上底图后还可涂蒙版做局部重绘；不额外收费（与纯文字一致）。Precise Reference 与 Vibe Transfer 目前只有 V4.5 支持。</string>
     <string name="generate_mode_img2img">图生图</string>
     <string name="generate_mode_txt2img">纯文字</string>
     <string name="generate_mode_precise_reference">Precise Reference</string>
@@ -176,7 +183,7 @@
     <string name="generate_reference_remove">移除参考图</string>
     <string name="generate_reference_importing">正在读取图片…</string>
     <string name="generate_reference_source_size">源图 %1$d × %2$d</string>
-    <string name="generate_reference_target_size">提交尺寸 %1$s（按源图比例，可在下方 Resolution 里改）</string>
+    <string name="generate_reference_target_size">提交尺寸 %1$s（按源图比例，可在上方「尺寸」里改）</string>
     <string name="generate_reference_strength">Strength</string>
     <string name="generate_reference_strength_hint">越小越接近源图，越大越接近纯文字生成的结果。</string>
     <string name="generate_reference_billing_hint">图生图不额外收费（与纯文字生成的费用一致）。</string>

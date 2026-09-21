@@ -24,8 +24,6 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,19 +53,12 @@ import net.pocketnai.domain.image.ReferenceSource
 import net.pocketnai.domain.model.ReferenceImage
 import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.common.LabeledSlider
-import net.pocketnai.ui.common.SectionHeader
 import net.pocketnai.ui.common.messageRes
 import net.pocketnai.ui.gallery.GalleryViewModel
 
 /**
- * 参考图卡片：Image2Img 的起点图。
- *
- * ## 为什么现在是一张卡片而不是官方那样的分页
- * 官方把 Prompt / Reference Images / Chunks 做成同一层的三个分页，是因为它有三个
- * 各自独立的参考图面板（Image2Img / Vibe Transfer / Precise Reference）。
- * 当前只做 Image2Img 一张图，做分页只会让用户多点一次才能看到唯一一个面板。
- * 等 Vibe 与 Precise Reference 落地、真的出现"多个面板"时再引入分页
- * （见《参考图功能规划书》4.1 与阶段 D/E）。
+ * 图生图面板：Image2Img 的起点图。作为「参考图」卡片的一个页签，
+ * 由 [ReferenceTabsSection] 承载，不再自带标题与卡片。
  *
  * ## 尺寸为什么不能由用户随便选
  * 图生图的输出尺寸由源图比例决定：选定源图后这里会把 Resolution 设成对应的官方预设，
@@ -75,7 +66,7 @@ import net.pocketnai.ui.gallery.GalleryViewModel
  * 裁剪发生在**提交时**，所以改尺寸永远不需要重新选图。
  */
 @Composable
-fun ReferenceImageSection(
+fun Img2ImgPanel(
     state: GenerateViewModel.UiState,
     connected: Boolean,
     viewModel: GenerateViewModel,
@@ -95,146 +86,132 @@ fun ReferenceImageSection(
         }
     }
 
-    SectionHeader(stringResource(R.string.generate_reference_title), modifier = modifier)
-
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
-        modifier = Modifier.fillMaxWidth(),
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            val source = state.referenceSource
-            if (source == null) {
-                Text(
-                    text = stringResource(R.string.generate_reference_empty_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = {
-                            pickImage.launch(
-                                PickVisualMediaRequest(
-                                    ActivityResultContracts.PickVisualMedia.ImageOnly,
-                                ),
-                            )
-                        },
-                        enabled = connected && !state.referenceBusy,
-                    ) {
-                        Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
-                        Text(
-                            text = stringResource(R.string.generate_reference_pick),
-                            modifier = Modifier.padding(start = 4.dp),
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = { historyPickerOpen = true },
-                        enabled = connected && !state.referenceBusy,
-                    ) {
-                        Icon(Icons.Default.History, contentDescription = null)
-                        Text(
-                            text = stringResource(R.string.generate_reference_from_history),
-                            modifier = Modifier.padding(start = 4.dp),
-                        )
-                    }
-                }
-            } else {
-                ReferenceSummary(
-                    source = source,
-                    targetSizeLabel = state.referenceTargetSize?.label.orEmpty(),
-                    onRemove = viewModel::onRemoveReference,
-                )
-
-                // 局部重绘入口：底图就绪才出现。
-                if (!state.supportsInpaint) {
-                    // 不支持的模型说清楚原因，而不是只把按钮藏起来。
-                    // （当前四个模型都支持，这个分支留给将来可能出现的不支持模型。）
-                    Text(
-                        text = stringResource(
-                            R.string.inpaint_needs_base,
-                            state.profile.displayName,
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                } else {
-                    val mask = state.inpaintMask
-                    OutlinedButton(
-                        onClick = onOpenInpaintEditor,
-                        enabled = connected && !state.referenceBusy,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            if (mask == null) {
-                                stringResource(R.string.inpaint_open_editor)
-                            } else {
-                                stringResource(R.string.inpaint_masked)
-                            },
-                        )
-                    }
-                    Text(
-                        text = if (mask == null) {
-                            stringResource(R.string.inpaint_not_masked)
-                        } else {
-                            stringResource(R.string.inpaint_masked_hint)
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (mask != null) {
-                        TextButton(onClick = viewModel::onInpaintMaskCleared) {
-                            Text(stringResource(R.string.inpaint_clear))
-                        }
-                    }
-                }
-                val strengthRange = state.profile.img2imgStrengthRange
-                LabeledSlider(
-                    label = stringResource(R.string.generate_reference_strength),
-                    value = source.strength ?: state.profile.defaultImg2ImgStrength,
-                    onValueChange = viewModel::onImg2imgStrengthChange,
-                    valueRange = strengthRange.min..strengthRange.max,
-                    decimals = 2,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    text = stringResource(R.string.generate_reference_strength_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            if (state.referenceBusy) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                    Text(
-                        text = stringResource(R.string.generate_reference_importing),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            state.referenceError?.let { error ->
-                Text(
-                    text = stringResource(error.code.messageRes()),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-
+        val source = state.referenceSource
+        if (source == null) {
             Text(
-                text = stringResource(R.string.generate_reference_billing_hint),
+                text = stringResource(R.string.generate_reference_empty_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        pickImage.launch(
+                            PickVisualMediaRequest(
+                                ActivityResultContracts.PickVisualMedia.ImageOnly,
+                            ),
+                        )
+                    },
+                    enabled = connected && !state.referenceBusy,
+                ) {
+                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
+                    Text(
+                        text = stringResource(R.string.generate_reference_pick),
+                        modifier = Modifier.padding(start = 4.dp),
+                    )
+                }
+                OutlinedButton(
+                    onClick = { historyPickerOpen = true },
+                    enabled = connected && !state.referenceBusy,
+                ) {
+                    Icon(Icons.Default.History, contentDescription = null)
+                    Text(
+                        text = stringResource(R.string.generate_reference_from_history),
+                        modifier = Modifier.padding(start = 4.dp),
+                    )
+                }
+            }
+        } else {
+            ReferenceSummary(
+                source = source,
+                targetSizeLabel = state.referenceTargetSize?.label.orEmpty(),
+                onRemove = viewModel::onRemoveReference,
+            )
+
+            // 局部重绘入口：底图就绪才出现。
+            if (!state.supportsInpaint) {
+                // 不支持的模型说清楚原因，而不是只把按钮藏起来。
+                // （当前四个模型都支持，这个分支留给将来可能出现的不支持模型。）
+                Text(
+                    text = stringResource(
+                        R.string.inpaint_needs_base,
+                        state.profile.displayName,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            } else {
+                val mask = state.inpaintMask
+                OutlinedButton(
+                    onClick = onOpenInpaintEditor,
+                    enabled = connected && !state.referenceBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        if (mask == null) {
+                            stringResource(R.string.inpaint_open_editor)
+                        } else {
+                            stringResource(R.string.inpaint_masked)
+                        },
+                    )
+                }
+                Text(
+                    text = if (mask == null) {
+                        stringResource(R.string.inpaint_not_masked)
+                    } else {
+                        stringResource(R.string.inpaint_masked_hint)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (mask != null) {
+                    TextButton(onClick = viewModel::onInpaintMaskCleared) {
+                        Text(stringResource(R.string.inpaint_clear))
+                    }
+                }
+            }
+            val strengthRange = state.profile.img2imgStrengthRange
+            LabeledSlider(
+                label = stringResource(R.string.generate_reference_strength),
+                value = source.strength ?: state.profile.defaultImg2ImgStrength,
+                onValueChange = viewModel::onImg2imgStrengthChange,
+                valueRange = strengthRange.min..strengthRange.max,
+                decimals = 2,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
+
+        if (state.referenceBusy) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Text(
+                    text = stringResource(R.string.generate_reference_importing),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        state.referenceError?.let { error ->
+            Text(
+                text = stringResource(error.code.messageRes()),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+
+        Text(
+            text = stringResource(R.string.generate_reference_billing_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 
     if (historyPickerOpen) {

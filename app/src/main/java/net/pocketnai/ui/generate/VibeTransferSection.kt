@@ -15,8 +15,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,10 +38,10 @@ import net.pocketnai.domain.image.ReferenceSource
 import net.pocketnai.domain.model.ReferenceImage
 import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.common.LabeledSlider
-import net.pocketnai.ui.common.SectionHeader
 
 /**
- * Vibe Transfer 面板。
+ * Vibe Transfer 面板。作为「参考图」卡片的一个页签，
+ * 由 [ReferenceTabsSection] 承载，不再自带标题与卡片。
  *
  * ## 与图生图 / Precise Reference 的关系：叠加而不是互斥
  * Vibe 是"风格条件"，加在别的模式之上使用 —— 官方界面里也是独立面板。
@@ -59,7 +57,7 @@ import net.pocketnai.ui.common.SectionHeader
  * Vibe 的价格尚未确认，因此只要挂了它，按钮上就是"费用待确认"。
  */
 @Composable
-fun VibeTransferSection(
+fun VibeTransferPanel(
     state: GenerateViewModel.UiState,
     connected: Boolean,
     viewModel: GenerateViewModel,
@@ -76,105 +74,91 @@ fun VibeTransferSection(
         }
     }
 
-    SectionHeader(stringResource(R.string.generate_vibe_title), modifier = modifier)
-
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
-        modifier = Modifier.fillMaxWidth(),
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
+
+        if (!state.supportsVibeTransfer) {
             Text(
-                text = stringResource(R.string.generate_vibe_hint),
+                text = stringResource(
+                    R.string.generate_director_unsupported,
+                    state.profile.displayName,
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+        } else {
+            state.vibeReferences.forEach { reference ->
+                VibeEntry(
+                    reference = reference,
+                    range = state.profile.img2imgStrengthRange.let { it.min..it.max },
+                    onStrengthChange = { viewModel.onVibeStrengthChanged(reference.id, it) },
+                    onInformationChange = {
+                        viewModel.onVibeInformationExtractedChanged(reference.id, it)
+                    },
+                    onRemove = { viewModel.onVibeReferenceRemoved(reference.id) },
+                )
+                HorizontalDivider()
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        pickImage.launch(
+                            PickVisualMediaRequest(
+                                ActivityResultContracts.PickVisualMedia.ImageOnly,
+                            ),
+                        )
+                    },
+                    enabled = connected && !state.referenceBusy && state.remainingVibeSlots > 0,
+                ) {
+                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
+                    Text(
+                        text = stringResource(R.string.generate_reference_pick),
+                        modifier = Modifier.padding(start = 4.dp),
+                    )
+                }
+                OutlinedButton(
+                    onClick = { historyPickerOpen = true },
+                    enabled = connected && !state.referenceBusy && state.remainingVibeSlots > 0,
+                ) {
+                    Icon(Icons.Default.History, contentDescription = null)
+                    Text(
+                        text = stringResource(R.string.generate_reference_from_history),
+                        modifier = Modifier.padding(start = 4.dp),
+                    )
+                }
+            }
+
+            Text(
+                text = stringResource(
+                    R.string.generate_director_slots,
+                    state.vibeReferences.size,
+                    state.profile.maxVibeReferences,
+                ) + " · " + stringResource(R.string.generate_vibe_cost_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            if (!state.supportsVibeTransfer) {
-                Text(
-                    text = stringResource(
-                        R.string.generate_director_unsupported,
-                        state.profile.displayName,
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            } else {
-                state.vibeReferences.forEach { reference ->
-                    VibeEntry(
-                        reference = reference,
-                        range = state.profile.img2imgStrengthRange.let { it.min..it.max },
-                        onStrengthChange = { viewModel.onVibeStrengthChanged(reference.id, it) },
-                        onInformationChange = {
-                            viewModel.onVibeInformationExtractedChanged(reference.id, it)
-                        },
-                        onRemove = { viewModel.onVibeReferenceRemoved(reference.id) },
-                    )
-                    HorizontalDivider()
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = {
-                            pickImage.launch(
-                                PickVisualMediaRequest(
-                                    ActivityResultContracts.PickVisualMedia.ImageOnly,
-                                ),
-                            )
-                        },
-                        enabled = connected && !state.referenceBusy && state.remainingVibeSlots > 0,
-                    ) {
-                        Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
-                        Text(
-                            text = stringResource(R.string.generate_reference_pick),
-                            modifier = Modifier.padding(start = 4.dp),
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = { historyPickerOpen = true },
-                        enabled = connected && !state.referenceBusy && state.remainingVibeSlots > 0,
-                    ) {
-                        Icon(Icons.Default.History, contentDescription = null)
-                        Text(
-                            text = stringResource(R.string.generate_reference_from_history),
-                            modifier = Modifier.padding(start = 4.dp),
-                        )
-                    }
-                }
-
-                Text(
-                    text = stringResource(
-                        R.string.generate_director_slots,
-                        state.vibeReferences.size,
-                        state.profile.maxVibeReferences,
-                    ) + " · " + stringResource(R.string.generate_vibe_cost_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                // 官方经验值：多张 vibe 的强度合计建议不超过 1.0。网页端有自动归一化开关，
-                // 这里给一个同样的按钮（只在合计超限时才可点）。
-                val totalStrength = state.vibeReferences.sumOf { it.strength ?: 0.0 }
-                Text(
-                    text = stringResource(R.string.generate_vibe_strength_total, totalStrength),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (totalStrength > 1.0) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-                if (state.vibeReferences.size > 1) {
-                    OutlinedButton(
-                        onClick = viewModel::normalizeVibeStrengths,
-                        enabled = totalStrength > 1.0,
-                    ) {
-                        Text(stringResource(R.string.generate_vibe_normalize))
-                    }
+            // 官方经验值：多张 vibe 的强度合计建议不超过 1.0。网页端有自动归一化开关，
+            // 这里给一个同样的按钮（只在合计超限时才可点）。
+            val totalStrength = state.vibeReferences.sumOf { it.strength ?: 0.0 }
+            Text(
+                text = stringResource(R.string.generate_vibe_strength_total, totalStrength),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (totalStrength > 1.0) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+            if (state.vibeReferences.size > 1) {
+                OutlinedButton(
+                    onClick = viewModel::normalizeVibeStrengths,
+                    enabled = totalStrength > 1.0,
+                ) {
+                    Text(stringResource(R.string.generate_vibe_normalize))
                 }
             }
         }
