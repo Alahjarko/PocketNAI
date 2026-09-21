@@ -14,10 +14,11 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -29,7 +30,6 @@ import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
 import androidx.compose.foundation.lazy.staggeredgrid.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -40,13 +40,13 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FilterAltOff
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
@@ -517,6 +517,14 @@ fun GalleryPane(
  * 每次重组都从筛选条件重建文本会把光标位置打回末尾，用户打第三个字时就会发现
  * 光标乱跳。两边只有在"清除筛选"时才需要显式同步。
  */
+/**
+ * 筛选栏：搜索框 + 一个筛选入口（带激活数量角标）。
+ *
+ * 早年是搜索框下一排四个 chip（多选/仅收藏/模型/模式），360dp 排不下、
+ * 最后一个被右边缘裁掉，而且"能横滚"没有任何视觉提示（2026-09-21 界面减负）：
+ * 模型/模式/仅收藏收进筛选对话框，多选收进同一对话框与长按菜单。
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun GalleryFilterBar(
     filter: GalleryFilter,
@@ -533,11 +541,19 @@ private fun GalleryFilterBar(
     val modeOptions = GenerationMode.entries
     val modeLabels = modeOptions.associateWith { stringResource(it.labelRes()) }
 
-    Column(
+    var filterDialogOpen by remember { mutableStateOf(false) }
+
+    // 角标只数"藏起来"的条件：关键词就写在搜索框里，不必再数一遍。
+    val hiddenActiveCount = (if (filter.model != null) 1 else 0) +
+        (if (filter.mode != null) 1 else 0) +
+        (if (filter.favoritesOnly) 1 else 0)
+
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         OutlinedTextField(
             value = queryField,
@@ -563,77 +579,100 @@ private fun GalleryFilterBar(
                 }
             },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.weight(1f),
         )
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-        ) {
-            AssistChip(
-                onClick = onEnterSelectionMode,
-                label = { Text(stringResource(R.string.action_batch_mode)) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Checklist,
-                        contentDescription = null,
-                        modifier = Modifier.size(FilterChipDefaults.IconSize),
-                    )
-                },
-            )
-
-            FilterChip(
-                selected = filter.favoritesOnly,
-                onClick = { onFavoritesOnlyChange(!filter.favoritesOnly) },
-                label = { Text(stringResource(R.string.gallery_filter_favorites)) },
-                leadingIcon = if (filter.favoritesOnly) {
-                    {
-                        Icon(
-                            imageVector = Icons.Default.Favorite,
-                            contentDescription = null,
-                            modifier = Modifier.size(FilterChipDefaults.IconSize),
-                        )
-                    }
-                } else {
-                    null
-                },
-            )
-
-            FilterMenuChip(
-                allLabel = stringResource(R.string.gallery_filter_all_models),
-                selectedLabel = filter.model?.let { ModelCatalog.profileOf(it).displayName },
-                options = ModelCatalog.models,
-                optionLabel = { ModelCatalog.profileOf(it).displayName },
-                onSelect = onModelChange,
-            )
-
-            FilterMenuChip(
-                allLabel = stringResource(R.string.gallery_filter_all_modes),
-                selectedLabel = filter.mode?.let { modeLabels[it] },
-                options = modeOptions,
-                optionLabel = { modeLabels.getValue(it) },
-                onSelect = onModeChange,
-            )
-
-            if (filter.isActive) {
-                // 只放图标：四个带文字的 chip 在 360dp 宽度里排不下，
-                // 最后那个会被右边缘裁掉半个字。这个 chip 只在有筛选时才出现，
-                // 语义（清除筛选）由图标与无障碍说明承担。
-                AssistChip(
-                    onClick = {
-                        queryField = TextFieldValue("")
-                        onClearAll()
-                    },
-                    label = {
-                        Icon(
-                            imageVector = Icons.Default.FilterAltOff,
-                            contentDescription = stringResource(R.string.gallery_filter_clear),
-                            modifier = Modifier.size(FilterChipDefaults.IconSize),
-                        )
+        Box {
+            IconButton(onClick = { filterDialogOpen = true }) {
+                Icon(
+                    imageVector = Icons.Default.FilterList,
+                    contentDescription = stringResource(R.string.gallery_filter_open),
+                    tint = if (hiddenActiveCount > 0) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
                     },
                 )
             }
+            if (hiddenActiveCount > 0) {
+                Badge(modifier = Modifier.align(Alignment.TopEnd)) {
+                    Text(hiddenActiveCount.toString())
+                }
+            }
         }
+    }
+
+    if (filterDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { filterDialogOpen = false },
+            title = { Text(stringResource(R.string.gallery_filter_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = filter.favoritesOnly,
+                            onClick = { onFavoritesOnlyChange(!filter.favoritesOnly) },
+                            label = { Text(stringResource(R.string.gallery_filter_favorites)) },
+                            leadingIcon = if (filter.favoritesOnly) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Default.Favorite,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(FilterChipDefaults.IconSize),
+                                    )
+                                }
+                            } else {
+                                null
+                            },
+                        )
+                        FilterMenuChip(
+                            allLabel = stringResource(R.string.gallery_filter_all_models),
+                            selectedLabel = filter.model?.let { ModelCatalog.profileOf(it).displayName },
+                            options = ModelCatalog.models,
+                            optionLabel = { ModelCatalog.profileOf(it).displayName },
+                            onSelect = onModelChange,
+                        )
+                        FilterMenuChip(
+                            allLabel = stringResource(R.string.gallery_filter_all_modes),
+                            selectedLabel = filter.mode?.let { modeLabels[it] },
+                            options = modeOptions,
+                            optionLabel = { modeLabels.getValue(it) },
+                            onSelect = onModeChange,
+                        )
+                    }
+                    TextButton(
+                        onClick = {
+                            filterDialogOpen = false
+                            onEnterSelectionMode()
+                        },
+                    ) {
+                        Icon(Icons.Default.Checklist, contentDescription = null)
+                        Text(
+                            text = stringResource(R.string.action_batch_mode),
+                            modifier = Modifier.padding(start = 4.dp),
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { filterDialogOpen = false }) {
+                    Text(stringResource(R.string.action_done))
+                }
+            },
+            dismissButton = if (filter.isActive) {
+                {
+                    TextButton(
+                        onClick = {
+                            queryField = TextFieldValue("")
+                            onClearAll()
+                        },
+                    ) {
+                        Text(stringResource(R.string.gallery_filter_clear))
+                    }
+                }
+            } else {
+                null
+            },
+        )
     }
 }
 

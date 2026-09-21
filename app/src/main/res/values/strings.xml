@@ -198,11 +198,13 @@
     <string name="gallery_status_partial">部分成功</string>
     <string name="gallery_search_hint">搜索提示词</string>
     <!-- 筛选 chip 的文案直接就是"当前值"，不做"模型：全部"这种带前缀的写法：
-         三个 chip 加搜索框在 360dp 宽度里横向排不下，会被右边缘裁掉。 -->
+         它们收在筛选对话框里，横向空间依然有限。 -->
     <string name="gallery_filter_all_models">全部模型</string>
     <string name="gallery_filter_all_modes">全部模式</string>
     <string name="gallery_filter_favorites">仅收藏</string>
     <string name="gallery_filter_clear">清除筛选</string>
+    <string name="gallery_filter_open">筛选</string>
+    <string name="gallery_filter_title">筛选与批量</string>
     <string name="gallery_no_match">没有符合当前筛选条件的图片。</string>
 
     <!-- 长按操作与分享 -->
@@ -216,6 +218,7 @@
     <string name="action_reuse_params">复用参数</string>
     <string name="action_cancel">取消</string>
     <string name="action_confirm">确定</string>
+    <string name="action_done">完成</string>
     <string name="action_retry">重试</string>
 
     <!-- 画廊多选批量操作 -->
@@ -258,6 +261,11 @@
     <string name="settings_streaming_preview">流式中间预览（实验性）</string>
     <string name="settings_streaming_preview_desc">生成过程中显示原始中间图与进度（观感与官方网页版不同，默认关闭）。连续失败时应用会自动关闭该功能，可在此重新启用。</string>
     <string name="settings_storage">存储占用</string>
+    <string name="settings_balance_ledger">消耗流水</string>
+    <string name="settings_ledger_subtitle">生成与超分的本机消耗记录</string>
+    <string name="settings_subscription_title">订阅等级</string>
+    <string name="settings_proxy_summary_off">已关闭</string>
+    <string name="proxy_enable_label">启用代理</string>
     <string name="settings_clear_orphans">清理孤立临时文件</string>
     <string name="settings_version">版本</string>
 

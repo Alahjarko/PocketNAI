@@ -30,7 +30,8 @@ import net.pocketnai.domain.proxy.ProxyType
 import net.pocketnai.domain.proxy.PublicProxyQuota
 
 /**
- * "网络代理"设置区。
+ * "网络代理"的配置内容（模式选择 + 公益/自定义配置），
+ * 供设置页的代理对话框承载；行内只留开关与摘要（2026-09-21 设置页列表化）。
  *
  * 两套来源：内置公益节点（SOCKS5，社区提供、每日限额）与自定义代理（HTTP/SOCKS5）。
  * **只影响 NovelAI 的请求**：检查更新与 APK 下载固定直连（不走代理流量）。
@@ -39,7 +40,7 @@ import net.pocketnai.domain.proxy.PublicProxyQuota
  * 落盘走 [net.pocketnai.data.proxy.ProxyStore] 的 Keystore 加密 —— 界面层不做任何持久化。
  */
 @Composable
-fun ProxySection(
+fun ProxyConfigContent(
     settings: ProxySettings,
     usedBytesToday: Long,
     nodeCount: Int,
@@ -51,30 +52,6 @@ fun ProxySection(
     val pasteFailedText = stringResource(R.string.proxy_paste_failed)
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.proxy_section_title),
-                    style = MaterialTheme.typography.titleSmall,
-                )
-                Text(
-                    text = stringResource(R.string.proxy_section_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Switch(
-                checked = settings.enabled,
-                onCheckedChange = { onSettingsChange(settings.copy(enabled = it)) },
-            )
-        }
-
-        if (!settings.enabled) return@Column
-
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
                 selected = settings.mode == ProxyMode.PUBLIC,

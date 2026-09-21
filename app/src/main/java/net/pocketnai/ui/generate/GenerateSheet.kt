@@ -47,6 +47,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -177,7 +178,6 @@ fun GenerateSheet(
     Column(modifier = modifier.fillMaxWidth()) {
         SheetHeader(
             state = state,
-            expanded = expanded,
             connected = connected,
             credentialType = credentialType,
             costEstimate = costEstimate,
@@ -755,18 +755,16 @@ private fun TagSuggestions(
 }
 
 /**
- * 悬浮层的头部：标题、参数摘要、状态行，以及右侧的生成按钮。
+ * 悬浮层的头部：第一行标题 + 参数摘要，第二行状态/余额，右侧是生成按钮。
  *
- * 收起状态下这就是用户看到的全部内容，所以摘要与状态行都是必要的 ——
- * 让用户不用展开也知道现在会用哪个模型、什么尺寸，以及按钮为什么是灰的。
- *
- * 这里刻意**不画拖拽提示**：`BottomSheetScaffold` 已经自带了拖拽横条，
- * 再画一个会白占一行高度，把摘要挤出收起态的可视区域。
+ * 收起状态下这就是用户看到的全部内容，所以压缩成两行（2026-09-21 界面减负）：
+ * 摘要挪到标题同行的右侧；状态与余额共用第二行 —— 有状态（未连接/生成中/失败/
+ * 提示词为空）时状态优先，没事要说是才轮到余额。"上拉展开"的教学文案删掉：
+ * 拖把手本身就是展开 affordance。
  */
 @Composable
 private fun SheetHeader(
     state: GenerateViewModel.UiState,
-    expanded: Boolean,
     connected: Boolean,
     credentialType: CredentialType?,
     costEstimate: GenerationCostEstimate,
@@ -785,58 +783,61 @@ private fun SheetHeader(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            Text(
-                text = stringResource(R.string.generate_sheet_title),
-                style = MaterialTheme.typography.titleSmall,
-            )
-            // 摘要只放参数：提示词的内容属于编辑区，塞进来只会把这一行挤到截断。
-            // 图生图必须在这里体现：否则收起悬浮层后用户看不出这次是在改图，
-            // 会以为出图尺寸或风格出了错。
-            // 注意 stringResource 只能调在 composable 作用域里，不能塞进 buildString。
-            val img2imgMarker = stringResource(R.string.generate_mode_img2img)
-            val preciseReferenceMarker = stringResource(R.string.generate_precise_reference_short)
-            val vibeMarker = stringResource(R.string.generate_vibe_short)
-            val inpaintMarker = stringResource(R.string.generate_mode_inpaint)
-            Text(
-                text = buildString {
-                    append(state.profile.model.shortDisplayName)
-                    append(" · ")
-                    append(state.params.size.label)
-                    append(" · ")
-                    append(state.params.qualityTags.displayName)
-                    if (state.mode == GenerationMode.IMG2IMG) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = stringResource(R.string.generate_sheet_title),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                // 摘要只放参数：提示词的内容属于编辑区，塞进来只会把这一行挤到截断。
+                // 图生图必须在这里体现：否则收起悬浮层后用户看不出这次是在改图，
+                // 会以为出图尺寸或风格出了错。
+                // 注意 stringResource 只能调在 composable 作用域里，不能塞进 buildString。
+                val img2imgMarker = stringResource(R.string.generate_mode_img2img)
+                val preciseReferenceMarker = stringResource(R.string.generate_precise_reference_short)
+                val vibeMarker = stringResource(R.string.generate_vibe_short)
+                val inpaintMarker = stringResource(R.string.generate_mode_inpaint)
+                Text(
+                    text = buildString {
+                        append(state.profile.model.shortDisplayName)
                         append(" · ")
-                        append(img2imgMarker)
-                    }
-                    if (state.mode == GenerationMode.PRECISE_REFERENCE) {
+                        append(state.params.size.label)
                         append(" · ")
-                        append(preciseReferenceMarker)
-                    }
-                    if (state.vibeReferences.isNotEmpty()) {
-                        append(" · ")
-                        append(vibeMarker)
-                    }
-                    // 与其它三个标记一样跟随 mode，而不是只看蒙版存不存在：
-                    // 只有蒙版没有底图的残缺状态不该挂"重绘"标记（那次的提交一定会 400）。
-                    if (state.mode == GenerationMode.INPAINT) {
-                        append(" · ")
-                        append(inpaintMarker)
-                    }
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+                        append(state.params.qualityTags.displayName)
+                        if (state.mode == GenerationMode.IMG2IMG) {
+                            append(" · ")
+                            append(img2imgMarker)
+                        }
+                        if (state.mode == GenerationMode.PRECISE_REFERENCE) {
+                            append(" · ")
+                            append(preciseReferenceMarker)
+                        }
+                        if (state.vibeReferences.isNotEmpty()) {
+                            append(" · ")
+                            append(vibeMarker)
+                        }
+                        // 与其它三个标记一样跟随 mode，而不是只看蒙版存不存在：
+                        // 只有蒙版没有底图的残缺状态不该挂"重绘"标记（那次的提交一定会 400）。
+                        if (state.mode == GenerationMode.INPAINT) {
+                            append(" · ")
+                            append(inpaintMarker)
+                        }
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 8.dp),
+                )
+            }
             SheetStatusLine(
                 state = state,
-                expanded = expanded,
                 connected = connected,
                 credentialType = credentialType,
+                onOpenBalance = onOpenBalance,
             )
-            // 余额与费用独立成行，**不并入状态行**：状态行有自己的错误优先级，
-            // 余额不该把它顶掉（余额规划 §11.1）。点它打开余额详情。
-            BalanceLine(state = state, onClick = onOpenBalance)
         }
 
         GenerateButton(
@@ -847,31 +848,6 @@ private fun SheetHeader(
             onClick = { if (connected) onGenerate() else onRequestConnect() },
         )
     }
-}
-
-/**
- * 头部最后一行：余额（点击查看详情）。
- *
- * 只放余额：费用已经在生成按钮上，这里再写一遍既重复又会被截断；
- * 费用的详细说明（批量总价、平均每张、"以 NovelAI 为准"）放在表单顶部的费用行里，
- * 那里有足够宽度写清楚。
- */
-@Composable
-private fun BalanceLine(
-    state: GenerateViewModel.UiState,
-    onClick: () -> Unit,
-) {
-    val balanceLabel = state.balanceState.compactLabel()
-    val text = balanceLabel ?: stringResource(R.string.balance_unavailable_short)
-
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.clickable(onClick = onClick),
-    )
 }
 
 /**
@@ -895,20 +871,21 @@ private fun CostDetailLine(costEstimate: GenerationCostEstimate) {
 }
 
 /**
- * 头部第三行：只说一件事，并且按重要性排优先级。
+ * 头部第二行：状态与余额共用，只说一件事。
  *
- * 这行同时承担了收起态的状态展示，所以顺序是
- * 未连接 → 生成中 → 失败 → 提示词为空 → 拖动提示。
+ * 顺序是 未连接 → 生成中 → 失败 → 提示词为空 → 余额：任何状态都比余额紧急，
+ * 余额不该把状态顶掉（余额规划 §11.1）；轮到余额时它可点击，打开余额详情。
  */
 @Composable
 private fun SheetStatusLine(
     state: GenerateViewModel.UiState,
-    expanded: Boolean,
     connected: Boolean,
     credentialType: CredentialType?,
+    onOpenBalance: () -> Unit,
 ) {
     val text: String
     val color: Color
+    var onClick: (() -> Unit)? = null
     when {
         !connected -> {
             text = stringResource(R.string.generate_no_token)
@@ -935,14 +912,10 @@ private fun SheetStatusLine(
         }
 
         else -> {
-            text = stringResource(
-                if (expanded) {
-                    R.string.generate_sheet_collapse_hint
-                } else {
-                    R.string.generate_sheet_expand_hint
-                },
-            )
-            color = MaterialTheme.colorScheme.primary
+            text = state.balanceState.compactLabel()
+                ?: stringResource(R.string.balance_unavailable_short)
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+            onClick = onOpenBalance
         }
     }
 
@@ -952,6 +925,7 @@ private fun SheetStatusLine(
         color = color,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
+        modifier = onClick?.let { Modifier.clickable(onClick = it) } ?: Modifier,
     )
 }
 

@@ -418,16 +418,18 @@ private fun DetailPageContent(
             )
         }
 
-        Button(onClick = onSaveClick, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.action_save_to_gallery))
+        // 操作分级（2026-09-21 界面减负）：唯一主按钮是"复用参数"（继续创作最常用的动作），
+        // 四个次要操作两两并排，删除降级为红色文字按钮放在最后。
+        Button(onClick = onReuseParams, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.action_reuse_params))
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onSaveClick, modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.action_save_to_gallery))
+            }
             OutlinedButton(onClick = onCopyPrompt, modifier = Modifier.weight(1f)) {
                 Text(stringResource(R.string.action_copy_prompt))
-            }
-            OutlinedButton(onClick = onReuseParams, modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.action_reuse_params))
             }
         }
 
@@ -443,8 +445,11 @@ private fun DetailPageContent(
             }
         }
 
-        OutlinedButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.action_delete))
+        TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = stringResource(R.string.action_delete),
+                color = MaterialTheme.colorScheme.error,
+            )
         }
 
         Text(
