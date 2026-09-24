@@ -24,6 +24,16 @@ data class CharacterPrompt(
         negativePrompt: String = "",
         position: CharacterPosition,
     ) : this(id, prompt, negativePrompt, position.x, position.y)
+
+    companion object {
+        /**
+         * 角色数量上限。
+         *
+         * 官方网页是 5×5 网格、上限更高；我们只做五档横排，5 个是界面与请求共同遵守的上限
+         * （添加按钮、元数据导入截断都读这一个常量，别再各写一份）。
+         */
+        const val MAX_COUNT: Int = 5
+    }
 }
 
 /** 5 档横向快捷站位选项 */

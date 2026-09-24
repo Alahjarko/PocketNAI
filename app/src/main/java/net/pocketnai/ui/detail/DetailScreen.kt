@@ -11,13 +11,16 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -41,6 +44,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -302,6 +306,10 @@ fun DetailScreen(
  *
  * [isCurrentPage] 为假的页（滑动时露出的邻页）不显示错误卡与"已保存"提示 ——
  * 那两条属于当前页的状态，跟着邻页一起画会让用户以为"上一张保存失败了"。
+ *
+ * **宽屏分两栏**（≥720dp，与 HomeScreen 的"宽屏档"同一个阈值）：左列整幅大图、
+ * 右列参数与操作可滚动。窄屏保持单列 —— 平板竖屏/横屏下把图压成半屏宽会让
+ * 细节全丢，而参数列固定在 380dp 一行读起来才不费劲。
  */
 @Composable
 private fun DetailPageContent(
@@ -320,145 +328,244 @@ private fun DetailPageContent(
     onDelete: () -> Unit,
     onDismissError: () -> Unit,
 ) {
-    val container = LocalAppContainer.current
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        // 点图进入全屏查看（双指缩放 / 拖动），单击或返回键退出。
-        AsyncImage(
-            model = container.generationRepository.fileOfRelativePath(image.privateFilePath),
-            contentDescription = generation.title,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(
-                    if (image.height > 0) image.width.toFloat() / image.height else 1f,
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        if (maxWidth >= DETAIL_TWO_PANE_MIN_WIDTH) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                DetailImagePane(
+                    image = image,
+                    generation = generation,
+                    onOpenFullscreen = onOpenFullscreen,
+                    // 宽屏交给 ContentScale.Fit 适配整块左栏，不再按宽高比撑高。
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .padding(16.dp),
                 )
-                .clickable(onClick = onOpenFullscreen),
-        )
-
-        Text(text = generation.title, style = MaterialTheme.typography.titleMedium)
-
-        val time = DateFormat.getDateTimeInstance().format(Date(generation.createdAt))
-        DetailRow(stringResource(R.string.common_time), time)
-        DetailRow(stringResource(R.string.common_model), generation.params.model.displayName)
-        DetailRow(stringResource(R.string.common_size), generation.params.size.label)
-        DetailRow(stringResource(R.string.generate_count), "${generation.params.sampleCount} 张（本张序号 ${image.ordinal}）")
-        DetailRow(stringResource(R.string.generate_steps), generation.params.steps.toString())
-        DetailRow(stringResource(R.string.generate_guidance), generation.params.guidance.toString())
-        DetailRow(stringResource(R.string.generate_cfg_rescale), generation.params.cfgRescale.toString())
-        DetailRow(stringResource(R.string.generate_sampler), generation.params.sampler.displayName)
-        DetailRow(stringResource(R.string.generate_noise_schedule), generation.params.noiseSchedule.displayName)
-        DetailRow(
-            stringResource(R.string.generate_seed),
-            image.seed?.toString() ?: "由 PNG 元数据决定（首版未解析）",
-        )
-        if (generation.errorCode != null) {
-            DetailRow("错误", generation.errorMessage ?: generation.errorCode.name)
+                VerticalDivider()
+                Column(
+                    modifier = Modifier
+                        .width(DETAIL_INFO_PANE_WIDTH)
+                        .fillMaxHeight()
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    DetailInfoPane(
+                        image = image,
+                        generation = generation,
+                        isCurrentPage = isCurrentPage,
+                        errorCode = errorCode,
+                        savedToGallery = savedToGallery,
+                        savedMessage = savedMessage,
+                        onSaveClick = onSaveClick,
+                        onCopyPrompt = onCopyPrompt,
+                        onReuseParams = onReuseParams,
+                        onInpaint = onInpaint,
+                        onOpenUpscaleDialog = onOpenUpscaleDialog,
+                        onDelete = onDelete,
+                        onDismissError = onDismissError,
+                    )
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                DetailImagePane(
+                    image = image,
+                    generation = generation,
+                    onOpenFullscreen = onOpenFullscreen,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(
+                            if (image.height > 0) image.width.toFloat() / image.height else 1f,
+                        ),
+                )
+                DetailInfoPane(
+                    image = image,
+                    generation = generation,
+                    isCurrentPage = isCurrentPage,
+                    errorCode = errorCode,
+                    savedToGallery = savedToGallery,
+                    savedMessage = savedMessage,
+                    onSaveClick = onSaveClick,
+                    onCopyPrompt = onCopyPrompt,
+                    onReuseParams = onReuseParams,
+                    onInpaint = onInpaint,
+                    onOpenUpscaleDialog = onOpenUpscaleDialog,
+                    onDelete = onDelete,
+                    onDismissError = onDismissError,
+                )
+            }
         }
+    }
+}
 
-        // 生成模式必须显示：图生图的尺寸、Strength 都只有在"这是一次改图"的前提下才说得通，
-        // 否则用户回看历史时会以为那次生成的参数配错了。
-        DetailRow(
-            stringResource(R.string.common_mode),
-            stringResource(generation.mode.labelRes()),
-        )
-        generation.references.forEach { reference ->
-            ReferenceRow(reference = reference)
+/** 点图进入全屏查看（双指缩放 / 拖动），单击或返回键退出。 */
+@Composable
+private fun DetailImagePane(
+    image: GeneratedImage,
+    generation: Generation,
+    onOpenFullscreen: () -> Unit,
+    modifier: Modifier,
+) {
+    val container = LocalAppContainer.current
+    AsyncImage(
+        model = container.generationRepository.fileOfRelativePath(image.privateFilePath),
+        contentDescription = generation.title,
+        contentScale = ContentScale.Fit,
+        modifier = modifier.clickable(onClick = onOpenFullscreen),
+    )
+}
+
+/**
+ * 参数表 + 提示词卡 + 状态提示 + 操作按钮。
+ *
+ * 刻意**不带滚动与内边距**：两套布局（单列 / 双栏右栏）都把它放进自己的滚动容器里，
+ * 滚动的位置与内边距由容器决定，这里只负责内容。
+ */
+@Composable
+private fun DetailInfoPane(
+    image: GeneratedImage,
+    generation: Generation,
+    isCurrentPage: Boolean,
+    errorCode: net.pocketnai.core.ErrorCode?,
+    savedToGallery: Boolean,
+    savedMessage: String,
+    onSaveClick: () -> Unit,
+    onCopyPrompt: () -> Unit,
+    onReuseParams: () -> Unit,
+    onInpaint: () -> Unit,
+    onOpenUpscaleDialog: () -> Unit,
+    onDelete: () -> Unit,
+    onDismissError: () -> Unit,
+) {
+    Text(text = generation.title, style = MaterialTheme.typography.titleMedium)
+
+    val time = DateFormat.getDateTimeInstance().format(Date(generation.createdAt))
+    DetailRow(stringResource(R.string.common_time), time)
+    DetailRow(stringResource(R.string.common_model), generation.params.model.displayName)
+    DetailRow(stringResource(R.string.common_size), generation.params.size.label)
+    DetailRow(stringResource(R.string.generate_count), "${generation.params.sampleCount} 张（本张序号 ${image.ordinal}）")
+    DetailRow(stringResource(R.string.generate_steps), generation.params.steps.toString())
+    DetailRow(stringResource(R.string.generate_guidance), generation.params.guidance.toString())
+    DetailRow(stringResource(R.string.generate_cfg_rescale), generation.params.cfgRescale.toString())
+    DetailRow(stringResource(R.string.generate_sampler), generation.params.sampler.displayName)
+    DetailRow(stringResource(R.string.generate_noise_schedule), generation.params.noiseSchedule.displayName)
+    DetailRow(
+        stringResource(R.string.generate_seed),
+        image.seed?.toString() ?: "由 PNG 元数据决定（首版未解析）",
+    )
+    if (generation.errorCode != null) {
+        DetailRow("错误", generation.errorMessage ?: generation.errorCode.name)
+    }
+
+    // 生成模式必须显示：图生图的尺寸、Strength 都只有在"这是一次改图"的前提下才说得通，
+    // 否则用户回看历史时会以为那次生成的参数配错了。
+    DetailRow(
+        stringResource(R.string.common_mode),
+        stringResource(generation.mode.labelRes()),
+    )
+    generation.references.forEach { reference ->
+        ReferenceRow(reference = reference)
+    }
+
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("正向提示词", style = MaterialTheme.typography.labelMedium)
+            Text(generation.params.prompt, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = "Undesired Content",
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Text(generation.params.negativePrompt, style = MaterialTheme.typography.bodyMedium)
         }
+    }
 
+    if (isCurrentPage && errorCode != null) {
         Card(
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                containerColor = MaterialTheme.colorScheme.errorContainer,
             ),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text("正向提示词", style = MaterialTheme.typography.labelMedium)
-                Text(generation.params.prompt, style = MaterialTheme.typography.bodyMedium)
+            Row(modifier = Modifier.padding(12.dp)) {
                 Text(
-                    text = "Undesired Content",
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(top = 8.dp),
+                    text = stringResource(errorCode.messageRes()),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.weight(1f),
                 )
-                Text(generation.params.negativePrompt, style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-
-        if (isCurrentPage && errorCode != null) {
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = stringResource(errorCode.messageRes()),
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = onDismissError) {
-                        Text(stringResource(R.string.action_confirm))
-                    }
+                TextButton(onClick = onDismissError) {
+                    Text(stringResource(R.string.action_confirm))
                 }
             }
         }
+    }
 
-        if (isCurrentPage && savedToGallery) {
-            Text(
-                text = savedMessage,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-
-        // 操作分级（2026-09-21 界面减负）：唯一主按钮是"复用参数"（继续创作最常用的动作），
-        // 四个次要操作两两并排，删除降级为红色文字按钮放在最后。
-        Button(onClick = onReuseParams, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.action_reuse_params))
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onSaveClick, modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.action_save_to_gallery))
-            }
-            OutlinedButton(onClick = onCopyPrompt, modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.action_copy_prompt))
-            }
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            // 局部重绘：官方文档说可以从"任意一张已生成的图片"进入，
-            // 而"这张图某处画坏了"正是用户点进详情页的常见理由。
-            OutlinedButton(onClick = onInpaint, modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.action_inpaint))
-            }
-
-            OutlinedButton(onClick = onOpenUpscaleDialog, modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.action_upscale))
-            }
-        }
-
-        TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = stringResource(R.string.action_delete),
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-
+    if (isCurrentPage && savedToGallery) {
         Text(
-            text = "删除只影响 PocketNAI 的本地副本与记录；已经保存到系统相册的图片不会被删除。",
+            text = savedMessage,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.colorScheme.primary,
         )
     }
+
+    // 操作分级（2026-09-21 界面减负）：唯一主按钮是"复用参数"（继续创作最常用的动作），
+    // 四个次要操作两两并排，删除降级为红色文字按钮放在最后。
+    Button(onClick = onReuseParams, modifier = Modifier.fillMaxWidth()) {
+        Text(stringResource(R.string.action_reuse_params))
+    }
+
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = onSaveClick, modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.action_save_to_gallery))
+        }
+        OutlinedButton(onClick = onCopyPrompt, modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.action_copy_prompt))
+        }
+    }
+
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // 局部重绘：官方文档说可以从"任意一张已生成的图片"进入，
+        // 而"这张图某处画坏了"正是用户点进详情页的常见理由。
+        OutlinedButton(onClick = onInpaint, modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.action_inpaint))
+        }
+
+        OutlinedButton(onClick = onOpenUpscaleDialog, modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.action_upscale))
+        }
+    }
+
+    TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = stringResource(R.string.action_delete),
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+
+    Text(
+        text = "删除只影响 PocketNAI 的本地副本与记录；已经保存到系统相册的图片不会被删除。",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
+
+/** 详情页进入双栏的宽度阈值：与 HomeScreen 的"宽屏档"一致（屏幕约 800dp 起）。 */
+private val DETAIL_TWO_PANE_MIN_WIDTH = 720.dp
+
+/** 双栏时右侧参数列的宽度：够一行放"标签 + 值"，又不至于把图挤窄。 */
+private val DETAIL_INFO_PANE_WIDTH = 380.dp
 
 /**
  * 一条参考图：缩略图 + 它的逐条参数。

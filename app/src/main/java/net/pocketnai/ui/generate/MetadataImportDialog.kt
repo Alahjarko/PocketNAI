@@ -154,6 +154,7 @@ private fun MetadataPlanSummary(plan: MetadataImportPlan) {
         plan.guidance?.let { add(stringResource(R.string.metadata_change_guidance, it)) }
         plan.sampler?.let { add(stringResource(R.string.metadata_change_sampler, it.displayName)) }
         plan.seed?.let { add(stringResource(R.string.metadata_change_seed, it.toString())) }
+        plan.characters?.let { add(stringResource(R.string.metadata_change_characters, it.size)) }
     }
     if (changes.isNotEmpty()) {
         Text(
@@ -173,8 +174,14 @@ private fun MetadataPlanSummary(plan: MetadataImportPlan) {
 /** 逐项跳过/无法恢复的说明。文案集中在这里，与 `ParamViolation` 的处理方式一致。 */
 @Composable
 private fun MetadataImportNote.text(): String = when (this) {
-    is MetadataImportNote.CharactersNotImportable ->
-        stringResource(R.string.metadata_note_characters, count)
+    is MetadataImportNote.CharactersImported ->
+        stringResource(R.string.metadata_note_characters_imported, count)
+
+    is MetadataImportNote.CharactersTruncated ->
+        stringResource(R.string.metadata_note_characters_truncated, requested, requested - applied)
+
+    is MetadataImportNote.CharactersPositionSnapped ->
+        stringResource(R.string.metadata_note_characters_snapped, count)
 
     is MetadataImportNote.ModelUnsupported ->
         stringResource(R.string.metadata_note_model, source ?: stringResource(R.string.metadata_note_unknown))

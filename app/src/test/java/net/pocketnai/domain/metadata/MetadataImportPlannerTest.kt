@@ -371,22 +371,85 @@ class MetadataImportPlannerTest {
         assertThat(plan.notes).contains(MetadataImportNote.BaseImageNotRestorable)
     }
 
+    // ---- 独立角色 ----
+
     @Test
-    fun `检测到角色提示词只报告数量`() {
+    fun `角色连同各自的负向词与站位一起导入`() {
         val plan = MetadataImportPlanner.plan(
             metadata(
                 PngFixture.commentJson(
-                    charCaptions = "[${PngFixture.charCaption("1girl", 0.25, 0.5)}," +
-                        "${PngFixture.charCaption("1boy", 0.75, 0.5)}]",
+                    charCaptions = "[${PngFixture.charCaption("1girl, silver hair", 0.32, 0.5)}," +
+                        "${PngFixture.charCaption("1boy, black hair", 0.68, 0.5)}]",
+                    negativeCharCaptions = "[${PngFixture.charCaption("bad hands", 0.32, 0.5)}," +
+                        "${PngFixture.charCaption("extra arms", 0.68, 0.5)}]",
                 ),
             ),
             currentParams(),
             MetadataImportSelection(),
         )
 
-        assertThat(plan.notes).contains(MetadataImportNote.CharactersNotImportable(2))
-        // 绝不能把角色词拼进基础提示词冒充"角色已导入"。
+        val characters = plan.characters
+        assertThat(characters).isNotNull()
+        assertThat(characters!!.map { it.prompt })
+            .containsExactly("1girl, silver hair", "1boy, black hair").inOrder()
+        assertThat(characters.map { it.negativePrompt })
+            .containsExactly("bad hands", "extra arms").inOrder()
+        assertThat(characters.map { it.centerX })
+            .containsExactly(0.32, 0.68).inOrder()
+        assertThat(plan.notes).contains(MetadataImportNote.CharactersImported(2))
+        // 站位本来就是我们的档位，不该报"位置被改装"。
+        assertThat(plan.notes.none { it is MetadataImportNote.CharactersPositionSnapped }).isTrue()
+        // 角色词仍然留在角色里，不拼进基础提示词。
         assertThat(plan.prompt).doesNotContain("1boy")
+    }
+
+    @Test
+    fun `角色位置按最近站位还原并如实说明`() {
+        // 官方是 5×5 网格（x=0.1/0.3/…），我们只有五档横排：吸附必须进 notes。
+        val plan = MetadataImportPlanner.plan(
+            metadata(
+                PngFixture.commentJson(
+                    charCaptions = "[${PngFixture.charCaption("left girl", 0.1, 0.5)}," +
+                        "${PngFixture.charCaption("right boy", 0.9, 0.5)}]",
+                ),
+            ),
+            currentParams(),
+            MetadataImportSelection(),
+        )
+
+        assertThat(plan.characters!!.map { it.centerX }).containsExactly(0.15, 0.85).inOrder()
+        assertThat(plan.notes).contains(MetadataImportNote.CharactersPositionSnapped(2))
+    }
+
+    @Test
+    fun `角色超过上限时截断并说明`() {
+        val captions = (1..6).joinToString(",") { index ->
+            PngFixture.charCaption("character $index", 0.5, 0.5)
+        }
+        val plan = MetadataImportPlanner.plan(
+            metadata(PngFixture.commentJson(charCaptions = "[$captions]")),
+            currentParams(),
+            MetadataImportSelection(),
+        )
+
+        assertThat(plan.characters).hasSize(net.pocketnai.domain.model.CharacterPrompt.MAX_COUNT)
+        assertThat(plan.notes).contains(MetadataImportNote.CharactersTruncated(6, 5))
+    }
+
+    @Test
+    fun `不勾提示词时不导入角色`() {
+        val plan = MetadataImportPlanner.plan(
+            metadata(
+                PngFixture.commentJson(
+                    charCaptions = "[${PngFixture.charCaption("1girl", 0.32, 0.5)}]",
+                ),
+            ),
+            currentParams(),
+            MetadataImportSelection(prompt = false),
+        )
+
+        assertThat(plan.characters).isNull()
+        assertThat(plan.notes.none { it is MetadataImportNote.CharactersImported }).isTrue()
     }
 
     @Test

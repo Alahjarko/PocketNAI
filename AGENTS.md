@@ -194,8 +194,12 @@
   V4.5 Curated 的官方后缀与我们不同。
 - **导入后模板与提交值必须一致**：编辑器绑定的是 `promptTemplate`，
   而质量标签是在提交时追加到 `params.prompt` 的。只改一个会让标签翻倍。
-- **Characters 只报告数量，不导入**，界面也不显示官方的 `Characters` / `Append`：
-  多角色提示词没实现，硬拼会丢角色的独立反向词、位置与顺序。
+- **Characters 随提示词一起导入**（2026-09-19）：解析 `v4_prompt` / `v4_negative_prompt`
+  的 `char_captions`，按 `CharacterPrompt` 落成"正/负向词 + 五档站位"。
+  三条纪律：超出 `CharacterPrompt.MAX_COUNT`（5）的部分**截断并进 notes**；
+  官方 5×5 网格的坐标吸附到最近档位（纵坐标丢弃）时**必须提示"位置按站位还原"**，
+  不许静默改写；角色词**绝不拼进基础提示词**冒充导入。导入是**整组替换**当前角色，
+  不是与草稿里的角色合并（混在一起会得到谁也没画过的组合）。
 - 导入**不自动生成**（同 Seed 同参数很容易再产出一张几乎一样的图，而那要花 Anlas）。
 - 元数据是外部输入：读取有限额（单块 1 MiB、解压 1 MiB、总量 2 MiB），
   且**不把 `Comment` 原文写进日志**（AGENTS.md 的安全约束）。
@@ -564,6 +568,10 @@
   "Rail | 画廊 | 常驻生成面板（400dp）"三栏（`HomeScreen` 按宽度分形态，
   对照 WinNAI 桌面端）。宽屏不重排表单本身；画廊网格是
   `StaggeredGridCells.Adaptive(160.dp)`，列数随宽度自然增减，不要改回 `Fixed(2)`。
+- **详情页也按 ≥720dp 分两栏**（2026-09-19）：左列整幅大图（`ContentScale.Fit` 适配左栏）、
+  分隔线、右列 380dp 参数与操作（可滚动）；窄屏保持单列。正文由一个**不带滚动与内边距**
+  的 `DetailInfoPane` 承担，两套布局各自包滚动容器 —— 加新参数行时只改那一处。
+  阈值常量 `DETAIL_TWO_PANE_MIN_WIDTH` / `DETAIL_INFO_PANE_WIDTH` 就在 DetailScreen 文件末尾。
 
 在模拟器上用 `adb shell input swipe` 验证拖拽时，**手势要慢且距离长**（例如
 `input swipe 540 1320 540 200 900`）。太快太短的 swipe 不会触发 Compose 的拖拽识别，

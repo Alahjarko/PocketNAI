@@ -1,5 +1,7 @@
 package net.pocketnai.domain.metadata
 
+import net.pocketnai.domain.model.CharacterPosition
+import net.pocketnai.domain.model.CharacterPrompt
 import net.pocketnai.domain.model.GenerationParams
 import net.pocketnai.domain.model.ImageModel
 import net.pocketnai.domain.model.ImageSizePreset
@@ -7,6 +9,7 @@ import net.pocketnai.domain.model.ModelCatalog
 import net.pocketnai.domain.model.NoiseSchedule
 import net.pocketnai.domain.model.QualityTagsOption
 import net.pocketnai.domain.model.Sampler
+import kotlin.math.abs
 
 /**
  * 导入时勾了哪些项。
@@ -32,8 +35,19 @@ data class MetadataImportSelection(
  * 测试也就能断言"为什么跳过"而不是去比对一句中文。
  */
 sealed interface MetadataImportNote {
-    /** 检测到角色提示词，但当前版本不能导入。 */
-    data class CharactersNotImportable(val count: Int) : MetadataImportNote
+    /** 导入了 N 条角色提示词（`v4_prompt.caption.char_captions`）。 */
+    data class CharactersImported(val count: Int) : MetadataImportNote
+
+    /** 角色数超过本机上限（[net.pocketnai.domain.model.CharacterPrompt.MAX_COUNT]），超出的部分未导入。 */
+    data class CharactersTruncated(val requested: Int, val applied: Int) : MetadataImportNote
+
+    /**
+     * 有 N 条角色的位置按最接近的站位还原。
+     *
+     * 官方网页是 5×5 网格，我们只有五档横排：横坐标吸附到最近一档、纵坐标丢弃 ——
+     * 这是**对原参数的改写**，按项目纪律必须如实说明，不能静默处理。
+     */
+    data class CharactersPositionSnapped(val count: Int) : MetadataImportNote
 
     /** 模型不在我们支持的四个之内；保留原始 `Source` 供界面说明。 */
     data class ModelUnsupported(val source: String?) : MetadataImportNote
@@ -101,13 +115,15 @@ data class MetadataImportPlan(
     val noiseSchedule: NoiseSchedule? = null,
     val seed: Long? = null,
     val qualityTags: QualityTagsOption? = null,
+    /** 导入的独立角色（正/负向词 + 位置）；null 表示不动现有角色。 */
+    val characters: List<CharacterPrompt>? = null,
     val notes: List<MetadataImportNote> = emptyList(),
 ) {
     /** 有没有任何一项真的会改动状态。 */
     val changesAnything: Boolean
         get() = prompt != null || negativePrompt != null || model != null || size != null ||
             steps != null || guidance != null || cfgRescale != null || sampler != null ||
-            noiseSchedule != null || seed != null || qualityTags != null
+            noiseSchedule != null || seed != null || qualityTags != null || characters != null
 }
 
 /**
@@ -271,6 +287,43 @@ object MetadataImportPlanner {
             }
         }
 
+        // ---- 独立角色：跟着"提示词"那一项走（角色词也是提示词，不该拆成两个勾选项） ----
+        var characters: List<CharacterPrompt>? = null
+        if (selection.prompt && metadata.characters.isNotEmpty()) {
+            var snappedCount = 0
+            val mapped = metadata.characters
+                // 空白条目（有的客户端会留占位）没有导入价值。
+                .filterNot { it.prompt.isBlank() && it.negativePrompt.isNullOrBlank() }
+                .map { character ->
+                    val rawX = character.centerX ?: DEFAULT_CENTER
+                    val rawY = character.centerY ?: DEFAULT_CENTER
+                    val position = CharacterPosition.fromCoords(rawX, rawY)
+                    if (abs(position.x - rawX) > POSITION_EPSILON ||
+                        abs(position.y - rawY) > POSITION_EPSILON
+                    ) {
+                        snappedCount++
+                    }
+                    CharacterPrompt(
+                        prompt = cleanIfRequested(character.prompt, selection),
+                        negativePrompt = cleanIfRequested(character.negativePrompt.orEmpty(), selection),
+                        position = position,
+                    )
+                }
+            val applied = mapped.take(CharacterPrompt.MAX_COUNT)
+            // 位置吸附/纵坐标丢弃发生在 take 之前，但只对真正导入的那些提示。
+            val snappedInApplied = snappedCount.coerceAtMost(applied.size)
+            characters = applied.takeIf { it.isNotEmpty() }
+            if (applied.isNotEmpty()) {
+                notes += MetadataImportNote.CharactersImported(applied.size)
+                if (applied.size < mapped.size) {
+                    notes += MetadataImportNote.CharactersTruncated(mapped.size, applied.size)
+                }
+                if (snappedInApplied > 0) {
+                    notes += MetadataImportNote.CharactersPositionSnapped(snappedInApplied)
+                }
+            }
+        }
+
         // ---- 无法恢复的引用类信息：只提示，绝不建空引用 ----
         if (metadata.usedVibeReferences) {
             notes += MetadataImportNote.VibeReferencesNotRestorable
@@ -280,9 +333,6 @@ object MetadataImportPlanner {
         }
         if (metadata.usedBaseImage) {
             notes += MetadataImportNote.BaseImageNotRestorable
-        }
-        if (metadata.characters.isNotEmpty()) {
-            notes += MetadataImportNote.CharactersNotImportable(metadata.characters.size)
         }
 
         val plan = MetadataImportPlan(
@@ -298,6 +348,7 @@ object MetadataImportPlanner {
             noiseSchedule = noiseSchedule,
             seed = seed,
             qualityTags = qualityTags,
+            characters = characters,
             notes = notes.toList(),
         )
 
@@ -352,12 +403,22 @@ object MetadataImportPlanner {
         return trimmed.dropLast(tail.length).trimEnd()
     }
 
+    /** Clean Imports 作用于整份提示词，角色词也是提示词，同样处理。 */
+    private fun cleanIfRequested(text: String, selection: MetadataImportSelection): String =
+        if (selection.cleanImports) CleanImports.clean(text) else text
+
     data class QualityTagStripResult(val text: String, val option: QualityTagsOption?)
 
     /** 官方前端用的 prompt chunk 分隔符。 */
     private const val CHUNK_SEPARATOR = "|"
 
     private const val SEPARATOR = ", "
+
+    /** 元数据里没写中心点时的默认值（与我们自己的默认站位一致）。 */
+    private const val DEFAULT_CENTER = 0.5
+
+    /** 判断"位置是否被改装过"的容差：官方坐标是十进制小数，能精确落到我们的档位时不该误报。 */
+    private const val POSITION_EPSILON = 1e-6
 }
 
 /**

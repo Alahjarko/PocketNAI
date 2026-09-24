@@ -518,7 +518,7 @@ class GenerateViewModel(
 
     fun addCharacter() {
         _state.update { current ->
-            if (current.params.characters.size >= 5) return@update current
+            if (current.params.characters.size >= CharacterPrompt.MAX_COUNT) return@update current
             current.copy(params = current.params.copy(characters = current.params.characters + CharacterPrompt()))
         }
     }
@@ -951,6 +951,9 @@ class GenerateViewModel(
                 qualityTags = plan.qualityTags ?: state.params.qualityTags,
                 seedMode = if (plan.seed != null) SeedMode.FIXED else state.params.seedMode,
                 baseSeed = plan.seed ?: state.params.baseSeed,
+                // 独立角色：整组替换而不是合并 —— 元数据里的角色词与位置是一套整体，
+                // 与当前草稿里的角色混在一起会得到谁也没画过的组合。
+                characters = plan.characters ?: state.params.characters,
             )
             val normalized = profile.normalize(updated)
             state.copy(

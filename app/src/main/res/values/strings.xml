@@ -371,7 +371,10 @@
     <string name="metadata_change_guidance">Guidance → %1$s</string>
     <string name="metadata_change_sampler">采样器 → %1$s</string>
     <string name="metadata_change_seed">固定 Seed → %1$s</string>
-    <string name="metadata_note_characters">检测到 %1$d 条角色提示词：当前版本还不支持多角色，未导入（硬拼进基础提示词会丢掉角色的独立反向词与位置）。</string>
+    <string name="metadata_change_characters">独立角色 ×%1$d</string>
+    <string name="metadata_note_characters_imported">已导入 %1$d 条独立角色提示词（含各自的负向词与站位）。</string>
+    <string name="metadata_note_characters_truncated">检测到 %1$d 条角色提示词，超出上限的 %2$d 条未导入。</string>
+    <string name="metadata_note_characters_snapped">其中 %1$d 条角色的位置按最接近的站位还原（官方是 5×5 网格，本机只有五档横排）。</string>
     <string name="metadata_note_model">模型 %1$s 不在支持范围内，模型保持不变。</string>
     <string name="metadata_note_unknown">未知</string>
     <string name="metadata_note_size">元数据尺寸 %1$d×%2$d 按自定义尺寸导入（原图就是这个画布，取整会复现不出原图）。</string>

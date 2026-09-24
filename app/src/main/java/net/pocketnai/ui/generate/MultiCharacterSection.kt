@@ -34,8 +34,6 @@ import androidx.compose.ui.unit.dp
 import net.pocketnai.domain.model.CharacterPosition
 import net.pocketnai.domain.model.CharacterPrompt
 
-private const val MAX_CHARACTERS = 5
-
 @Composable
 fun MultiCharacterSection(
     characters: List<CharacterPrompt>,
@@ -77,15 +75,15 @@ fun MultiCharacterSection(
                 label = {
                     Text(
                         if (characters.isEmpty()) {
-                            "+ 添加独立角色 (0/$MAX_CHARACTERS)"
+                            "+ 添加独立角色 (0/${CharacterPrompt.MAX_COUNT})"
                         } else {
-                            "独立角色 (${characters.size}/$MAX_CHARACTERS)" + if (expanded) " (收起)" else " (展开)"
+                            "独立角色 (${characters.size}/${CharacterPrompt.MAX_COUNT})" + if (expanded) " (收起)" else " (展开)"
                         }
                     )
                 },
             )
 
-            if (characters.isNotEmpty() && expanded && characters.size < MAX_CHARACTERS) {
+            if (characters.isNotEmpty() && expanded && characters.size < CharacterPrompt.MAX_COUNT) {
                 TextButton(onClick = onAddCharacter) {
                     Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                     Text("添加角色", modifier = Modifier.padding(start = 4.dp))
