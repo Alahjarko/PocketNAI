@@ -29,6 +29,57 @@ class MigrationTest {
     )
 
     @Test
+    fun migrate7To8KeepsHistoryAndAddsCharacters() {
+        helper.createDatabase(TEST_DB, 7).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO generations (
+                    id, createdAt, updatedAt, status, title, promptTemplate, mode,
+                    prompt, negativePrompt, modelApiId, width, height, sampleCount,
+                    steps, guidance, cfgRescale, sampler, noiseSchedule, seedMode,
+                    baseSeed, qualityTags, qualityTagsEnabled, ucPresetIndex,
+                    modelConfigVersion, requestSnapshotVersion
+                ) VALUES (
+                    'gen-1', 1, 1, 'SUCCEEDED', 'title', '1girl', 'TXT2IMG',
+                    '1girl', '', 'nai-diffusion-4-5-curated', 832, 1216, 1,
+                    23, 7.0, 0.0, 'k_euler_ancestral', 'karras', 'FIXED',
+                    42, 'STANDARD', 1, 0, 'v1', 3
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                INSERT INTO generated_images (
+                    id, generationId, ordinal, seed, relativePath, width, height,
+                    byteSize, sha256, metadataJson, createdAt, exportedUri
+                ) VALUES (
+                    'img-1', 'gen-1', 1, 42, 'generations/gen-1/0001.png', 832, 1216,
+                    1024, 'sha', NULL, 1, NULL
+                )
+                """.trimIndent(),
+            )
+        }
+
+        helper.runMigrationsAndValidate(TEST_DB, 8, true, PocketNaiDatabase.MIGRATION_7_8)
+            .use { db ->
+                // 历史必须原样还在。
+                db.query("SELECT width, height, outputWidth, outputHeight, charactersJson FROM generations").use { cursor ->
+                    assertThat(cursor.moveToFirst()).isTrue()
+                    assertThat(cursor.getInt(0)).isEqualTo(832)
+                    assertThat(cursor.getInt(1)).isEqualTo(1216)
+                    // 新列对老记录是 NULL —— 语义就是"没裁切过"，不是 0。
+                    assertThat(cursor.isNull(2)).isTrue()
+                    assertThat(cursor.isNull(3)).isTrue()
+                    assertThat(cursor.isNull(4)).isTrue()
+                }
+                db.query("SELECT COUNT(*) FROM generated_images").use { cursor ->
+                    assertThat(cursor.moveToFirst()).isTrue()
+                    assertThat(cursor.getInt(0)).isEqualTo(1)
+                }
+            }
+    }
+
+    @Test
     fun migrate4To5KeepsHistoryAndAddsOutputColumns() {
         helper.createDatabase(TEST_DB, 4).use { db ->
             db.execSQL(

@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,11 +26,14 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.Share
 import net.pocketnai.ui.common.ImageShareManager
 import androidx.compose.material3.Button
@@ -52,12 +56,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -67,6 +74,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import net.pocketnai.R
 import net.pocketnai.domain.model.DirectorReferenceKind
+import net.pocketnai.domain.model.CharacterPosition
+import net.pocketnai.domain.model.shortDisplayName
 import net.pocketnai.domain.model.GeneratedImage
 import net.pocketnai.domain.model.Generation
 import net.pocketnai.domain.model.ReferenceImage
@@ -302,7 +311,7 @@ fun DetailScreen(
 }
 
 /**
- * 一页的正文：图片 + 参数表 + 提示词卡 + 操作按钮。
+ * 一页的正文：图片 + 摘要与操作 + 折叠参数 + 提示词。
  *
  * [isCurrentPage] 为假的页（滑动时露出的邻页）不显示错误卡与"已保存"提示 ——
  * 那两条属于当前页的状态，跟着邻页一起画会让用户以为"上一张保存失败了"。
@@ -423,13 +432,13 @@ private fun DetailImagePane(
 }
 
 /**
- * 参数表 + 提示词卡 + 状态提示 + 操作按钮。
+ * 摘要与操作优先，完整参数可展开，长提示词不会把按钮推到页面末尾。
  *
  * 刻意**不带滚动与内边距**：两套布局（单列 / 双栏右栏）都把它放进自己的滚动容器里，
  * 滚动的位置与内边距由容器决定，这里只负责内容。
  */
 @Composable
-private fun DetailInfoPane(
+internal fun DetailInfoPane(
     image: GeneratedImage,
     generation: Generation,
     isCurrentPage: Boolean,
@@ -444,52 +453,21 @@ private fun DetailInfoPane(
     onDelete: () -> Unit,
     onDismissError: () -> Unit,
 ) {
-    Text(text = generation.title, style = MaterialTheme.typography.titleMedium)
-
-    val time = DateFormat.getDateTimeInstance().format(Date(generation.createdAt))
-    DetailRow(stringResource(R.string.common_time), time)
-    DetailRow(stringResource(R.string.common_model), generation.params.model.displayName)
-    DetailRow(stringResource(R.string.common_size), generation.params.size.label)
-    DetailRow(stringResource(R.string.generate_count), "${generation.params.sampleCount} 张（本张序号 ${image.ordinal}）")
-    DetailRow(stringResource(R.string.generate_steps), generation.params.steps.toString())
-    DetailRow(stringResource(R.string.generate_guidance), generation.params.guidance.toString())
-    DetailRow(stringResource(R.string.generate_cfg_rescale), generation.params.cfgRescale.toString())
-    DetailRow(stringResource(R.string.generate_sampler), generation.params.sampler.displayName)
-    DetailRow(stringResource(R.string.generate_noise_schedule), generation.params.noiseSchedule.displayName)
-    DetailRow(
-        stringResource(R.string.generate_seed),
-        image.seed?.toString() ?: "由 PNG 元数据决定（首版未解析）",
+    Text(
+        text = generation.title,
+        style = MaterialTheme.typography.titleMedium,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
     )
-    if (generation.errorCode != null) {
-        DetailRow("错误", generation.errorMessage ?: generation.errorCode.name)
-    }
-
-    // 生成模式必须显示：图生图的尺寸、Strength 都只有在"这是一次改图"的前提下才说得通，
-    // 否则用户回看历史时会以为那次生成的参数配错了。
-    DetailRow(
-        stringResource(R.string.common_mode),
-        stringResource(generation.mode.labelRes()),
+    Text(
+        text = "${generation.params.model.shortDisplayName} · ${image.width} × ${image.height} · " +
+            stringResource(generation.mode.labelRes()),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    generation.references.forEach { reference ->
-        ReferenceRow(reference = reference)
-    }
-
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text("正向提示词", style = MaterialTheme.typography.labelMedium)
-            Text(generation.params.prompt, style = MaterialTheme.typography.bodyMedium)
-            Text(
-                text = "Undesired Content",
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-            Text(generation.params.negativePrompt, style = MaterialTheme.typography.bodyMedium)
-        }
+    val seed = image.seed?.toString() ?: "未记录"
+    SelectionContainer {
+        Text("Seed  $seed", style = MaterialTheme.typography.bodySmall)
     }
 
     if (isCurrentPage && errorCode != null) {
@@ -544,6 +522,109 @@ private fun DetailInfoPane(
 
         OutlinedButton(onClick = onOpenUpscaleDialog, modifier = Modifier.weight(1f)) {
             Text(stringResource(R.string.action_upscale))
+        }
+    }
+
+    var parametersExpanded by rememberSaveable(generation.id) { mutableStateOf(false) }
+    TextButton(
+        onClick = { parametersExpanded = !parametersExpanded },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text("完整生成参数", modifier = Modifier.weight(1f))
+        Icon(
+            imageVector = if (parametersExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+            contentDescription = if (parametersExpanded) "收起参数" else "展开参数",
+        )
+    }
+    AnimatedVisibility(visible = parametersExpanded) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val time = DateFormat.getDateTimeInstance().format(Date(generation.createdAt))
+            DetailRow(stringResource(R.string.common_time), time)
+            DetailRow(stringResource(R.string.common_model), generation.params.model.displayName)
+            DetailRow("生成画布", generation.params.size.label)
+            DetailRow("图片尺寸", "${image.width} × ${image.height}")
+            DetailRow(stringResource(R.string.generate_count), "${generation.params.sampleCount} 张（本张序号 ${image.ordinal}）")
+            DetailRow(stringResource(R.string.generate_steps), generation.params.steps.toString())
+            DetailRow(stringResource(R.string.generate_guidance), generation.params.guidance.toString())
+            DetailRow(stringResource(R.string.generate_cfg_rescale), generation.params.cfgRescale.toString())
+            DetailRow(stringResource(R.string.generate_sampler), generation.params.sampler.displayName)
+            DetailRow(stringResource(R.string.generate_noise_schedule), generation.params.noiseSchedule.displayName)
+            if (generation.errorCode != null) {
+                DetailRow("错误", generation.errorMessage ?: generation.errorCode.name)
+            }
+            generation.references.forEach { reference -> ReferenceRow(reference = reference) }
+        }
+    }
+
+    val promptCardColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
+        .compositeOver(MaterialTheme.colorScheme.surface)
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = promptCardColor,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("基础提示词", style = MaterialTheme.typography.titleSmall)
+            SelectionContainer {
+                Text(generation.params.prompt, style = MaterialTheme.typography.bodyMedium)
+            }
+            if (generation.params.negativePrompt.isNotBlank()) {
+                Text(
+                    "Undesired Content",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SelectionContainer {
+                    Text(generation.params.negativePrompt, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+    }
+
+    generation.params.characters.forEachIndexed { index, character ->
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = promptCardColor,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val position = CharacterPosition.entries.firstOrNull {
+                    it.x == character.centerX && it.y == character.centerY
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "独立角色 ${index + 1}",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = position?.label ?: "(${character.centerX}, ${character.centerY})",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                SelectionContainer {
+                    Text(character.prompt.ifBlank { "正向提示词未设置" }, style = MaterialTheme.typography.bodyMedium)
+                }
+                if (character.negativePrompt.isNotBlank()) {
+                    Text(
+                        "角色专属排除词",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    SelectionContainer {
+                        Text(character.negativePrompt, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
         }
     }
 

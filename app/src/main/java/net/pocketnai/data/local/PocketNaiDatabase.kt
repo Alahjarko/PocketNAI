@@ -22,7 +22,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FavoriteImageEntity::class,
         AnlasTransactionEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class PocketNaiDatabase : RoomDatabase() {
@@ -37,6 +37,13 @@ abstract class PocketNaiDatabase : RoomDatabase() {
 
     companion object {
         private const val DATABASE_NAME = "pocketnai.db"
+
+        /** 只加可空列，保留全部历史与图片外键。旧记录在详情读取时从 PNG 恢复角色。 */
+        val MIGRATION_7_8: Migration = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE generations ADD COLUMN charactersJson TEXT")
+            }
+        }
 
         /**
          * v1 → v2：新增质量标签档位列。
@@ -226,6 +233,7 @@ abstract class PocketNaiDatabase : RoomDatabase() {
                     MIGRATION_4_5,
                     MIGRATION_5_6,
                     MIGRATION_6_7,
+                    MIGRATION_7_8,
                 )
                 .build()
     }

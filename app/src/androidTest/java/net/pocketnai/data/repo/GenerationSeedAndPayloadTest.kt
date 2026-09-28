@@ -222,6 +222,21 @@ class GenerationSeedAndPayloadTest {
     }
 
     @Test
+    fun charactersSurviveGenerationAndDetailReload() = runBlocking {
+        val payloads = mutableListOf<JsonObject>()
+        val repository = repository(payloads, Random(1), GenerationFileStore(context))
+        val characters = listOf(
+            net.pocketnai.domain.model.CharacterPrompt(prompt = "blue hair", negativePrompt = "hat", centerX = 0.2),
+            net.pocketnai.domain.model.CharacterPrompt(prompt = "red hair", negativePrompt = "glasses", centerX = 0.8),
+        )
+        val params = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V4_5_CURATED))
+            .copy(prompt = "two people", characters = characters)
+        val events = repository.generate(GenerationRequest(params = params), "two people").toList()
+        val image = events.filterIsInstance<GenerationEvent.Final>().single().image
+        assertThat(repository.loadDetail(image.id)?.generation?.params?.characters).isEqualTo(characters)
+    }
+
+    @Test
     fun payloadUsesTheGenerationCanvasNotTheFinalSize() {
         // 自定义分辨率的另一半保证：请求体发的是 64 对齐的画布，不是用户要的最终尺寸。
         val payloads = mutableListOf<JsonObject>()

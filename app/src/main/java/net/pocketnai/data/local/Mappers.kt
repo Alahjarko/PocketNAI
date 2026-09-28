@@ -1,6 +1,7 @@
 package net.pocketnai.data.local
 
 import net.pocketnai.core.ErrorCode
+import net.pocketnai.domain.metadata.HistoryCharacters
 import net.pocketnai.domain.model.DirectorReferenceKind
 import net.pocketnai.domain.model.GalleryItem
 import net.pocketnai.domain.model.GeneratedImage
@@ -36,6 +37,7 @@ object Mappers {
         mode = generation.mode.name,
         prompt = generation.params.prompt,
         negativePrompt = generation.params.negativePrompt,
+        charactersJson = HistoryCharacters.encode(generation.params.characters),
         modelApiId = generation.params.model.apiModelId,
         width = generation.params.size.width,
         height = generation.params.size.height,
@@ -79,6 +81,7 @@ object Mappers {
                 model = model,
                 prompt = entity.prompt,
                 negativePrompt = entity.negativePrompt,
+                characters = HistoryCharacters.decode(entity.charactersJson),
                 size = ImageSizePreset(width = entity.width, height = entity.height),
                 // 两列都为 NULL（v4 之前的记录，或没裁切过）时按"不裁切"降级。
                 outputSize = if (entity.outputWidth != null && entity.outputHeight != null) {

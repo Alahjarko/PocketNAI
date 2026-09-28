@@ -25,6 +25,26 @@ import org.junit.Test
  */
 class MappersTest {
 
+    @Test
+    fun `历史角色的顺序正负提示词和坐标可以原样往返`() {
+        val original = generation().let {
+            it.copy(params = it.params.copy(characters = listOf(
+                net.pocketnai.domain.model.CharacterPrompt(id = "left", prompt = "blue hair", negativePrompt = "hat", centerX = 0.2, centerY = 0.3),
+                net.pocketnai.domain.model.CharacterPrompt(id = "right", prompt = "", negativePrompt = "glasses", centerX = 0.8),
+            )))
+        }
+        assertThat(Mappers.toDomain(Mappers.toEntity(original))?.params).isEqualTo(original.params)
+    }
+
+    @Test
+    fun `旧记录与损坏角色快照不会阻止读取基础参数`() {
+        for (raw in listOf(null, "[]", "broken")) {
+            val restored = Mappers.toDomain(entity().copy(charactersJson = raw))
+            assertThat(restored?.params?.characters).isEmpty()
+            assertThat(restored?.params?.prompt).isEqualTo("1girl, red hair")
+        }
+    }
+
     private val profile = ModelCatalog.profileOf(ImageModel.V4_5_CURATED)
 
     private fun generation(

@@ -6,15 +6,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.VerticalDivider
-import androidx.compose.material3.rememberBottomSheetScaffoldState
-import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import net.pocketnai.data.security.CredentialType
@@ -87,31 +82,14 @@ fun HomeScreen(
         }
 
         // ---- 手机形态：底部悬浮层 ----
-        val scaffoldState = rememberBottomSheetScaffoldState(
-            bottomSheetState = rememberStandardBottomSheetState(
-                initialValue = SheetValue.PartiallyExpanded,
-                skipHiddenState = true,
-            ),
-        )
-
-        // 生成一开始就把悬浮层收起来：用户此刻想看的是图片陆续出现，而不是参数表单。
-        LaunchedEffect(state.inFlight) {
-            if (state.inFlight) {
-                scaffoldState.bottomSheetState.partialExpand()
-            }
-        }
-
-        BottomSheetScaffold(
-            scaffoldState = scaffoldState,
-            // 收起时必须能完整显示头部（标题 + 参数摘要一行、状态/余额一行、生成按钮）
-            // 与自带的拖拽横条。头部两行化（2026-09-21）后从 146dp 降下来，
-            // 否则会多露一截表单空白。
-            sheetPeekHeight = 112.dp,
-            sheetContent = {
+        GenerationSheetScaffold(
+            inFlight = state.inFlight,
+            sheetContent = { expanded, headerDragModifier ->
                 GenerateSheet(
                     viewModel = generateViewModel,
                     state = state,
-                    expanded = scaffoldState.bottomSheetState.currentValue == SheetValue.Expanded,
+                    expanded = expanded,
+                    headerDragModifier = headerDragModifier,
                     connected = connected,
                     credentialType = credentialType,
                     onRequestConnect = onRequestConnect,

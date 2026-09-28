@@ -95,4 +95,6 @@ data class GenerationEntity(
 
     /** 非空表示已标记删除但尚未清理文件，界面此时应隐藏该记录。 */
     val deletedAt: Long? = null,
+    /** v8 新增；NULL 表示旧记录，可从原 PNG 恢复；[] 表示确实没有角色。 */
+    val charactersJson: String? = null,
 )

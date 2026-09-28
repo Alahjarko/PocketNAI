@@ -1,0 +1,67 @@
+# 提示词与独立角色
+
+本文件是 [根开发约定](../../AGENTS.md) 的专题补充。修改相关功能前必须阅读；跨模块改动需同时阅读索引指向的其他专题。历史实测记录保留其日期，不构成自动发起真实生成、登录或付费调用的授权。
+
+## 质量标签
+
+- 质量标签是**追加到提示词末尾的文本**（`very aesthetic, masterpiece, no text` 等），由客户端拼接，不是 API 开关。
+- 因此 `NovelAiRequestBuilder` 把 `qualityToggle` 固定发 `false`，避免服务端重复追加。
+
+## 提示词拼接
+
+- 任何"把一段文本接进提示词"的需求都必须调用 `PromptComposition.append`，
+  **不要另写一份拼接逻辑**。曾经质量标签与收藏片段各有一份实现，
+  差异最终会变成"有时开头多一个逗号"这类难查的小毛病。
+- 收藏提示词只有一个入口（提示词框右上角的书签）：有选中存标签，没选中存整条。
+  因此两个输入框都必须用 `TextFieldValue` 跟踪，不能退回普通字符串——
+  选区信息是这条判断的唯一依据。
+
+## 提示词权重高亮
+
+- 编辑里的绿/红圆角底纹由 `PromptWeightScanner` 算区间、`WeightHighlightedTextField` 画。
+  权重计算一律走 `EmphasisSyntax.strengthOf`，**不要在扫描器里再写一套倍率**。
+- **不要改回 `OutlinedTextField` + `OutlinedTextFieldDefaults.DecorationBox`。**
+  那个 `container` 参数是**边框图层**而不是文字内容，`DecorationBox` 自己会放置输入框；
+  按"内容是 container"的写法会得到**文字画两遍、边框消失**的界面（已实测）。
+  现在的做法是自建边框 + 把 Canvas 与输入框放进同一个 `Box`，用 `matchParentSize` 保证
+  两者同尺寸同原点，**因此不依赖任何 Material 内边距常量**。
+- 输入框必须 `fillMaxWidth()`：底纹的换行位置来自"排版宽度 == Box 宽度"这个等式。
+- **文字颜色必须显式设为主题色**（`textStyle = LocalTextStyle.current.copy(color = onSurface)`）：
+  裸 `BasicTextField` 不像 Material 组件那样解析未指定的颜色，`LocalTextStyle` 的默认颜色是
+  `Unspecified`，底层按黑色渲染 —— 浅色主题下恰好正确，深色主题就是"黑底黑字"
+  （2026-09-16 实测并修复，技术决策记录 §22.6）。改这个输入框时别把这行删了。
+- 数字权重 `0.9::tag ::` 是**用户要求的语法，未经核对服务端是否认**（技术决策记录 §22.4）。
+  它只用于高亮：**不替用户改写提示词，也不要加"插入数字权重"的按钮**。
+  核对它需要在官方网页版手动验证，属于用户手动发起的项。
+- 目前提示词框"随内容长高、由外层滚动"，底纹才能对齐；给它们加固定高度 + `maxLines`
+  会让底纹在内部滚动时错位，那时必须一并处理滚动偏移。
+
+## 提示词输入框的状态（不要镜像文本）
+
+- **输入框的文本与光标归输入框自己所有。** 绝不要写"文本一变就把 ViewModel 的文本
+  同步回输入框"的 effect：每次按键都会把文本推给 ViewModel，那种写法等于把刚写出去的东西
+  再收回来，而 effect 的执行晚一拍、收到的是**上一拍的值**，于是输入框被整体重置、
+  光标跳到别处。2026-09-16 实测：连续退格时"跳行"，根因与取证见技术决策记录 §25。
+- 外部**整体替换**文本只有三条路：复用历史参数、导入元数据、收藏夹填充。它们统一靠
+  `UiState.textRevision`（代数）+1 表达，输入框用 `remember(textRevision)` 重建。
+  写新的"整体替换"入口时**必须 +1**（在 `GenerateViewModel` 里写，别在界面拼）；
+  打字路径 `onPromptChange` / `onNegativePromptChange` **绝不能**动它 ——
+  在那里 +1 会让输入框每次按键都重建、光标永远停在文末。
+- 界面上"由外部塞进输入框"的动作（收藏夹填充）走 `GenerateViewModel.replacePromptText`，
+  不要用 `onPromptChange`：后者不会让输入框知道文本换了，界面会停在旧内容上。
+- 导入元数据时**模板与 `params` 必须同时写**（正向与负向都是）。只写 `params` 的话，
+  提交时 `startGeneration` 会用模板重新解析一遍并覆盖它 —— 导入的值既不显示也不生效
+  （负面提示词曾经如此静默失效，技术决策记录 §25.5）。
+
+## 多角色提示词（Characters，2026-09-18）
+
+- 请求形态：`v4_prompt.caption.char_captions[]`，每项 `{char_caption, centers:[{x,y}]}`；
+  **有角色时 `use_coords` 为 true**；负向走 `v4_negative_prompt` 的同构数组，
+  每角色的负向词取 `character.negativePrompt`（空则发空串）。
+- 位置只有**五档**（左/偏左/居中/偏右/右）映射到 x，没有自由拖拽、没有 y 轴
+  （官方网页是 5×5 网格；我们保持简单）。改坐标换算要同步 `CharacterPrompt` 与请求构造两处。
+- 角色数量上限 **5**。
+- **计费已核对（2026-09-18 晚，技术决策记录 §30.2）：免费组合下多角色不收费。**
+  官方免费判定读的 `characterRef` 是个只读不写的死字段，计价组装里也没有 `char_captions`
+  的附加费项 —— 多角色与普通生成同价。有单测钉住（`AnlasCostCalculatorTest`）。
+  真实调用仍然只能由用户手动点；第一次跑时顺手看一眼余额，确认订阅权益还在。

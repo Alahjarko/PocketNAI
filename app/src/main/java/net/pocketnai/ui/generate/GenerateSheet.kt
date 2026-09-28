@@ -98,8 +98,7 @@ import net.pocketnai.ui.common.messageRes
  * 头部（含生成按钮与状态行）固定在可滚动表单之外，因此表单滚到哪个位置，
  * 按钮与当前状态都停在原地。
  *
- * [expanded] 为 false 时**禁用**内部滚动（而不是不挂载）：收起状态下拖手势要留给
- * 悬浮层自己展开，否则手指在表单上往上拖只会滚动内容、永远拉不开悬浮层；
+ * [expanded] 为 false 时**禁用**内部滚动（而不是不挂载）；展开/收起手势仅由头部处理。
  * 但滚动位置必须一直生效 —— 展开动画期间 [expanded] 还是 false（`SheetState.currentValue`
  * 要等动画落定才翻转），此时若不挂载滚动，内容会先按顶部排版、动画结束才跳到上次的位置，
  * 用户看到的就是"先显示最上方、然后页面忽然跳一下"（2026-09-16 用户报告，见技术决策记录 §26）。
@@ -114,6 +113,7 @@ fun GenerateSheet(
     onRequestConnect: () -> Unit,
     onOpenInpaintEditor: () -> Unit,
     modifier: Modifier = Modifier,
+    headerDragModifier: Modifier = Modifier,
 ) {
     val scrollState = rememberScrollState()
     val profile = state.profile
@@ -184,6 +184,7 @@ fun GenerateSheet(
             onGenerate = viewModel::generate,
             onRequestConnect = onRequestConnect,
             onOpenBalance = { balanceDialogOpen = true },
+            modifier = headerDragModifier,
         )
         HorizontalDivider()
 
@@ -771,9 +772,10 @@ private fun SheetHeader(
     onGenerate: () -> Unit,
     onRequestConnect: () -> Unit,
     onOpenBalance: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,

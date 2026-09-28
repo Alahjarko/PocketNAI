@@ -24,6 +24,7 @@ import net.pocketnai.data.network.PngValidator
 import net.pocketnai.data.network.ZipImageExtractor
 import net.pocketnai.data.security.CredentialStore
 import net.pocketnai.domain.billing.UpscaleCost
+import net.pocketnai.domain.metadata.HistoryCharacters
 import net.pocketnai.domain.image.ImageGeometry
 import net.pocketnai.domain.image.ImageTransform
 import net.pocketnai.domain.image.PixelSize
@@ -436,11 +437,28 @@ class GenerationRepository(
         val imageEntity = dao.findImage(imageId) ?: return null
         val generationEntity = dao.findGeneration(imageEntity.generationId) ?: return null
         val generation = Mappers.toDomain(generationEntity) ?: return null
+        val characters = if (generationEntity.charactersJson == null) {
+            withContext(Dispatchers.IO) {
+                try {
+                    fileStore.resolve(imageEntity.relativePath).inputStream().buffered()
+                        .use(HistoryCharacters::readLegacy)
+                } catch (e: IOException) {
+                    emptyList()
+                } catch (e: SecurityException) {
+                    emptyList()
+                }
+            }
+        } else {
+            generation.params.characters
+        }
         // 参考图单独查一次再拼装：画廊与历史的查询不 join 它，避免影响瀑布流。
         val references = dao.findReferences(generation.id).mapNotNull(Mappers::toDomain)
         return ImageDetail(
             image = Mappers.toDomain(imageEntity),
-            generation = generation.copy(references = references),
+            generation = generation.copy(
+                references = references,
+                params = generation.params.copy(characters = characters),
+            ),
         )
     }
 
