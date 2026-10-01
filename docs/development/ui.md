@@ -17,6 +17,10 @@
 
 ## 分享、批量操作与图片清理（2026-09-18）
 
+- 接收相册分享（2026-10-01）：`MainActivity` 接收单张 `ACTION_SEND` + `image/*` 的 content URI，
+  冷启动和 `onNewIntent` 共用参数探查流程；返回首页后让用户选择读参数或仅作参考。
+  不要求扩大相册权限，不接受外部任意文件路径，也不自动生成。接收 URI 不新增 FileProvider 暴露路径。
+
 - 分享走系统 `ACTION_SEND`（多张时 `ACTION_SEND_MULTIPLE`），文件经 FileProvider 的
   `files/generations/` 路径授权。`res/xml/file_paths.xml` **只允许两条路径**：
   `cache/updates/`（给安装器）与 `files/generations/`（给分享）——

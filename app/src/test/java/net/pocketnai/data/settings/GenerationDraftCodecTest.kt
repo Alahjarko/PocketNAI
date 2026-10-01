@@ -27,6 +27,17 @@ import org.junit.Test
  */
 class GenerationDraftCodecTest {
 
+    @Test
+    fun `角色的二维坐标和长提示词在重启草稿后保留`() {
+        val character = net.pocketnai.domain.model.CharacterPrompt(
+            prompt = "long character tag, ".repeat(200), negativePrompt = "hat",
+            centerX = 0.12345, centerY = 0.98765,
+        )
+        val original = draftWith { it.copy(characters = listOf(character)) }
+        assertThat(GenerationDraftCodec.decode(GenerationDraftCodec.encode(original))?.params?.characters)
+            .containsExactly(character)
+    }
+
     private val profile = ModelCatalog.profileOf(ImageModel.V4_5_CURATED)
 
     private fun draftWith(

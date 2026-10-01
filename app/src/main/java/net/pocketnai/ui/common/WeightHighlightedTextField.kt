@@ -73,9 +73,11 @@ fun WeightHighlightedTextField(
     enabled: Boolean = true,
     minLines: Int = 1,
     trailingIcon: @Composable (() -> Unit)? = null,
+    onFocusChanged: (Boolean) -> Unit = {},
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
+    androidx.compose.runtime.LaunchedEffect(focused) { onFocusChanged(focused) }
     val spans = remember(value.text) { PromptWeightScanner.scan(value.text) }
 
     // 排版结果由输入框回调过来。绝大多数提示词没有加权语法，那种情况下不保存它，
@@ -87,6 +89,7 @@ fun WeightHighlightedTextField(
     val verticalInset = with(density) { HIGHLIGHT_VERTICAL_INSET.toPx() }
     val cornerRadius = with(density) { HIGHLIGHT_CORNER_RADIUS.toPx() }
     val highlights = LocalWeightHighlightColors.current
+    val neutralHighlight = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
 
     // 文字颜色必须显式跟随主题：裸 BasicTextField 不像 Material 组件那样解析颜色，
     // textStyle 里颜色未指定时底层按**黑色**渲染 —— 浅色主题下碰巧正确，
@@ -127,7 +130,7 @@ fun WeightHighlightedTextField(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(modifier = Modifier.weight(1f)) {
-                val current = layout
+                val current = layout?.takeIf { it.layoutInput.text.text == value.text }
                 if (current != null) {
                     // 放在输入框之前 = 先画，于是底纹在文字**下面**。
                     Canvas(modifier = Modifier.matchParentSize()) {
@@ -136,6 +139,7 @@ fun WeightHighlightedTextField(
                             spans = spans,
                             weakerColor = highlights.weaker,
                             strongerColor = highlights.stronger,
+                            neutralColor = neutralHighlight,
                             horizontalPadding = horizontalPadding,
                             verticalInset = verticalInset,
                             cornerRadius = cornerRadius,
@@ -179,12 +183,14 @@ private fun DrawScope.drawWeightHighlights(
     spans: List<PromptWeightSpan>,
     weakerColor: Color,
     strongerColor: Color,
+    neutralColor: Color,
     horizontalPadding: Float,
     verticalInset: Float,
     cornerRadius: Float,
 ) {
     spans.forEach { span ->
         val color = when (span.direction) {
+            WeightDirection.NEUTRAL -> neutralColor
             WeightDirection.WEAKER -> weakerColor
             WeightDirection.STRONGER -> strongerColor
         }
@@ -200,7 +206,8 @@ private fun DrawScope.drawWeightHighlights(
             if (start >= end) continue
 
             val left = layout.getHorizontalPosition(start, usePrimaryDirection = true)
-            val right = layout.getHorizontalPosition(end, usePrimaryDirection = true)
+            val right = if (end == lineEnd) layout.getLineRight(line)
+                else layout.getHorizontalPosition(end, usePrimaryDirection = true)
             if (right <= left) continue
 
             // 行的上下边界是**整个行高**（含行距），直接拿来画会让相邻两行的底纹连成一片，

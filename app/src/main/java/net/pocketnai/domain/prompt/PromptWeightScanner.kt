@@ -14,9 +14,13 @@ data class PromptWeightSpan(
     val endExclusive: Int,
     val weight: Double,
 ) {
-    /** 权重低于 1 是弱化，高于 1 是强化；等于 1 的片段根本不会被扫描出来。 */
+    /** 权重低于 1 是弱化，高于 1 是强化；成对 :: 的中性权重也标出。 */
     val direction: WeightDirection
-        get() = if (weight < 1.0) WeightDirection.WEAKER else WeightDirection.STRONGER
+        get() = when {
+            weight < 1.0 -> WeightDirection.WEAKER
+            weight > 1.0 -> WeightDirection.STRONGER
+            else -> WeightDirection.NEUTRAL
+        }
 
     /** 区间长度，界面用它跳过空片段。 */
     val length: Int get() = endExclusive - start
@@ -24,6 +28,8 @@ data class PromptWeightSpan(
 
 /** 权重相对 1.0 的偏向，决定底纹用哪种颜色。 */
 enum class WeightDirection {
+    /** 成对 :: 已闭合，但未指定数值权重或数值为 1。 */
+    NEUTRAL,
     /** 权重 < 1：这个标签被削弱了。 */
     WEAKER,
 
@@ -44,8 +50,8 @@ enum class WeightDirection {
  * 至今没有核对过。因此本类只做"把它画出来"这一件事：不替用户改写提示词，
  * 界面上也不提供插入这种写法的按钮。用户若要用，风险自担，详见技术决策记录 22.4。
  *
- * 只按**顶层**逗号切分片段：`{a, b}` 内部的逗号不切，避免把一个被包裹的短语拆成两半
- * （被拆开后两半都算不出权重，高亮会整段消失）。
+ * 成对 :: 独立识别，不要求相邻逗号；逗号/换行可位于组内。
+ * 剩余文本按顶层逗号识别完整的 {} / [] 包裹，不在组内部切分。
  */
 object PromptWeightScanner {
 
@@ -67,10 +73,16 @@ object PromptWeightScanner {
         pattern = """^([0-9]*\.?[0-9]+)\s*::(.*)::\s*$""",
         option = RegexOption.DOT_MATCHES_ALL,
     )
+    private val NUMERIC_GROUP = Regex(
+        """(?:(?<![0-9.])([0-9]*\.?[0-9]+)\s*)?::(.*?)::""",
+        RegexOption.DOT_MATCHES_ALL,
+    )
 
     /** 按出现顺序返回所有加权片段；没有则返回空列表。 */
     fun scan(prompt: String): List<PromptWeightSpan> {
         val spans = mutableListOf<PromptWeightSpan>()
+        val groups = NUMERIC_GROUP.findAll(prompt).toList()
+        val groupStarts = groups.associateBy { it.range.first }
         var chunkStart = 0
         var depth = 0
 
@@ -86,7 +98,20 @@ object PromptWeightScanner {
             spans += PromptWeightSpan(start = start, endExclusive = end, weight = weight)
         }
 
-        for (index in prompt.indices) {
+        var index = 0
+        while (index < prompt.length) {
+            val group = groupStarts[index]
+            if (group != null) {
+                flush(index)
+                val weight = group.groupValues[1].toDoubleOrNull() ?: 1.0
+                if (group.groupValues[2].isNotBlank()) {
+                    spans += PromptWeightSpan(index, group.range.last + 1, weight)
+                }
+                index = group.range.last + 1
+                chunkStart = index
+                depth = 0
+                continue
+            }
             when (prompt[index]) {
                 '{', '[' -> depth++
                 '}', ']' -> if (depth > 0) depth--
@@ -95,6 +120,7 @@ object PromptWeightScanner {
                     chunkStart = index + 1
                 }
             }
+            index++
         }
         flush(prompt.length)
         return spans

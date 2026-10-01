@@ -85,7 +85,7 @@ private data class TabSpec(
 )
 
 @Composable
-fun PocketNaiApp() {
+fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Unit = {}) {
     val container = LocalAppContainer.current
     val connected by container.sessionState.connected.collectAsStateWithLifecycle()
     val credentialType by container.sessionState.credentialType.collectAsStateWithLifecycle()
@@ -114,6 +114,16 @@ fun PocketNaiApp() {
         },
     )
     val generateState by generateViewModel.state.collectAsStateWithLifecycle()
+    LaunchedEffect(sharedImageUri, generateState.referenceBusy) {
+        if (sharedImageUri != null && !generateState.referenceBusy) {
+            navController.navigate(Routes.HOME) {
+                popUpTo(navController.graph.findStartDestination().id)
+                launchSingleTop = true
+            }
+            generateViewModel.onReferencePicked(ReferenceSource.PickedUri(sharedImageUri))
+            onSharedImageHandled()
+        }
+    }
 
     // 更新检查独立于生成链路：它只读 GitHub 上的 Release。
     // 同样提升到这一层：启动时的那次检查与设置页的手动检查必须共用一份状态。

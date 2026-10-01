@@ -48,9 +48,10 @@ fun MetadataImportDialog(
     onSelectionChange: (MetadataImportSelection) -> Unit,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
+    onCancel: () -> Unit = onDismiss,
 ) {
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = onCancel,
         title = { Text(stringResource(R.string.metadata_title)) },
         text = {
             Column(

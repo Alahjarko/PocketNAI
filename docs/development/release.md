@@ -4,6 +4,7 @@
 
 ## 检查更新与发布（GitHub Release）
 
+- Git 提交的作者与提交者使用用户账号 `Alahjarko`，邮箱使用已核实的 GitHub noreply 地址 `143304950+Alahjarko@users.noreply.github.com`；仅设置仓库级 Git 配置，不使用 `PocketNAI Dev` 或其他通用团队身份。
 - 发布渠道有两条，**构建号同源**（都取"已有 Release 里最大的 `build-N` 加 1"），因此不会撞号：
   1. **日常用本地发布**：`scripts/publish-release.ps1`（或双击根目录的"发布新版本.bat"）——
      跑单测 → 构建 APK（带下一个构建号）→ 建 Release 并上传，一条龙，不用等云端排队；

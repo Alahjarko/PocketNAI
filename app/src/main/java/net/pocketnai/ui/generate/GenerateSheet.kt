@@ -3,8 +3,6 @@ package net.pocketnai.ui.generate
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -63,7 +61,6 @@ import net.pocketnai.domain.model.PromptFavorite
 import net.pocketnai.domain.model.PromptFavoriteKind
 import net.pocketnai.domain.model.PromptTarget
 import net.pocketnai.domain.prompt.PromptComposition
-import net.pocketnai.domain.prompt.PromptTagEditing
 import net.pocketnai.domain.prompt.PromptTitle
 import net.pocketnai.core.AppError
 import net.pocketnai.core.ErrorCode
@@ -124,35 +121,8 @@ fun GenerateSheet(
     var promptField by rememberSyncedField(state.promptTemplate, state.textRevision)
     var negativeField by rememberSyncedField(state.negativeTemplate, state.textRevision)
 
-    // 标签补全只作用于光标所在的那一个标签。有选区时不参与 ——
-    // 此时"当前标签"是哪一个说不清楚，替换目标不明确。
-    val suggestionFragment = if (promptField.selection.collapsed) {
-        PromptTagEditing
-            .tagSpanAt(promptField.text, promptField.selection.end)
-            .textIn(promptField.text)
-            .trim()
-    } else {
-        ""
-    }
-
-    // 刚填入的建议不重复建议。填入后光标正停在这个标签末尾，片段恰好等于建议本身，
-    // 不拦住的话会立刻又弹出同一批。片段变空（例如末尾补了逗号）时这个记录就失效。
-    var filledFragment by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(suggestionFragment) {
-        if (suggestionFragment.isEmpty()) {
-            filledFragment = null
-            viewModel.onSuggestionFragmentChange("")
-            return@LaunchedEffect
-        }
-        if (suggestionFragment == filledFragment) return@LaunchedEffect
-        viewModel.onSuggestionFragmentChange(suggestionFragment)
-    }
-
-    // 只在建议确实对应光标当前所在标签时才显示：请求在途时用户又改了字，
-    // 那批建议已经过期，显示出来只会让人点到一个跟自己刚打的字不匹配的词。
-    val visibleSuggestions = state.suggestions
-        .takeIf { state.suggestionQuery == suggestionFragment }
-        .orEmpty()
+    var promptFocused by remember { mutableStateOf(false) }
+    var negativeFocused by remember { mutableStateOf(false) }
 
     val container = LocalAppContainer.current
     val favoritesViewModel: PromptFavoritesViewModel = viewModel(
@@ -221,6 +191,7 @@ fun GenerateSheet(
             // 权重高亮：{}/[] 与 `0.9::tag ::` 会被画上绿/红底纹，见 PromptWeightScanner。
             WeightHighlightedTextField(
                 value = promptField,
+                onFocusChanged = { promptFocused = it },
                 onValueChange = { newValue ->
                     promptField = newValue
                     viewModel.onPromptChange(newValue.text)
@@ -237,25 +208,17 @@ fun GenerateSheet(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            if (visibleSuggestions.isNotEmpty()) {
-                TagSuggestions(
-                    suggestions = visibleSuggestions,
-                    onPick = { suggestion ->
-                        val span = PromptTagEditing
-                            .tagSpanAt(promptField.text, promptField.selection.end)
-                        val replacement = PromptTagEditing
-                            .applySuggestion(promptField.text, span, suggestion)
-
-                        promptField = TextFieldValue(
-                            text = replacement.text,
-                            selection = TextRange(replacement.cursor),
-                        )
-                        viewModel.onPromptChange(replacement.text)
-                        filledFragment = suggestion
-                    },
-                )
-            }
-
+            PromptTagSuggestions(
+                field = promptField,
+                focused = promptFocused,
+                target = "base",
+                state = state,
+                onQuery = viewModel::onSuggestionFragmentChange,
+                onFieldChange = { next ->
+                    promptField = next
+                    viewModel.onPromptChange(next.text)
+                },
+            )
             // 软上限只提示，不阻断提交（规划书 3.1）。
             if (state.exceedsPromptSoftLimit) {
                 Text(
@@ -317,40 +280,62 @@ fun GenerateSheet(
                 onAddCharacter = viewModel::addCharacter,
                 onRemoveCharacter = viewModel::removeCharacter,
                 onUpdateCharacter = viewModel::updateCharacter,
+                textRevision = state.textRevision,
+                suggestionState = state,
+                onSuggestionQuery = viewModel::onSuggestionFragmentChange,
+                canvasSize = state.params.size,
             )
 
-            WeightHighlightedTextField(
-                value = negativeField,
-                onValueChange = { newValue ->
-                    negativeField = newValue
-                    viewModel.onNegativePromptChange(newValue.text)
-                },
+            CollapsedNegativePrompt(
                 label = stringResource(R.string.generate_negative_label),
-                minLines = 2,
-                trailingIcon = {
-                    FavoriteSaveButton(
-                        field = negativeField,
-                        target = PromptTarget.NEGATIVE,
-                        onRequest = { saveRequest = it },
-                    )
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            // 负向词也要能从收藏夹填充。入口与正向的同一形态（图标 + 计数），
-            // 但名字点明目标框，两个入口不再长得一模一样分不清。
-            TextButton(
-                onClick = {
-                    pickerTarget = PromptTarget.NEGATIVE
-                    pickerOpen = true
-                },
+                hasContent = negativeField.text.isNotBlank(),
             ) {
-                Icon(Icons.Default.Bookmarks, contentDescription = null)
-                Text(
-                    text = stringResource(R.string.favorites_button_negative) +
-                        " (${favoritesState.promptCount + favoritesState.tagCount})",
-                    modifier = Modifier.padding(start = 4.dp),
+                WeightHighlightedTextField(
+                    value = negativeField,
+                    onFocusChanged = { negativeFocused = it },
+                    onValueChange = { newValue ->
+                        negativeField = newValue
+                        viewModel.onNegativePromptChange(newValue.text)
+                    },
+                    label = stringResource(R.string.generate_negative_label),
+                    minLines = 2,
+                    trailingIcon = {
+                        FavoriteSaveButton(
+                            field = negativeField,
+                            target = PromptTarget.NEGATIVE,
+                            onRequest = { saveRequest = it },
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
                 )
+
+                PromptTagSuggestions(
+                    field = negativeField,
+                    focused = negativeFocused,
+                    target = "base-negative",
+                    state = state,
+                    onQuery = viewModel::onSuggestionFragmentChange,
+                    onFieldChange = { next ->
+                        negativeField = next
+                        viewModel.onNegativePromptChange(next.text)
+                    },
+                )
+                // 负向词也要能从收藏夹填充。入口与正向的同一形态（图标 + 计数），
+                // 但名字点明目标框，两个入口不再长得一模一样分不清。
+                TextButton(
+                    onClick = {
+                        pickerTarget = PromptTarget.NEGATIVE
+                        pickerOpen = true
+                    },
+                ) {
+                    Icon(Icons.Default.Bookmarks, contentDescription = null)
+                    Text(
+                        text = stringResource(R.string.favorites_button_negative) +
+                            " (${favoritesState.promptCount + favoritesState.tagCount})",
+                        modifier = Modifier.padding(start = 4.dp),
+                    )
+                }
+
             }
 
             SectionHeader(stringResource(R.string.generate_section_params))
@@ -698,6 +683,7 @@ fun GenerateSheet(
             onSelectionChange = viewModel::onMetadataSelectionChange,
             onConfirm = viewModel::confirmMetadataImport,
             onDismiss = viewModel::dismissMetadataImport,
+            onCancel = viewModel::cancelMetadataImport,
         )
     }
 
@@ -721,37 +707,6 @@ fun GenerateSheet(
                 }
             },
         )
-    }
-}
-
-/**
- * 标签建议。点一下就把光标所在的标签替换成建议的词。
- *
- * 用 [FlowRow] 而不是横向滚动：一次最多 5 条，换行能全部看见 ——
- * 横向滚动会把后面的建议藏在屏幕外，用户不知道还有没有别的。
- *
- * 这里没有"关闭"按钮：建议随输入片段自动出现和消失，多一个开关只会多一处状态。
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun TagSuggestions(
-    suggestions: List<String>,
-    onPick: (String) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            text = stringResource(R.string.generate_suggestions_hint),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            suggestions.forEach { suggestion ->
-                AssistChip(
-                    onClick = { onPick(suggestion) },
-                    label = { Text(suggestion) },
-                )
-            }
-        }
     }
 }
 

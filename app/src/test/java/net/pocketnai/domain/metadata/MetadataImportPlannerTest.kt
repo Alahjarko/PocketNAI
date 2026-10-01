@@ -404,21 +404,22 @@ class MetadataImportPlannerTest {
     }
 
     @Test
-    fun `角色位置按最近站位还原并如实说明`() {
+    fun `角色二维位置原样导入不再吸附五档`() {
         // 官方是 5×5 网格（x=0.1/0.3/…），我们只有五档横排：吸附必须进 notes。
         val plan = MetadataImportPlanner.plan(
             metadata(
                 PngFixture.commentJson(
-                    charCaptions = "[${PngFixture.charCaption("left girl", 0.1, 0.5)}," +
-                        "${PngFixture.charCaption("right boy", 0.9, 0.5)}]",
+                    charCaptions = "[${PngFixture.charCaption("left girl", 0.1, 0.2)}," +
+                        "${PngFixture.charCaption("right boy", 0.9, 0.8)}]",
                 ),
             ),
             currentParams(),
             MetadataImportSelection(),
         )
 
-        assertThat(plan.characters!!.map { it.centerX }).containsExactly(0.15, 0.85).inOrder()
-        assertThat(plan.notes).contains(MetadataImportNote.CharactersPositionSnapped(2))
+        assertThat(plan.characters!!.map { it.centerX }).containsExactly(0.1, 0.9).inOrder()
+        assertThat(plan.characters!!.map { it.centerY }).containsExactly(0.2, 0.8).inOrder()
+        assertThat(plan.notes.filterIsInstance<MetadataImportNote.CharactersPositionSnapped>()).isEmpty()
     }
 
     @Test

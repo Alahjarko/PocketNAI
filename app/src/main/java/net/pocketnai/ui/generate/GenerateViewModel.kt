@@ -186,6 +186,7 @@ class GenerateViewModel(
          * 与自己刚打的字不匹配的建议。
          */
         val suggestionQuery: String = "",
+        val suggestionTarget: String = "",
         /**
          * 选图时读到的 NovelAI 元数据。非空时界面弹"要不要导入这张图的参数"。
          *
@@ -217,6 +218,7 @@ class GenerateViewModel(
         data class MetadataCandidate(
             val metadata: NovelAiImageMetadata,
             val selection: MetadataImportSelection = MetadataImportSelection(),
+            val source: ReferenceSource? = null,
         )
 
         val profile: ModelProfile get() = ModelCatalog.profileOf(params.model)
@@ -327,7 +329,8 @@ class GenerateViewModel(
      * 单独用一个 Flow 而不是塞进 `_state`：补全要等用户停手之后才发请求，
      * 防抖是"这个输入流怎么处理"的问题，放在这里比散在界面里更容易看清。
      */
-    private val suggestionInput = MutableStateFlow("")
+    private data class SuggestionRequest(val fragment: String = "", val target: String = "")
+    private val suggestionInput = MutableStateFlow(SuggestionRequest())
 
     /**
      * 当前参数的费用预估。
@@ -855,43 +858,53 @@ class GenerateViewModel(
             // 那时 tEXt 文本块已经没了（见 ImageMetadataInspector 的说明）。
             val probed = metadataInspector.inspect(source)
 
-            when (val outcome = referenceImporter.import(source)) {
-                is Outcome.Success -> {
-                    val prepared = outcome.value
-                    _state.update { current ->
-                        val profile = current.profile
-                        current.copy(
-                            referenceBusy = false,
-                            referenceSource = ReferenceImage.img2imgSource(
-                                prepared = prepared,
-                                strength = profile.defaultImg2ImgStrength,
-                                id = idGenerator(),
-                                createdAt = clock(),
-                            ),
-                            // 图生图与 Precise Reference 互斥：挂上起点图就清掉另一类。
-                            directorReferences = emptyList(),
-                            // 换底图必须作废旧蒙版：蒙版是按上一张底图的尺寸裁的，留着就会错位。
-                            inpaintReferences = emptyList(),
-                            // 自定义模式下尺寸由用户说了算：底图会被 Cover 到那个画布，
-                            // 而不是反过来把用户的尺寸改掉。
-                            params = if (current.customResolution != null) {
-                                current.params
-                            } else {
-                                current.params.copy(
-                                    size = sizeForSource(profile, prepared),
-                                    outputSize = null,
-                                )
-                            },
-                            // 只有确认是 NovelAI 图片才弹导入框：普通照片弹一个"没有元数据"是噪音。
-                            metadataCandidate = (probed as? MetadataProbeResult.Found)
-                                ?.let { UiState.MetadataCandidate(it.metadata) },
-                        )
-                    }
+            if (probed is MetadataProbeResult.Found) {
+                _state.update {
+                    it.copy(referenceBusy = false, metadataCandidate = UiState.MetadataCandidate(probed.metadata, source = source))
                 }
+            } else {
+                importReferenceImage(source)
+            }
+        }
+    }
 
-                is Outcome.Failure -> _state.update {
-                    it.copy(referenceBusy = false, referenceError = outcome.error)
+    private suspend fun importReferenceImage(source: ReferenceSource) {
+        when (val outcome = referenceImporter.import(source)) {
+            is Outcome.Success -> {
+                val prepared = outcome.value
+                _state.update { current ->
+                    val profile = current.profile
+                    current.copy(
+                        referenceBusy = false,
+                        referenceSource = ReferenceImage.img2imgSource(
+                            prepared = prepared,
+                            strength = profile.defaultImg2ImgStrength,
+                            id = idGenerator(),
+                            createdAt = clock(),
+                        ),
+                        // 图生图与 Precise Reference 互斥：挂上起点图就清掉另一类。
+                        directorReferences = emptyList(),
+                        // 换底图必须作废旧蒙版：蒙版是按上一张底图的尺寸裁的，留着就会错位。
+                        inpaintReferences = emptyList(),
+                        // 自定义模式下尺寸由用户说了算：底图会被 Cover 到那个画布，
+                        // 而不是反过来把用户的尺寸改掉。
+                        params = if (current.customResolution != null) {
+                            current.params
+                        } else {
+                            current.params.copy(
+                                size = sizeForSource(profile, prepared),
+                                outputSize = null,
+                            )
+                        },
+                        // 只有确认是 NovelAI 图片才弹导入框：普通照片弹一个"没有元数据"是噪音。
+                        metadataCandidate = null, // 参数导入和参考图用途互斥。
+
+                    )
                 }
+            }
+
+            is Outcome.Failure -> _state.update {
+                it.copy(referenceBusy = false, referenceError = outcome.error)
             }
         }
     }
@@ -916,11 +929,19 @@ class GenerateViewModel(
         return MetadataImportPlanner.plan(candidate.metadata, current.params, candidate.selection)
     }
 
-    /** 关闭导入对话框：图片照常留作参考图，只是不导入参数。 */
+    /** 显式选择仅作参考图；确认读取参数与取消都不走此路径。 */
     fun dismissMetadataImport() {
+        val source = _state.value.metadataCandidate?.source
         _state.update { it.copy(metadataCandidate = null) }
+        if (source != null) {
+            _state.update { it.copy(referenceBusy = true, referenceError = null) }
+            viewModelScope.launch { importReferenceImage(source) }
+        }
     }
 
+    fun cancelMetadataImport() {
+        _state.update { it.copy(metadataCandidate = null) }
+    }
     /**
      * 按当前勾选把元数据写进编辑区。
      *
@@ -959,6 +980,8 @@ class GenerateViewModel(
             state.copy(
                 // 采样器/调度/尺寸都按新模型再过一遍，避免导入出的组合服务端不认。
                 params = normalized,
+                referenceSource = if (candidate.source != null) null else state.referenceSource,
+                inpaintReferences = if (candidate.source != null) emptyList() else state.inpaintReferences,
                 // 元数据里的尺寸不在预设里但合法时，把它当作自定义尺寸接住：
                 // 那张图本来就是按这个尺寸生成的，因此不需要裁切（exactOutput = false）。
                 customResolution = plan.size?.let { size ->
@@ -1349,22 +1372,23 @@ class GenerateViewModel(
      * 传空串表示没有可补全的内容（光标不在标签里、或用户正在选择一段文字），
      * 此时立刻清掉建议，不等防抖 —— 建议留在屏幕上却和输入框对不上更让人困惑。
      */
-    fun onSuggestionFragmentChange(fragment: String) {
+    fun onSuggestionFragmentChange(fragment: String, target: String = "base") {
         if (fragment.isBlank()) {
-            suggestionInput.value = ""
+            if (suggestionInput.value.target != target) return
+            suggestionInput.value = SuggestionRequest(target = target)
             clearSuggestions()
             return
         }
-        suggestionInput.value = fragment
+        suggestionInput.value = SuggestionRequest(fragment, target)
     }
 
     fun clearSuggestions() {
         if (_state.value.suggestions.isEmpty() && _state.value.suggestionQuery.isEmpty()) return
-        _state.update { it.copy(suggestions = emptyList(), suggestionQuery = "") }
+        _state.update { it.copy(suggestions = emptyList(), suggestionQuery = "", suggestionTarget = "") }
     }
 
-    private suspend fun refreshSuggestions(fragment: String, model: ImageModel) {
-        val query = fragment.trim()
+    private suspend fun refreshSuggestions(request: SuggestionRequest, model: ImageModel) {
+        val query = request.fragment.trim()
         if (query.length < MIN_SUGGESTION_FRAGMENT_CHARS) {
             clearSuggestions()
             return
@@ -1373,7 +1397,10 @@ class GenerateViewModel(
         val tags = tagSuggestionSource.suggest(query, model)
             .distinct()
             .take(MAX_SUGGESTIONS)
-        _state.update { it.copy(suggestions = tags, suggestionQuery = fragment) }
+        if (suggestionInput.value != request || _state.value.params.model != model) return
+        _state.update {
+            it.copy(suggestions = tags, suggestionQuery = request.fragment, suggestionTarget = request.target)
+        }
     }
 
     fun generate() {
@@ -1618,7 +1645,7 @@ class GenerateViewModel(
         const val MIN_SUGGESTION_FRAGMENT_CHARS = 2
 
         /** 与服务端网页版一致，一次最多展示 5 条。 */
-        const val MAX_SUGGESTIONS = 5
+        const val MAX_SUGGESTIONS = 20
 
         /** 费用预估流的订阅超时，与画廊保持一致。 */
         const val COST_SUBSCRIPTION_TIMEOUT_MS = 5_000L

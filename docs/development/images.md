@@ -100,6 +100,8 @@
   `tEXt` 文本块在那一步全丢。正确顺序是 `onReferencePicked` 里先
   `metadataInspector.inspect(source)` 再 `referenceImporter.import(source)`；
   反过来功能会**静默失效**（不报错，永远没有元数据）。
+- 用途在归一化前分开（2026-10-01）：读到参数先展示选择；确认读参数不挂图生图参考，
+  只有明确选择“仅作参考图”才执行图片归一化。取消对话框不挂图、不改参数，不自动生成。
 - 只有 `Software` 含 `NovelAI` 才算元数据（与官方一致）。`Comment` 解析失败不算致命：
   仍给出"这是 NovelAI 图"，只是没有参数。
 - **字段白名单**，只取我们认识的：`prompt/uc/width/height/steps/scale/cfg_rescale/
@@ -114,10 +116,10 @@
 - **导入后模板与提交值必须一致**：编辑器绑定的是 `promptTemplate`，
   而质量标签是在提交时追加到 `params.prompt` 的。只改一个会让标签翻倍。
 - **Characters 随提示词一起导入**（2026-09-19）：解析 `v4_prompt` / `v4_negative_prompt`
-  的 `char_captions`，按 `CharacterPrompt` 落成"正/负向词 + 五档站位"。
+  的 `char_captions`，按 `CharacterPrompt` 落成"正/负向词 + 二维坐标"。
   三条纪律：超出 `CharacterPrompt.MAX_COUNT`（5）的部分**截断并进 notes**；
-  官方 5×5 网格的坐标吸附到最近档位（纵坐标丢弃）时**必须提示"位置按站位还原"**，
-  不许静默改写；角色词**绝不拼进基础提示词**冒充导入。导入是**整组替换**当前角色，
+  有效 x/y 原样保留，不再吸附五档或丢弃纵坐标；越界坐标限制到 0–1 必须进 notes。
+  角色词**绝不拼进基础提示词**冒充导入。导入是**整组替换**当前角色，
   不是与草稿里的角色合并（混在一起会得到谁也没画过的组合）。
 - 导入**不自动生成**（同 Seed 同参数很容易再产出一张几乎一样的图，而那要花 Anlas）。
 - 元数据是外部输入：读取有限额（单块 1 MiB、解压 1 MiB、总量 2 MiB），

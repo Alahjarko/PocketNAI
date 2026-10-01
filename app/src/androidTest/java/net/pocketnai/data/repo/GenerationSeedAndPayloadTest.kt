@@ -226,14 +226,23 @@ class GenerationSeedAndPayloadTest {
         val payloads = mutableListOf<JsonObject>()
         val repository = repository(payloads, Random(1), GenerationFileStore(context))
         val characters = listOf(
-            net.pocketnai.domain.model.CharacterPrompt(prompt = "blue hair", negativePrompt = "hat", centerX = 0.2),
-            net.pocketnai.domain.model.CharacterPrompt(prompt = "red hair", negativePrompt = "glasses", centerX = 0.8),
+            net.pocketnai.domain.model.CharacterPrompt(prompt = "blue hair", negativePrompt = "hat", centerX = 0.2, centerY = 0.3),
+            net.pocketnai.domain.model.CharacterPrompt(prompt = "red hair", negativePrompt = "glasses", centerX = 0.8, centerY = 0.7),
         )
         val params = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V4_5_CURATED))
             .copy(prompt = "two people", characters = characters)
         val events = repository.generate(GenerationRequest(params = params), "two people").toList()
         val image = events.filterIsInstance<GenerationEvent.Final>().single().image
         assertThat(repository.loadDetail(image.id)?.generation?.params?.characters).isEqualTo(characters)
+        for (key in listOf("v4_prompt", "v4_negative_prompt")) {
+            val block = parametersOf(payloads.single())[key] as JsonObject
+            val captions = (block["caption"] as JsonObject)["char_captions"] as kotlinx.serialization.json.JsonArray
+            val first = captions[0] as JsonObject
+            val centers = first["centers"] as kotlinx.serialization.json.JsonArray
+            val center = centers[0] as JsonObject
+            assertThat(center["x"]!!.jsonPrimitive.contentOrNull).isEqualTo("0.2")
+            assertThat(center["y"]!!.jsonPrimitive.contentOrNull).isEqualTo("0.3")
+        }
     }
 
     @Test

@@ -1,6 +1,5 @@
 package net.pocketnai.domain.metadata
 
-import net.pocketnai.domain.model.CharacterPosition
 import net.pocketnai.domain.model.CharacterPrompt
 import net.pocketnai.domain.model.GenerationParams
 import net.pocketnai.domain.model.ImageModel
@@ -9,7 +8,6 @@ import net.pocketnai.domain.model.ModelCatalog
 import net.pocketnai.domain.model.NoiseSchedule
 import net.pocketnai.domain.model.QualityTagsOption
 import net.pocketnai.domain.model.Sampler
-import kotlin.math.abs
 
 /**
  * 导入时勾了哪些项。
@@ -42,9 +40,9 @@ sealed interface MetadataImportNote {
     data class CharactersTruncated(val requested: Int, val applied: Int) : MetadataImportNote
 
     /**
-     * 有 N 条角色的位置按最接近的站位还原。
+     * 有 N 条角色的坐标超出 0–1 范围，已限制到画布边界。
      *
-     * 官方网页是 5×5 网格，我们只有五档横排：横坐标吸附到最近一档、纵坐标丢弃 ——
+     * 有效二维坐标原样保留；只有越界值才修正 ——
      * 这是**对原参数的改写**，按项目纪律必须如实说明，不能静默处理。
      */
     data class CharactersPositionSnapped(val count: Int) : MetadataImportNote
@@ -290,40 +288,30 @@ object MetadataImportPlanner {
         // ---- 独立角色：跟着"提示词"那一项走（角色词也是提示词，不该拆成两个勾选项） ----
         var characters: List<CharacterPrompt>? = null
         if (selection.prompt && metadata.characters.isNotEmpty()) {
-            var snappedCount = 0
-            val mapped = metadata.characters
-                // 空白条目（有的客户端会留占位）没有导入价值。
-                .filterNot { it.prompt.isBlank() && it.negativePrompt.isNullOrBlank() }
-                .map { character ->
-                    val rawX = character.centerX ?: DEFAULT_CENTER
-                    val rawY = character.centerY ?: DEFAULT_CENTER
-                    val position = CharacterPosition.fromCoords(rawX, rawY)
-                    if (abs(position.x - rawX) > POSITION_EPSILON ||
-                        abs(position.y - rawY) > POSITION_EPSILON
-                    ) {
-                        snappedCount++
-                    }
-                    CharacterPrompt(
-                        prompt = cleanIfRequested(character.prompt, selection),
-                        negativePrompt = cleanIfRequested(character.negativePrompt.orEmpty(), selection),
-                        position = position,
-                    )
-                }
-            val applied = mapped.take(CharacterPrompt.MAX_COUNT)
-            // 位置吸附/纵坐标丢弃发生在 take 之前，但只对真正导入的那些提示。
-            val snappedInApplied = snappedCount.coerceAtMost(applied.size)
+            var adjustedCount = 0
+            val eligible = metadata.characters.filterNot { it.prompt.isBlank() && it.negativePrompt.isNullOrBlank() }
+            val applied = eligible.take(CharacterPrompt.MAX_COUNT).map { character ->
+                val rawX = character.centerX ?: DEFAULT_CENTER
+                val rawY = character.centerY ?: DEFAULT_CENTER
+                val x = rawX.coerceIn(0.0, 1.0)
+                val y = rawY.coerceIn(0.0, 1.0)
+                if (x != rawX || y != rawY) adjustedCount++
+                CharacterPrompt(
+                    prompt = cleanIfRequested(character.prompt, selection),
+                    negativePrompt = cleanIfRequested(character.negativePrompt.orEmpty(), selection),
+                    centerX = x,
+                    centerY = y,
+                )
+            }
             characters = applied.takeIf { it.isNotEmpty() }
             if (applied.isNotEmpty()) {
                 notes += MetadataImportNote.CharactersImported(applied.size)
-                if (applied.size < mapped.size) {
-                    notes += MetadataImportNote.CharactersTruncated(mapped.size, applied.size)
+                if (applied.size < eligible.size) {
+                    notes += MetadataImportNote.CharactersTruncated(eligible.size, applied.size)
                 }
-                if (snappedInApplied > 0) {
-                    notes += MetadataImportNote.CharactersPositionSnapped(snappedInApplied)
-                }
+                if (adjustedCount > 0) notes += MetadataImportNote.CharactersPositionSnapped(adjustedCount)
             }
         }
-
         // ---- 无法恢复的引用类信息：只提示，绝不建空引用 ----
         if (metadata.usedVibeReferences) {
             notes += MetadataImportNote.VibeReferencesNotRestorable
@@ -417,8 +405,6 @@ object MetadataImportPlanner {
     /** 元数据里没写中心点时的默认值（与我们自己的默认站位一致）。 */
     private const val DEFAULT_CENTER = 0.5
 
-    /** 判断"位置是否被改装过"的容差：官方坐标是十进制小数，能精确落到我们的档位时不该误报。 */
-    private const val POSITION_EPSILON = 1e-6
 }
 
 /**

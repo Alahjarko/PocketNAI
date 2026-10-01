@@ -129,14 +129,44 @@ class PromptTagEditingTest {
     }
 
     @Test
-    fun `末尾只剩空白时用逗号顶掉它`() {
+    fun `补全不删除光标右侧的空白`() {
         val text = "1girl, blue ey   "
         val cursor = text.indexOf("ey") + 2
         val span = PromptTagEditing.tagSpanAt(text, cursor)
 
         val replacement = PromptTagEditing.applySuggestion(text, span, "blue eyes")
 
-        assertThat(replacement.text).isEqualTo("1girl, blue eyes, ")
+        assertThat(replacement.text).isEqualTo("1girl, blue eyes,    ")
+    }
+
+    @Test
+    fun `补全只读取光标前片段并保留后面的加权组`() {
+        val text = "blu1.1::honkai: star rail,official art::"
+        val span = PromptTagEditing.completionSpanAt(text, 3)
+        assertThat(span.textIn(text)).isEqualTo("blu")
+        assertThat(PromptTagEditing.applySuggestion(text, span, "blue hair").text)
+            .isEqualTo("blue hair, 1.1::honkai: star rail,official art::")
+    }
+
+    @Test
+    fun `权重组内补全保留前缀后缀和右侧标签`() {
+        val text = "1.1::blu,official art::"
+        val span = PromptTagEditing.completionSpanAt(text, text.indexOf(','))
+        assertThat(span.textIn(text)).isEqualTo("blu")
+        assertThat(PromptTagEditing.applySuggestion(text, span, "blue hair").text)
+            .isEqualTo("1.1::blue hair,official art::")
+        val last = "0.9::blu::"
+        assertThat(PromptTagEditing.applySuggestion(last,
+            PromptTagEditing.completionSpanAt(last, last.indexOf("blu") + 3), "blue hair").text)
+            .isEqualTo("0.9::blue hair::")
+    }
+
+    @Test
+    fun `补全不跨越花括号且光标之后原样保留`() {
+        val text = "{blu}solo"
+        val span = PromptTagEditing.completionSpanAt(text, 4)
+        assertThat(PromptTagEditing.applySuggestion(text, span, "blue hair").text).isEqualTo("{blue hair}solo")
+        assertThat(PromptTagEditing.completionSpanAt("blue eyes", 4).textIn("blue eyes")).isEqualTo("blue")
     }
 
     @Test

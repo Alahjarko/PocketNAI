@@ -75,9 +75,26 @@ class PromptWeightScannerTest {
     }
 
     @Test
-    fun `权重恰好为 1 的片段不产生高亮`() {
-        assertThat("1::cat::".spansOf()).isEmpty()
-        assertThat("1.0::cat::".spansOf()).isEmpty()
+    fun `权重为1仍标出成对语法且保持中性`() {
+        assertThat("1::cat::".spansOf()).containsExactly("1::cat::")
+        assertThat(PromptWeightScanner.scan("1.0::cat::").single().direction).isEqualTo(WeightDirection.NEUTRAL)
+    }
+
+    @Test
+    fun `多标签数字权重不按内部逗号切断`() {
+        assertThat("1.1::honkai: star rail,official art::".spansOf())
+            .containsExactly("1.1::honkai: star rail,official art::")
+    }
+
+    @Test
+    fun `成对权重前后不需要逗号且多组各自高亮`() {
+        val text = "prefix 0.9::a,b::1.2::c,d::suffix"
+        assertThat(text.spansOf()).containsExactly("0.9::a,b::", "1.2::c,d::").inOrder()
+    }
+
+    @Test
+    fun `只有成对冒号也标出高亮并支持换行`() {
+        assertThat("prefix::a,\nb::suffix".spansOf()).containsExactly("::a,\nb::")
     }
 
     @Test

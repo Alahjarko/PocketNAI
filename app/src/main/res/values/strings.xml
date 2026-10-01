@@ -350,7 +350,7 @@
 
     <!-- 图片元数据导入 -->
     <string name="metadata_title">这张图带 NovelAI 元数据</string>
-    <string name="metadata_subtitle">要把它里面的提示词与参数导入到编辑区吗？导入不会自动开始生成。</string>
+    <string name="metadata_subtitle">读取提示词与参数后，这张图不会作为参考图；也可以选择仅作参考图。导入不会自动开始生成。</string>
     <string name="metadata_source">模型：%1$s</string>
     <string name="metadata_generation_time">生成耗时 %1$.1f 秒</string>
     <string name="metadata_prompt">提示词</string>
@@ -363,7 +363,7 @@
     <string name="metadata_actual_prompt_desc">这张图用了随机提示词。勾选后把抽选展开后的实际值写进提示词框（模板原文不再保留）。</string>
     <string name="metadata_overwrites_prompt">当前提示词不为空，导入会覆盖它。</string>
     <string name="metadata_import">导入</string>
-    <string name="metadata_skip">只用图片</string>
+    <string name="metadata_skip">仅作参考图</string>
     <string name="metadata_will_change">将改动：%1$s</string>
     <string name="metadata_change_model">模型 → %1$s</string>
     <string name="metadata_change_size">尺寸 → %1$s</string>
@@ -374,7 +374,7 @@
     <string name="metadata_change_characters">独立角色 ×%1$d</string>
     <string name="metadata_note_characters_imported">已导入 %1$d 条独立角色提示词（含各自的负向词与站位）。</string>
     <string name="metadata_note_characters_truncated">检测到 %1$d 条角色提示词，超出上限的 %2$d 条未导入。</string>
-    <string name="metadata_note_characters_snapped">其中 %1$d 条角色的位置按最接近的站位还原（官方是 5×5 网格，本机只有五档横排）。</string>
+    <string name="metadata_note_characters_snapped">其中 %1$d 条角色的坐标超出画布范围，已限制到画布边界。</string>
     <string name="metadata_note_model">模型 %1$s 不在支持范围内，模型保持不变。</string>
     <string name="metadata_note_unknown">未知</string>
     <string name="metadata_note_size">元数据尺寸 %1$d×%2$d 按自定义尺寸导入（原图就是这个画布，取整会复现不出原图）。</string>
