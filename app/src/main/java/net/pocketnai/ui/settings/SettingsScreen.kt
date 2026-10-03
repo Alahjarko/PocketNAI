@@ -57,6 +57,7 @@ import net.pocketnai.ui.billing.AnlasLedgerDialog
 import net.pocketnai.ui.billing.BalanceDetailDialog
 import net.pocketnai.ui.billing.compactLabel
 import net.pocketnai.ui.common.messageRes
+import net.pocketnai.ui.update.UpdateCheckDialog
 import net.pocketnai.ui.update.UpdateViewModel
 
 /**
@@ -425,56 +426,12 @@ fun SettingsScreen(
     }
 
     if (updateDialogOpen) {
-        AlertDialog(
-            onDismissRequest = { updateDialogOpen = false },
-            title = { Text(stringResource(R.string.update_section_title)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = "${stringResource(R.string.settings_version)} " +
-                            "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = stringResource(R.string.settings_update_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    OutlinedButton(
-                        onClick = updateViewModel::checkManually,
-                        enabled = !updateState.checking,
-                    ) {
-                        Text(
-                            stringResource(
-                                if (updateState.checking) {
-                                    R.string.update_checking
-                                } else {
-                                    R.string.update_check_action
-                                },
-                            ),
-                        )
-                    }
-                    when {
-                        updateState.upToDateNotice -> Text(
-                            text = stringResource(R.string.update_up_to_date),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-
-                        updateState.error != null -> Text(
-                            text = stringResource(updateState.error!!.messageRes()),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { updateDialogOpen = false }) {
-                    Text(stringResource(R.string.action_done))
-                }
-            },
+        UpdateCheckDialog(
+            currentVersionName = BuildConfig.VERSION_NAME,
+            currentVersionCode = BuildConfig.VERSION_CODE,
+            state = updateState,
+            onCheck = updateViewModel::checkManually,
+            onDismiss = { updateDialogOpen = false },
         )
     }
 

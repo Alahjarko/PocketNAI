@@ -29,6 +29,8 @@
   - 判据是**构建号比较**（tag `build-42` → 42 与 `BuildConfig.VERSION_CODE` 比大小），
     不比较版本名字符串；解析与判定都是纯函数（`UpdateEvaluator`），有单测钉住；
   - 仓库地址在 `BuildConfig.UPDATE_REPO`（`app/build.gradle.kts`），换仓库只改这一处；
+  - 设置页检查窗口与新版本提示都提供“在 GitHub 查看最新版”（2026-10-02），跳转同一仓库的
+    `/releases/latest` 页面；检查失败或已是最新版时入口仍可用，不依赖 API 返回的外部 URL；
   - **只发匿名 GET**（`releases/latest`），不带凭据、不带任何用户数据；这是应用里
     唯一会自动发起的网络请求（启动后延迟数秒静默检查，失败不打扰，设置页可手动检查）；
   - "稍后"记进 `SettingsStore.updateDismissedVersionCode` —— 同一个构建不重复弹，

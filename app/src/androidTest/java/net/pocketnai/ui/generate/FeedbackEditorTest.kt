@@ -143,4 +143,51 @@ class FeedbackEditorTest {
         target.parentFile?.mkdirs()
         target.outputStream().use { image.asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
     }
+
+    @Test fun `负数绿色与连续未闭合权重在明暗主题下均显示`() {
+        var theme by mutableStateOf(ThemeMode.LIGHT)
+        val prompt = "-1::hat, glasses\n1.5::tag, tag 1.2::tag::\n1.8::tag"
+        compose.setContent {
+            PocketNaiTheme(themeMode = theme, dynamicColor = false) {
+                androidx.compose.material3.Surface {
+                    WeightHighlightedTextField(
+                        androidx.compose.ui.text.input.TextFieldValue(prompt), {}, label = "权重反馈验证",
+                        modifier = androidx.compose.ui.Modifier.testTag("signed-highlight-field"),
+                    )
+                }
+            }
+        }
+        listOf(ThemeMode.LIGHT, ThemeMode.DARK).forEach { mode ->
+            compose.runOnIdle { theme = mode }
+            val pixels = compose.onNodeWithTag("signed-highlight-field").captureToImage().toPixelMap()
+            val greenRows = (0 until pixels.height).filter { y ->
+                (0 until pixels.width).count { x ->
+                    val c = pixels[x, y]
+                    c.green > c.red + 0.035f && c.green > c.blue + 0.035f
+                } > 10
+            }
+            val redRows = (0 until pixels.height).filter { y ->
+                (0 until pixels.width).count { x ->
+                    val c = pixels[x, y]
+                    c.red > c.green + 0.035f && c.red > c.blue + 0.035f
+                } > 10
+            }
+            assertThat(greenRows).isNotEmpty()
+            assertThat(redRows).isNotEmpty()
+            assertThat(greenRows.last()).isLessThan(redRows.first())
+            assertThat(redRows.zipWithNext().count { (a, b) -> b > a + 1 } + 1).isAtLeast(2)
+            // 在字形上方的底纹行取样：同一行两段红色之间必须有空隙。
+            val y = redRows.first() + 2
+            val redColumns = (0 until pixels.width).filter { x ->
+                val c = pixels[x, y]
+                c.red > c.green + 0.035f && c.red > c.blue + 0.035f
+            }
+            assertThat(redColumns.zipWithNext().count { (a, b) -> b > a + 1 } + 1).isEqualTo(2)
+            val instrumentation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+            val target = java.io.File(instrumentation.targetContext.cacheDir, "feedback-signed-${mode.name}.png")
+            val screen = instrumentation.uiAutomation.takeScreenshot()
+            target.outputStream().use { screen.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            screen.recycle()
+        }
+    }
 }

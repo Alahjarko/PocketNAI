@@ -6,10 +6,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -22,8 +24,7 @@ import net.pocketnai.ui.common.messageRes
  * "发现新版本"对话框。
  *
  * 三种形态共用这一个框：待下载 / 下载中 / 出错（可重试）。
- * 下载中禁用两个按钮 —— 这时的用户动作只有"等"，允许取消就得处理
- * 半截文件与竞赛，收益不成比例。
+ * 下载中禁用重复下载与关闭操作；仍可打开 GitHub 页面查看发布说明。
  */
 @Composable
 fun UpdateAvailableDialog(
@@ -35,6 +36,7 @@ fun UpdateAvailableDialog(
     onLater: () -> Unit,
     onDismissError: () -> Unit,
 ) {
+    val uriHandler = LocalUriHandler.current
     AlertDialog(
         onDismissRequest = { if (download == null) onLater() },
         title = { Text(stringResource(R.string.update_title)) },
@@ -89,6 +91,7 @@ fun UpdateAvailableDialog(
                         )
                     }
                 }
+                LatestReleaseButton(uriHandler)
             }
         },
         confirmButton = {
@@ -115,6 +118,55 @@ fun UpdateAvailableDialog(
                     },
                 )
             }
+        },
+    )
+}
+
+/** 设置页手动检查入口，成功、失败或检查中都保留浏览器更新途径。 */
+@Composable
+fun UpdateCheckDialog(
+    currentVersionName: String,
+    currentVersionCode: Int,
+    state: UpdateViewModel.UiState,
+    onCheck: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val uriHandler = LocalUriHandler.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.update_section_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    stringResource(R.string.update_current_version, currentVersionName) + " (build $currentVersionCode)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    stringResource(R.string.settings_update_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(onClick = onCheck, enabled = !state.checking) {
+                    Text(stringResource(if (state.checking) R.string.update_checking else R.string.update_check_action))
+                }
+                when {
+                    state.upToDateNotice -> Text(
+                        stringResource(R.string.update_up_to_date),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    state.error != null -> Text(
+                        stringResource(state.error.messageRes()),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                LatestReleaseButton(uriHandler)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_done)) }
         },
     )
 }

@@ -425,6 +425,8 @@
     <string name="settings_update_desc">应用会自动查看 GitHub 上发布的最新构建；检查只读取公开的版本信息，不发送任何你的数据。</string>
     <string name="update_current_version">当前版本 %1$s</string>
     <string name="update_check_action">检查更新</string>
+    <string name="update_open_release_page">在 GitHub 查看最新版</string>
+    <string name="update_open_page_failed">无法打开网页，请确认已安装浏览器。</string>
     <string name="update_checking">正在检查…</string>
     <string name="update_up_to_date">已是最新版本</string>
     <string name="update_install_permission_hint">请先允许本应用安装应用，回来后重新点一次"下载并安装"。</string>

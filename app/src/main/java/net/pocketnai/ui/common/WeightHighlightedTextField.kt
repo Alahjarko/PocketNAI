@@ -88,6 +88,7 @@ fun WeightHighlightedTextField(
     val horizontalPadding = with(density) { HIGHLIGHT_HORIZONTAL_PADDING.toPx() }
     val verticalInset = with(density) { HIGHLIGHT_VERTICAL_INSET.toPx() }
     val cornerRadius = with(density) { HIGHLIGHT_CORNER_RADIUS.toPx() }
+    val groupGap = with(density) { 1.dp.toPx() }
     val highlights = LocalWeightHighlightColors.current
     val neutralHighlight = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
 
@@ -143,6 +144,7 @@ fun WeightHighlightedTextField(
                             horizontalPadding = horizontalPadding,
                             verticalInset = verticalInset,
                             cornerRadius = cornerRadius,
+                            groupGap = groupGap,
                         )
                     }
                 }
@@ -187,8 +189,9 @@ private fun DrawScope.drawWeightHighlights(
     horizontalPadding: Float,
     verticalInset: Float,
     cornerRadius: Float,
+    groupGap: Float,
 ) {
-    spans.forEach { span ->
+    spans.forEachIndexed { spanIndex, span ->
         val color = when (span.direction) {
             WeightDirection.NEUTRAL -> neutralColor
             WeightDirection.WEAKER -> weakerColor
@@ -210,6 +213,23 @@ private fun DrawScope.drawWeightHighlights(
                 else layout.getHorizontalPosition(end, usePrimaryDirection = true)
             if (right <= left) continue
 
+            // 相邻组的外扩底纹不能相交；即使没有逗号或权重颜色相同，也留出可见分界。
+            var highlightLeft = left - horizontalPadding
+            var highlightRight = right + horizontalPadding
+            spans.getOrNull(spanIndex - 1)?.takeIf {
+                it.endExclusive <= start && layout.getLineForOffset(it.endExclusive - 1) == line
+            }?.let { previous ->
+                val previousRight = layout.getHorizontalPosition(previous.endExclusive, usePrimaryDirection = true)
+                highlightLeft = maxOf(highlightLeft, (previousRight + left) / 2f + groupGap / 2f)
+            }
+            spans.getOrNull(spanIndex + 1)?.takeIf {
+                it.start >= end && layout.getLineForOffset(it.start) == line
+            }?.let { next ->
+                val nextLeft = layout.getHorizontalPosition(next.start, usePrimaryDirection = true)
+                highlightRight = minOf(highlightRight, (right + nextLeft) / 2f - groupGap / 2f)
+            }
+            if (highlightRight <= highlightLeft) continue
+
             // 行的上下边界是**整个行高**（含行距），直接拿来画会让相邻两行的底纹连成一片，
             // 所以四边各内缩一点：底纹因此更像"划重点"的笔道，而不是一块整色。
             val top = layout.getLineTop(line) + verticalInset
@@ -218,9 +238,9 @@ private fun DrawScope.drawWeightHighlights(
 
             drawRoundRect(
                 color = color,
-                topLeft = Offset(left - horizontalPadding, top),
+                topLeft = Offset(highlightLeft, top),
                 size = Size(
-                    width = right - left + horizontalPadding * 2,
+                    width = highlightRight - highlightLeft,
                     height = bottom - top,
                 ),
                 cornerRadius = CornerRadius(cornerRadius, cornerRadius),

@@ -102,4 +102,48 @@ class PngTextChunksTest {
 
         assertThat(read(png.copyOf(png.size / 2))).isEqualTo(PngTextChunks.Result.Malformed)
     }
+
+    @Test fun `Latin1空格和重音字符在普通文本块中不会变成替换符`() {
+        val prompt = "artist:example,\u00a0\u00a0café, year 2025"
+        val png = PngFixture.png(texts = listOf("Description" to prompt), textCharset = Charsets.ISO_8859_1)
+        assertThat(read(png).value("Description")).isEqualTo(prompt)
+    }
+
+    @Test fun `压缩Latin1提示词读取后传入元数据解析仍保留空格`() {
+        val prompt = "girl,\u00a0\u00a0café"
+        val png = PngFixture.png(
+            texts = listOf("Software" to "NovelAI"),
+            compressedTexts = listOf("Comment" to PngFixture.commentJson(prompt = prompt)),
+            textCharset = Charsets.ISO_8859_1,
+        )
+        val result = read(png) as PngTextChunks.Result.Read
+        val parsed = NovelAiMetadataParser.parse(result.chunks, kotlinx.serialization.json.Json { ignoreUnknownKeys = true })
+        assertThat(parsed?.prompt).isEqualTo(prompt)
+    }
+
+    @Test fun `兼容既有UTF8普通和压缩文本块中的中文及特殊空格`() {
+        val prompt = "白发,\u00a0\u2009\u3000café, 🌸"
+        val png = PngFixture.png(
+            texts = listOf("Description" to prompt),
+            compressedTexts = listOf("Comment" to prompt),
+        )
+        assertThat(read(png).value("Description")).isEqualTo(prompt)
+        assertThat(read(png).value("Comment")).isEqualTo(prompt)
+    }
+
+    @Test fun `压缩与未压缩国际文本都按UTF8读取`() {
+        val prompt = "白发\u00a0🌸"
+        listOf(false, true).forEach { compressed ->
+            val png = PngFixture.png(
+                internationalTexts = listOf("Description" to prompt), compressInternationalTexts = compressed,
+            )
+            assertThat(read(png).value("Description")).isEqualTo(prompt)
+        }
+    }
+
+    @Test fun `原文已有替换字符时不擅自猜测它是空格`() {
+        val prompt = "tag\uFFFDname"
+        assertThat(read(PngFixture.png(texts = listOf("Description" to prompt))).value("Description"))
+            .isEqualTo(prompt)
+    }
 }

@@ -14,7 +14,7 @@ data class PromptWeightSpan(
     val endExclusive: Int,
     val weight: Double,
 ) {
-    /** 权重低于 1 是弱化，高于 1 是强化；成对 :: 的中性权重也标出。 */
+    /** 权重低于 1（包括负数）用绿色，高于 1 用红色；显式中性权重也标出。 */
     val direction: WeightDirection
         get() = when {
             weight < 1.0 -> WeightDirection.WEAKER
@@ -28,7 +28,7 @@ data class PromptWeightSpan(
 
 /** 权重相对 1.0 的偏向，决定底纹用哪种颜色。 */
 enum class WeightDirection {
-    /** 成对 :: 已闭合，但未指定数值权重或数值为 1。 */
+    /** 未指定数值权重或数值为 1。 */
     NEUTRAL,
     /** 权重 < 1：这个标签被削弱了。 */
     WEAKER,
@@ -43,14 +43,12 @@ enum class WeightDirection {
  * 认识两种写法：
  * - NovelAI 的包裹语法：每层 `{}` 乘 1.05、每层 `[]` 除以 1.05，权重计算**复用
  *   [EmphasisSyntax.strengthOf]**，不在这里另写一套 —— 否则两个入口迟早会给出不同的数；
- * - 数字前缀 `0.9::tag ::`。
+ * - 带可选正负号的数字前缀，例如 `-1::tag`、`0.9::tag ::`。
  *
- * ⚠️ 数字前缀这一条是**为高亮而实现的，不代表 NovelAI 认这种写法**。
- * 现有代码注释（[EmphasisSyntax]）本来就写着"数字权重不是 NovelAI 的语法"，而这一点
- * 至今没有核对过。因此本类只做"把它画出来"这一件事：不替用户改写提示词，
- * 界面上也不提供插入这种写法的按钮。用户若要用，风险自担，详见技术决策记录 22.4。
+ * 本类只负责显示，不改写实际提交文本，也不自动补上闭合符号。
  *
- * 成对 :: 独立识别，不要求相邻逗号；逗号/换行可位于组内。
+ * :: 独立识别，不要求相邻逗号或闭合；逗号/换行可位于组内。
+ * 新数值前缀开始下一段，裸 :: 关闭当前段；未闭合段延伸到文末。
  * 剩余文本按顶层逗号识别完整的 {} / [] 包裹，不在组内部切分。
  */
 object PromptWeightScanner {
@@ -63,26 +61,15 @@ object PromptWeightScanner {
      */
     private const val EPSILON = 1e-9
 
-    /**
-     * 数字前缀写法：`0.9::ningen mame ::`。
-     *
-     * `.*` 配 [RegexOption.DOT_MATCHES_ALL]，因为片段里可能有换行（用户没打逗号时）；
-     * 贪婪匹配会一直退到最后一个 `::`，于是 `1.3::a::b::` 整体算 1.3，符合直觉。
-     */
-    private val NUMERIC_PREFIX = Regex(
-        pattern = """^([0-9]*\.?[0-9]+)\s*::(.*)::\s*$""",
-        option = RegexOption.DOT_MATCHES_ALL,
-    )
-    private val NUMERIC_GROUP = Regex(
-        """(?:(?<![0-9.])([0-9]*\.?[0-9]+)\s*)?::(.*?)::""",
-        RegexOption.DOT_MATCHES_ALL,
+    // 数值前缀必须先于裸 :: 匹配，否则下一段的开头会被当成上一段的结尾。
+    private val COLON_TOKEN = Regex(
+        """(?<![0-9.+-])([+-]?[0-9]*\.?[0-9]+)\s*::|::""",
     )
 
     /** 按出现顺序返回所有加权片段；没有则返回空列表。 */
     fun scan(prompt: String): List<PromptWeightSpan> {
         val spans = mutableListOf<PromptWeightSpan>()
-        val groups = NUMERIC_GROUP.findAll(prompt).toList()
-        val groupStarts = groups.associateBy { it.range.first }
+        val groupStarts = colonSpans(prompt).associateBy { it.start }
         var chunkStart = 0
         var depth = 0
 
@@ -103,11 +90,8 @@ object PromptWeightScanner {
             val group = groupStarts[index]
             if (group != null) {
                 flush(index)
-                val weight = group.groupValues[1].toDoubleOrNull() ?: 1.0
-                if (group.groupValues[2].isNotBlank()) {
-                    spans += PromptWeightSpan(index, group.range.last + 1, weight)
-                }
-                index = group.range.last + 1
+                spans += group
+                index = group.endExclusive
                 chunkStart = index
                 depth = 0
                 continue
@@ -134,12 +118,42 @@ object PromptWeightScanner {
      */
     fun weightOf(term: String): Double {
         val trimmed = term.trim()
-        val numeric = NUMERIC_PREFIX.matchEntire(trimmed)
-        if (numeric != null) {
-            val value = numeric.groupValues[1].toDoubleOrNull()
-            // 内容为空（`0.9::::`）时没有可高亮的实体，交回包裹语法处理。
-            if (value != null && numeric.groupValues[2].isNotBlank()) return value
-        }
+        colonSpans(trimmed).singleOrNull()
+            ?.takeIf { it.start == 0 && it.endExclusive == trimmed.length }
+            ?.let { return it.weight }
         return EmphasisSyntax.strengthOf(trimmed)
+    }
+
+    private fun colonSpans(prompt: String): List<PromptWeightSpan> {
+        val spans = mutableListOf<PromptWeightSpan>()
+        var opening: MatchResult? = null
+
+        fun finish(bodyEnd: Int, spanEnd: Int) {
+            val start = opening ?: return
+            if (prompt.substring(start.range.last + 1, bodyEnd).isNotBlank()) {
+                var end = spanEnd
+                while (end > start.range.last + 1 && prompt[end - 1].isWhitespace()) end--
+                val weight = start.groupValues[1].toDoubleOrNull()?.takeIf { it.isFinite() } ?: 1.0
+                spans += PromptWeightSpan(start.range.first, end, weight)
+            }
+        }
+
+        for (token in COLON_TOKEN.findAll(prompt)) {
+            if (token.groupValues[1].isNotEmpty()) {
+                finish(token.range.first, token.range.first)
+                opening = token
+            } else if (opening != null) {
+                finish(token.range.first, token.range.last + 1)
+                opening = null
+            } else {
+                opening = token
+            }
+        }
+        var end = prompt.length
+        while (end > 0 && prompt[end - 1].isWhitespace()) end--
+        // 开头只有权重、尚未输入正文时不产生空高亮。
+        val trailing = opening
+        if (trailing != null && end >= trailing.range.last + 1) finish(end, end)
+        return spans
     }
 }

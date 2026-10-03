@@ -3,6 +3,9 @@ package net.pocketnai.domain.metadata
 import java.io.EOFException
 import java.io.IOException
 import java.io.InputStream
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
 import java.util.zip.DataFormatException
 import java.util.zip.Inflater
 
@@ -162,12 +165,12 @@ object PngTextChunks {
         return body
     }
 
-    /** `tEXt`：`keyword\0text`，文本按 Latin-1 解释（PNG 规范如此，NovelAI 写入的是 UTF-8 子集）。 */
+    /** tEXt 按规范支持 Latin-1，同时兼容既有图片写入的 UTF-8。 */
     private fun decodeText(body: ByteArray): TextChunk? {
         val separator = body.indexOf(0.toByte())
         if (separator <= 0) return null
         val keyword = String(body, 0, separator, Charsets.ISO_8859_1)
-        val text = String(body, separator + 1, body.size - separator - 1, Charsets.UTF_8)
+        val text = decodeLegacyText(body.copyOfRange(separator + 1, body.size))
         return TextChunk(keyword, text)
     }
 
@@ -177,7 +180,7 @@ object PngTextChunks {
         if (separator <= 0 || separator + 2 > body.size) return null
         val keyword = String(body, 0, separator, Charsets.ISO_8859_1)
         val compressed = body.copyOfRange(separator + 2, body.size)
-        val text = inflate(compressed) ?: return null
+        val text = decodeLegacyText(inflate(compressed) ?: return null)
         return TextChunk(keyword, text)
     }
 
@@ -198,12 +201,13 @@ object PngTextChunks {
         if (cursor > body.size) return null
 
         val payload = body.copyOfRange(cursor, body.size)
-        val text = if (compressed) inflate(payload) ?: return null else String(payload, Charsets.UTF_8)
+        // iTXt 明确规定 UTF-8，损坏时跳过，不把解码替换符写进用户的提示词。
+        val text = decodeUtf8(if (compressed) inflate(payload) ?: return null else payload) ?: return null
         return TextChunk(keyword, text)
     }
 
     /** 限额解压。超限或格式错误返回 null —— 元数据读不出来不该让整张图不可用。 */
-    private fun inflate(compressed: ByteArray): String? {
+    private fun inflate(compressed: ByteArray): ByteArray? {
         val inflater = Inflater()
         try {
             inflater.setInput(compressed)
@@ -222,10 +226,26 @@ object PngTextChunks {
                 if (output.size() + read > MAX_INFLATED_BYTES) return null
                 output.write(buffer, 0, read)
             }
-            return output.toString(Charsets.UTF_8.name())
+            return if (inflater.finished()) output.toByteArray() else null
         } finally {
             inflater.end()
         }
+    }
+
+    /**
+     * tEXt/zTXt 的 0xA0 是合法 Latin-1 空格，宽容 UTF-8 解码会把它变成 U+FFFD。
+     * 先严格验证 UTF-8，失败后再按 PNG 规范读取 Latin-1；保留字符本身，不猜测替换正文。
+     */
+    private fun decodeLegacyText(bytes: ByteArray): String =
+        decodeUtf8(bytes) ?: String(bytes, Charsets.ISO_8859_1)
+
+    private fun decodeUtf8(bytes: ByteArray): String? = try {
+        Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(bytes)).toString()
+    } catch (_: CharacterCodingException) {
+        null
     }
 
     private fun readUInt32(bytes: ByteArray): Long =

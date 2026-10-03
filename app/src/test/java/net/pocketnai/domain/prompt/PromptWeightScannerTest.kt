@@ -133,7 +133,6 @@ class PromptWeightScannerTest {
         // 没闭合的 `{` 不构成包裹，权重仍是 1，因此不高亮（不擅自吞掉用户输入）。
         assertThat("{cat".spansOf()).isEmpty()
         assertThat("[cat".spansOf()).isEmpty()
-        assertThat("0.9::cat".spansOf()).isEmpty()
     }
 
     @Test
@@ -145,5 +144,51 @@ class PromptWeightScannerTest {
     fun `随机选项语法不会被误判为加权`() {
         // `<a|b|c>` 是 Randomizer 的语法，与权重无关。
         assertThat("1girl, <long hair|short hair>".spansOf()).isEmpty()
+    }
+
+    @Test fun `负数权重连同负号完整高亮为绿色`() {
+        val text = "-1::hat::, -.5::glasses, +1.2::smile::"
+        assertThat(text.spansOf()).containsExactly("-1::hat::", "-.5::glasses,", "+1.2::smile::").inOrder()
+        assertThat(PromptWeightScanner.scan(text).map { it.weight }).containsExactly(-1.0, -0.5, 1.2).inOrder()
+        assertThat(PromptWeightScanner.scan(text).map { it.direction })
+            .containsExactly(WeightDirection.WEAKER, WeightDirection.WEAKER, WeightDirection.STRONGER).inOrder()
+    }
+
+    @Test fun `未闭合数字权重跨逗号与换行延伸至文末`() {
+        val text = "plain, 0.9::cat, dog\nbird  "
+        assertThat(text.spansOf()).containsExactly("0.9::cat, dog\nbird")
+        assertThat(text.weightOfFirst()).isEqualTo(0.9)
+    }
+
+    @Test fun `截图中的连续权重分别高亮`() {
+        val text = "1.5::tag, tag 1.2::tag::\n1.8::tag"
+        assertThat(text.spansOf()).containsExactly("1.5::tag, tag", "1.2::tag::", "1.8::tag").inOrder()
+        assertThat(PromptWeightScanner.scan(text).map { it.weight }).containsExactly(1.5, 1.2, 1.8).inOrder()
+    }
+
+    @Test fun `负向未闭合组遇到正向组即结束且闭合后恢复普通文本`() {
+        val text = "-2::hat, glasses 1.4::smile:: plain"
+        assertThat(text.spansOf()).containsExactly("-2::hat, glasses", "1.4::smile::").inOrder()
+    }
+
+    @Test fun `同权重相邻组仍是独立区间且无逗号也能切换`() {
+        val text = "1.2::cat 1.2::dog::-1::hat"
+        assertThat(text.spansOf()).containsExactly("1.2::cat", "1.2::dog::", "-1::hat").inOrder()
+    }
+
+    @Test fun `未指定权重的冒号也支持未闭合正文`() {
+        assertThat("::cat, dog".spansOf()).containsExactly("::cat, dog")
+        assertThat(PromptWeightScanner.scan("::cat").single().direction).isEqualTo(WeightDirection.NEUTRAL)
+    }
+
+    @Test fun `正在输入的空组没有高亮实体且不会越界`() {
+        listOf("::", "-1::  ", "1.2::::", "1.2:: -1::").forEach {
+            assertThat(it.spansOf()).isEmpty()
+        }
+    }
+
+    @Test fun `片段权重计算也接受负值和未闭合语法`() {
+        assertThat(PromptWeightScanner.weightOf("-1.5::hat")).isEqualTo(-1.5)
+        assertThat(PromptWeightScanner.weightOf(".5::{hat}::")).isEqualTo(0.5)
     }
 }

@@ -24,6 +24,8 @@ object PngFixture {
         idatChunks: Int = 2,
         idatSize: Int = 32,
         trailingBytes: ByteArray = ByteArray(0),
+        textCharset: java.nio.charset.Charset = Charsets.UTF_8,
+        compressInternationalTexts: Boolean = false,
     ): ByteArray {
         val out = ByteArrayOutputStream()
         out.write(SIGNATURE)
@@ -31,9 +33,9 @@ object PngFixture {
         repeat(idatChunks) { index ->
             out.write(chunk("IDAT", ByteArray(idatSize) { index.toByte() }))
         }
-        texts.forEach { (keyword, text) -> out.write(textChunk(keyword, text)) }
-        compressedTexts.forEach { (keyword, text) -> out.write(compressedTextChunk(keyword, text)) }
-        internationalTexts.forEach { (keyword, text) -> out.write(internationalTextChunk(keyword, text)) }
+        texts.forEach { (keyword, text) -> out.write(textChunk(keyword, text, textCharset)) }
+        compressedTexts.forEach { (keyword, text) -> out.write(compressedTextChunk(keyword, text, textCharset)) }
+        internationalTexts.forEach { (keyword, text) -> out.write(internationalTextChunk(keyword, text, compressInternationalTexts)) }
         out.write(trailingBytes)
         out.write(chunk("IEND", ByteArray(0)))
         return out.toByteArray()
@@ -134,32 +136,33 @@ object PngFixture {
 
     // ---- chunk 拼装 ----
 
-    private fun textChunk(keyword: String, text: String): ByteArray {
+    private fun textChunk(keyword: String, text: String, charset: java.nio.charset.Charset): ByteArray {
         val out = ByteArrayOutputStream()
         out.write(keyword.toByteArray(Charsets.ISO_8859_1))
         out.write(0)
-        out.write(text.toByteArray(Charsets.UTF_8))
+        out.write(text.toByteArray(charset))
         return chunk("tEXt", out.toByteArray())
     }
 
-    private fun compressedTextChunk(keyword: String, text: String): ByteArray {
+    private fun compressedTextChunk(keyword: String, text: String, charset: java.nio.charset.Charset): ByteArray {
         val out = ByteArrayOutputStream()
         out.write(keyword.toByteArray(Charsets.ISO_8859_1))
         out.write(0)
         out.write(0) // 压缩方法 0 = zlib
-        out.write(deflate(text.toByteArray(Charsets.UTF_8)))
+        out.write(deflate(text.toByteArray(charset)))
         return chunk("zTXt", out.toByteArray())
     }
 
-    private fun internationalTextChunk(keyword: String, text: String): ByteArray {
+    private fun internationalTextChunk(keyword: String, text: String, compressed: Boolean): ByteArray {
         val out = ByteArrayOutputStream()
         out.write(keyword.toByteArray(Charsets.ISO_8859_1))
         out.write(0)
-        out.write(0) // 未压缩
+        out.write(if (compressed) 1 else 0)
         out.write(0) // 压缩方法
         out.write(0) // 语言标签结束
         out.write(0) // 翻译关键字结束
-        out.write(text.toByteArray(Charsets.UTF_8))
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        out.write(if (compressed) deflate(bytes) else bytes)
         return chunk("iTXt", out.toByteArray())
     }
 
