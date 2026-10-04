@@ -21,11 +21,14 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ReferenceImageEntity::class,
         FavoriteImageEntity::class,
         AnlasTransactionEntity::class,
+        ChatConversationEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 abstract class PocketNaiDatabase : RoomDatabase() {
+
+    abstract fun chatConversationDao(): ChatConversationDao
 
     abstract fun generationDao(): GenerationDao
 
@@ -220,6 +223,13 @@ abstract class PocketNaiDatabase : RoomDatabase() {
             }
         }
 
+        /** v8 → v9 只增加独立对话表，既有图片历史表保持原样。 */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `chat_conversations` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, `entriesJson` TEXT NOT NULL, PRIMARY KEY(`id`))")
+            }
+        }
+
         fun build(context: Context): PocketNaiDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
@@ -234,6 +244,7 @@ abstract class PocketNaiDatabase : RoomDatabase() {
                     MIGRATION_5_6,
                     MIGRATION_6_7,
                     MIGRATION_7_8,
+                    MIGRATION_8_9,
                 )
                 .build()
     }

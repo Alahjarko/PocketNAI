@@ -4,11 +4,12 @@
 
 ## 数据库
 
-- 当前 schema 版本 **8**。新增表（如 `prompt_favorites`、`reference_images`、`favorite_images`）用独立 `CREATE TABLE`，
+- 当前 schema 版本 **9**。新增表（如 `prompt_favorites`、`reference_images`、`favorite_images`）用独立 `CREATE TABLE`，
   不要触碰既有表。v3 → v4 新增了 `reference_images` 表与 `generations.mode` 列（可空，见下）；
   v4 → v5 给 `generations` 加 `outputWidth/outputHeight`；v5 → v6 新增 `favorite_images` 表；
   v6 → v7 新增 `anlas_transactions` 表（Anlas 消耗流水，2026-09-18）。
   v7 → v8 给 `generations` 加可空 `charactersJson`，保存独立角色完整快照；NULL 的旧记录在详情读取时从自身 PNG 元数据恢复，`[]` 表示明确无角色。详情与复用参数共用恢复结果，不读取当前草稿补历史。
+  v8 → v9 仅新增 `chat_conversations`，保存对话与图片索引，既有图片记录保持不变；思考与工具 ID 必须一起保存，见[对话专题](chat.md)。
 - **`generations` 表绝不能重建（DROP / RENAME）。** `generated_images` 以 `ON DELETE CASCADE` 引用它，重建会连带删除用户的图片记录。
 - 加列用 `ALTER TABLE ... ADD COLUMN`；删列需要 SQLite 3.35+，`minSdk 26` 不满足，所以宁可保留遗留列。
 - Room 的表校验要求实体列与真实表列**完全一致**，多一列少一列都会失败。因此遗留列必须留在实体里。

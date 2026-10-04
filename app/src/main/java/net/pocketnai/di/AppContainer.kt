@@ -59,6 +59,11 @@ import java.util.concurrent.TimeUnit
  */
 class AppContainer(application: Application) {
 
+    val llmSettingsStore by lazy { net.pocketnai.data.chat.LlmSettingsStore(application) }
+    val chatClient by lazy { net.pocketnai.data.chat.OpenAiCompatibleChatClient() }
+    val chatStore by lazy { net.pocketnai.data.chat.ChatStore(database.chatConversationDao()) }
+    val agentFiles by lazy { net.pocketnai.data.chat.AgentFiles(application) }
+
     private val json: Json = Json {
         ignoreUnknownKeys = true
         explicitNulls = false

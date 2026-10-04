@@ -59,6 +59,8 @@ import net.pocketnai.ui.billing.compactLabel
 import net.pocketnai.ui.common.messageRes
 import net.pocketnai.ui.update.UpdateCheckDialog
 import net.pocketnai.ui.update.UpdateViewModel
+import net.pocketnai.ui.chat.ChatViewModel
+import net.pocketnai.ui.chat.ChatSettingsDialog
 
 /**
  * 设置页：顶部账号卡片 + 一个分组列表。
@@ -72,6 +74,7 @@ import net.pocketnai.ui.update.UpdateViewModel
 fun SettingsScreen(
     onRequestConnect: () -> Unit,
     updateViewModel: UpdateViewModel,
+    chatViewModel: ChatViewModel,
 ) {
     val container = LocalAppContainer.current
     val viewModel: SettingsViewModel = viewModel(
@@ -99,6 +102,8 @@ fun SettingsScreen(
     // 余额与生成页共用同一个仓库实例，不另建一份网络状态或缓存（余额规划 §11.4）。
     val balanceState by container.accountBalanceRepository.state.collectAsStateWithLifecycle()
     val updateState by updateViewModel.state.collectAsStateWithLifecycle()
+    val chatEnabled by container.settingsStore.chatEnabled.collectAsStateWithLifecycle()
+    var chatSettingsOpen by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     var accountSwitchDialogOpen by remember { mutableStateOf(false) }
@@ -239,6 +244,13 @@ fun SettingsScreen(
                             onCheckedChange = viewModel::setStreamingPreviewEnabled,
                         )
                     },
+                )
+                SettingsDivider()
+                SettingsRow(
+                    title = "实验性对话",
+                    subtitle = if (chatEnabled) "已开启 · 点击配置 LLM 与人格" else "开启后在导航栏显示对话",
+                    onClick = { chatSettingsOpen = true },
+                    trailing = { Switch(chatEnabled, container.settingsStore::setChatEnabled) },
                 )
                 SettingsDivider()
                 SettingsRow(
@@ -424,6 +436,8 @@ fun SettingsScreen(
             },
         )
     }
+
+    if (chatSettingsOpen) ChatSettingsDialog(chatViewModel) { chatSettingsOpen = false }
 
     if (updateDialogOpen) {
         UpdateCheckDialog(

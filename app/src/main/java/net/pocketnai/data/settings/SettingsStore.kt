@@ -18,6 +18,13 @@ class SettingsStore(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    private val _chatEnabled = MutableStateFlow(prefs.getBoolean("experimental_chat_enabled", false))
+    val chatEnabled: StateFlow<Boolean> = _chatEnabled.asStateFlow()
+    fun setChatEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("experimental_chat_enabled", enabled).apply()
+        _chatEnabled.value = enabled
+    }
+
     private val _streamingPreviewEnabled = MutableStateFlow(
         // 默认关闭（2026-09-16）：功能本身已验证可用，但真机观感与官方网页版有明显差距
         // （网页版对中间图做过平滑处理，我们拿到的是原始采样帧，且生成只要几秒时一闪而过），

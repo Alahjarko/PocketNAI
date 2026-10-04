@@ -3,6 +3,9 @@ package net.pocketnai.ui
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,6 +13,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.automirrored.filled.Chat
+import net.pocketnai.ui.chat.ChatScreen
+import net.pocketnai.ui.chat.ChatViewModel
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -67,6 +73,7 @@ object Routes {
     /** 首页 = 画廊 + 生成悬浮层（两者已合并）。 */
     const val HOME = "home"
     const val SETTINGS = "settings"
+    const val CHAT = "chat"
     const val DETAIL = "detail/{imageId}"
 
     /** 局部重绘的蒙版编辑器（全屏）。 */
@@ -75,7 +82,7 @@ object Routes {
     fun detail(imageId: String): String = "detail/$imageId"
 
     /** 底部导航展示的 Tab。 */
-    val tabs = listOf(HOME, SETTINGS)
+    val tabs = listOf(HOME, CHAT, SETTINGS)
 }
 
 private data class TabSpec(
@@ -114,6 +121,18 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
         },
     )
     val generateState by generateViewModel.state.collectAsStateWithLifecycle()
+    val chatEnabled by container.settingsStore.chatEnabled.collectAsStateWithLifecycle()
+    val chatViewModel: ChatViewModel = viewModel(factory = viewModelFactory {
+        initializer {
+            ChatViewModel(container.llmSettingsStore, container.chatClient, container.chatStore, container.agentFiles,
+                object : net.pocketnai.domain.chat.ChatImageGenerator {
+                    override fun currentParams() = generateViewModel.state.value.params
+                    override suspend fun quote(params: net.pocketnai.domain.model.GenerationParams) = generateViewModel.quoteForChat(params)
+                    override suspend fun generate(params: net.pocketnai.domain.model.GenerationParams, onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit) =
+                        generateViewModel.generateForChat(params, onImage)
+                }, container.settingsStore.chatEnabled)
+        }
+    })
     LaunchedEffect(sharedImageUri, generateState.referenceBusy) {
         if (sharedImageUri != null && !generateState.referenceBusy) {
             navController.navigate(Routes.HOME) {
@@ -193,6 +212,9 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+    LaunchedEffect(chatEnabled, currentRoute) {
+        if (!chatEnabled && currentRoute == Routes.CHAT) navController.navigateToTab(Routes.HOME)
+    }
 
     // 宽屏（横屏 / 平板，≥600dp）把导航挪到最左侧的 NavigationRail，
     // 内容区原样占满右侧 —— 布局本身不变（2026-09-21 用户点名的双栏方案）。
@@ -203,6 +225,7 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
                 PocketNaiNavRail(
                     navController = navController,
                     currentRoute = currentRoute,
+                    chatEnabled = chatEnabled,
                 )
             }
             Scaffold(
@@ -213,6 +236,7 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
                         PocketNaiBottomBar(
                             navController = navController,
                             currentRoute = currentRoute,
+                            chatEnabled = chatEnabled,
                         )
                     }
                 },
@@ -221,6 +245,10 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
                     navController = navController,
                     startDestination = if (connected) Routes.HOME else Routes.CONNECT,
                     modifier = Modifier.padding(innerPadding),
+                    enterTransition = { fadeIn(tween(160)) },
+                    exitTransition = { fadeOut(tween(100)) },
+                    popEnterTransition = { fadeIn(tween(160)) },
+                    popExitTransition = { fadeOut(tween(100)) },
                 ) {
             composable(Routes.CONNECT) {
                 ConnectScreen(
@@ -256,7 +284,11 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
                 SettingsScreen(
                     onRequestConnect = { navController.navigate(Routes.CONNECT) },
                     updateViewModel = updateViewModel,
+                    chatViewModel = chatViewModel,
                 )
+            }
+            composable(Routes.CHAT) {
+                ChatScreen(chatViewModel, container.fileStore::resolve) { imageId -> navController.navigate(Routes.detail(imageId)) }
             }
             composable(Routes.DETAIL) { entry ->
                 DetailScreen(
@@ -340,11 +372,9 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
 private fun PocketNaiBottomBar(
     navController: NavHostController,
     currentRoute: String?,
+    chatEnabled: Boolean,
 ) {
-    val specs = listOf(
-        TabSpec(Routes.HOME, Icons.Default.Image, R.string.nav_gallery),
-        TabSpec(Routes.SETTINGS, Icons.Default.Settings, R.string.nav_settings),
-    )
+    val specs = tabSpecs(chatEnabled)
 
     NavigationBar {
         specs.forEach { spec ->
@@ -363,11 +393,9 @@ private fun PocketNaiBottomBar(
 private fun PocketNaiNavRail(
     navController: NavHostController,
     currentRoute: String?,
+    chatEnabled: Boolean,
 ) {
-    val specs = listOf(
-        TabSpec(Routes.HOME, Icons.Default.Image, R.string.nav_gallery),
-        TabSpec(Routes.SETTINGS, Icons.Default.Settings, R.string.nav_settings),
-    )
+    val specs = tabSpecs(chatEnabled)
 
     NavigationRail {
         specs.forEach { spec ->
@@ -379,6 +407,12 @@ private fun PocketNaiNavRail(
             )
         }
     }
+}
+
+private fun tabSpecs(chatEnabled: Boolean) = buildList {
+    add(TabSpec(Routes.HOME, Icons.Default.Image, R.string.nav_gallery))
+    if (chatEnabled) add(TabSpec(Routes.CHAT, Icons.AutoMirrored.Filled.Chat, R.string.nav_chat))
+    add(TabSpec(Routes.SETTINGS, Icons.Default.Settings, R.string.nav_settings))
 }
 
 /** 切换 Tab 时保留各 Tab 自己的状态，并且不在返回栈里堆积重复条目。 */

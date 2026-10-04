@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="nav_chat">对话</string>
     <string name="app_name">PocketNAI</string>
 
     <!-- 底部导航 -->

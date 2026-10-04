@@ -11,6 +11,7 @@
 | 提示词、权重、光标/选区、质量标签、独立角色 | [提示词与角色](docs/development/prompts.md) |
 | 页面布局、生成悬浮层、详情、画廊筛选、收藏、分享 | [界面与交互](docs/development/ui.md) |
 | HTTP、超时/重试、代理、凭据、登录、多账号 | [网络与认证](docs/development/network-auth.md) |
+| 实验性对话、LLM 接入、思考回传、图片工具、人格 Markdown | [实验性对话](docs/development/chat.md)，并读网络、存储与界面专题 |
 | 余额、订阅权益、费用报价、流水、高清放大 | [计费与超分](docs/development/billing.md) |
 | 检查更新、APK 下载、签名、版本号、发布 | [更新与发布](docs/development/release.md) |
 | 构建、安装、设备测试、协议核对 | [验证与待核对事项](docs/development/verification.md) |
@@ -22,11 +23,13 @@
 ## 全局红线
 
 1. **真实生成、超分及其他可能消耗 Anlas 的操作，只能由用户在界面手动触发。** 不代发真实登录，不读取 `persistent-api-token.txt`。即使本地报价为免费，也不构成自动生成授权；免费取决于当前订阅权益，历史账号读数不能当作永久属性。
-2. **测试使用 MockWebServer 或假实现，不联网。** 唯一既有例外是 `SocksProxyProbeTest`，只允许 GET NovelAI 首页验证代理建连，不涉及生成。账号与费用细节见对应专题。
+2. **默认测试使用 MockWebServer 或假实现，不联网。** 既有只读例外是 `SocksProxyProbeTest`，只允许 GET NovelAI 首页验证代理建连，不涉及生成。用户明确授权的受控真实联调见下方对话授权边界；账号与费用细节见对应专题。
 3. **秘密不得泄露。** Token、密码、Access Key、PST 不进入日志、普通数据库/首选项、图片元数据、剪贴板、异常或测试代码；凭据仅允许按既有 Keystore 加密方案保存。不要提交 `persistent-api-token.txt`、`local.properties` 或代理明文凭据。
 4. **保留用户数据与签名兼容性。** 禁止破坏性迁移、重建 `generations` 表（DROP / RENAME）、更换既有签名密钥、为安装成功而卸载应用或清数据。设备测试前检查保留 APK 的设置，见交付流程。
 5. **请求只发一次。** 生成零次自动重试；超时/断流报告 `TIMEOUT_UNCERTAIN`，流式失败不自动改发普通生成。代理切换仅限请求尚未发出的连接失败或幂等 GET/HEAD，已发出的 POST 不重发。
 6. **日志只记结构。** 通用网络日志走 `RedactingHttpLogger`，仅方法、路径、状态码、耗时；Prompt 只记长度/哈希。禁止引入 `HttpLoggingInterceptor`。流式/代理诊断允许的结构字段见专题，不能追加内容或凭据。
+
+对话功能的显式授权边界：用户主动开启“自动执行图片工具”并发送消息时，该次操作最多授权一次生成；默认仍通过生成卡片手动确认。真实联调测试必须有当前用户的明确授权，使用受控 `allowLive` 入口，范围和凭据清理见[对话专题](docs/development/chat.md)。其余自动生成及自动重试禁令继续适用。
 
 ## 修改与交付流程
 

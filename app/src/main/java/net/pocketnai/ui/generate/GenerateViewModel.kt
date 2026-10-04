@@ -1542,6 +1542,64 @@ class GenerateViewModel(
         }
     }
 
+    /** 对话独立参数快照，与首页共用生成锁、计费和仓库，不覆盖用户草稿。 */
+    suspend fun quoteForChat(params: GenerationParams): String {
+        val estimate = costCalculator.estimate(pricingContextOf(
+            UiState(params = params), accountBalanceRepository.state.value, settingsStore.subscriptionOverride.value,
+        ))
+        return when (estimate) {
+            is GenerationCostEstimate.Free -> "当前报价免费"
+            is GenerationCostEstimate.UsesV5Allowance -> "使用 V5 额度"
+            is GenerationCostEstimate.EstimatedAnlas -> "预计 ${estimate.batchTotal} Anlas"
+            else -> "费用待确认，以服务端为准"
+        }
+    }
+
+    suspend fun generateForChat(
+        params: GenerationParams,
+        onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit,
+    ): List<net.pocketnai.domain.chat.ChatImage> {
+        if (_state.value.inFlight || _state.value.referenceBusy)
+            throw net.pocketnai.domain.chat.ChatFailure("另一个图片任务正在执行，请等待完成")
+        val before = accountBalanceRepository.latestOrNull()
+        val billing = before?.let { BillingSession(it, clock() - it.fetchedAtMillis,
+            ObservedBalanceChange.DEFAULT_MAX_PRE_SNAPSHOT_AGE_MS, params.sampleCount) }
+        val images = mutableListOf<net.pocketnai.domain.chat.ChatImage>()
+        _state.update { it.copy(inFlight = true, completedImages = 0, error = null) }
+        try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                repository.generate(GenerationRequest(params = params), params.prompt).collect { event ->
+                    when (event) {
+                        is GenerationEvent.Final -> {
+                            val image = event.image
+                            val chatImage = net.pocketnai.domain.chat.ChatImage(image.id, image.privateFilePath, image.width, image.height)
+                            images += chatImage; onImage(chatImage)
+                            _state.update { it.copy(completedImages = images.size) }
+                        }
+                        is GenerationEvent.FatalError -> {
+                            _state.update { it.copy(error = event.error) }
+                            if (event.error.code == ErrorCode.TIMEOUT_UNCERTAIN) {
+                                refreshBalanceAfterGeneration(billing, false)
+                                throw net.pocketnai.domain.chat.ChatFailure("图片请求超时，可能已计费；请先核对图库和余额，未自动重试")
+                            }
+                            throw net.pocketnai.domain.chat.ChatFailure("图片生成失败（${event.error.code.name}），未自动重试")
+                        }
+                        is GenerationEvent.Completed -> {
+                            previewStore.clear(event.generationId)
+                            runCatching { refreshBalanceAfterGeneration(billing, event.status != GenerationStatus.FAILED,
+                                event.generationId, "对话生成 ${params.model.displayName} ${params.size.label}") }
+                        }
+                        is GenerationEvent.Intermediate -> Unit
+                        is GenerationEvent.ItemError -> _state.update { it.copy(error = event.error) }
+                        is GenerationEvent.Started -> Unit
+                    }
+                }
+            }
+        } finally { _state.update { it.copy(inFlight = false) } }
+        if (images.isEmpty()) throw net.pocketnai.domain.chat.ChatFailure("没有收到最终图片，未自动重试")
+        return images
+    }
+
     private fun formatGenerationDescription(state: UiState): String {
         val model = state.params.model.displayName
         val size = "${state.params.size.width}×${state.params.size.height}"

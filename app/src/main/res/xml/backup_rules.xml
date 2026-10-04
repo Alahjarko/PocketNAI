@@ -5,4 +5,5 @@
 -->
 <full-backup-content>
     <exclude domain="sharedpref" path="pocketnai_secure.xml" />
+    <exclude domain="sharedpref" path="pocketnai_llm.xml" />
 </full-backup-content>

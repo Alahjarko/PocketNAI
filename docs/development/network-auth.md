@@ -9,6 +9,7 @@
 - Prompt 在日志里只记录长度与哈希指纹。
 - `persistent-api-token.txt`、`local.properties` 已被 `.gitignore` 排除，不要把它们加进版本库。
 - Token 所在首选项文件固定叫 `pocketnai_secure`，必须与 `res/xml/backup_rules.xml`、`data_extraction_rules.xml` 的排除项保持一致。
+- LLM 的独立密钥使用 `pocketnai_llm` 与专用 Keystore alias，不能写入 NovelAI 凭据槽；连接、思考协议与真实联调的授权边界见[对话专题](chat.md)。
 
 ## 网络
 
