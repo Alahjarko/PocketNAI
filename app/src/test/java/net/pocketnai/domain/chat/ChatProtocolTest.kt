@@ -6,6 +6,17 @@ import net.pocketnai.domain.model.*
 import org.junit.Test
 
 class ChatProtocolTest {
+    @Test fun `图片使用真实多模态数组并且不改动历史或思考字段`() {
+        val history = wireMessage("user", "请描述图中的服装")
+        val withImage = ChatProtocol.withImages(history, listOf("data:image/jpeg;base64,dGVzdA=="))
+        val parts = withImage["content"]!!.jsonArray
+        assertThat(parts[0].jsonObject.string("text")).isEqualTo("请描述图中的服装")
+        assertThat(parts[1].jsonObject["image_url"]!!.jsonObject.string("url")).isEqualTo("data:image/jpeg;base64,dGVzdA==")
+        assertThat(history["content"]!!.jsonPrimitive.content).isEqualTo("请描述图中的服装")
+        val reasoning = buildJsonObject { put("role", "assistant"); put("reasoning_content", "kept"); put("tool_calls", JsonArray(emptyList())) }
+        assertThat(ChatProtocol.withImages(reasoning, emptyList())).isEqualTo(reasoning)
+        assertThat(runCatching { ChatProtocol.withImages(reasoning, listOf("data:image/jpeg;base64,x")) }.isFailure).isTrue()
+    }
     @Test fun `误回显的认证值在正文思考和嵌套参数中全部移除`() {
         val placeholder = "test-auth-placeholder"
         val wire = buildJsonObject { put("content", placeholder); put("reasoning_content", "prefix $placeholder")

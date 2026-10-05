@@ -83,7 +83,7 @@ class ChatLongTextTest {
             compose.runOnIdle { measuredWindow.removeOnFrameMetricsAvailableListener(listener); listening = false }
             record("history_scroll")
             compose.onNodeWithTag("chat-messages").performScrollToIndex(19)
-            compose.onNodeWithText("查看全文（${body.length} 字）").performClick()
+            compose.onNodeWithText("查看全文（${body.length} 字）").performScrollTo().performClick()
             compose.onNodeWithTag("chat-full-reader").assertExists()
             compose.waitUntil(10_000) { compose.onAllNodesWithText("段落 1：", substring = true).fetchSemanticsNodes().isNotEmpty() }
             realSwipe(down = false); realSwipe(down = true)

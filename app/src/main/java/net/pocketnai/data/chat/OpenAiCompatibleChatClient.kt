@@ -42,7 +42,7 @@ class OpenAiCompatibleChatClient(
             .header("Authorization", "Bearer $apiKey")
             .header("Accept", "text/event-stream")
             .post(ChatProtocol.request(config, messages, tools).toString().toRequestBody("application/json".toMediaType())).build()
-        execute(request) { response ->
+        execute(request, hasImages = messages.any { (it["content"] as? JsonArray)?.any { part -> (part as? JsonObject)?.string("type") == "image_url" } == true }) { response ->
             val body = response.body ?: throw ChatFailure("供应商返回空响应")
             if (response.header("Content-Type").orEmpty().contains("application/json")) {
                 val bytes = readBounded(body)
@@ -98,7 +98,7 @@ class OpenAiCompatibleChatClient(
         return buffer.readByteArray()
     }
 
-    private suspend fun <T> execute(request: Request, read: suspend (okhttp3.Response) -> T): T = coroutineScope {
+    private suspend fun <T> execute(request: Request, hasImages: Boolean = false, read: suspend (okhttp3.Response) -> T): T = coroutineScope {
         val call = client.newCall(request)
         val cancellation = launch(start = CoroutineStart.UNDISPATCHED) {
             try { awaitCancellation() } finally { call.cancel() }
@@ -108,7 +108,7 @@ class OpenAiCompatibleChatClient(
                 if (!response.isSuccessful) throw ChatFailure(when (response.code) {
                     401, 403 -> "API Key 无效或没有模型访问权限"
                     429 -> "供应商额度不足或请求限流，请稍后再试"
-                    400 -> "供应商拒绝参数，请核对模型和思考协议"
+                    400 -> if (hasImages) "供应商拒绝图片或参数，请核对模型是否支持识图及思考协议" else "供应商拒绝参数，请核对模型和思考协议"
                     in 300..399 -> "API 地址发生重定向，请填写供应商最终 Base URL"
                     else -> "LLM 服务请求失败（HTTP ${response.code}）"
                 })

@@ -10,6 +10,11 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Settings
@@ -91,6 +96,7 @@ private data class TabSpec(
     val labelRes: Int,
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Unit = {}) {
     val container = LocalAppContainer.current
@@ -130,7 +136,7 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
                     override suspend fun quote(params: net.pocketnai.domain.model.GenerationParams) = generateViewModel.quoteForChat(params)
                     override suspend fun generate(params: net.pocketnai.domain.model.GenerationParams, onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit) =
                         generateViewModel.generateForChat(params, onImage)
-                }, container.settingsStore.chatEnabled)
+                }, container.settingsStore.chatEnabled, container.chatAttachmentStore)
         }
     })
     LaunchedEffect(sharedImageUri, generateState.referenceBusy) {
@@ -212,6 +218,7 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+    val chatKeyboardVisible = currentRoute == Routes.CHAT && WindowInsets.isImeVisible
     LaunchedEffect(chatEnabled, currentRoute) {
         if (!chatEnabled && currentRoute == Routes.CHAT) navController.navigateToTab(Routes.HOME)
     }
@@ -229,10 +236,11 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
                 )
             }
             Scaffold(
+                modifier = if (currentRoute == Routes.CHAT) Modifier.imePadding() else Modifier,
                 bottomBar = {
                     // 底部只剩导航栏。生成按钮在首页生成悬浮层的头部里（GenerateButton），
                     // 不再占用任何一条独立的底部栏。宽屏时导航在左侧 Rail，底部栏不渲染。
-                    if (!useNavigationRail && currentRoute in Routes.tabs) {
+                    if (!useNavigationRail && currentRoute in Routes.tabs && !chatKeyboardVisible) {
                         PocketNaiBottomBar(
                             navController = navController,
                             currentRoute = currentRoute,
@@ -244,7 +252,7 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
                 NavHost(
                     navController = navController,
                     startDestination = if (connected) Routes.HOME else Routes.CONNECT,
-                    modifier = Modifier.padding(innerPadding),
+                    modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
                     enterTransition = { fadeIn(tween(160)) },
                     exitTransition = { fadeOut(tween(100)) },
                     popEnterTransition = { fadeIn(tween(160)) },

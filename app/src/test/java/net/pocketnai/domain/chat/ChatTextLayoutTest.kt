@@ -8,7 +8,6 @@ class ChatTextLayoutTest {
         val text = "长篇聊天文本\n".repeat(10_000)
         assertThat(ChatTextLayout.isLong(text)).isTrue()
         assertThat(ChatTextLayout.preview(text).length).isAtMost(ChatTextLayout.PREVIEW_CHARS)
-        assertThat(ChatTextLayout.preview(text).count { it == '\n' }).isAtMost(7)
         assertThat(ChatTextLayout.liveTail(text).length).isAtMost(ChatTextLayout.LIVE_CHARS)
         val pages = ChatTextLayout.pages(text)
         assertThat(pages.joinToString("")).isEqualTo(text)
@@ -29,5 +28,17 @@ class ChatTextLayoutTest {
         assertThat(ChatTextLayout.isLong("你好")).isFalse()
         assertThat(ChatTextLayout.preview("你好")).isEqualTo("你好")
         assertThat(ChatTextLayout.pages("")).isEmpty()
+    }
+    @Test fun `不足三百字的多段列表不会因换行而折叠`() {
+        val text = (1..12).joinToString("\n\n") { "$it. 角色、服装、场景与光线的要点" }
+        assertThat(text.length).isLessThan(300)
+        assertThat(ChatTextLayout.isLong(text)).isFalse()
+        assertThat(ChatTextLayout.preview(text)).isEqualTo(text)
+        assertThat(ChatTextLayout.isLong("字".repeat(2000))).isFalse()
+        assertThat(ChatTextLayout.isLong("字".repeat(2001))).isTrue()
+    }
+    @Test fun `超长正文尽量在完整段落结束处折叠`() {
+        val text = "首段".repeat(650) + "\n\n" + "第二段".repeat(1000)
+        assertThat(ChatTextLayout.preview(text)).isEqualTo("首段".repeat(650))
     }
 }

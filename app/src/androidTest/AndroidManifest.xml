@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- 仅测试 APK：提供实际 Android IME 窗口，测试结束恢复用户原输入法。 -->
+        <service android:name="net.pocketnai.ui.chat.ChatTestImeService" android:exported="true" android:permission="android.permission.BIND_INPUT_METHOD" android:label="PocketNAI 输入验收">
+            <intent-filter><action android:name="android.view.InputMethod" /></intent-filter>
+            <meta-data android:name="android.view.im" android:resource="@xml/chat_test_ime" />
+        </service>
+    </application>
+</manifest>

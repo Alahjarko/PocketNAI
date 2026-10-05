@@ -22,11 +22,17 @@ data class LlmConfig(
 data class ChatImage(val imageId: String, val relativePath: String, val width: Int, val height: Int)
 
 @Serializable
+data class ChatAttachment(val id: String, val relativePath: String, val mimeType: String, val width: Int, val height: Int) {
+    companion object { const val MAX_COUNT = 4 }
+}
+
+@Serializable
 data class ChatEntry(
     val id: String,
     val wire: JsonObject,
     val images: List<ChatImage> = emptyList(),
     val notice: String? = null,
+    val attachments: List<ChatAttachment> = emptyList(),
 ) {
     val role: String get() = wire.string("role").orEmpty()
     val content: String get() = wire.string("content").orEmpty()

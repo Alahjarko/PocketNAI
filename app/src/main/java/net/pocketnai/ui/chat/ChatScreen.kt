@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -28,6 +29,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.window.Dialog
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import net.pocketnai.ui.generate.HistoryImagePickerDialog
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -45,7 +57,13 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
     var settingsOpen by remember { mutableStateOf(false) }
     var sessionsOpen by remember { mutableStateOf(false) }
     var imagesOpen by remember { mutableStateOf(false) }
-    var input by remember { mutableStateOf("") }
+    var input by rememberSaveable(state.current?.id, stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
+    var attachmentMenu by remember { mutableStateOf(false) }
+    var galleryPicker by remember { mutableStateOf(false) }
+    var viewingAttachment by remember { mutableStateOf<ChatAttachment?>(null) }
+    val focus = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let { viewModel.addPhoto(it.toString()) } }
     var menuOpen by remember { mutableStateOf(false) }
     var deleteId by remember { mutableStateOf<String?>(null) }
     var reading by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -89,7 +107,15 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
             }
         }
     }
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).imePadding()) {
+    fun submit() {
+        if (!viewModel.hasKey() || config.model.isBlank()) { settingsOpen = true; return }
+        if (state.busy || state.importingAttachment || (input.text.isBlank() && state.draftAttachments.isEmpty())) return
+        following = true
+        viewModel.send(input.text)
+        input = TextFieldValue("")
+        focus.clearFocus(); keyboard?.hide()
+    }
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box {
                 IconButton(onClick = { menuOpen = true }, modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)) {
@@ -126,7 +152,7 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                 }
             }
             items(entries, key = { it.id }, contentType = { "message" }) { entry ->
-                ChatMessageBubble(entry, resolveImage, onOpenImage, onRead = { title, text -> reading = title to text })
+                ChatMessageBubble(entry, resolveImage, onOpenImage, onRead = { title, text -> reading = title to text }, onOpenAttachment = { viewingAttachment = it })
             }
             state.partial?.let { partial -> item(key = "partial", contentType = "message") {
                 ChatMessageBubble(ChatEntry("partial", partial), resolveImage, onOpenImage, streaming = true)
@@ -156,21 +182,42 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
             Icon(Icons.Default.KeyboardArrowDown, null); Text("回到最新")
         }
         Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = RoundedCornerShape(28.dp),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp).testTag("chat-composer")) {
+          Column {
+            if (state.draftAttachments.isNotEmpty()) LazyRow(Modifier.fillMaxWidth().testTag("chat-attachment-strip"),
+                contentPadding = PaddingValues(start = 14.dp, top = 12.dp, end = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(state.draftAttachments, key = { it.id }) { attachment ->
+                    Box(Modifier.size(80.dp)) {
+                        AsyncImage(resolveImage(attachment.relativePath), "待发送图片", contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).clickable { viewingAttachment = attachment })
+                        IconButton(onClick = { viewModel.removeAttachment(attachment.id) }, enabled = !state.busy && !state.importingAttachment,
+                            modifier = Modifier.align(Alignment.TopEnd).size(32.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape).testTag("chat-remove-attachment")) {
+                            Icon(Icons.Default.Close, "移除图片", modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+            }
+            if (state.importingAttachment) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 20.dp))
             Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { settingsOpen = true }) { Icon(Icons.Default.Add, "连接与人格") }
+                Box {
+                    IconButton(onClick = { focus.clearFocus(); keyboard?.hide(); attachmentMenu = true }, enabled = !state.busy && !state.importingAttachment,
+                        modifier = Modifier.testTag("chat-attach-button")) { Icon(Icons.Default.Add, "添加图片") }
+                    DropdownMenu(attachmentMenu, { attachmentMenu = false }) {
+                        DropdownMenuItem(text = { Text("从相册选择") }, onClick = { attachmentMenu = false; photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
+                        DropdownMenuItem(text = { Text("从软件画廊选择") }, onClick = { attachmentMenu = false; galleryPicker = true })
+                    }
+                }
                 TextField(value = input, onValueChange = { input = it }, modifier = Modifier.weight(1f).testTag("chat-input"),
                     placeholder = { Text("给 ${config.assistantName.ifBlank { "绘伴" }} 发消息", maxLines = 1) }, maxLines = 5,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send), keyboardActions = KeyboardActions(onSend = { submit() }),
                     colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
                         focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent))
                 if (state.busy) IconButton(onClick = viewModel::stop, enabled = !state.generating) { Icon(Icons.Default.Stop, "停止回复") }
-                else IconButton(onClick = {
-                    if (!viewModel.hasKey() || config.model.isBlank()) settingsOpen = true
-                    else { following = true; viewModel.send(input); input = "" }
-                }, enabled = input.isNotBlank(), modifier = Modifier.testTag("chat-send")) {
+                else IconButton(onClick = { submit() }, enabled = !state.importingAttachment && (input.text.isNotBlank() || state.draftAttachments.isNotEmpty()), modifier = Modifier.testTag("chat-send")) {
                     Icon(Icons.AutoMirrored.Filled.Send, "发送", tint = MaterialTheme.colorScheme.primary)
                 }
             }
+          }
         }
     }
     if (settingsOpen) ChatSettingsDialog(viewModel) { settingsOpen = false }
@@ -204,15 +251,31 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
         confirmButton = { TextButton(onClick = { viewModel.deleteConversation(id); deleteId = null }) { Text("删除") } },
         dismissButton = { TextButton(onClick = { deleteId = null }) { Text("取消") } }) }
     reading?.let { (title, text) -> ChatTextReader(title, text) { reading = null } }
+    if (galleryPicker) HistoryImagePickerDialog(onPick = { path -> viewModel.addGalleryImage(path); galleryPicker = false }, onDismiss = { galleryPicker = false })
+    viewingAttachment?.let { attachment -> Dialog(onDismissRequest = { viewingAttachment = null }) {
+        Surface(shape = RoundedCornerShape(20.dp)) {
+            Column(Modifier.fillMaxWidth()) {
+                AsyncImage(resolveImage(attachment.relativePath), "图片附件", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp))
+                TextButton(onClick = { viewingAttachment = null }, modifier = Modifier.align(Alignment.End)) { Text("关闭图片") }
+            }
+        }
+    } }
 }
 
 @Composable
 fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenImage: (String) -> Unit,
-    streaming: Boolean = false, onRead: (String, String) -> Unit = { _, _ -> }) {
-    if (entry.content.isBlank() && entry.reasoning.isBlank() && entry.images.isEmpty() && entry.notice == null) return
+    streaming: Boolean = false, onRead: (String, String) -> Unit = { _, _ -> }, onOpenAttachment: (ChatAttachment) -> Unit = {}) {
+    if (entry.content.isBlank() && entry.reasoning.isBlank() && entry.images.isEmpty() && entry.attachments.isEmpty() && entry.notice == null) return
     val user = entry.role == "user"
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (user) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        entry.attachments.forEach { attachment ->
+            val file = resolveImage(attachment.relativePath)
+            if (file.isFile) AsyncImage(file, "发送的图片附件", contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth(0.72f).aspectRatio(attachment.width.toFloat() / attachment.height.coerceAtLeast(1))
+                    .clip(RoundedCornerShape(22.dp)).clickable { onOpenAttachment(attachment) })
+            else Text("图片附件已丢失", style = MaterialTheme.typography.bodySmall)
+        }
         entry.images.forEach { image ->
             val file = resolveImage(image.relativePath)
             if (file.isFile) AsyncImage(file, "对话生成的图片", contentScale = ContentScale.Fit,
@@ -248,7 +311,7 @@ private fun BoundedChatText(text: String, title: String, streaming: Boolean,
         if (streaming && long) Text("正在回复 · ${text.length} 字 · 显示最新片段", style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         SelectionContainer { Text(visible, style = if (small) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyLarge,
-            maxLines = if (streaming) 12 else if (long) 8 else Int.MAX_VALUE, overflow = TextOverflow.Ellipsis) }
+            overflow = TextOverflow.Ellipsis) }
         if (!streaming && long) TextButton(onClick = { onRead(title, text) }, modifier = Modifier.testTag("chat-read-full")) {
             Text("查看全文（${text.length} 字）")
         }

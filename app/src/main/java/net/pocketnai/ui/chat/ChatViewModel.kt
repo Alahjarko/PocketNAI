@@ -17,6 +17,7 @@ class ChatViewModel(
     private val files: AgentFiles,
     private val images: ChatImageGenerator,
     private val enabled: StateFlow<Boolean>,
+    private val attachments: ChatAttachmentStore,
 ) : ViewModel() {
     data class PendingImage(val callId: String, val params: GenerationParams, val quote: String)
     data class UiState(
@@ -30,6 +31,8 @@ class ChatViewModel(
         val models: List<String> = emptyList(),
         val loadingModels: Boolean = false,
         val error: String? = null,
+        val draftAttachments: List<ChatAttachment> = emptyList(),
+        val importingAttachment: Boolean = false,
     )
     private val _state = MutableStateFlow(UiState())
     val state = _state.asStateFlow()
@@ -55,19 +58,22 @@ class ChatViewModel(
         }
     }
     private fun fresh() = ChatConversation(UUID.randomUUID().toString(), updatedAt = System.currentTimeMillis())
-    fun newConversation() { if (!_state.value.busy) _state.update { it.copy(current = fresh(), partial = null, error = null) } }
+    fun newConversation() { if (!_state.value.busy && !_state.value.importingAttachment) { clearDraftAttachments(); _state.update { it.copy(current = fresh(), partial = null, error = null) } } }
     fun selectConversation(id: String) {
-        if (_state.value.busy) return
+        if (_state.value.busy || _state.value.importingAttachment) return
         viewModelScope.launch {
             runCatching { store.load(id)?.recoverInterruptedTools() }.onSuccess { chat ->
-                if (chat != null) { _state.update { it.copy(current = chat, error = null) }; store.save(chat) }
+                if (chat != null) { clearDraftAttachments(); _state.update { it.copy(current = chat, error = null) }; store.save(chat) }
             }.onFailure { _state.update { it.copy(error = "无法读取该对话") } }
         }
     }
     fun deleteConversation(id: String) {
-        if (_state.value.busy) return
+        if (_state.value.busy || _state.value.importingAttachment) return
         viewModelScope.launch {
+            val old = store.load(id)
             store.delete(id)
+            val alive = (store.observeAll().first().flatMap { it.entries }.flatMap { it.attachments } + _state.value.draftAttachments).map { it.id }.toSet()
+            old?.entries?.flatMap { it.attachments }?.filter { it.id !in alive }?.distinctBy { it.id }?.forEach { attachments.discard(it) }
             if (_state.value.current?.id == id) newConversation()
         }
     }
@@ -107,8 +113,36 @@ class ChatViewModel(
     fun confirmImage(accept: Boolean) { confirmation?.complete(accept) }
     fun stop() { if (!_state.value.generating) job?.cancel() }
 
+    fun addPhoto(uri: String) = importAttachment { attachments.importUri(uri) }
+    fun addGalleryImage(path: String) = importAttachment { attachments.importGallery(path) }
+    private fun importAttachment(import: suspend () -> ChatAttachment) {
+        if (_state.value.busy || _state.value.importingAttachment) return
+        if (_state.value.draftAttachments.size >= ChatAttachment.MAX_COUNT) { _state.update { it.copy(error = "每条消息最多添加 4 张图片") }; return }
+        _state.update { it.copy(importingAttachment = true, error = null) }
+        viewModelScope.launch {
+            try {
+                val attachment = import()
+                _state.update { it.copy(draftAttachments = it.draftAttachments + attachment) }
+            } catch (failure: ChatFailure) { _state.update { it.copy(error = failure.userMessage) } }
+            catch (_: Exception) { _state.update { it.copy(error = "无法添加图片，请重新选择") } }
+            finally { _state.update { it.copy(importingAttachment = false) } }
+        }
+    }
+    fun removeAttachment(id: String) {
+        if (_state.value.busy || _state.value.importingAttachment) return
+        val removed = _state.value.draftAttachments.firstOrNull { it.id == id } ?: return
+        _state.update { it.copy(draftAttachments = it.draftAttachments.filterNot { image -> image.id == id }) }
+        viewModelScope.launch { attachments.discard(removed) }
+    }
+    private fun clearDraftAttachments() {
+        val unused = _state.value.draftAttachments
+        _state.update { it.copy(draftAttachments = emptyList()) }
+        viewModelScope.launch { unused.forEach { attachments.discard(it) } }
+    }
+
     fun send(text: String) {
-        if (text.isBlank() || _state.value.busy || !enabled.value) return
+        if ((text.isBlank() && _state.value.draftAttachments.isEmpty()) || _state.value.busy || _state.value.importingAttachment || !enabled.value) return
+        val attached = _state.value.draftAttachments.toList()
         val cfg = config.value
         job = viewModelScope.launch {
             _state.update { it.copy(busy = true, error = null, phase = "正在思考") }
@@ -120,7 +154,7 @@ class ChatViewModel(
             }
             try {
                 val token = settings.apiKey()?.takeIf { it.isNotBlank() } ?: throw ChatFailure("请先配置 LLM API Key")
-                val userText = text.trim()
+                val userText = text.trim().ifEmpty { "请看看这些图片。" }
                 if (userText.length > 64 * 1024) throw ChatFailure("单条输入过长，请缩短内容或分条发送")
                 if (userText.contains(token)) throw ChatFailure("请勿在聊天消息中粘贴 API Key")
                 val systemPrompt = files.systemPrompt()
@@ -131,15 +165,17 @@ class ChatViewModel(
                 if (!withinContext(listOf(wireMessage("system", systemPrompt)) + chat.entries.map { it.wire } + wireMessage("user", userText)))
                     throw ChatFailure("对话上下文过长，请新建对话；历史消息仍可完整阅读")
                 chat = chat.copy(title = if (chat.entries.isEmpty()) userText.take(28) else chat.title,
-                    entries = chat.entries + ChatEntry(UUID.randomUUID().toString(), wireMessage("user", userText)))
+                    entries = chat.entries + ChatEntry(UUID.randomUUID().toString(), wireMessage("user", userText), attachments = attached))
                 persist()
+                _state.update { it.copy(draftAttachments = emptyList()) }
+                val imageCache = mutableMapOf<String, String>()
                 var generated = false
                 val seen = mutableSetOf<String>()
                 for (round in 0 until 6) {
                     if (!enabled.value) throw ChatFailure("实验性对话已关闭")
                     if (settings.apiKey() != token) throw ChatFailure("API Key 已变更，本条消息已停止")
-                    val messages = listOf(wireMessage("system", systemPrompt)) + chat.entries.map { it.wire }
-                    if (!withinContext(messages)) throw ChatFailure("对话上下文过长，请新建对话；历史消息仍可完整阅读")
+                    if (!withinContext(listOf(wireMessage("system", systemPrompt)) + chat.entries.map { it.wire })) throw ChatFailure("对话上下文过长，请新建对话；历史消息仍可完整阅读")
+                    val messages = listOf(wireMessage("system", systemPrompt)) + attachments.messages(chat.entries, imageCache)
                     val reply = api.complete(cfg, token, messages, ImageChatTools.schema) { partial ->
                         _state.update { it.copy(partial = partial.withoutSecret(token)) }
                     }

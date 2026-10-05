@@ -2,16 +2,18 @@ package net.pocketnai.domain.chat
 
 /** 界面投影只限制排版量；协议和持久化始终保留完整消息。 */
 object ChatTextLayout {
-    const val PREVIEW_CHARS = 640
-    const val LIVE_CHARS = 1200
+    const val COLLAPSE_CHARS = 2000
+    const val PREVIEW_CHARS = 1800
+    const val LIVE_CHARS = 2400
     const val PAGE_CHARS = 600
 
-    fun isLong(text: String) = text.length > PREVIEW_CHARS || text.count { it == '\n' } > 8
+    fun isLong(text: String) = text.length > COLLAPSE_CHARS
 
     fun preview(text: String): String {
+        if (!isLong(text)) return text
         var end = minOf(text.length, PREVIEW_CHARS)
-        var lines = 0
-        for (index in 0 until end) if (text[index] == '\n' && ++lines == 8) { end = index; break }
+        val paragraph = text.lastIndexOf("\n\n", end)
+        if (paragraph >= 1200) end = paragraph
         return text.substring(0, safeEnd(text, end))
     }
 

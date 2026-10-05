@@ -4,6 +4,19 @@ import kotlinx.serialization.json.*
 import java.net.URI
 
 object ChatProtocol {
+    /** 只在当次请求里加入图片；历史 wire 和 Room 不保存 base64。 */
+    fun withImages(message: JsonObject, dataUrls: List<String>): JsonObject {
+        if (dataUrls.isEmpty()) return message
+        if (message.string("role") != "user") throw ChatFailure("只有用户主动添加的附件会发送给模型")
+        return JsonObject(message + ("content" to buildJsonArray {
+            add(buildJsonObject { put("type", "text"); put("text", message.string("content").orEmpty()) })
+            dataUrls.forEach { url ->
+                if (!url.startsWith("data:image/jpeg;base64,")) throw ChatFailure("图片附件格式不正确")
+                add(buildJsonObject { put("type", "image_url"); put("image_url", buildJsonObject { put("url", url) }) })
+            }
+        }))
+    }
+
     /** base URL 可以含网关前缀；不猜测追加 /v1，用户填什么前缀就使用什么。 */
     fun endpoint(baseUrl: String, resource: String): String {
         val url = runCatching { URI(baseUrl.trim()) }.getOrNull()
