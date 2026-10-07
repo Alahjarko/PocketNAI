@@ -454,4 +454,5 @@
     <string name="proxy_paste_success">已导入代理配置。</string>
     <string name="proxy_custom_incomplete">地址和端口还没填完整。</string>
     <string name="error_proxy_quota_exceeded">公益代理的今日额度（750 MB）已用完，明天恢复；也可以在设置里改用自定义代理。</string>
+    <string name="nav_artist_lab">抽卡</string>
 </resources>

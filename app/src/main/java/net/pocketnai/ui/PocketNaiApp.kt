@@ -16,6 +16,9 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Casino
+import net.pocketnai.ui.artistlab.ArtistLabScreen
+import net.pocketnai.ui.artistlab.ArtistLabViewModel
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.automirrored.filled.Chat
@@ -79,6 +82,7 @@ object Routes {
     const val HOME = "home"
     const val SETTINGS = "settings"
     const val CHAT = "chat"
+    const val ARTIST_LAB = "artist-lab"
     const val DETAIL = "detail/{imageId}"
 
     /** 局部重绘的蒙版编辑器（全屏）。 */
@@ -87,7 +91,7 @@ object Routes {
     fun detail(imageId: String): String = "detail/$imageId"
 
     /** 底部导航展示的 Tab。 */
-    val tabs = listOf(HOME, CHAT, SETTINGS)
+    val tabs = listOf(HOME, CHAT, ARTIST_LAB, SETTINGS)
 }
 
 private data class TabSpec(
@@ -138,6 +142,11 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
                         generateViewModel.generateForChat(params, onImage)
                 }, container.settingsStore.chatEnabled, container.chatAttachmentStore)
         }
+    })
+    val artistLabEnabled by container.settingsStore.artistLabEnabled.collectAsStateWithLifecycle()
+    val artistLabViewModel: ArtistLabViewModel = viewModel(factory = viewModelFactory {
+        initializer { ArtistLabViewModel(container.artistLabStore, container.generationRepository,
+            container.favoriteImageRepository, generateViewModel, container.settingsStore.artistLabEnabled) }
     })
     LaunchedEffect(sharedImageUri, generateState.referenceBusy) {
         if (sharedImageUri != null && !generateState.referenceBusy) {
@@ -208,6 +217,7 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) artistLabViewModel.pause()
             if (event == Lifecycle.Event.ON_START) {
                 generateViewModel.refreshBalanceOnForeground()
             }
@@ -218,9 +228,13 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val chatKeyboardVisible = currentRoute == Routes.CHAT && WindowInsets.isImeVisible
+    val chatKeyboardVisible = (currentRoute == Routes.CHAT || currentRoute == Routes.ARTIST_LAB) && WindowInsets.isImeVisible
     LaunchedEffect(chatEnabled, currentRoute) {
         if (!chatEnabled && currentRoute == Routes.CHAT) navController.navigateToTab(Routes.HOME)
+    }
+
+    LaunchedEffect(artistLabEnabled, currentRoute) {
+        if (!artistLabEnabled && currentRoute == Routes.ARTIST_LAB) navController.navigateToTab(Routes.HOME)
     }
 
     // 宽屏（横屏 / 平板，≥600dp）把导航挪到最左侧的 NavigationRail，
@@ -233,10 +247,11 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
                     navController = navController,
                     currentRoute = currentRoute,
                     chatEnabled = chatEnabled,
+                    artistLabEnabled = artistLabEnabled,
                 )
             }
             Scaffold(
-                modifier = if (currentRoute == Routes.CHAT) Modifier.imePadding() else Modifier,
+                modifier = if (currentRoute == Routes.CHAT || currentRoute == Routes.ARTIST_LAB) Modifier.imePadding() else Modifier,
                 bottomBar = {
                     // 底部只剩导航栏。生成按钮在首页生成悬浮层的头部里（GenerateButton），
                     // 不再占用任何一条独立的底部栏。宽屏时导航在左侧 Rail，底部栏不渲染。
@@ -245,6 +260,7 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
                             navController = navController,
                             currentRoute = currentRoute,
                             chatEnabled = chatEnabled,
+                            artistLabEnabled = artistLabEnabled,
                         )
                     }
                 },
@@ -297,6 +313,11 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
             }
             composable(Routes.CHAT) {
                 ChatScreen(chatViewModel, container.fileStore::resolve) { imageId -> navController.navigate(Routes.detail(imageId)) }
+            }
+            composable(Routes.ARTIST_LAB) {
+                ArtistLabScreen(artistLabViewModel, generateState.params, container.fileStore::resolve) { imageId ->
+                    navController.navigate(Routes.detail(imageId))
+                }
             }
             composable(Routes.DETAIL) { entry ->
                 DetailScreen(
@@ -381,8 +402,9 @@ private fun PocketNaiBottomBar(
     navController: NavHostController,
     currentRoute: String?,
     chatEnabled: Boolean,
+    artistLabEnabled: Boolean,
 ) {
-    val specs = tabSpecs(chatEnabled)
+    val specs = tabSpecs(chatEnabled, artistLabEnabled)
 
     NavigationBar {
         specs.forEach { spec ->
@@ -402,8 +424,9 @@ private fun PocketNaiNavRail(
     navController: NavHostController,
     currentRoute: String?,
     chatEnabled: Boolean,
+    artistLabEnabled: Boolean,
 ) {
-    val specs = tabSpecs(chatEnabled)
+    val specs = tabSpecs(chatEnabled, artistLabEnabled)
 
     NavigationRail {
         specs.forEach { spec ->
@@ -417,9 +440,10 @@ private fun PocketNaiNavRail(
     }
 }
 
-private fun tabSpecs(chatEnabled: Boolean) = buildList {
+private fun tabSpecs(chatEnabled: Boolean, artistLabEnabled: Boolean) = buildList {
     add(TabSpec(Routes.HOME, Icons.Default.Image, R.string.nav_gallery))
     if (chatEnabled) add(TabSpec(Routes.CHAT, Icons.AutoMirrored.Filled.Chat, R.string.nav_chat))
+    if (artistLabEnabled) add(TabSpec(Routes.ARTIST_LAB, Icons.Default.Casino, R.string.nav_artist_lab))
     add(TabSpec(Routes.SETTINGS, Icons.Default.Settings, R.string.nav_settings))
 }
 

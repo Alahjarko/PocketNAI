@@ -12,6 +12,7 @@
 | 页面布局、生成悬浮层、详情、画廊筛选、收藏、分享 | [界面与交互](docs/development/ui.md) |
 | HTTP、超时/重试、代理、凭据、登录、多账号 | [网络与认证](docs/development/network-auth.md) |
 | 实验性对话、LLM 接入、思考回传、图片工具、人格 Markdown | [实验性对话](docs/development/chat.md)，并读网络、存储与界面专题 |
+| 画师词库、抽卡实验室、调度、收藏与批次清理 | [抽卡实验室](docs/development/artist-lab.md)，并读提示词、图片、计费、网络、存储与界面专题 |
 | 余额、订阅权益、费用报价、流水、高清放大 | [计费与超分](docs/development/billing.md) |
 | 检查更新、APK 下载、签名、版本号、发布 | [更新与发布](docs/development/release.md) |
 | 构建、安装、设备测试、协议核对 | [验证与待核对事项](docs/development/verification.md) |
@@ -30,6 +31,8 @@
 6. **日志只记结构。** 通用网络日志走 `RedactingHttpLogger`，仅方法、路径、状态码、耗时；Prompt 只记长度/哈希。禁止引入 `HttpLoggingInterceptor`。流式/代理诊断允许的结构字段见专题，不能追加内容或凭据。
 
 对话功能的显式授权边界：用户主动开启“自动执行图片工具”并发送消息时，该次操作最多授权一次生成；默认仍通过生成卡片手动确认。真实联调测试必须有当前用户的明确授权，使用受控 `allowLive` 入口，范围和凭据清理见[对话专题](docs/development/chat.md)。其余自动生成及自动重试禁令继续适用。
+
+抽卡实验室的显式授权边界：用户核对数量、固定参数和费用后，点击明确次数的批次确认按钮，仅授权本批剩余的 N 次串行单张请求。暂停/重启后重新确认，失败和待确认项不重试。该例外不授权助手自动启动真实批次或代用户测试；见[抽卡专题](docs/development/artist-lab.md)。
 
 ## 修改与交付流程
 

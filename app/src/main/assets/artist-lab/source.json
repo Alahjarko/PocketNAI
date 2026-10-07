@@ -1,0 +1,12 @@
+{
+  "dataset": "HDiffusion/historical-danbooru-tag-counts",
+  "revision": "0f256e51b8affc379e5181f42c9dab41ceb00e4e",
+  "snapshot_date": "2026-10-06",
+  "url": "https://huggingface.co/datasets/HDiffusion/historical-danbooru-tag-counts/resolve/0f256e51b8affc379e5181f42c9dab41ceb00e4e/danbooru-2026-10-06.csv",
+  "license": "Apache-2.0",
+  "source_sha256": "516f690003c3f31c0c5647fe3f2e9216ca46bb81fc5e26d8d1a7cb5c1372a448",
+  "pool_sha256": "3e467a719b693c5f820143c97232a7b7e12261fb4f7e803a4019e7d54d8daa0f",
+  "count": 1000,
+  "eligible_artists": 49167,
+  "selection": "category=1; sort by post count descending; normalize underscore to space; deduplicate"
+}

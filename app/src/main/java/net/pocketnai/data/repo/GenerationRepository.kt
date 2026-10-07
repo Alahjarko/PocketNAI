@@ -141,6 +141,8 @@ class GenerationRepository(
     fun generate(
         request: GenerationRequest,
         promptTemplate: String,
+        expectedAccountFingerprint: String? = null,
+        beforeSend: suspend (String) -> Unit = {},
     ): Flow<GenerationEvent> = flow {
         val generationId = idGenerator()
         val startedAt = clock()
@@ -150,6 +152,12 @@ class GenerationRepository(
         // 生成链路只关心可用的 Bearer Token，不关心它来自 PST 还是账号会话。
         val token = credentialStore.load()?.token
         if (token.isNullOrEmpty()) {
+            emit(GenerationEvent.FatalError(generationId, AppError.of(ErrorCode.TOKEN_INVALID)))
+            return@flow
+        }
+
+        // 队列的授权属于确认时的账号，用实际加载的不可变 token 核对，避免切号竞态。
+        if (expectedAccountFingerprint != null && Hashing.sha256(token.toByteArray(Charsets.UTF_8)).take(8) != expectedAccountFingerprint) {
             emit(GenerationEvent.FatalError(generationId, AppError.of(ErrorCode.TOKEN_INVALID)))
             return@flow
         }
@@ -260,6 +268,14 @@ class GenerationRepository(
             upstreamImages = encodedImages,
             streaming = useStreaming,
         )
+
+        // flowOn 会缓冲 Started，不能依赖下游事件处理先于 POST 完成。
+        // 持久化批次索引和重新核对授权必须在生产请求的协程里显式等待。
+        try { beforeSend(generationId) } catch (e: Exception) {
+            dao.updateStatus(generationId, GenerationStatus.FAILED.name, clock(), ErrorCode.INVALID_PARAMS.name,
+                "发送前检查未通过，未发送图片请求", null)
+            throw e
+        }
 
         var archiveToDelete: File? = null
         val extracted: ZipImageExtractor.Result.Success = if (useStreaming) {
@@ -656,6 +672,14 @@ class GenerationRepository(
      *
      * @param deleteFavorites 是否同时清理已收藏的图片。false 时严格保护所有收藏图片。
      */
+    /** 实验室清理仅接受该批次的图片 ID，不触碰其它历史和收藏。 */
+    suspend fun cleanupLabImages(imageIds: List<String>): Int = withContext(Dispatchers.IO) {
+        val deleted = imageIds.distinct().chunked(400).flatMap { dao.deleteScopedUnfavorited(it) }
+        deleted.forEach { fileStore.resolve(it.relativePath).delete() }
+        // 保留空父记录用于追溯请求；文件删除失败的孤儿交由既有启动清理回收。
+        deleted.size
+    }
+
     suspend fun cleanupGeneratedImages(deleteFavorites: Boolean): ImageCleanupReport = withContext(Dispatchers.IO) {
         val initialBytes = fileStore.usedBytes()
         if (deleteFavorites) {

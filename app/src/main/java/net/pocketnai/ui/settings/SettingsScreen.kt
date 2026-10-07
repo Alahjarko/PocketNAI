@@ -103,6 +103,7 @@ fun SettingsScreen(
     val balanceState by container.accountBalanceRepository.state.collectAsStateWithLifecycle()
     val updateState by updateViewModel.state.collectAsStateWithLifecycle()
     val chatEnabled by container.settingsStore.chatEnabled.collectAsStateWithLifecycle()
+    val artistLabEnabled by container.settingsStore.artistLabEnabled.collectAsStateWithLifecycle()
     var chatSettingsOpen by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -251,6 +252,13 @@ fun SettingsScreen(
                     subtitle = if (chatEnabled) "已开启 · 点击配置 LLM 与人格" else "开启后在导航栏显示对话",
                     onClick = { chatSettingsOpen = true },
                     trailing = { Switch(chatEnabled, container.settingsStore::setChatEnabled) },
+                )
+                SettingsDivider()
+                SettingsRow(
+                    title = "抽卡实验室（实验）",
+                    subtitle = "随机画师串 · 固定种子 · 收藏与批次清理",
+                    onClick = { container.settingsStore.setArtistLabEnabled(!artistLabEnabled) },
+                    trailing = { Switch(artistLabEnabled, container.settingsStore::setArtistLabEnabled) },
                 )
                 SettingsDivider()
                 SettingsRow(

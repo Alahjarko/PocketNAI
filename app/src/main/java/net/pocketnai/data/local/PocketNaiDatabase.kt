@@ -22,11 +22,16 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FavoriteImageEntity::class,
         AnlasTransactionEntity::class,
         ChatConversationEntity::class,
+        ArtistLabRunEntity::class,
+        ArtistLabDrawEntity::class,
+        ArtistMixFavoriteEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 abstract class PocketNaiDatabase : RoomDatabase() {
+
+    abstract fun artistLabDao(): ArtistLabDao
 
     abstract fun chatConversationDao(): ChatConversationDao
 
@@ -230,6 +235,17 @@ abstract class PocketNaiDatabase : RoomDatabase() {
             }
         }
 
+        /** 独立实验表，只新增，不重建历史。图片清理后抽卡记录保留，图片索引置空。 */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `artist_lab_runs` (`id` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `configJson` TEXT NOT NULL, `status` TEXT NOT NULL, `message` TEXT NOT NULL, PRIMARY KEY(`id`))")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `artist_lab_draws` (`id` TEXT NOT NULL, `runId` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `mixJson` TEXT NOT NULL, `status` TEXT NOT NULL, `generationId` TEXT, `imageId` TEXT, `message` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`runId`) REFERENCES `artist_lab_runs`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(`imageId`) REFERENCES `generated_images`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_artist_lab_draws_runId` ON `artist_lab_draws` (`runId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_artist_lab_draws_imageId` ON `artist_lab_draws` (`imageId`)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `artist_lab_mix_favorites` (`prompt` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`prompt`))")
+            }
+        }
+
         fun build(context: Context): PocketNaiDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
@@ -245,6 +261,7 @@ abstract class PocketNaiDatabase : RoomDatabase() {
                     MIGRATION_6_7,
                     MIGRATION_7_8,
                     MIGRATION_8_9,
+                    MIGRATION_9_10,
                 )
                 .build()
     }

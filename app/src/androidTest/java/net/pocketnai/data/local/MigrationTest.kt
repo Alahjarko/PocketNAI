@@ -39,6 +39,31 @@ class MigrationTest {
         }
     }
 
+    @Test fun migrate9To10KeepsHistoryFavoritesChatAndAddsLab() {
+        val name = "artist-lab-migration-test"
+        helper.createDatabase(name, 9).use { db ->
+            db.execSQL("""INSERT INTO generations (id,createdAt,updatedAt,status,title,promptTemplate,mode,prompt,negativePrompt,modelApiId,width,height,sampleCount,steps,guidance,cfgRescale,sampler,noiseSchedule,seedMode,baseSeed,qualityTags,qualityTagsEnabled,ucPresetIndex,modelConfigVersion,requestSnapshotVersion,charactersJson)
+                VALUES ('old',1,1,'SUCCEEDED','old title','sfw','TXT2IMG','sfw','','nai-diffusion-4-5-curated',832,1216,1,23,7.0,0.0,'k_euler_ancestral','karras','FIXED',42,'NONE',0,0,'v1',3,'[]')""")
+            db.execSQL("""INSERT INTO generated_images (id,generationId,ordinal,seed,relativePath,width,height,byteSize,sha256,metadataJson,createdAt,exportedUri)
+                VALUES ('old-image','old',1,42,'generations/old/0001.png',832,1216,1024,'sha',NULL,1,NULL)""")
+            db.execSQL("INSERT INTO favorite_images VALUES ('old-image', 1)")
+            db.execSQL("INSERT INTO chat_conversations VALUES ('old-chat','original',2,'[]')")
+        }
+        helper.runMigrationsAndValidate(name, 10, true, PocketNaiDatabase.MIGRATION_9_10).use { db ->
+            db.execSQL("PRAGMA foreign_keys = ON")
+            for (table in listOf("generations", "generated_images", "favorite_images", "chat_conversations")) {
+                db.query("SELECT COUNT(*) FROM $table").use { assertThat(it.moveToFirst()).isTrue(); assertThat(it.getInt(0)).isEqualTo(1) }
+            }
+            db.execSQL("INSERT INTO artist_lab_runs VALUES ('run',3,'{}','PAUSED','')")
+            db.execSQL("INSERT INTO artist_lab_draws VALUES ('draw','run',0,'{}','SUCCEEDED','old','old-image','')")
+            db.execSQL("INSERT INTO artist_lab_mix_favorites VALUES ('1.0::artist: test::',3)")
+            db.execSQL("DELETE FROM generated_images WHERE id = 'old-image'")
+            db.query("SELECT imageId FROM artist_lab_draws").use { assertThat(it.moveToFirst()).isTrue(); assertThat(it.isNull(0)).isTrue() }
+            db.query("SELECT COUNT(*) FROM artist_lab_mix_favorites").use { assertThat(it.moveToFirst()).isTrue(); assertThat(it.getInt(0)).isEqualTo(1) }
+            db.query("SELECT COUNT(*) FROM generations").use { assertThat(it.moveToFirst()).isTrue(); assertThat(it.getInt(0)).isEqualTo(1) }
+        }
+    }
+
     @get:Rule
     val helper = MigrationTestHelper(
         InstrumentationRegistry.getInstrumentation(),

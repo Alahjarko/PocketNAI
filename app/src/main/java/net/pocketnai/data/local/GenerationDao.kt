@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -152,6 +153,17 @@ interface GenerationDao {
 
     @Query("SELECT * FROM generated_images WHERE id NOT IN (SELECT imageId FROM favorite_images)")
     suspend fun allUnfavoritedImages(): List<GeneratedImageEntity>
+
+    @Query("SELECT * FROM generated_images WHERE id IN (:ids) AND id NOT IN (SELECT imageId FROM favorite_images)")
+    suspend fun scopedUnfavoritedImages(ids: List<String>): List<GeneratedImageEntity>
+
+    /** 收藏查询和删行在同一个写事务内，避免界面刚收藏的图片被清理掉。 */
+    @Transaction
+    suspend fun deleteScopedUnfavorited(ids: List<String>): List<GeneratedImageEntity> {
+        val rows = scopedUnfavoritedImages(ids)
+        if (rows.isNotEmpty()) deleteImages(rows.map { it.id })
+        return rows
+    }
 
     @Query("SELECT * FROM generated_images")
     suspend fun allImages(): List<GeneratedImageEntity>

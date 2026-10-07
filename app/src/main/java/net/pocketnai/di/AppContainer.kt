@@ -59,6 +59,8 @@ import java.util.concurrent.TimeUnit
  */
 class AppContainer(application: Application) {
 
+    val artistLabStore by lazy { net.pocketnai.data.artistlab.ArtistLabStore(application, database) }
+
     val llmSettingsStore by lazy { net.pocketnai.data.chat.LlmSettingsStore(application) }
     val chatClient by lazy { net.pocketnai.data.chat.OpenAiCompatibleChatClient() }
     val chatStore by lazy { net.pocketnai.data.chat.ChatStore(database.chatConversationDao()) }

@@ -204,6 +204,7 @@ class GenerateViewModel(
         val customResolution: CustomResolution? = null,
         /** 自定义尺寸算不出来时的原因（边长越界、面积超限），显示在输入框下方。 */
         val customResolutionError: ResolutionPlanner.Reason? = null,
+        val artistLabActive: Boolean = false,
     ) {
         /** 自定义模式下的规划结果；预设模式或算不出来时为 null。 */
         val resolutionPlan: ResolutionPlanner.Plan?
@@ -234,7 +235,7 @@ class GenerateViewModel(
         val blockingViolations: List<ParamViolation>
             get() = profile.validate(params).filterNot { it is ParamViolation.PromptTooLong }
 
-        val canGenerate: Boolean get() = !inFlight && !referenceBusy && promptTemplate.isNotBlank()
+        val canGenerate: Boolean get() = !inFlight && !artistLabActive && !referenceBusy && promptTemplate.isNotBlank()
 
         /** 本次会用的全部参考图（图生图起点 + Precise Reference + Vibe + 重绘蒙版）。 */
         val allReferences: List<ReferenceImage>
@@ -1555,11 +1556,44 @@ class GenerateViewModel(
         }
     }
 
+    fun reserveArtistLab(): Boolean {
+        val current = _state.value
+        if (current.inFlight || current.referenceBusy || current.artistLabActive) return false
+        _state.update { it.copy(artistLabActive = true) }
+        return true
+    }
+
+    fun releaseArtistLab() { _state.update { it.copy(artistLabActive = false) } }
+
+    fun artistLabAccount(): String? = credentialStore?.hint()?.fingerprint
+
+    fun quoteForArtistLab(params: GenerationParams): GenerationCostEstimate = costCalculator.estimate(
+        pricingContextOf(UiState(params = params), accountBalanceRepository.state.value, settingsStore.subscriptionOverride.value),
+    )
+
+    suspend fun generateForArtistLab(
+        params: GenerationParams,
+        accountFingerprint: String,
+        onStarted: suspend (String) -> Unit,
+    ): net.pocketnai.domain.chat.ChatImage {
+        check(_state.value.artistLabActive) { "抽卡队列尚未取得生成锁" }
+        return generateIsolated(params, {}, "画师抽卡", onStarted, fromArtistLab = true, expectedAccountFingerprint = accountFingerprint).single()
+    }
+
     suspend fun generateForChat(
         params: GenerationParams,
         onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit,
+    ): List<net.pocketnai.domain.chat.ChatImage> = generateIsolated(params, onImage, "对话生成")
+
+    private suspend fun generateIsolated(
+        params: GenerationParams,
+        onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit,
+        description: String,
+        onStarted: suspend (String) -> Unit = {},
+        fromArtistLab: Boolean = false,
+        expectedAccountFingerprint: String? = null,
     ): List<net.pocketnai.domain.chat.ChatImage> {
-        if (_state.value.inFlight || _state.value.referenceBusy)
+        if (_state.value.inFlight || _state.value.referenceBusy || (_state.value.artistLabActive && !fromArtistLab))
             throw net.pocketnai.domain.chat.ChatFailure("另一个图片任务正在执行，请等待完成")
         val before = accountBalanceRepository.latestOrNull()
         val billing = before?.let { BillingSession(it, clock() - it.fetchedAtMillis,
@@ -1568,7 +1602,8 @@ class GenerateViewModel(
         _state.update { it.copy(inFlight = true, completedImages = 0, error = null) }
         try {
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                repository.generate(GenerationRequest(params = params), params.prompt).collect { event ->
+                repository.generate(GenerationRequest(params = params), params.prompt, expectedAccountFingerprint,
+                    beforeSend = { if (fromArtistLab) onStarted(it) }).collect { event ->
                     when (event) {
                         is GenerationEvent.Final -> {
                             val image = event.image
@@ -1578,6 +1613,13 @@ class GenerateViewModel(
                         }
                         is GenerationEvent.FatalError -> {
                             _state.update { it.copy(error = event.error) }
+                            if (fromArtistLab) {
+                                val uncertain = event.error.code == ErrorCode.TIMEOUT_UNCERTAIN
+                                if (uncertain || event.error.code == ErrorCode.INSUFFICIENT_ANLAS) refreshBalanceAfterGeneration(billing, false)
+                                throw net.pocketnai.domain.artistlab.ArtistLabRequestFailure(uncertain,
+                                    if (uncertain) "请求超时或断流，可能已计费；核对图库与余额，本张不会重试"
+                                    else "本张失败（${event.error.code.name}），本张不会重试")
+                            }
                             if (event.error.code == ErrorCode.TIMEOUT_UNCERTAIN) {
                                 refreshBalanceAfterGeneration(billing, false)
                                 throw net.pocketnai.domain.chat.ChatFailure("图片请求超时，可能已计费；请先核对图库和余额，未自动重试")
@@ -1587,7 +1629,7 @@ class GenerateViewModel(
                         is GenerationEvent.Completed -> {
                             previewStore.clear(event.generationId)
                             runCatching { refreshBalanceAfterGeneration(billing, event.status != GenerationStatus.FAILED,
-                                event.generationId, "对话生成 ${params.model.displayName} ${params.size.label}") }
+                                event.generationId, "$description ${params.model.displayName} ${params.size.label}") }
                         }
                         is GenerationEvent.Intermediate -> Unit
                         is GenerationEvent.ItemError -> _state.update { it.copy(error = event.error) }

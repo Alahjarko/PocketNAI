@@ -116,6 +116,7 @@ class GenerationSeedAndPayloadTest {
         payloads: MutableList<JsonObject>,
         random: Random,
         fileStore: GenerationFileStore,
+        idGenerator: () -> String = { "gen-test" },
     ) = GenerationRepository(
         api = FakeApi(payloads),
         credentialStore = object : CredentialStore {
@@ -134,12 +135,92 @@ class GenerationSeedAndPayloadTest {
         liveReferencePaths = LiveReferencePathsProvider { emptySet() },
         random = random,
         clock = { 1_000L },
-        idGenerator = { "gen-test" },
+        idGenerator = idGenerator,
     )
 
     /** 尺寸与 seed 都在 `parameters` 里，顶层只有 input / model / action。 */
     private fun parametersOf(payload: JsonObject): JsonObject =
         payload.getValue("parameters") as JsonObject
+
+    @Test fun artistLabHundredSingleRequestsKeepSeedAndCleanupIsScoped() = runBlocking {
+        val payloads = mutableListOf<JsonObject>()
+        val files = GenerationFileStore(context)
+        val prefix = "artist-lab-test-" + java.util.UUID.randomUUID()
+        var ordinal = 0
+        val repo = repository(payloads, Random(99), files) { "$prefix-${ordinal++}" }
+        val base = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V4_5_CURATED)).copy(
+            prompt = "sfw, blue sky", negativePrompt = "lowres", qualityTags = net.pocketnai.domain.model.QualityTagsOption.NONE,
+            seedMode = SeedMode.FIXED, baseSeed = 87654321,
+        )
+        val config = net.pocketnai.domain.artistlab.ArtistLabConfig(
+            net.pocketnai.data.settings.GenerationDraftCodec.encode(net.pocketnai.domain.model.GenerationDraft(base, base.prompt, base.negativePrompt)),
+            5, 10, 30, 100, "test-pool")
+        val store = net.pocketnai.data.artistlab.ArtistLabStore(context, database)
+        val catalog = store.catalog()
+        assertThat(catalog.first).hasSize(1000)
+        val plan = net.pocketnai.domain.artistlab.ArtistLabPlanner.plan(catalog.first, config, Random(42))
+        val imageIds = mutableListOf<String>()
+        try {
+            val waits = mutableListOf<Long>()
+            net.pocketnai.domain.artistlab.ArtistLabQueue(wait = { waits += it }, interval = { 1500 }).run(plan, { false }) { mix ->
+                val params = net.pocketnai.domain.artistlab.ArtistLabPlanner.params(base, mix)
+                val events = repo.generate(GenerationRequest(params), params.prompt).toList()
+                imageIds += events.filterIsInstance<GenerationEvent.Final>().single().image.id
+            }
+            assertThat(payloads).hasSize(100)
+            assertThat(waits.all { it in 1000..2000 }).isTrue()
+            for ((index, payload) in payloads.withIndex()) {
+                val params = parametersOf(payload)
+                assertThat(params["seed"]!!.jsonPrimitive.longOrNull).isEqualTo(87654321)
+                assertThat(params["n_samples"]!!.jsonPrimitive.intOrNull).isEqualTo(1)
+                assertThat(payload["input"]!!.jsonPrimitive.contentOrNull).isEqualTo(net.pocketnai.domain.artistlab.ArtistLabPlanner.params(base, plan[index]).prompt)
+            }
+            val favorite = net.pocketnai.data.repo.FavoriteImageRepository(database.favoriteImageDao())
+            favorite.setFavorite(imageIds[0], true)
+            favorite.setFavorite(imageIds[1], true)
+            // 生成一张属于其它批次的图片，清理当前批次不能波及它。
+            val other = repo.generate(GenerationRequest(base), base.prompt).toList().filterIsInstance<GenerationEvent.Final>().single().image
+            assertThat(repo.cleanupLabImages(imageIds)).isEqualTo(98)
+            assertThat(database.generationDao().findImage(imageIds[0])).isNotNull()
+            assertThat(database.generationDao().findImage(imageIds[1])).isNotNull()
+            assertThat(database.generationDao().findImage(other.id)).isNotNull()
+            assertThat(database.generationDao().allImages()).hasSize(3)
+            // 中断请求只恢复本地结果，空结果标为待确认，不会补发。
+            store.dao.create(net.pocketnai.data.local.ArtistLabRunEntity(prefix, 1, "{}", "RUNNING", ""), listOf(
+                net.pocketnai.data.local.ArtistLabDrawEntity("$prefix:a", prefix, 0, "{}", "RUNNING", other.generationId),
+                net.pocketnai.data.local.ArtistLabDrawEntity("$prefix:b", prefix, 1, "{}", "RUNNING", "$prefix:missing")))
+            store.recover()
+            val recovered = store.dao.draws(prefix)
+            assertThat(recovered.map { it.status }).containsExactly("SUCCEEDED", "UNCERTAIN").inOrder()
+            assertThat(store.dao.run(prefix)!!.status).isEqualTo("PAUSED")
+            assertThat(payloads).hasSize(101)
+        } finally {
+            database.generationDao().allGenerationIds().filter { it.startsWith(prefix) }.forEach { files.deleteGeneration(it) }
+        }
+    }
+
+    @Test fun preflightMustFinishBeforePostAndWrongAccountNeverSends() = runBlocking {
+        val payloads = mutableListOf<JsonObject>()
+        val files = GenerationFileStore(context)
+        val prefix = "artist-lab-preflight-test-" + java.util.UUID.randomUUID()
+        val repo = repository(payloads, Random(1), files) { prefix }
+        val params = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V4_5_CURATED)).copy(prompt = "sfw, blue sky")
+        try {
+            val denied = repo.generate(GenerationRequest(params), params.prompt, expectedAccountFingerprint = "wrong-account").toList()
+            assertThat(denied.filterIsInstance<GenerationEvent.FatalError>()).hasSize(1)
+            assertThat(payloads).isEmpty()
+            var hookCalled = false
+            try {
+                repo.generate(GenerationRequest(params), params.prompt, beforeSend = {
+                    hookCalled = true
+                    throw net.pocketnai.domain.artistlab.ArtistLabPreflightChanged()
+                }).toList()
+            } catch (_: net.pocketnai.domain.artistlab.ArtistLabPreflightChanged) { }
+            assertThat(hookCalled).isTrue()
+            assertThat(payloads).isEmpty()
+            assertThat(database.generationDao().findGeneration(prefix)!!.status).isEqualTo("FAILED")
+        } finally { files.deleteGeneration(prefix) }
+    }
 
     @After
     fun tearDown() {

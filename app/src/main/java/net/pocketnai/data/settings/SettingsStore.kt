@@ -18,6 +18,13 @@ class SettingsStore(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    private val _artistLabEnabled = MutableStateFlow(prefs.getBoolean("experimental_artist_lab_enabled", false))
+    val artistLabEnabled: StateFlow<Boolean> = _artistLabEnabled.asStateFlow()
+    fun setArtistLabEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("experimental_artist_lab_enabled", enabled).apply()
+        _artistLabEnabled.value = enabled
+    }
+
     private val _chatEnabled = MutableStateFlow(prefs.getBoolean("experimental_chat_enabled", false))
     val chatEnabled: StateFlow<Boolean> = _chatEnabled.asStateFlow()
     fun setChatEnabled(enabled: Boolean) {
