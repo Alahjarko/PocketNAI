@@ -1,2 +1,3 @@
 # 词库摘要按 LF 字节计算；Windows checkout 也须保留相同行尾。
 app/src/main/assets/artist-lab/artists.txt text eol=lf
+app/src/main/assets/artist-lab/curated-artists.json text eol=lf

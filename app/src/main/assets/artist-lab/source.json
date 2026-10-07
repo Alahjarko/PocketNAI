@@ -5,8 +5,11 @@
   "url": "https://huggingface.co/datasets/HDiffusion/historical-danbooru-tag-counts/resolve/0f256e51b8affc379e5181f42c9dab41ceb00e4e/danbooru-2026-10-06.csv",
   "license": "Apache-2.0",
   "source_sha256": "516f690003c3f31c0c5647fe3f2e9216ca46bb81fc5e26d8d1a7cb5c1372a448",
-  "pool_sha256": "3e467a719b693c5f820143c97232a7b7e12261fb4f7e803a4019e7d54d8daa0f",
-  "count": 1000,
-  "eligible_artists": 49167,
-  "selection": "category=1; sort by post count descending; normalize underscore to space; deduplicate"
+  "pool_sha256": "d0a06dd9c8e0842e7c2c3ff5ad85d533839dbb7ac1fe125e4bfc3b602a00ec27",
+  "count": 157,
+  "min_post_count": 84,
+  "review_date": "2026-10-07",
+  "review_sha256": "4ba6963e51cf345584c7d8ecfdb97a4eae562290a658a933880fcbe680a2d2c7",
+  "selection": "broad modern-artist whitelist from known artist profiles and public SFW features; category=1; post_count>=50; recent activity; manual artwork review; no follower criterion",
+  "verification_scope": "Pinned Danbooru-derived metadata snapshot; live Danbooru API unavailable. Pixiv public profile/top samples and official features; not entire account history."
 }

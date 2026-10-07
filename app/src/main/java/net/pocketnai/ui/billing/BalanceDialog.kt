@@ -57,6 +57,7 @@ fun BalanceDetailDialog(
     onDismiss: () -> Unit,
 ) {
     val balance = state.knownBalance
+    val expiry = rememberSubscriptionExpiry(balance?.expiresAtEpochSeconds)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -72,6 +73,13 @@ fun BalanceDetailDialog(
                         label = stringResource(R.string.balance_subscription_tier),
                         value = subscriptionStatus.displayText(),
                     )
+                    BalanceRow(
+                        label = "订阅期限",
+                        value = expiry.summary,
+                    )
+                    expiry.expiresAt?.let { date ->
+                        BalanceRow(label = "到期时间", value = date)
+                    }
                     BalanceRow(
                         label = stringResource(R.string.balance_subscription),
                         value = formatAnlas(balance.subscriptionAnlas),

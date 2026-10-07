@@ -10,6 +10,7 @@ import kotlinx.serialization.decodeFromString
 import net.pocketnai.domain.artistlab.ArtistLabForm
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.int
 import net.pocketnai.data.local.*
 
 class ArtistLabStore(context: Context, val database: PocketNaiDatabase) {
@@ -24,11 +25,10 @@ class ArtistLabStore(context: Context, val database: PocketNaiDatabase) {
 
     suspend fun catalog(): Pair<List<String>, String> = withContext(Dispatchers.IO) {
         val bytes = assets.open("artist-lab/artists.txt").use { it.readBytes() }
-        val tags = bytes.toString(Charsets.UTF_8).lineSequence().filter(String::isNotBlank).toList()
-        check(tags.size == 1000 && tags.distinct().size == 1000 && tags.all { it.startsWith("artist: ") })
         val source = assets.open("artist-lab/source.json").bufferedReader().use { it.readText() }
-        val hash = json.parseToJsonElement(source).jsonObject.getValue("pool_sha256").jsonPrimitive.content
-        check(net.pocketnai.core.Hashing.sha256(bytes) == hash)
+        val metadata = json.parseToJsonElement(source).jsonObject
+        val hash = metadata.getValue("pool_sha256").jsonPrimitive.content
+        val tags = net.pocketnai.core.ArtistCatalog.validate(bytes, metadata.getValue("count").jsonPrimitive.int, hash)
         tags to hash
     }
 

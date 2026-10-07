@@ -56,6 +56,8 @@ import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.billing.AnlasLedgerDialog
 import net.pocketnai.ui.billing.BalanceDetailDialog
 import net.pocketnai.ui.billing.compactLabel
+import net.pocketnai.ui.billing.rememberSubscriptionExpiry
+import net.pocketnai.ui.billing.SubscriptionExpiryText
 import net.pocketnai.ui.common.messageRes
 import net.pocketnai.ui.update.UpdateCheckDialog
 import net.pocketnai.ui.update.UpdateViewModel
@@ -101,6 +103,7 @@ fun SettingsScreen(
 
     // 余额与生成页共用同一个仓库实例，不另建一份网络状态或缓存（余额规划 §11.4）。
     val balanceState by container.accountBalanceRepository.state.collectAsStateWithLifecycle()
+    val subscriptionExpiry = rememberSubscriptionExpiry(balanceState.knownBalance?.expiresAtEpochSeconds)
     val updateState by updateViewModel.state.collectAsStateWithLifecycle()
     val chatEnabled by container.settingsStore.chatEnabled.collectAsStateWithLifecycle()
     val artistLabEnabled by container.settingsStore.artistLabEnabled.collectAsStateWithLifecycle()
@@ -205,7 +208,8 @@ fun SettingsScreen(
                 SettingsDivider()
                 SettingsRow(
                     title = stringResource(R.string.settings_subscription_title),
-                    subtitle = subscriptionSummary(subscriptionStatus),
+                    subtitle = subscriptionSummary(subscriptionStatus) +
+                        if (connected) " · ${subscriptionExpiry.summary}" else "",
                     onClick = { subscriptionDialogOpen = true },
                 )
                 SettingsDivider()
@@ -329,6 +333,7 @@ fun SettingsScreen(
         SubscriptionDialog(
             override = subscriptionOverride,
             status = subscriptionStatus,
+            expiry = subscriptionExpiry,
             onOverrideChange = viewModel::setSubscriptionOverride,
             onDismiss = { subscriptionDialogOpen = false },
         )
@@ -542,6 +547,7 @@ private fun proxySummaryLabel(
 private fun SubscriptionDialog(
     override: SubscriptionOverride,
     status: SubscriptionStatus,
+    expiry: SubscriptionExpiryText,
     onOverrideChange: (SubscriptionOverride) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -549,7 +555,7 @@ private fun SubscriptionDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.settings_subscription_title)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     text = buildString {
                         append("当前：")
@@ -558,6 +564,10 @@ private fun SubscriptionDialog(
                     },
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                Text(expiry.summary, style = MaterialTheme.typography.bodyMedium)
+                expiry.expiresAt?.let { date ->
+                    Text("到期：$date", style = MaterialTheme.typography.bodyMedium)
+                }
                 // 五个选项在窄屏上一行放不下，用 FlowRow 换行而不是横向滚动：
                 // 全部可见才谈得上"选哪个"，藏起来的选项等于不存在。
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

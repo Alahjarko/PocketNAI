@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -157,7 +159,9 @@ class GenerationSeedAndPayloadTest {
             5, 10, 30, 100, "test-pool")
         val store = net.pocketnai.data.artistlab.ArtistLabStore(context, database)
         val catalog = store.catalog()
-        assertThat(catalog.first).hasSize(1000)
+        val catalogSource = context.assets.open("artist-lab/source.json").bufferedReader().use { it.readText() }
+        assertThat(catalog.first).hasSize(Json.parseToJsonElement(catalogSource).jsonObject.getValue("count").jsonPrimitive.content.toInt())
+        assertThat(catalog.first.size).isAtLeast(10)
         val plan = net.pocketnai.domain.artistlab.ArtistLabPlanner.plan(catalog.first, config, Random(42))
         val imageIds = mutableListOf<String>()
         try {

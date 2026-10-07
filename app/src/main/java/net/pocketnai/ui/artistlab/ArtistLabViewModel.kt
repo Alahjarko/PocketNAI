@@ -58,6 +58,8 @@ class ArtistLabViewModel(
     val message = _message.asStateFlow()
     private val _ready = MutableStateFlow(false)
     val ready = _ready.asStateFlow()
+    private val _catalogCount = MutableStateFlow(0)
+    val catalogCount = _catalogCount.asStateFlow()
     private val _form = MutableStateFlow(store.loadForm())
     val form = _form.asStateFlow()
     fun updateForm(form: ArtistLabForm) { _form.value = form }
@@ -80,6 +82,7 @@ class ArtistLabViewModel(
             try {
                 store.recover()
                 val catalog = store.catalog(); pool = catalog.first; hash = catalog.second
+                _catalogCount.value = pool.size
                 selected.value = store.dao.observeRuns().first().firstOrNull()?.id
                 _ready.value = true
             } catch (_: Exception) { _message.value = "画师词库或实验记录无法加载，请重新打开实验室" }

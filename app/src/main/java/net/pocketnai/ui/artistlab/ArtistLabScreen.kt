@@ -50,6 +50,7 @@ fun ArtistLabScreen(vm: ArtistLabViewModel, currentParams: GenerationParams, res
     val busy by vm.busy.collectAsStateWithLifecycle()
     val pausing by vm.pausing.collectAsStateWithLifecycle()
     val ready by vm.ready.collectAsStateWithLifecycle()
+    val catalogCount by vm.catalogCount.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
     val approval by vm.approval.collectAsStateWithLifecycle()
     val form by vm.form.collectAsStateWithLifecycle()
@@ -79,7 +80,8 @@ fun ArtistLabScreen(vm: ArtistLabViewModel, currentParams: GenerationParams, res
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("抽卡实验室", style = MaterialTheme.typography.headlineSmall)
-                Text("1,000 个画师标签 · 固定种子对比", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (ready) "$catalogCount 位画师" else "词库加载中",
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = { historyOpen = true }, enabled = !busy) { Icon(Icons.Default.History, "实验记录") }
             IconButton(onClick = { favoritesOpen = true }) { Icon(Icons.Default.Bookmarks, "画师串收藏") }
@@ -116,8 +118,7 @@ fun ArtistLabScreen(vm: ArtistLabViewModel, currentParams: GenerationParams, res
         if (shown.isEmpty()) Box(Modifier.weight(1f).fillMaxWidth().padding(28.dp), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Icon(Icons.Default.Casino, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
-                Text(if (onlyFavorites) "还没有收藏图片" else if (busy) "第一张正在准备中" else "让画师串发生新的组合", style = MaterialTheme.typography.titleMedium)
-                Text("只改变画师与权重，其余参数保持一致。\n点击星标，图片和画师串一起收藏。", style = MaterialTheme.typography.bodyMedium)
+                Text(if (onlyFavorites) "还没有收藏图片" else if (busy) "第一张正在准备中" else "还没有实验结果", style = MaterialTheme.typography.titleMedium)
             }
         } else LazyVerticalGrid(columns = GridCells.Adaptive(156.dp), modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
