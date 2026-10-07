@@ -144,6 +144,36 @@ class GenerationSeedAndPayloadTest {
     private fun parametersOf(payload: JsonObject): JsonObject =
         payload.getValue("parameters") as JsonObject
 
+    @Test fun numericArtistSuffixStaysSeparatedInPayloadHistoryAndFavorite() = runBlocking {
+        val payloads = mutableListOf<JsonObject>()
+        val files = GenerationFileStore(context)
+        val prefix = "artist-weight-test-" + java.util.UUID.randomUUID()
+        val repo = repository(payloads, Random(1), files) { prefix }
+        val mix = net.pocketnai.domain.artistlab.ArtistMix(listOf(
+            net.pocketnai.domain.artistlab.ArtistTag("artist: salmon88", 24),
+            net.pocketnai.domain.artistlab.ArtistTag("artist: mignon", 15),
+        ))
+        val base = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V4_5_CURATED)).copy(
+            prompt = "sfw, blue sky", seedMode = SeedMode.FIXED, baseSeed = 87654321,
+            qualityTags = net.pocketnai.domain.model.QualityTagsOption.NONE,
+        )
+        val prompt = "1.20::artist: salmon88, ::, 0.75::artist: mignon, ::, sfw, blue sky"
+        try {
+            val params = net.pocketnai.domain.artistlab.ArtistLabPlanner.params(base, mix)
+            val events = repo.generate(GenerationRequest(params), params.prompt).toList()
+            val image = events.filterIsInstance<GenerationEvent.Final>().single().image
+            val payload = payloads.single()
+            assertThat(payload["input"]!!.jsonPrimitive.content).isEqualTo(prompt)
+            val caption = parametersOf(payload)["v4_prompt"]!!.jsonObject["caption"]!!.jsonObject
+            assertThat(caption["base_caption"]!!.jsonPrimitive.content).isEqualTo(prompt)
+            assertThat(repo.loadDetail(image.id)!!.generation.params.prompt).isEqualTo(prompt)
+            val store = net.pocketnai.data.artistlab.ArtistLabStore(context, database)
+            store.favorite(net.pocketnai.data.local.ArtistLabDrawEntity("$prefix:0", prefix, 0, "{}", "SUCCEEDED", imageId = image.id), mix.prompt, true)
+            assertThat(store.dao.observeMixFavorites().first().single().prompt)
+                .isEqualTo("1.20::artist: salmon88, ::, 0.75::artist: mignon, ::")
+        } finally { files.deleteGeneration(prefix) }
+    }
+
     @Test fun artistLabHundredSingleRequestsKeepSeedAndCleanupIsScoped() = runBlocking {
         val payloads = mutableListOf<JsonObject>()
         val files = GenerationFileStore(context)

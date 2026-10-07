@@ -31,6 +31,7 @@ import coil.compose.AsyncImage
 import net.pocketnai.domain.model.GenerationParams
 import net.pocketnai.domain.artistlab.ArtistLabConfig
 import net.pocketnai.domain.artistlab.ArtistLabForm
+import net.pocketnai.domain.artistlab.ArtistMix
 import net.pocketnai.data.settings.GenerationDraftCodec
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.decodeFromString
@@ -177,10 +178,11 @@ fun ArtistLabScreen(vm: ArtistLabViewModel, currentParams: GenerationParams, res
         text = { LazyColumn(Modifier.heightIn(max = 440.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { Text("画师串独立保存；取消图片星标不会删除这里的收藏。", style = MaterialTheme.typography.bodySmall) }
             items(mixes, key = { it.prompt }) { item ->
+                val prompt = remember(item.prompt) { ArtistMix.promptForReuse(item.prompt) }
                 Column {
-                    SelectionContainer { Text(item.prompt, style = MaterialTheme.typography.bodyMedium) }
+                    SelectionContainer { Text(prompt, style = MaterialTheme.typography.bodyMedium) }
                     Row {
-                        TextButton(onClick = { clipboard.setText(AnnotatedString(item.prompt)) }) { Text("复制") }
+                        TextButton(onClick = { clipboard.setText(AnnotatedString(prompt)) }) { Text("复制") }
                         TextButton(onClick = { vm.removeMix(item.prompt) }) { Text("移除画师串") }
                     }
                     HorizontalDivider()

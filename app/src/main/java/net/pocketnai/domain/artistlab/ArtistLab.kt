@@ -11,12 +11,22 @@ import kotlin.random.Random
 @Serializable
 data class ArtistTag(val tag: String, val ticks: Int) {
     init { require(ticks in 10..30); require(tag.startsWith("artist: ")) }
-    val weighted: String get() = "${ticks / 20}.${((ticks % 20) * 5).toString().padStart(2, '0')}::$tag::"
+    // 名字可能以数字结尾；逗号与空格隔开裸 ::，避免 salmon88:: 被解析成 88:: 权重。
+    val weighted: String get() = "${ticks / 20}.${((ticks % 20) * 5).toString().padStart(2, '0')}::$tag, ::"
 }
 
 @Serializable
 data class ArtistMix(val artists: List<ArtistTag>) {
     val prompt: String get() = artists.joinToString(", ") { it.weighted }
+
+    companion object {
+        // 旧收藏只存完整文本。复用时修正旧版自动生成的画师段，不改数据库主键或历史快照。
+        private val legacyWeightedArtist = Regex("(\\d+\\.\\d{2}::artist: [^,:]+)::")
+
+        fun promptForReuse(prompt: String): String = legacyWeightedArtist.replace(prompt) {
+            "${it.groupValues[1]}, ::"
+        }
+    }
 }
 
 class ArtistLabRequestFailure(val uncertain: Boolean, val userMessage: String) : RuntimeException(userMessage)
