@@ -67,6 +67,8 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            // 优化构建仍用原来的签名，保证覆盖安装保留历史和凭据。
+            signingConfig = signingConfigs.findByName("pinned") ?: signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -114,6 +116,31 @@ kotlin {
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
+
+val checkTestBudget by tasks.registering {
+    group = "verification"
+    description = "检查 JVM 与设备测试合计不超过 50 项"
+    doLast {
+        val annotation = Regex("(?m)^\\s*@(?:org\\.junit\\.)?Test\\b")
+        val expandedTests = Regex("@(?:[\\w.]+\\.)?(?:ParameterizedTest|TestFactory|TestTemplate)\\b|@RunWith\\s*\\(\\s*(?:[\\w.]+\\.)?Parameterized\\b")
+        fun count(sourceSet: String): Int = fileTree("src/$sourceSet") {
+            include("**/*.kt", "**/*.java")
+        }.files.sumOf { source ->
+            val text = source.readText()
+            check(!expandedTests.containsMatchIn(text)) {
+                "${source.name} 使用了展开式测试；请改为明确的独立测试，计入 50 项总限额。"
+            }
+            annotation.findAll(text).count()
+        }
+        val unit = count("test")
+        val device = count("androidTest")
+        check(unit + device <= 50) { "测试总数 ${unit + device} 超过 50 项：JVM $unit，设备 $device。请删减重复项目。" }
+        logger.lifecycle("Test budget: ${unit + device}/50 (JVM $unit, Android $device)")
+    }
+}
+
+tasks.named("preBuild") { dependsOn(checkTestBudget) }
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach { dependsOn(checkTestBudget) }
 
 dependencies {
     implementation(libs.androidx.core.ktx)

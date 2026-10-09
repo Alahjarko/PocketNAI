@@ -1,5 +1,7 @@
 package net.pocketnai.ui.home
 
+import net.pocketnai.ui.motion.imageMotionChrome
+
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -64,7 +66,8 @@ fun HomeScreen(
                 Surface(
                     modifier = Modifier
                         .width(400.dp)
-                        .fillMaxHeight(),
+                        .fillMaxHeight()
+                        .imageMotionChrome(zIndex = 2f),
                 ) {
                     // 面板形态下始终"展开"：内部滚动一直可用，无悬浮层手势。
                     GenerateSheet(

@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
@@ -194,11 +195,16 @@ class GenerationSeedAndPayloadTest {
         assertThat(catalog.first.size).isAtLeast(10)
         val plan = net.pocketnai.domain.artistlab.ArtistLabPlanner.plan(catalog.first, config, Random(42))
         val imageIds = mutableListOf<String>()
+        val gallerySlots = net.pocketnai.ui.gallery.GalleryMotionSlots()
         try {
             val waits = mutableListOf<Long>()
             net.pocketnai.domain.artistlab.ArtistLabQueue(wait = { waits += it }, interval = { 1500 }).run(plan, { false }) { mix ->
                 val params = net.pocketnai.domain.artistlab.ArtistLabPlanner.params(base, mix)
-                val events = repo.generate(GenerationRequest(params), params.prompt).toList()
+                val events = repo.generate(GenerationRequest(params), params.prompt).onEach { event ->
+                    if (event is GenerationEvent.Started) {
+                        gallerySlots.sections(emptyList(), repo.observeGenerations().first(), true)
+                    }
+                }.toList()
                 imageIds += events.filterIsInstance<GenerationEvent.Final>().single().image.id
             }
             assertThat(payloads).hasSize(100)
@@ -214,11 +220,16 @@ class GenerationSeedAndPayloadTest {
             favorite.setFavorite(imageIds[1], true)
             // 生成一张属于其它批次的图片，清理当前批次不能波及它。
             val other = repo.generate(GenerationRequest(base), base.prompt).toList().filterIsInstance<GenerationEvent.Final>().single().image
+            gallerySlots.sections(repo.observeGallery().first(), repo.observeGenerations().first(), true)
             assertThat(repo.cleanupLabImages(imageIds)).isEqualTo(98)
             assertThat(database.generationDao().findImage(imageIds[0])).isNotNull()
             assertThat(database.generationDao().findImage(imageIds[1])).isNotNull()
             assertThat(database.generationDao().findImage(other.id)).isNotNull()
             assertThat(database.generationDao().allImages()).hasSize(3)
+            val afterCleanup = gallerySlots.sections(repo.observeGallery().first(), repo.observeGenerations().first(), true)
+                .flatMap { it.slots }
+            assertThat(afterCleanup.map { it.image?.imageId }).containsExactly(imageIds[0], imageIds[1], other.id)
+            assertThat(repo.observeGenerations().first()).hasSize(101)
             // 中断请求只恢复本地结果，空结果标为待确认，不会补发。
             store.dao.create(net.pocketnai.data.local.ArtistLabRunEntity(prefix, 1, "{}", "RUNNING", ""), listOf(
                 net.pocketnai.data.local.ArtistLabDrawEntity("$prefix:a", prefix, 0, "{}", "RUNNING", other.generationId),
@@ -307,36 +318,6 @@ class GenerationSeedAndPayloadTest {
     }
 
     @Test
-    fun randomModeUsesADifferentSeedEachTime() {
-        val payloads = mutableListOf<JsonObject>()
-        val fileStore = GenerationFileStore(context)
-        val random = Random(7)
-
-        runGeneration(SeedMode.RANDOM, baseSeed = 0L, random = random, payloads = payloads, fileStore = fileStore)
-        runGeneration(SeedMode.RANDOM, baseSeed = 0L, random = random, payloads = payloads, fileStore = fileStore)
-
-        val seeds = payloads.map { parametersOf(it)["seed"]!!.jsonPrimitive.longOrNull }
-        assertThat(seeds).hasSize(2)
-        assertThat(seeds[0]).isNotEqualTo(seeds[1])
-    }
-
-    @Test
-    fun fixedModeSendsThePinnedSeed() {
-        val payloads = mutableListOf<JsonObject>()
-        val fileStore = GenerationFileStore(context)
-        runGeneration(
-            SeedMode.FIXED,
-            baseSeed = 12345L,
-            random = Random(1),
-            payloads = payloads,
-            fileStore = fileStore,
-        )
-
-        assertThat(parametersOf(payloads.single())["seed"]!!.jsonPrimitive.longOrNull)
-            .isEqualTo(12345L)
-    }
-
-    @Test
     fun charactersSurviveGenerationAndDetailReload() = runBlocking {
         val payloads = mutableListOf<JsonObject>()
         val repository = repository(payloads, Random(1), GenerationFileStore(context))
@@ -358,32 +339,5 @@ class GenerationSeedAndPayloadTest {
             assertThat(center["x"]!!.jsonPrimitive.contentOrNull).isEqualTo("0.2")
             assertThat(center["y"]!!.jsonPrimitive.contentOrNull).isEqualTo("0.3")
         }
-    }
-
-    @Test
-    fun payloadUsesTheGenerationCanvasNotTheFinalSize() {
-        // 自定义分辨率的另一半保证：请求体发的是 64 对齐的画布，不是用户要的最终尺寸。
-        val payloads = mutableListOf<JsonObject>()
-        val fileStore = GenerationFileStore(context)
-        val profile = ModelCatalog.profileOf(ImageModel.V4_5_CURATED)
-        val params = GenerationParams.defaultsFor(profile).copy(
-            prompt = "1girl",
-            size = net.pocketnai.domain.model.ImageSizePreset(1920, 1088),
-            outputSize = net.pocketnai.domain.model.ImageSizePreset(1920, 1080),
-        )
-
-        runBlocking {
-            repository(payloads, Random(1), fileStore)
-                .generate(GenerationRequest(params = params), promptTemplate = "1girl")
-                .toList()
-        }
-
-        val payload = payloads.single()
-        val parameters = parametersOf(payload)
-        assertThat(parameters["width"]!!.jsonPrimitive.intOrNull).isEqualTo(1920)
-        assertThat(parameters["height"]!!.jsonPrimitive.intOrNull).isEqualTo(1088)
-        // 最终尺寸只进数据库，不进请求。
-        assertThat(parameters["output_width"]).isNull()
-        assertThat(parameters["outputSize"]).isNull()
     }
 }

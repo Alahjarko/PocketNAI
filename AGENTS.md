@@ -24,23 +24,25 @@
 ## 全局红线
 
 1. **真实生成、超分及其他可能消耗 Anlas 的操作，只能由用户在界面手动触发。** 不代发真实登录，不读取 `persistent-api-token.txt`。即使本地报价为免费，也不构成自动生成授权；免费取决于当前订阅权益，历史账号读数不能当作永久属性。
-2. **默认测试使用 MockWebServer 或假实现，不联网。** 既有只读例外是 `SocksProxyProbeTest`，只允许 GET NovelAI 首页验证代理建连，不涉及生成。用户明确授权的受控真实联调见下方对话授权边界；账号与费用细节见对应专题。
+2. **默认测试使用 MockWebServer 或假实现，不联网。** 用户明确授权的受控真实联调见下方对话授权边界；账号与费用细节见对应专题。
 3. **秘密不得泄露。** Token、密码、Access Key、PST 不进入日志、普通数据库/首选项、图片元数据、剪贴板、异常或测试代码；凭据仅允许按既有 Keystore 加密方案保存。不要提交 `persistent-api-token.txt`、`local.properties` 或代理明文凭据。
 4. **保留用户数据与签名兼容性。** 禁止破坏性迁移、重建 `generations` 表（DROP / RENAME）、更换既有签名密钥、为安装成功而卸载应用或清数据。设备测试前检查保留 APK 的设置，见交付流程。
 5. **请求只发一次。** 生成零次自动重试；超时/断流报告 `TIMEOUT_UNCERTAIN`，流式失败不自动改发普通生成。代理切换仅限请求尚未发出的连接失败或幂等 GET/HEAD，已发出的 POST 不重发。
 6. **日志只记结构。** 通用网络日志走 `RedactingHttpLogger`，仅方法、路径、状态码、耗时；Prompt 只记长度/哈希。禁止引入 `HttpLoggingInterceptor`。流式/代理诊断允许的结构字段见专题，不能追加内容或凭据。
 
-对话功能的显式授权边界：用户主动开启“自动执行图片工具”并发送消息时，该次操作最多授权一次生成；默认仍通过生成卡片手动确认。真实联调测试必须有当前用户的明确授权，使用受控 `allowLive` 入口，范围和凭据清理见[对话专题](docs/development/chat.md)。其余自动生成及自动重试禁令继续适用。
+对话功能的显式授权边界：用户主动开启“自动执行图片工具”并发送消息时，该次操作最多授权一次生成；默认仍通过生成卡片手动确认。真实联调必须有当前用户的明确授权，范围和凭据清理见[对话专题](docs/development/chat.md)。其余自动生成及自动重试禁令继续适用。
 
 抽卡实验室的显式授权边界：用户核对数量、固定参数和费用后，点击明确次数的批次确认按钮，仅授权本批剩余的 N 次串行单张请求。暂停/重启后重新确认，失败和待确认项不重试。该例外不授权助手自动启动真实批次或代用户测试；见[抽卡专题](docs/development/artist-lab.md)。
 
 ## 修改与交付流程
 
+**JVM 与设备测试合计不得超过 50 项。** 优先保留数据保全、凭据安全、请求与费用、关键交互；新增项目先检查能否替换已有项目，不为常量、文案或实现细节增加测试，不把大量旧测试打包成一个方法。构建任务 `:app:checkTestBudget` 自动检查总数，当前保留清单见[验证专题](docs/development/verification.md)。
+
 **改完代码必须依次完成，不能停在“编译通过”或再问是否安装：**
 
 1. 单元测试全绿：`./gradlew :app:testDebugUnitTest`。
 2. 构建 APK：`./gradlew :app:assembleDebug`。
-3. 直接覆盖安装：`adb -s 127.0.0.1:5559 install -r app/build/outputs/apk/debug/app-debug.apk`；`emulator-5558` 在线时也安装。
+3. 直接覆盖安装：`adb -s 127.0.0.1:5559 install -r app/build/outputs/apk/debug/app-debug.apk`；`emulator-5558` 在线且指向不同实例时也安装。同一实例的多个ADB地址只验证一次，核对方法见验证专题。
 4. 涉及界面时，用 `adb shell screencap` 截图确认实际显示，不以源码推断代替验收。
 
 - Windows 可用 `gradlew.bat`；项目自带 `.tooling/gradle-8.11.1/bin/gradle.bat`，没有全局 Gradle 时使用它。
@@ -54,7 +56,7 @@
 ## 架构与一致性
 
 - `core/`、`domain/` 保持纯 Kotlin，不引入 Android API；纯逻辑用 JVM 单测，中文测试名、Truth 断言。依赖 Android 的位图、Room、Compose 验证才放设备测试。
-- 首页画廊与生成面板共用 `PocketNaiApp` 层的 `GenerateViewModel`，不能下移到 Tab 或悬浮层内部。
+- 首页画廊与生成面板共用 `PocketNaiApp` 获取的进程级 `GenerateViewModel`（由 `AppContainer` 持有，后台抽卡共用生成锁），不能下移到 Tab 或悬浮层内部。
 - `GenerationDraft` 是可变草稿，`Generation` 是历史快照。新增生成参数时同步检查草稿 DTO、历史映射/存储、请求构造、导入与复用、详情展示，不允许某段链路静默丢字段。
 - 随机 Seed 只通过 `withResolvedSeed` 抽一次，历史与请求共用结果；请求画布 `params.size` 与最终尺寸 `params.outputSize` 含义不同。
 - 复用既有规则入口：提示词拼接 `PromptComposition.append`，权重 `EmphasisSyntax.strengthOf`，裁切 `ResolutionPlanner.centeredCrop`，订阅判断 `SubscriptionStatusResolver`，费用 `NovelAiPaidAnlasFormula`。

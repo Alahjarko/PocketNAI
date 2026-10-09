@@ -44,6 +44,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import net.pocketnai.ui.motion.sharedImage
+import net.pocketnai.ui.motion.sharedImageRequest
+import net.pocketnai.ui.motion.LocalImageMotion
+import net.pocketnai.ui.motion.ImageOriginPreview
 import net.pocketnai.domain.chat.*
 import java.io.File
 import kotlinx.coroutines.delay
@@ -266,6 +270,7 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
 fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenImage: (String) -> Unit,
     streaming: Boolean = false, onRead: (String, String) -> Unit = { _, _ -> }, onOpenAttachment: (ChatAttachment) -> Unit = {}) {
     if (entry.content.isBlank() && entry.reasoning.isBlank() && entry.images.isEmpty() && entry.attachments.isEmpty() && entry.notice == null) return
+    val imageMotion = LocalImageMotion.current
     val user = entry.role == "user"
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (user) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -278,9 +283,9 @@ fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenIm
         }
         entry.images.forEach { image ->
             val file = resolveImage(image.relativePath)
-            if (file.isFile) AsyncImage(file, "对话生成的图片", contentScale = ContentScale.Fit,
+            if (file.isFile) AsyncImage(sharedImageRequest(file), "对话生成的图片", contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxWidth(0.78f).aspectRatio(image.width.toFloat() / image.height.coerceAtLeast(1))
-                    .clip(RoundedCornerShape(22.dp)).clickable { onOpenImage(image.imageId) })
+                    .sharedImage(image.imageId).clip(RoundedCornerShape(22.dp)).clickable { imageMotion?.preview = ImageOriginPreview(image.imageId, file, image.width.toFloat() / image.height.coerceAtLeast(1), "对话生成的图片"); onOpenImage(image.imageId) })
             else Text("图片已从图库移除", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (entry.role == "tool") {

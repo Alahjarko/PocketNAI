@@ -1,5 +1,11 @@
 package net.pocketnai.ui.artistlab
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -20,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -28,10 +35,13 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import net.pocketnai.ui.motion.sharedImage
+import net.pocketnai.ui.motion.sharedImageRequest
+import net.pocketnai.ui.motion.LocalImageMotion
+import net.pocketnai.ui.motion.ImageOriginPreview
 import net.pocketnai.domain.model.GenerationParams
 import net.pocketnai.domain.artistlab.ArtistLabConfig
 import net.pocketnai.domain.artistlab.ArtistLabForm
-import net.pocketnai.domain.artistlab.ArtistMix
 import net.pocketnai.data.settings.GenerationDraftCodec
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.decodeFromString
@@ -45,6 +55,7 @@ import kotlin.random.Random
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ArtistLabScreen(vm: ArtistLabViewModel, currentParams: GenerationParams, resolve: (String) -> File, onOpen: (String) -> Unit) {
+    val imageMotion = LocalImageMotion.current
     val runs by vm.runs.collectAsStateWithLifecycle()
     val selected by vm.selectedRun.collectAsStateWithLifecycle()
     val cards by vm.cards.collectAsStateWithLifecycle()
@@ -55,14 +66,16 @@ fun ArtistLabScreen(vm: ArtistLabViewModel, currentParams: GenerationParams, res
     val message by vm.message.collectAsStateWithLifecycle()
     val approval by vm.approval.collectAsStateWithLifecycle()
     val form by vm.form.collectAsStateWithLifecycle()
-    val mixes by vm.mixFavorites.collectAsStateWithLifecycle()
     var configOpen by rememberSaveable { mutableStateOf(false) }
+    var catalogOpen by rememberSaveable { mutableStateOf(false) }
     var historyOpen by remember { mutableStateOf(false) }
     var favoritesOpen by remember { mutableStateOf(false) }
     var cleanupOpen by remember { mutableStateOf(false) }
     var onlyFavorites by rememberSaveable { mutableStateOf(false) }
     var focused by remember { mutableStateOf<LabCard?>(null) }
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { vm.confirm() }
     val favorites = remember(cards) { cards.filter { it.favorite && it.image != null } }
     val shown = remember(cards, onlyFavorites) {
         val visible = cards.filter { it.statusVisible() && (!onlyFavorites || it.favorite) }
@@ -84,11 +97,12 @@ fun ArtistLabScreen(vm: ArtistLabViewModel, currentParams: GenerationParams, res
                 Text(if (ready) "$catalogCount 位画师" else "词库加载中",
                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            IconButton(onClick = { catalogOpen = true }, enabled = ready) { Icon(Icons.Default.Palette, "画师库") }
             IconButton(onClick = { historyOpen = true }, enabled = !busy) { Icon(Icons.Default.History, "实验记录") }
             IconButton(onClick = { favoritesOpen = true }) { Icon(Icons.Default.Bookmarks, "画师串收藏") }
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { vm.clearMessage(); configOpen = true }, enabled = ready && !busy, modifier = Modifier.weight(1f)) {
+            Button(onClick = { vm.clearMessage(); configOpen = true }, enabled = ready && !busy && catalogCount > 0, modifier = Modifier.weight(1f)) {
                 Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("新建实验")
             }
             if (busy) OutlinedButton(onClick = vm::pause, enabled = !pausing) { Text(if (pausing) "等待暂停" else "暂停") }
@@ -133,8 +147,8 @@ fun ArtistLabScreen(vm: ArtistLabViewModel, currentParams: GenerationParams, res
                                 tint = if (card.favorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    if (card.image != null) AsyncImage(resolve(card.image.relativePath), "第 ${card.draw.ordinal + 1} 张",
-                        Modifier.fillMaxWidth().aspectRatio(card.image.aspectRatio.coerceIn(0.65f, 1.5f)).clickable { onOpen(card.image.imageId) }, contentScale = ContentScale.Crop)
+                    if (card.image != null) AsyncImage(sharedImageRequest(resolve(card.image.relativePath)), "第 ${card.draw.ordinal + 1} 张",
+                        Modifier.fillMaxWidth().aspectRatio(card.image.aspectRatio.coerceIn(0.65f, 1.5f)).sharedImage(card.image.imageId).clickable { imageMotion?.preview = ImageOriginPreview(card.image.imageId, resolve(card.image.relativePath), card.image.aspectRatio, "抽卡结果"); onOpen(card.image.imageId) }, contentScale = ContentScale.Crop)
                     else Box(Modifier.fillMaxWidth().height(90.dp), contentAlignment = Alignment.Center) {
                         Text(if (card.draw.status == "RUNNING") "生成中…" else if (card.draw.status == "FAILED") "生成失败" else "结果待确认")
                     }
@@ -144,6 +158,7 @@ fun ArtistLabScreen(vm: ArtistLabViewModel, currentParams: GenerationParams, res
             }
         }
     }
+    if (catalogOpen) ArtistCatalogDialog(vm, onDismiss = { catalogOpen = false })
     if (configOpen) LabConfigDialog(currentParams, form, message, vm::updateForm, { configOpen = false }) { prompt, negative, seed, count, artists, min, max ->
         vm.prepare(prompt, negative, seed, count, artists, min, max)
     }
@@ -152,8 +167,12 @@ fun ArtistLabScreen(vm: ArtistLabViewModel, currentParams: GenerationParams, res
             Text("${a.remaining} 张 · 每张 ${a.config.artistCount} 位画师\n权重 ${a.config.minTicks / 20.0}～${a.config.maxTicks / 20.0}，步长 0.05")
             Text("${a.params.model.displayName} · ${a.params.size.label}\n${a.params.steps} Steps · Guidance ${a.params.guidance}\nSeed ${a.params.baseSeed}")
             Text(a.quote.labDescription(a.remaining), color = MaterialTheme.colorScheme.primary)
-            Text("每次只请求 1 张，完成后等待 1～2 秒。失败、费用变化或应用进入后台会暂停；已发送的请求不会重试。此次确认授权上面的请求次数。", style = MaterialTheme.typography.bodySmall)
-        } }, confirmButton = { TextButton(onClick = vm::confirm) { Text("确认 ${a.remaining} 次请求") } },
+            Text("每次只请求 1 张，完成后等待 1～2 秒。可切换应用或锁屏继续，通知栏可暂停。失败或费用变化会暂停，已发送的请求不会重试。", style = MaterialTheme.typography.bodySmall)
+        } }, confirmButton = { TextButton(onClick = {
+            if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            else vm.confirm()
+        }) { Text("确认 ${a.remaining} 次请求") } },
         dismissButton = { TextButton(onClick = vm::dismissApproval) { Text("取消") } }) }
     if (cleanupOpen) AlertDialog(onDismissRequest = { cleanupOpen = false }, title = { Text("清理本批未收藏图片？") },
         text = { Text("删除本批 $cleanable 张未收藏图片，保留 ${favorites.size} 张收藏图片和所有画师串。其它批次与普通画廊图片不受影响。图片文件删除后无法撤销。") },
@@ -174,21 +193,10 @@ fun ArtistLabScreen(vm: ArtistLabViewModel, currentParams: GenerationParams, res
                 }
             }
         } }, confirmButton = { TextButton(onClick = { historyOpen = false }) { Text("关闭") } })
-    if (favoritesOpen) AlertDialog(onDismissRequest = { favoritesOpen = false }, title = { Text("画师串收藏 (${mixes.size})") },
-        text = { LazyColumn(Modifier.heightIn(max = 440.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { Text("画师串独立保存；取消图片星标不会删除这里的收藏。", style = MaterialTheme.typography.bodySmall) }
-            items(mixes, key = { it.prompt }) { item ->
-                val prompt = remember(item.prompt) { ArtistMix.promptForReuse(item.prompt) }
-                Column {
-                    SelectionContainer { Text(prompt, style = MaterialTheme.typography.bodyMedium) }
-                    Row {
-                        TextButton(onClick = { clipboard.setText(AnnotatedString(prompt)) }) { Text("复制") }
-                        TextButton(onClick = { vm.removeMix(item.prompt) }) { Text("移除画师串") }
-                    }
-                    HorizontalDivider()
-                }
-            }
-        } }, confirmButton = { TextButton(onClick = { favoritesOpen = false }) { Text("关闭") } })
+    if (favoritesOpen) ArtistMixFavoritesDialog(vm, resolve, onDismiss = { favoritesOpen = false }, onOpen = {
+        favoritesOpen = false
+        onOpen(it)
+    })
 }
 
 private fun LabCard.statusVisible() = image != null || draw.status in listOf("RUNNING", "UNCERTAIN", "FAILED")

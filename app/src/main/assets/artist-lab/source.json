@@ -5,11 +5,13 @@
   "url": "https://huggingface.co/datasets/HDiffusion/historical-danbooru-tag-counts/resolve/0f256e51b8affc379e5181f42c9dab41ceb00e4e/danbooru-2026-10-06.csv",
   "license": "Apache-2.0",
   "source_sha256": "516f690003c3f31c0c5647fe3f2e9216ca46bb81fc5e26d8d1a7cb5c1372a448",
-  "pool_sha256": "d0a06dd9c8e0842e7c2c3ff5ad85d533839dbb7ac1fe125e4bfc3b602a00ec27",
-  "count": 157,
-  "min_post_count": 84,
+  "pool_sha256": "d8c7ffa845401d4fa1d4dd86d5448025843f512efbab16247817829c0323ce2f",
+  "count": 174,
+  "min_post_count": 50,
   "review_date": "2026-10-07",
-  "review_sha256": "4ba6963e51cf345584c7d8ecfdb97a4eae562290a658a933880fcbe680a2d2c7",
-  "selection": "broad modern-artist whitelist from known artist profiles and public SFW features; category=1; post_count>=50; recent activity; manual artwork review; no follower criterion",
-  "verification_scope": "Pinned Danbooru-derived metadata snapshot; live Danbooru API unavailable. Pixiv public profile/top samples and official features; not entire account history."
+  "review_sha256": "715addc6f955cc4765d3cdd2919666cce7f1b12ada678788f642047eb16423fe",
+  "selection": "reviewed modern artists with emphasis on painterly rendering, soft colors, skin and fabric; category=1; post_count>=50; recent activity; manual artwork review; adult-oriented authors are eligible",
+  "verification_scope": "Pinned Danbooru-derived metadata snapshot; live Danbooru API unavailable. Public artist profiles, representative artworks and official activity metadata; not a NovelAI output evaluation.",
+  "previews_sha256": "59aa3bf21d9298044339d800a66ef58385e497a07a415899cea0a840d79b5779",
+  "preview_images": 348
 }

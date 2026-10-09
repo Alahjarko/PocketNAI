@@ -117,10 +117,10 @@ class GenerationRepository(
             rows.mapNotNull { row ->
                 Mappers.toDomain(row.generation)?.let { GenerationSummary(it, row.imageCount) }
             }
-        }
+        }.flowOn(Dispatchers.Default)
 
     fun observeGallery(): Flow<List<GalleryItem>> =
-        dao.observeGalleryImages().map { rows -> rows.map(Mappers::toDomain) }
+        dao.observeGalleryImages().map { rows -> rows.map(Mappers::toDomain) }.flowOn(Dispatchers.Default)
 
     /**
      * 执行一次生成（纯文生图）。
@@ -449,27 +449,25 @@ class GenerationRepository(
     }.flowOn(Dispatchers.IO)
 
     /** 详情页需要的完整信息：图片本身 + 它所属的生成记录与参数（含参考图）。 */
-    suspend fun loadDetail(imageId: String): ImageDetail? {
-        val imageEntity = dao.findImage(imageId) ?: return null
-        val generationEntity = dao.findGeneration(imageEntity.generationId) ?: return null
-        val generation = Mappers.toDomain(generationEntity) ?: return null
+    suspend fun loadDetail(imageId: String): ImageDetail? = withContext(Dispatchers.IO) {
+        val imageEntity = dao.findImage(imageId) ?: return@withContext null
+        val generationEntity = dao.findGeneration(imageEntity.generationId) ?: return@withContext null
+        val generation = Mappers.toDomain(generationEntity) ?: return@withContext null
         val characters = if (generationEntity.charactersJson == null) {
-            withContext(Dispatchers.IO) {
-                try {
-                    fileStore.resolve(imageEntity.relativePath).inputStream().buffered()
-                        .use(HistoryCharacters::readLegacy)
-                } catch (e: IOException) {
-                    emptyList()
-                } catch (e: SecurityException) {
-                    emptyList()
-                }
+            try {
+                fileStore.resolve(imageEntity.relativePath).inputStream().buffered()
+                    .use(HistoryCharacters::readLegacy)
+            } catch (e: IOException) {
+                emptyList()
+            } catch (e: SecurityException) {
+                emptyList()
             }
         } else {
             generation.params.characters
         }
         // 参考图单独查一次再拼装：画廊与历史的查询不 join 它，避免影响瀑布流。
         val references = dao.findReferences(generation.id).mapNotNull(Mappers::toDomain)
-        return ImageDetail(
+        ImageDetail(
             image = Mappers.toDomain(imageEntity),
             generation = generation.copy(
                 references = references,
@@ -740,7 +738,7 @@ class GenerationRepository(
      * [LiveReferencePathsProvider] 给出的"还没提交但正在编辑"的那几张。
      * 两者缺一都会误删用户还在用的文件。
      */
-    suspend fun cleanupOnStartup(): StartupReport {
+    suspend fun cleanupOnStartup(): StartupReport = withContext(Dispatchers.IO) {
         val knownIds = dao.allGenerationIds().toSet()
         // 参考图的存活集合必须来自完整查询：漏一条就会误删别的历史还在用的文件。
         val referencedPaths = dao.allReferencePaths().toSet() + liveReferencePaths.provide()
@@ -768,14 +766,10 @@ class GenerationRepository(
             )
         }
 
-        var missingFiles = 0
-        knownIds.forEach { generationId ->
-            dao.findImages(generationId).forEach { image ->
-                if (!fileStore.exists(image.relativePath)) missingFiles++
-            }
-        }
+        // One snapshot instead of a query / main-thread resumption per generation.
+        val missingFiles = dao.allImages().count { !fileStore.exists(it.relativePath) }
 
-        return StartupReport(
+        StartupReport(
             removedGenerationDirs = cleanup.removedGenerationDirs,
             removedIncomingDirs = cleanup.removedIncomingDirs,
             removedReferenceFiles = cleanup.removedReferenceFiles,

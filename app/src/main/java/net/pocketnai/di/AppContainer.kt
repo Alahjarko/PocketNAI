@@ -60,6 +60,21 @@ import java.util.concurrent.TimeUnit
 class AppContainer(application: Application) {
 
     val artistLabStore by lazy { net.pocketnai.data.artistlab.ArtistLabStore(application, database) }
+    val artistLabBackgroundExecution by lazy { net.pocketnai.data.artistlab.AndroidArtistLabBackgroundExecution(application) }
+
+    // 页面与后台服务共用进程级实例，Activity 重建/退出不销毁已确认的批次或生成锁。
+    val generateViewModel by lazy {
+        net.pocketnai.ui.generate.GenerateViewModel(
+            generationRepository, draftStore, generationPreviewStore, generationDraftPreferences,
+            tagSuggestionSource, referenceImageProcessor, imageMetadataInspector, accountBalanceRepository,
+            settingsStore, anlasCostCalculator, anlasLedgerRepository = anlasLedgerRepository,
+            credentialStore = credentialStore,
+        )
+    }
+    val artistLabViewModel by lazy {
+        net.pocketnai.ui.artistlab.ArtistLabViewModel(artistLabStore, generationRepository,
+            favoriteImageRepository, generateViewModel, settingsStore.artistLabEnabled, artistLabBackgroundExecution)
+    }
 
     val llmSettingsStore by lazy { net.pocketnai.data.chat.LlmSettingsStore(application) }
     val chatClient by lazy { net.pocketnai.data.chat.OpenAiCompatibleChatClient() }

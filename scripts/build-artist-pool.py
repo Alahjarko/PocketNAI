@@ -25,9 +25,10 @@ for artist in review["artists"]:
     assert row and row[1] == "1", f"Not a canonical Danbooru artist: {tag}"
     assert int(row[2]) >= 50 and int(row[2]) == artist["danbooru_post_count"], f"Invalid post count: {tag}"
     assert artist["review_status"] == "accepted" and artist["identity_evidence"], f"Unreviewed identity: {tag}"
-    assert date.fromisoformat(artist["latest_pixiv_work_date"]) >= date.fromisoformat(active_since), f"Inactive artist: {tag}"
-    assert artist["sfw_review"]["sample_count"] > 0 and artist["sfw_review"]["all_x_restrict_zero"], f"Missing SFW review: {tag}"
-    assert not artist["sfw_review"]["adult_profile_marker"] and artist["sfw_review"]["no_ai_generated_samples"], f"Excluded profile: {tag}"
+    activity_date = artist.get("latest_activity_date", artist.get("latest_pixiv_work_date"))
+    assert date.fromisoformat(activity_date) >= date.fromisoformat(active_since) and artist["activity_evidence_url"], f"Inactive artist: {tag}"
+    work_review = artist.get("work_review", artist.get("sfw_review"))
+    assert work_review and work_review["sample_count"] > 0 and work_review["no_ai_generated_samples"], f"Missing artwork review: {tag}"
     assert artist["visual_review"]["status"] == "accepted" and artist["visual_review"]["sample_urls"], f"Missing visual review: {tag}"
     name = tag.replace("_", " ").strip().lower()
     assert name and len(name) <= 100 and not any(ch in name for ch in ",\n\r{}[]") and "::" not in name, f"Unsafe tag: {tag}"
@@ -35,15 +36,20 @@ for artist in review["artists"]:
 assert len(selected) >= 100 and len(set(selected)) == len(selected), "Default curated pool must contain at least 100 distinct artists"
 out = "\n".join("artist: " + name for name in selected) + "\n"
 (target / "artists.txt").write_text(out, encoding="utf-8", newline="\n")
-(target / "source.json").write_text(json.dumps({
+source_metadata = {
     "dataset": "HDiffusion/historical-danbooru-tag-counts", "revision": REVISION,
     "snapshot_date": "2026-10-06", "url": SOURCE, "license": "Apache-2.0",
     "source_sha256": hashlib.sha256(raw).hexdigest(), "pool_sha256": hashlib.sha256(out.encode()).hexdigest(),
     "count": len(selected), "min_post_count": min(int(rows[a["danbooru_tag"]][2]) for a in review["artists"]),
     "review_date": review["review_date"], "review_sha256": hashlib.sha256(review_bytes).hexdigest(),
-    "selection": "broad modern-artist whitelist from known artist profiles and public SFW features; category=1; post_count>=50; recent activity; manual artwork review; no follower criterion",
-    "verification_scope": "Pinned Danbooru-derived metadata snapshot; live Danbooru API unavailable. Pixiv public profile/top samples and official features; not entire account history.",
-}, indent=2), encoding="utf-8")
+    "selection": "reviewed modern artists with emphasis on painterly rendering, soft colors, skin and fabric; category=1; post_count>=50; recent activity; manual artwork review; adult-oriented authors are eligible",
+    "verification_scope": "Pinned Danbooru-derived metadata snapshot; live Danbooru API unavailable. Public artist profiles, representative artworks and official activity metadata; not a NovelAI output evaluation.",
+}
+preview_index = target / "previews.json"
+if preview_index.exists():
+    source_metadata["previews_sha256"] = hashlib.sha256(preview_index.read_bytes()).hexdigest()
+    source_metadata["preview_images"] = sum(len(a["previews"]) for a in json.loads(preview_index.read_text(encoding="utf-8")))
+(target / "source.json").write_text(json.dumps(source_metadata, indent=2), encoding="utf-8")
 if not (target / "LICENSE-2.0.txt").exists():
     (target / "LICENSE-2.0.txt").write_bytes(urllib.request.urlopen("https://www.apache.org/licenses/LICENSE-2.0.txt", timeout=30).read())
 print(json.dumps({"count": len(selected), "min_post_count": min(int(rows[a["danbooru_tag"]][2]) for a in review["artists"]), "pool_sha256": hashlib.sha256(out.encode()).hexdigest()}))

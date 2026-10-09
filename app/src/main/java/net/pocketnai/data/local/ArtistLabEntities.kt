@@ -30,6 +30,8 @@ data class ArtistLabDrawEntity(
 @Entity(tableName = "artist_lab_mix_favorites")
 data class ArtistMixFavoriteEntity(@PrimaryKey val prompt: String, val createdAt: Long)
 
+data class ArtistMixImageLink(val mixJson: String, val imageId: String)
+
 @Dao
 interface ArtistLabDao {
     @Query("SELECT * FROM artist_lab_runs ORDER BY createdAt DESC")
@@ -58,8 +60,12 @@ interface ArtistLabDao {
     }
     @Query("SELECT * FROM artist_lab_mix_favorites ORDER BY createdAt DESC")
     fun observeMixFavorites(): Flow<List<ArtistMixFavoriteEntity>>
+    @Query("SELECT DISTINCT mixJson, imageId FROM artist_lab_draws WHERE imageId IS NOT NULL")
+    fun observeMixImageLinks(): Flow<List<ArtistMixImageLink>>
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun saveMix(favorite: ArtistMixFavoriteEntity)
     @Query("DELETE FROM artist_lab_mix_favorites WHERE prompt = :prompt")
     suspend fun removeMix(prompt: String)
+    @Query("DELETE FROM artist_lab_mix_favorites WHERE prompt IN (:prompts)")
+    suspend fun removeMixes(prompts: List<String>)
 }

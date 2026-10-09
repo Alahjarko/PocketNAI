@@ -3,6 +3,8 @@ package net.pocketnai.ui.gallery
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -54,22 +56,17 @@ class GalleryViewModel(
             .map { item -> item.copy(favorite = item.imageId in favoriteIds) }
             .filter { GallerySearch.matches(it, filter) }
             .toList()
-    }.stateIn(
+    }.flowOn(Dispatchers.Default).stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS),
         initialValue = emptyList(),
     )
 
-    /** 还没有产出图片的任务，在瀑布流顶部显示为占位卡片。 */
-    val generatingCards: StateFlow<List<GenerationSummary>> = repository.observeGenerations()
-        .map { summaries ->
-            summaries.filter { it.generation.status == GenerationStatus.GENERATING }
-        }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS),
-            initialValue = emptyList(),
-        )
+    internal val motionSlots = GalleryMotionSlots()
+
+    /** Includes finished jobs so a visible placeholder survives until its image is decoded. */
+    val generations: StateFlow<List<GenerationSummary>> = repository.observeGenerations()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS), emptyList())
 
     private val _undoGenerationIds = MutableStateFlow<Set<String>>(emptySet())
 

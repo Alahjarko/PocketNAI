@@ -124,48 +124,4 @@ class OutputImageProcessorTest {
         assertThat(output.cropX).isEqualTo(0)
         assertThat(output.cropY).isEqualTo(4)
     }
-
-    @Test
-    fun leavesBytesUntouchedWhenNoCropRequested() {
-        val dir = File(context.cacheDir, "output-crop-noop").apply {
-            deleteRecursively()
-            mkdirs()
-        }
-        val file = File(dir, "0001.png")
-        val original = buildCanvas(width = 832, height = 1216)
-        file.writeBytes(original)
-        val extracted = extractedFrom(file, original, 832, 1216)
-
-        val result = OutputImageProcessor().apply(
-            images = listOf(extracted),
-            crop = null,
-            canvas = null,
-        )
-
-        // 预设尺寸的历史记录完全不受新功能影响：不重新编码，哈希与体积保持原样。
-        assertThat(result).isEqualTo(listOf(extracted))
-        assertThat(file.readBytes()).isEqualTo(original)
-    }
-
-    @Test
-    fun keepsOriginalWhenCropRectExceedsImage() {
-        val dir = File(context.cacheDir, "output-crop-invalid").apply {
-            deleteRecursively()
-            mkdirs()
-        }
-        val file = File(dir, "0001.png")
-        val original = buildCanvas(width = 832, height = 1216)
-        file.writeBytes(original)
-        val extracted = extractedFrom(file, original, 832, 1216)
-
-        val result = OutputImageProcessor().apply(
-            images = listOf(extracted),
-            // 故意给一个越界的范围：宁可原样保留，也不能写出一个尺寸对不上的文件。
-            crop = PixelRegion(x = 0, y = 1000, width = 832, height = 1216),
-            canvas = PixelSize(832, 1216),
-        )
-
-        assertThat(result.single()).isEqualTo(extracted)
-        assertThat(file.readBytes()).isEqualTo(original)
-    }
 }

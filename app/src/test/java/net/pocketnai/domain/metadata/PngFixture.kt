@@ -134,8 +134,6 @@ object PngFixture {
         append('"')
     }
 
-    // ---- chunk 拼装 ----
-
     private fun textChunk(keyword: String, text: String, charset: java.nio.charset.Charset): ByteArray {
         val out = ByteArrayOutputStream()
         out.write(keyword.toByteArray(Charsets.ISO_8859_1))

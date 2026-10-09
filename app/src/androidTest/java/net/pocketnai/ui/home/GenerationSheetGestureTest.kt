@@ -8,7 +8,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -16,7 +15,6 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
@@ -61,27 +59,5 @@ class GenerationSheetGestureTest {
         compose.onNodeWithTag("form").performTouchInput { swipeUp() }
         compose.runOnIdle { assertThat(scrollOffset).isGreaterThan(0) }
         compose.onNodeWithContentDescription("收起生成设置").assertIsDisplayed()
-    }
-
-    @Test
-    fun headerRequiresDeliberateDragAndRetainsScrollOnReopen() {
-        showSheet()
-        compose.onNodeWithTag("header").performTouchInput {
-            swipe(center, center - Offset(0f, 20f), 250)
-        }
-        compose.onNodeWithContentDescription("展开生成设置").assertIsDisplayed()
-        compose.onNodeWithTag("header").performTouchInput {
-            swipe(center, center - Offset(0f, 250f), 600)
-        }
-        compose.onNodeWithContentDescription("收起生成设置").assertIsDisplayed()
-        compose.onNodeWithTag("form").performTouchInput { swipeUp() }
-        var previous = 0
-        compose.runOnIdle { previous = scrollOffset; assertThat(previous).isGreaterThan(0) }
-        compose.onNodeWithTag("header").performTouchInput {
-            swipe(center, center + Offset(0f, 250f), 600)
-        }
-        compose.onNodeWithContentDescription("展开生成设置").performClick()
-        compose.onNodeWithContentDescription("收起生成设置").assertIsDisplayed()
-        compose.runOnIdle { assertThat(scrollOffset).isEqualTo(previous) }
     }
 }

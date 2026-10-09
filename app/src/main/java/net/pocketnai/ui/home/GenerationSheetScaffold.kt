@@ -29,6 +29,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
+import net.pocketnai.ui.motion.imageMotionChrome
 import kotlinx.coroutines.launch
 
 /** 内容滚动与面板切换分开：仅把手/标题接受明确拖动，不接收内容的剩余滚动或 fling。 */
@@ -76,11 +78,14 @@ internal fun GenerationSheetScaffold(
         scaffoldState = scaffoldState,
         sheetPeekHeight = 112.dp,
         sheetSwipeEnabled = false,
+        sheetContainerColor = Color.Transparent,
         sheetDragHandle = {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp)
+                    .imageMotionChrome(zIndex = 2f)
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
                     .then(headerDrag)
                     .clickable(
                         role = Role.Button,
@@ -104,7 +109,11 @@ internal fun GenerationSheetScaffold(
                 )
             }
         },
-        sheetContent = { sheetContent(expanded, headerDrag) },
+        sheetContent = {
+            Box(Modifier.fillMaxWidth().imageMotionChrome(zIndex = 2f).background(MaterialTheme.colorScheme.surfaceContainerLow)) {
+                sheetContent(expanded, headerDrag)
+            }
+        },
         content = content,
     )
 }

@@ -3,11 +3,25 @@ package net.pocketnai.ui
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import net.pocketnai.ui.motion.ImageMotionRoot
+import net.pocketnai.ui.motion.ImageMotionViewport
+import net.pocketnai.ui.motion.ImageMotionRoute
+import net.pocketnai.ui.motion.LocalImageMotion
+import net.pocketnai.ui.motion.imagePageEnter
+import net.pocketnai.ui.motion.imagePageExit
+import net.pocketnai.ui.motion.imageMotionChrome
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.background
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.imePadding
@@ -18,7 +32,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Casino
 import net.pocketnai.ui.artistlab.ArtistLabScreen
-import net.pocketnai.ui.artistlab.ArtistLabViewModel
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.automirrored.filled.Chat
@@ -31,6 +44,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -42,6 +56,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -67,7 +82,6 @@ import net.pocketnai.ui.detail.DetailScreen
 import net.pocketnai.ui.inpaint.InpaintEditorScreen
 import net.pocketnai.ui.inpaint.InpaintPreparing
 import net.pocketnai.ui.inpaint.InpaintUnavailable
-import net.pocketnai.ui.generate.GenerateViewModel
 import net.pocketnai.ui.home.HomeScreen
 import net.pocketnai.ui.settings.SettingsScreen
 import net.pocketnai.ui.update.UpdateAvailableDialog
@@ -103,6 +117,13 @@ private data class TabSpec(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Unit = {}) {
+    ImageMotionRoot { PocketNaiAppContent(sharedImageUri, onSharedImageHandled) }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: () -> Unit) {
+    val imageMotion = LocalImageMotion.current!!
     val container = LocalAppContainer.current
     val connected by container.sessionState.connected.collectAsStateWithLifecycle()
     val credentialType by container.sessionState.credentialType.collectAsStateWithLifecycle()
@@ -110,26 +131,7 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
 
     // 生成状态提升到这一层：底部固定栏和悬浮层必须操作同一个 ViewModel，
     // 否则按钮改了参数、悬浮层却看不到。
-    val generateViewModel: GenerateViewModel = viewModel(
-        factory = viewModelFactory {
-            initializer {
-                GenerateViewModel(
-                    repository = container.generationRepository,
-                    draftStore = container.draftStore,
-                    previewStore = container.generationPreviewStore,
-                    draftPreferences = container.generationDraftPreferences,
-                    tagSuggestionSource = container.tagSuggestionSource,
-                    referenceImporter = container.referenceImageProcessor,
-                    metadataInspector = container.imageMetadataInspector,
-                    accountBalanceRepository = container.accountBalanceRepository,
-                    settingsStore = container.settingsStore,
-                    costCalculator = container.anlasCostCalculator,
-                    anlasLedgerRepository = container.anlasLedgerRepository,
-                    credentialStore = container.credentialStore,
-                )
-            }
-        },
-    )
+    val generateViewModel = remember(container) { container.generateViewModel }
     val generateState by generateViewModel.state.collectAsStateWithLifecycle()
     val chatEnabled by container.settingsStore.chatEnabled.collectAsStateWithLifecycle()
     val chatViewModel: ChatViewModel = viewModel(factory = viewModelFactory {
@@ -144,10 +146,7 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
         }
     })
     val artistLabEnabled by container.settingsStore.artistLabEnabled.collectAsStateWithLifecycle()
-    val artistLabViewModel: ArtistLabViewModel = viewModel(factory = viewModelFactory {
-        initializer { ArtistLabViewModel(container.artistLabStore, container.generationRepository,
-            container.favoriteImageRepository, generateViewModel, container.settingsStore.artistLabEnabled) }
-    })
+    val artistLabViewModel = remember(container) { container.artistLabViewModel }
     LaunchedEffect(sharedImageUri, generateState.referenceBusy) {
         if (sharedImageUri != null && !generateState.referenceBusy) {
             navController.navigate(Routes.HOME) {
@@ -217,7 +216,6 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) artistLabViewModel.pause()
             if (event == Lifecycle.Event.ON_START) {
                 generateViewModel.refreshBalanceOnForeground()
             }
@@ -228,7 +226,6 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val chatKeyboardVisible = (currentRoute == Routes.CHAT || currentRoute == Routes.ARTIST_LAB) && WindowInsets.isImeVisible
     LaunchedEffect(chatEnabled, currentRoute) {
         if (!chatEnabled && currentRoute == Routes.CHAT) navController.navigateToTab(Routes.HOME)
     }
@@ -237,133 +234,140 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
         if (!artistLabEnabled && currentRoute == Routes.ARTIST_LAB) navController.navigateToTab(Routes.HOME)
     }
 
-    // 宽屏（横屏 / 平板，≥600dp）把导航挪到最左侧的 NavigationRail，
-    // 内容区原样占满右侧 —— 布局本身不变（2026-09-21 用户点名的双栏方案）。
-    BoxWithConstraints {
-        val useNavigationRail = maxWidth >= 600.dp
-        Row(modifier = Modifier.fillMaxSize()) {
-            if (useNavigationRail && currentRoute in Routes.tabs) {
-                PocketNaiNavRail(
-                    navController = navController,
-                    currentRoute = currentRoute,
-                    chatEnabled = chatEnabled,
-                    artistLabEnabled = artistLabEnabled,
-                )
-            }
-            Scaffold(
-                modifier = if (currentRoute == Routes.CHAT || currentRoute == Routes.ARTIST_LAB) Modifier.imePadding() else Modifier,
-                bottomBar = {
-                    // 底部只剩导航栏。生成按钮在首页生成悬浮层的头部里（GenerateButton），
-                    // 不再占用任何一条独立的底部栏。宽屏时导航在左侧 Rail，底部栏不渲染。
-                    if (!useNavigationRail && currentRoute in Routes.tabs && !chatKeyboardVisible) {
-                        PocketNaiBottomBar(
-                            navController = navController,
-                            currentRoute = currentRoute,
-                            chatEnabled = chatEnabled,
-                            artistLabEnabled = artistLabEnabled,
+    // Each destination owns its insets and navigation chrome, including while it leaves.
+    Surface(Modifier.fillMaxSize()) {
+        NavHost(
+            navController = navController,
+            startDestination = if (connected) Routes.HOME else Routes.CONNECT,
+            modifier = Modifier.fillMaxSize(),
+            enterTransition = {
+                if (targetState.destination.route == Routes.DETAIL || initialState.destination.route == Routes.DETAIL)
+                    imagePageEnter() else fadeIn(tween(160))
+            },
+            exitTransition = {
+                if (targetState.destination.route == Routes.DETAIL || initialState.destination.route == Routes.DETAIL)
+                    imagePageExit() else fadeOut(tween(100))
+            },
+            popEnterTransition = { if (initialState.destination.route == Routes.DETAIL) imagePageEnter() else fadeIn(tween(160)) },
+            popExitTransition = { if (initialState.destination.route == Routes.DETAIL) imagePageExit() else fadeOut(tween(100)) },
+        ) {
+            composable(Routes.CONNECT) {
+                ImageMotionRoute(this, Routes.CONNECT) {
+                    PocketNaiPageFrame(navController, Routes.CONNECT, chatEnabled, artistLabEnabled) {
+                        ConnectScreen(
+                            onConnected = {
+                                navController.navigate(Routes.HOME) {
+                                    popUpTo(Routes.CONNECT) { inclusive = true }
+                                }
+                            },
                         )
                     }
-                },
-            ) { innerPadding ->
-                NavHost(
-                    navController = navController,
-                    startDestination = if (connected) Routes.HOME else Routes.CONNECT,
-                    modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
-                    enterTransition = { fadeIn(tween(160)) },
-                    exitTransition = { fadeOut(tween(100)) },
-                    popEnterTransition = { fadeIn(tween(160)) },
-                    popExitTransition = { fadeOut(tween(100)) },
-                ) {
-            composable(Routes.CONNECT) {
-                ConnectScreen(
-                    onConnected = {
-                        navController.navigate(Routes.HOME) {
-                            popUpTo(Routes.CONNECT) { inclusive = true }
-                        }
-                    },
-                )
+                }
             }
             composable(Routes.HOME) {
-                HomeScreen(
-                    generateViewModel = generateViewModel,
-                    state = generateState,
-                    connected = connected,
-                    credentialType = credentialType,
-                    onOpenImage = { imageId -> navController.navigate(Routes.detail(imageId)) },
-                    onInpaintImage = { item ->
-                        // 画廊长按 → 直接以这张图作为重绘底图并进入编辑器。
-                        generateViewModel.onInpaintBasePicked(
-                            ReferenceSource.LocalPath(item.relativePath),
+                ImageMotionRoute(this, Routes.HOME) {
+                    PocketNaiPageFrame(navController, Routes.HOME, chatEnabled, artistLabEnabled) {
+                        HomeScreen(
+                            generateViewModel = generateViewModel,
+                            state = generateState,
+                            connected = connected,
+                            credentialType = credentialType,
+                            onOpenImage = { imageId -> imageMotion.open(Routes.HOME, imageId); navController.navigate(Routes.detail(imageId)) },
+                            onInpaintImage = { item ->
+                                // 画廊长按 → 直接以这张图作为重绘底图并进入编辑器。
+                                generateViewModel.onInpaintBasePicked(
+                                    ReferenceSource.LocalPath(item.relativePath),
+                                )
+                                navController.navigate(Routes.INPAINT) {
+                                    popUpTo(Routes.HOME)
+                                    launchSingleTop = true
+                                }
+                            },
+                            onRequestConnect = { navController.navigate(Routes.CONNECT) },
+                            onOpenInpaintEditor = { navController.navigate(Routes.INPAINT) },
                         )
-                        navController.navigate(Routes.INPAINT) {
-                            popUpTo(Routes.HOME)
-                            launchSingleTop = true
-                        }
-                    },
-                    onRequestConnect = { navController.navigate(Routes.CONNECT) },
-                    onOpenInpaintEditor = { navController.navigate(Routes.INPAINT) },
-                )
+                    }
+                }
             }
             composable(Routes.SETTINGS) {
-                SettingsScreen(
-                    onRequestConnect = { navController.navigate(Routes.CONNECT) },
-                    updateViewModel = updateViewModel,
-                    chatViewModel = chatViewModel,
-                )
+                ImageMotionRoute(this, Routes.SETTINGS) {
+                    PocketNaiPageFrame(navController, Routes.SETTINGS, chatEnabled, artistLabEnabled) {
+                        SettingsScreen(
+                            onRequestConnect = { navController.navigate(Routes.CONNECT) },
+                            updateViewModel = updateViewModel,
+                            chatViewModel = chatViewModel,
+                        )
+                    }
+                }
             }
             composable(Routes.CHAT) {
-                ChatScreen(chatViewModel, container.fileStore::resolve) { imageId -> navController.navigate(Routes.detail(imageId)) }
+                ImageMotionRoute(this, Routes.CHAT) {
+                    PocketNaiPageFrame(navController, Routes.CHAT, chatEnabled, artistLabEnabled) {
+                        ChatScreen(chatViewModel, container.fileStore::resolve) { imageId -> imageMotion.open(Routes.CHAT, imageId); navController.navigate(Routes.detail(imageId)) }
+                    }
+                }
             }
             composable(Routes.ARTIST_LAB) {
-                ArtistLabScreen(artistLabViewModel, generateState.params, container.fileStore::resolve) { imageId ->
-                    navController.navigate(Routes.detail(imageId))
+                ImageMotionRoute(this, Routes.ARTIST_LAB) {
+                    PocketNaiPageFrame(navController, Routes.ARTIST_LAB, chatEnabled, artistLabEnabled) {
+                        ArtistLabScreen(artistLabViewModel, generateState.params, container.fileStore::resolve) { imageId ->
+                            imageMotion.open(Routes.ARTIST_LAB, imageId)
+                            navController.navigate(Routes.detail(imageId))
+                        }
+                    }
                 }
             }
             composable(Routes.DETAIL) { entry ->
-                DetailScreen(
-                    imageId = entry.arguments?.getString("imageId").orEmpty(),
-                    onBack = { navController.popBackStack() },
-                    onParamsReused = {
-                        navController.navigate(Routes.HOME) {
-                            popUpTo(Routes.HOME)
-                            launchSingleTop = true
-                        }
-                    },
-                    onInpaint = { relativePath ->
-                        // 详情页 → 以当前这张图作为重绘底图并进入编辑器。
-                        generateViewModel.onInpaintBasePicked(ReferenceSource.LocalPath(relativePath))
-                        navController.navigate(Routes.INPAINT) {
-                            popUpTo(Routes.HOME)
-                            launchSingleTop = true
-                        }
-                    },
-                )
-            }
-            composable(Routes.INPAINT) {
-                // 底图是**异步导入**的：进入这个路由时它可能还在处理中，
-                // 因此要显式区分"正在准备 / 失败 / 就绪"三种状态，
-                // 不能因为一次读不到就弹回首页（真机验证时正是这么错的）。
-                val base = generateState.referenceSource
-                when {
-                    base != null -> InpaintEditorScreen(
-                        viewModel = generateViewModel,
-                        base = base,
-                        onDone = {
-                            navController.navigate(Routes.HOME) {
-                                popUpTo(Routes.HOME)
-                                launchSingleTop = true
-                            }
-                        },
-                    )
-
-                    generateState.referenceError != null -> InpaintUnavailable(
-                        messageRes = generateState.referenceError!!.code,
-                        onBack = { navController.popBackStack() },
-                    )
-
-                    else -> InpaintPreparing(onCancel = { navController.popBackStack() })
+                ImageMotionRoute(this, imageMotion.source ?: Routes.DETAIL) {
+                    PocketNaiPageFrame(navController, Routes.DETAIL, chatEnabled, artistLabEnabled) {
+                        DetailScreen(
+                            imageId = entry.arguments?.getString("imageId").orEmpty(),
+                            onBack = { imageMotion.returnToSource(); navController.popBackStack() },
+                            onParamsReused = {
+                                navController.navigate(Routes.HOME) {
+                                    popUpTo(Routes.HOME)
+                                    launchSingleTop = true
+                                }
+                            },
+                            onInpaint = { relativePath ->
+                                // 详情页 → 以当前这张图作为重绘底图并进入编辑器。
+                                generateViewModel.onInpaintBasePicked(ReferenceSource.LocalPath(relativePath))
+                                navController.navigate(Routes.INPAINT) {
+                                    popUpTo(Routes.HOME)
+                                    launchSingleTop = true
+                                }
+                            },
+                        )
+                    }
                 }
             }
+            composable(Routes.INPAINT) {
+                ImageMotionRoute(this, Routes.INPAINT) {
+                    PocketNaiPageFrame(navController, Routes.INPAINT, chatEnabled, artistLabEnabled) {
+                        // 底图是**异步导入**的：进入这个路由时它可能还在处理中，
+                        // 因此要显式区分"正在准备 / 失败 / 就绪"三种状态，
+                        // 不能因为一次读不到就弹回首页（真机验证时正是这么错的）。
+                        val base = generateState.referenceSource
+                        when {
+                            base != null -> InpaintEditorScreen(
+                                viewModel = generateViewModel,
+                                base = base,
+                                onDone = {
+                                    navController.navigate(Routes.HOME) {
+                                        popUpTo(Routes.HOME)
+                                        launchSingleTop = true
+                                    }
+                                },
+                            )
+
+                            generateState.referenceError != null -> InpaintUnavailable(
+                                messageRes = generateState.referenceError!!.code,
+                                onBack = { navController.popBackStack() },
+                            )
+
+                            else -> InpaintPreparing(onCancel = { navController.popBackStack() })
+                        }
+                    }
                 }
             }
         }
@@ -397,6 +401,39 @@ fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Uni
     }
 }
 
+/** Route-owned chrome cannot resize the outgoing gallery when another destination opens. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun PocketNaiPageFrame(
+    navController: NavHostController,
+    route: String,
+    chatEnabled: Boolean,
+    artistLabEnabled: Boolean,
+    content: @Composable () -> Unit,
+) {
+    val keyboardPage = route == Routes.CHAT || route == Routes.ARTIST_LAB
+    val hideBottomBar = keyboardPage && WindowInsets.isImeVisible
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val rail = maxWidth >= 600.dp
+        Row(Modifier.fillMaxSize()) {
+            if (rail && route in Routes.tabs) PocketNaiNavRail(navController, route, chatEnabled, artistLabEnabled)
+            Scaffold(
+                modifier = Modifier.weight(1f).then(if (keyboardPage) Modifier.imePadding() else Modifier),
+                bottomBar = {
+                    if (!rail && route in Routes.tabs && !hideBottomBar)
+                        PocketNaiBottomBar(navController, route, chatEnabled, artistLabEnabled)
+                },
+            ) { padding ->
+                Box(Modifier.fillMaxSize()) {
+                    ImageMotionViewport(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) { content() }
+                    Spacer(Modifier.fillMaxWidth().height(padding.calculateTopPadding()).align(Alignment.TopCenter)
+                        .imageMotionChrome(zIndex = 4f).background(MaterialTheme.colorScheme.background))
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun PocketNaiBottomBar(
     navController: NavHostController,
@@ -406,7 +443,7 @@ private fun PocketNaiBottomBar(
 ) {
     val specs = tabSpecs(chatEnabled, artistLabEnabled)
 
-    NavigationBar {
+    NavigationBar(modifier = Modifier.testTag("bottom-navigation").imageMotionChrome(zIndex = 3f)) {
         specs.forEach { spec ->
             NavigationBarItem(
                 selected = currentRoute == spec.route,
@@ -428,7 +465,7 @@ private fun PocketNaiNavRail(
 ) {
     val specs = tabSpecs(chatEnabled, artistLabEnabled)
 
-    NavigationRail {
+    NavigationRail(modifier = Modifier.imageMotionChrome(zIndex = 3f)) {
         specs.forEach { spec ->
             NavigationRailItem(
                 selected = currentRoute == spec.route,

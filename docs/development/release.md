@@ -4,6 +4,8 @@
 
 ## 检查更新与发布（GitHub Release）
 
+- 从2026-10-09起，两条发布路径均使用 `:app:assembleRelease`，产物为 `app/build/outputs/apk/release/app-release.apk`。启用R8与资源优化，关闭调试开销；`release`继续使用既有debug keystore或CI显式指定的同一密钥，不能另建签名。调试包仍用于日常设备测试，冷启动性能需用同签名优化包另行实测。[Compose官方性能说明](https://developer.android.com/develop/ui/compose/performance)
+
 - Git 提交的作者与提交者使用用户账号 `Alahjarko`，邮箱使用已核实的 GitHub noreply 地址 `143304950+Alahjarko@users.noreply.github.com`；仅设置仓库级 Git 配置，不使用 `PocketNAI Dev` 或其他通用团队身份。
 - 发布渠道有两条，**构建号同源**（都取"已有 Release 里最大的 `build-N` 加 1"），因此不会撞号：
   1. **日常用本地发布**：`scripts/publish-release.ps1`（或双击根目录的"发布新版本.bat"）——
@@ -27,7 +29,7 @@
   **Release tag 里的数字与 APK 的 versionCode 必须同源** —— 应用内更新检测就靠这个比较。
 - 应用内检查更新（`domain/update` + `data/update` + `ui/update`）：
   - 判据是**构建号比较**（tag `build-42` → 42 与 `BuildConfig.VERSION_CODE` 比大小），
-    不比较版本名字符串；解析与判定都是纯函数（`UpdateEvaluator`），有单测钉住；
+    不比较版本名字符串；解析与判定都是纯函数（`UpdateEvaluator`）；
   - 仓库地址在 `BuildConfig.UPDATE_REPO`（`app/build.gradle.kts`），换仓库只改这一处；
   - 设置页检查窗口与新版本提示都提供“在 GitHub 查看最新版”（2026-10-02），跳转同一仓库的
     `/releases/latest` 页面；检查失败或已是最新版时入口仍可用，不依赖 API 返回的外部 URL；

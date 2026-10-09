@@ -75,14 +75,14 @@ $env:PNAI_KEYSTORE_PATH = $null
 $env:PNAI_VERSION_CODE = "$next"
 $env:PNAI_VERSION_NAME = "0.1.$next"
 try {
-    & .\gradlew.bat :app:assembleDebug
+    & .\gradlew.bat :app:assembleRelease
     Assert-LastExit "构建"
 } finally {
     Remove-Item Env:PNAI_VERSION_CODE -ErrorAction SilentlyContinue
     Remove-Item Env:PNAI_VERSION_NAME -ErrorAction SilentlyContinue
 }
 
-$apk = "app\build\outputs\apk\debug\app-debug.apk"
+$apk = "app\build\outputs\apk\release\app-release.apk"
 if (-not (Test-Path $apk)) { throw "找不到构建产物：$apk" }
 
 # 附件必须叫 PocketNAI.apk：应用侧检测与"永远指向最新"的分享链接都认这个名字。

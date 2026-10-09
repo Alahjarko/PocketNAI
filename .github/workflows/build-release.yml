@@ -77,7 +77,7 @@ jobs:
       - name: Unit tests
         run: ./gradlew :app:testDebugUnitTest
 
-      - name: Build debug APK
+      - name: Build optimized APK
         env:
           PNAI_KEYSTORE_PATH: ${{ runner.temp }}/pocketnai-debug.keystore
           PNAI_KEYSTORE_STORE_PASSWORD: android
@@ -85,7 +85,7 @@ jobs:
           PNAI_KEYSTORE_KEY_PASSWORD: android
           PNAI_VERSION_CODE: ${{ steps.build_number.outputs.number }}
           PNAI_VERSION_NAME: 0.1.${{ steps.build_number.outputs.number }}
-        run: ./gradlew :app:assembleDebug
+        run: ./gradlew :app:assembleRelease
 
       - name: Publish release
         env:
@@ -101,7 +101,7 @@ jobs:
           # "releases/latest/download/PocketNAI.apk" 这个固定分享链接也认它。
           # （gh release create 的 `file#name` 改名语法实测不生效 —— build-2 的附件
           #  仍然叫 app-debug.apk —— 所以先改好文件名再上传。）
-          cp app/build/outputs/apk/debug/app-debug.apk PocketNAI.apk
+          cp app/build/outputs/apk/release/app-release.apk PocketNAI.apk
           gh release create "$TAG" \
             --title "0.1.$RUN_NUMBER" \
             --notes "$NOTES" \

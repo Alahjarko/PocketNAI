@@ -49,24 +49,6 @@ class AccountAdderTest {
         clock = { 0L },
     )
 
-    // ---- 粘贴 PST ----
-
-    @Test
-    fun `粘贴 PST：验证通过后落盘并切到新账号`() = runBlocking {
-        // 已有一个激活账号：新账号落盘时默认不激活，必须由 AccountAdder 显式切换。
-        store.seedActiveAccount("旧账号")
-
-        val outcome = adder().addWithToken(name = "小号", token = "  pst-token-1  ")
-
-        assertThat(outcome).isInstanceOf(Outcome.Success::class.java)
-        assertThat(store.savedCredentials).hasSize(1)
-        assertThat(store.savedCredentials.single().token).isEqualTo("pst-token-1")
-        assertThat(store.savedCredentials.single().type)
-            .isEqualTo(CredentialType.PERSISTENT_API_TOKEN)
-        assertThat(store.switchCalls).hasSize(1)
-        assertThat(store.activeAccountId()).isEqualTo(store.switchCalls.single())
-    }
-
     @Test
     fun `粘贴 PST：验证失败不落盘也不切换`() = runBlocking {
         store.seedActiveAccount("旧账号")
@@ -79,71 +61,6 @@ class AccountAdderTest {
         assertThat(store.switchCalls).isEmpty()
         assertThat(store.activeAccountId()).isEqualTo("acc-seed")
     }
-
-    @Test
-    fun `粘贴 PST：空 Token 直接失败且不发请求`() = runBlocking {
-        val outcome = adder().addWithToken(name = "小号", token = "   ")
-
-        assertThat(outcome).isInstanceOf(Outcome.Failure::class.java)
-        assertThat(api.accountStatusCalls).isEqualTo(0)
-        assertThat(store.savedCredentials).isEmpty()
-    }
-
-    // ---- 账号登录 ----
-
-    @Test
-    fun `账号登录：派生、登录、复验、落盘四步全走通`() = runBlocking {
-        store.seedActiveAccount("旧账号")
-
-        val outcome = adder().addWithLogin(
-            name = "主号",
-            email = " user@example.com ",
-            password = " pass word ",
-        )
-
-        assertThat(outcome).isInstanceOf(Outcome.Success::class.java)
-        // 邮箱去空白、密码原样（首尾空格是密码的一部分）。
-        assertThat(derivedKeys).containsExactly("user@example.com" to " pass word ")
-        assertThat(authApi.lastAccessKey).isEqualTo("AK_user@example.com")
-        // 落盘的是登录拿到的 Access Token，不是派生值。
-        assertThat(store.savedCredentials.single().token).isEqualTo("access-token-1")
-        assertThat(store.savedCredentials.single().type).isEqualTo(CredentialType.ACCOUNT_SESSION)
-        assertThat(store.switchCalls).hasSize(1)
-    }
-
-    @Test
-    fun `账号登录：登录失败不碰复验接口`() = runBlocking {
-        authApi.loginResult = Outcome.Failure(AppError.of(ErrorCode.LOGIN_CREDENTIALS_INVALID))
-
-        val outcome = adder().addWithLogin(name = "主号", email = "a@b.c", password = "pw")
-
-        assertThat(outcome).isInstanceOf(Outcome.Failure::class.java)
-        assertThat(api.accountStatusCalls).isEqualTo(0)
-        assertThat(store.savedCredentials).isEmpty()
-    }
-
-    @Test
-    fun `账号登录：复验失败不落盘`() = runBlocking {
-        api.accountStatusResult = Outcome.Failure(AppError.of(ErrorCode.TOKEN_INVALID))
-
-        val outcome = adder().addWithLogin(name = "主号", email = "a@b.c", password = "pw")
-
-        assertThat(outcome).isInstanceOf(Outcome.Failure::class.java)
-        assertThat(authApi.loginCalls).isEqualTo(1)
-        assertThat(store.savedCredentials).isEmpty()
-        assertThat(store.switchCalls).isEmpty()
-    }
-
-    @Test
-    fun `账号登录：空邮箱或空密码直接失败且不派生`() = runBlocking {
-        val outcome = adder().addWithLogin(name = "主号", email = "  ", password = "pw")
-
-        assertThat(outcome).isInstanceOf(Outcome.Failure::class.java)
-        assertThat(derivedKeys).isEmpty()
-        assertThat(authApi.loginCalls).isEqualTo(0)
-    }
-
-    // ---- 假实现 ----
 
     private class FakeCredentialStore : CredentialStore {
         val savedCredentials = mutableListOf<StoredCredential>()

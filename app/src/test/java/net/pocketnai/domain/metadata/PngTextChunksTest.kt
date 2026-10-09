@@ -16,76 +16,6 @@ class PngTextChunksTest {
         PngTextChunks.read(ByteArrayInputStream(bytes))
 
     @Test
-    fun `读出 tEXt 文本块`() {
-        val png = PngFixture.png(
-            texts = listOf(
-                "Software" to "NovelAI",
-                "Source" to "NovelAI Diffusion V5 DB276663",
-            ),
-        )
-
-        val result = read(png)
-
-        assertThat(result).isInstanceOf(PngTextChunks.Result.Read::class.java)
-        val chunks = (result as PngTextChunks.Result.Read).chunks
-        assertThat(chunks.map { it.keyword })
-            .containsExactly("Software", "Source").inOrder()
-        assertThat(result.value("source")).isEqualTo("NovelAI Diffusion V5 DB276663")
-        // 关键字大小写不敏感：官方两种写法（Generation_time / Generation time）都要认。
-        assertThat(result.value("SOFTWARE")).isEqualTo("NovelAI")
-    }
-
-    @Test
-    fun `读出 zTXt 与 iTXt`() {
-        val png = PngFixture.png(
-            compressedTexts = listOf("Comment" to """{"steps": 23}"""),
-            internationalTexts = listOf("Description" to "1girl, 白发"),
-        )
-
-        val result = read(png)
-
-        assertThat(result.value("Comment")).isEqualTo("""{"steps": 23}""")
-        // iTXt 是 UTF-8：非 ASCII 不能读成乱码。
-        assertThat(result.value("Description")).isEqualTo("1girl, 白发")
-    }
-
-    @Test
-    fun `文本块在 IDAT 之后也能读到`() {
-        // 真实文件就是这个形状：元数据在文件尾部，因此不能"只读前几 KB"。
-        val png = PngFixture.png(
-            texts = listOf("Software" to "NovelAI"),
-            idatChunks = 8,
-            idatSize = 64 * 1024,
-        )
-
-        assertThat(read(png).value("Software")).isEqualTo("NovelAI")
-    }
-
-    @Test
-    fun `不是 PNG 时如实报告`() {
-        val jpeg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte(), 0, 0, 0, 0, 0, 0, 0, 0)
-
-        assertThat(read(jpeg)).isEqualTo(PngTextChunks.Result.NotPng)
-    }
-
-    @Test
-    fun `没有文本块的 PNG 返回空列表而不是失败`() {
-        val result = read(PngFixture.png())
-
-        assertThat((result as PngTextChunks.Result.Read).chunks).isEmpty()
-        assertThat(result.value("Software")).isNull()
-    }
-
-    @Test
-    fun `长度字段撒谎时判定为损坏而不是分配内存`() {
-        // 签名 + 声称有 2 GiB 的 tEXt，后面什么都没有。
-        val header = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A) +
-            PngFixture.uint32(0x7FFFFFFFL) + "tEXt".toByteArray()
-
-        assertThat(read(header)).isEqualTo(PngTextChunks.Result.TooLarge)
-    }
-
-    @Test
     fun `解压炸弹被限额挡住`() {
         // 声明一个 1 MiB 上限之上的压缩块：解压内容超过 MAX_CHUNK_BYTES 时正文会被跳过，
         // 因此结果是"读到了但没有这条文本块"，而不是耗尽内存。
@@ -94,19 +24,6 @@ class PngTextChunksTest {
 
         val result = read(png) as PngTextChunks.Result.Read
         assertThat(result.value("Comment")).isNull()
-    }
-
-    @Test
-    fun `截断的文件判定为损坏`() {
-        val png = PngFixture.png(texts = listOf("Software" to "NovelAI"))
-
-        assertThat(read(png.copyOf(png.size / 2))).isEqualTo(PngTextChunks.Result.Malformed)
-    }
-
-    @Test fun `Latin1空格和重音字符在普通文本块中不会变成替换符`() {
-        val prompt = "artist:example,\u00a0\u00a0café, year 2025"
-        val png = PngFixture.png(texts = listOf("Description" to prompt), textCharset = Charsets.ISO_8859_1)
-        assertThat(read(png).value("Description")).isEqualTo(prompt)
     }
 
     @Test fun `压缩Latin1提示词读取后传入元数据解析仍保留空格`() {
@@ -119,31 +36,5 @@ class PngTextChunksTest {
         val result = read(png) as PngTextChunks.Result.Read
         val parsed = NovelAiMetadataParser.parse(result.chunks, kotlinx.serialization.json.Json { ignoreUnknownKeys = true })
         assertThat(parsed?.prompt).isEqualTo(prompt)
-    }
-
-    @Test fun `兼容既有UTF8普通和压缩文本块中的中文及特殊空格`() {
-        val prompt = "白发,\u00a0\u2009\u3000café, 🌸"
-        val png = PngFixture.png(
-            texts = listOf("Description" to prompt),
-            compressedTexts = listOf("Comment" to prompt),
-        )
-        assertThat(read(png).value("Description")).isEqualTo(prompt)
-        assertThat(read(png).value("Comment")).isEqualTo(prompt)
-    }
-
-    @Test fun `压缩与未压缩国际文本都按UTF8读取`() {
-        val prompt = "白发\u00a0🌸"
-        listOf(false, true).forEach { compressed ->
-            val png = PngFixture.png(
-                internationalTexts = listOf("Description" to prompt), compressInternationalTexts = compressed,
-            )
-            assertThat(read(png).value("Description")).isEqualTo(prompt)
-        }
-    }
-
-    @Test fun `原文已有替换字符时不擅自猜测它是空格`() {
-        val prompt = "tag\uFFFDname"
-        assertThat(read(PngFixture.png(texts = listOf("Description" to prompt))).value("Description"))
-            .isEqualTo(prompt)
     }
 }

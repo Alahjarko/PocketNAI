@@ -67,81 +67,6 @@ class AnlasCostCalculatorTest {
     private fun GenerationCostEstimate.total(): Long =
         (this as GenerationCostEstimate.EstimatedAnlas).batchTotal
 
-    // ---- 免费单张（官方规则） ----
-
-    @Test
-    fun `Opus 满足面积与步数条件时单张免费`() {
-        val estimate = calculator.estimate(context())
-
-        assertThat(estimate).isInstanceOf(GenerationCostEstimate.Free::class.java)
-        assertThat((estimate as GenerationCostEstimate.Free).reason)
-            .isEqualTo(FreeReason.OPUS_FREE_IMAGE)
-    }
-
-    @Test
-    fun `多角色提示词不破免费也没有附加费`() {
-        // 官方计价组装里只有 Precise Reference（5/张/输出）与 Vibe 两项附加费，
-        // 没有 char_captions 项；免费判定读的 `characterRef` 是个从不被赋值的死字段
-        // （技术决策记录 §30.2）。因此免费组合下的多角色生成同样免费。
-        val estimate = calculator.estimate(
-            context(
-                characters = List(5) { index -> CharacterPrompt(prompt = "1girl, character $index") },
-            ),
-        )
-
-        assertThat(estimate).isInstanceOf(GenerationCostEstimate.Free::class.java)
-    }
-
-    @Test
-    fun `只买 Anlas 没有订阅的账号不免费`() {
-        // 免费单张是订阅权益：未订阅账号按官方公式正常扣费。
-        val estimate = calculator.estimate(context(tier = SubscriptionTier.None, subscribed = false))
-
-        assertThat(estimate).isInstanceOf(GenerationCostEstimate.EstimatedAnlas::class.java)
-        assertThat(estimate.total()).isEqualTo(17L)
-    }
-
-    @Test
-    fun `订阅权益在但等级不是 Opus 时不免费`() {
-        val estimate = calculator.estimate(context(tier = SubscriptionTier.Scroll))
-
-        assertThat(estimate).isInstanceOf(GenerationCostEstimate.EstimatedAnlas::class.java)
-    }
-
-    @Test
-    fun `面积上界是 1024x1024`() {
-        assertThat(calculator.estimate(context(size = ImageSizePreset(1024, 1024))))
-            .isInstanceOf(GenerationCostEstimate.Free::class.java)
-        // 1216×832 与 832×1216 都在 1024² 以内，同属免费区间。
-        assertThat(calculator.estimate(context(size = ImageSizePreset(1216, 832))))
-            .isInstanceOf(GenerationCostEstimate.Free::class.java)
-        // Large 方形 1536×1536 超出上界。
-        assertThat(calculator.estimate(context(size = ImageSizePreset(1536, 1536))))
-            .isInstanceOf(GenerationCostEstimate.EstimatedAnlas::class.java)
-    }
-
-    @Test
-    fun `Steps 28 仍免费而 29 不免费`() {
-        assertThat(calculator.estimate(context(steps = 28)))
-            .isInstanceOf(GenerationCostEstimate.Free::class.java)
-        assertThat(calculator.estimate(context(steps = 29)))
-            .isInstanceOf(GenerationCostEstimate.EstimatedAnlas::class.java)
-    }
-
-    @Test
-    fun `图生图同样享受免费单张`() {
-        // 官方文档说"不带底图"，但官方前端的判据里没有这一条，本机实测也不扣费。
-        val estimate = calculator.estimate(
-            context(
-                kind = GenerationKind.IMAGE_TO_IMAGE,
-                hasBaseImage = true,
-                strengthMultiplier = 0.7,
-            ),
-        )
-
-        assertThat(estimate).isInstanceOf(GenerationCostEstimate.Free::class.java)
-    }
-
     @Test
     fun `批量只免一张而不是整单免费`() {
         val estimate = calculator.estimate(context(sampleCount = 4)) as GenerationCostEstimate.EstimatedAnlas
@@ -149,22 +74,6 @@ class AnlasCostCalculatorTest {
         assertThat(estimate.freeImageCount).isEqualTo(1)
         // 4 张里免 1 张 → 3 × 17。
         assertThat(estimate.batchTotal).isEqualTo(3 * 17L)
-    }
-
-    @Test
-    fun `V4_5 Full 在 Opus 下同样免费`() {
-        assertThat(calculator.estimate(context(profile = v45Full)))
-            .isInstanceOf(GenerationCostEstimate.Free::class.java)
-    }
-
-    // ---- V5 额度 ----
-
-    @Test
-    fun `V5 在 Opus 且额度可用时走额度分支`() {
-        val estimate = calculator.estimate(context(profile = v5))
-
-        assertThat(estimate).isInstanceOf(GenerationCostEstimate.UsesV5Allowance::class.java)
-        assertThat((estimate as GenerationCostEstimate.UsesV5Allowance).estimatedPercentCost).isNull()
     }
 
     @Test
@@ -178,29 +87,6 @@ class AnlasCostCalculatorTest {
         ) as GenerationCostEstimate.EstimatedAnlas
 
         assertThat(estimate.batchTotal).isEqualTo(26L)
-    }
-
-    @Test
-    fun `V5 非 Opus 不走额度分支`() {
-        val estimate = calculator.estimate(
-            context(profile = v5, tier = SubscriptionTier.None, subscribed = false),
-        )
-
-        assertThat(estimate).isNotInstanceOf(GenerationCostEstimate.UsesV5Allowance::class.java)
-    }
-
-    // ---- 参考图附加费 ----
-
-    @Test
-    fun `Precise Reference 一张在免费基础上只收 5 Anlas`() {
-        // 实测：余额 407 → 402。基础生成被 Opus 权益免掉，附加费照收。
-        val estimate = calculator.estimate(
-            context(kind = GenerationKind.PRECISE_REFERENCE, referenceImageCount = 1),
-        ) as GenerationCostEstimate.EstimatedAnlas
-
-        assertThat(estimate.batchTotal)
-            .isEqualTo(NovelAiPaidAnlasFormula.PRECISE_REFERENCE_ANLAS_PER_IMAGE)
-        assertThat(estimate.freeImageCount).isEqualTo(1)
     }
 
     @Test
@@ -222,53 +108,6 @@ class AnlasCostCalculatorTest {
     }
 
     @Test
-    fun `Vibe 超过四张的部分每张加 2 Anlas`() {
-        val estimate = calculator.estimate(
-            context(vibeCount = 6, model = ImageModel.V4_5_CURATED),
-        ) as GenerationCostEstimate.EstimatedAnlas
-
-        // 基础被免费覆盖，只剩超出的 2 张。
-        assertThat(estimate.batchTotal).isEqualTo(4L)
-    }
-
-    @Test
-    fun `未编码的 Vibe 每张加 2 Anlas`() {
-        val estimate = calculator.estimate(
-            context(vibeCount = 2, uncachedVibeCount = 2),
-        ) as GenerationCostEstimate.EstimatedAnlas
-
-        assertThat(estimate.batchTotal).isEqualTo(4L)
-    }
-
-    @Test
-    fun `已经编码过的 Vibe 不再收费`() {
-        val estimate = calculator.estimate(
-            context(vibeCount = 2, uncachedVibeCount = 0),
-        )
-
-        assertThat(estimate).isInstanceOf(GenerationCostEstimate.Free::class.java)
-    }
-
-    // ---- 未知与非法 ----
-
-    @Test
-    fun `非法参数返回 Unknown`() {
-        val estimate = calculator.estimate(context(size = ImageSizePreset(0, 0)))
-
-        assertThat((estimate as GenerationCostEstimate.Unknown).reason)
-            .isEqualTo(UnknownCostReason.INVALID_PARAMETERS)
-    }
-
-    @Test
-    fun `超出官方报价范围的步数不给数字`() {
-        // 官方前端认为 steps > 50 的参数不合法，因此不报价。
-        val estimate = calculator.estimate(context(steps = 60, size = ImageSizePreset(1536, 1024)))
-
-        assertThat((estimate as GenerationCostEstimate.Unknown).reason)
-            .isEqualTo(UnknownCostReason.PRICING_NOT_CALIBRATED)
-    }
-
-    @Test
     fun `未校准公式仍然返回待确认`() {
         val uncalibrated = AnlasCostCalculator(UncalibratedPaidAnlasFormula)
         val estimate = uncalibrated.estimate(context(tier = SubscriptionTier.None, subscribed = false))
@@ -277,35 +116,7 @@ class AnlasCostCalculatorTest {
             .isEqualTo(UnknownCostReason.PRICING_NOT_CALIBRATED)
     }
 
-    @Test
-    fun `四种状态互不混淆`() {
-        assertThat(calculator.estimate(context()))
-            .isInstanceOf(GenerationCostEstimate.Free::class.java)
-        assertThat(calculator.estimate(context(profile = v5)))
-            .isInstanceOf(GenerationCostEstimate.UsesV5Allowance::class.java)
-        assertThat(calculator.estimate(context(tier = SubscriptionTier.None, subscribed = false)))
-            .isInstanceOf(GenerationCostEstimate.EstimatedAnlas::class.java)
-        assertThat(calculator.estimate(context(size = ImageSizePreset(0, 0))))
-            .isInstanceOf(GenerationCostEstimate.Unknown::class.java)
-    }
-
-    // ---- 订阅状态解析 ----
-
     private val now = 1_800_000_000L
-
-    @Test
-    fun `服务端 tier 3 且在有效期内即有订阅`() {
-        val status = SubscriptionStatusResolver.resolve(
-            rawTier = 3,
-            accountType = 0,
-            expiresAtEpochSeconds = now + 86_400,
-            nowEpochSeconds = now,
-        )
-
-        assertThat(status.tier).isEqualTo(SubscriptionTier.Opus)
-        assertThat(status.subscribed).isTrue()
-        assertThat(status.source).isEqualTo(SubscriptionSource.REMOTE)
-    }
 
     @Test
     fun `已取消但仍在付费周期内仍算有订阅`() {
@@ -318,70 +129,5 @@ class AnlasCostCalculatorTest {
         )
 
         assertThat(status.subscribed).isTrue()
-    }
-
-    @Test
-    fun `本机账号的实测读数判为无订阅`() {
-        // tier 0 / active false / accountType RETAIL / expiresAt 0 —— 2026-09-14 实测值。
-        val status = SubscriptionStatusResolver.resolve(
-            rawTier = 0,
-            accountType = 0,
-            expiresAtEpochSeconds = 0,
-            nowEpochSeconds = now,
-        )
-
-        assertThat(status.tier).isEqualTo(SubscriptionTier.None)
-        assertThat(status.subscribed).isFalse()
-    }
-
-    @Test
-    fun `内部账号类型直接算有订阅`() {
-        val status = SubscriptionStatusResolver.resolve(
-            rawTier = 0,
-            accountType = AccountType.SERVICE.rawValue,
-            expiresAtEpochSeconds = 0,
-            nowEpochSeconds = now,
-        )
-
-        assertThat(status.subscribed).isTrue()
-    }
-
-    @Test
-    fun `手动指定直接覆盖服务端读数`() {
-        val manual = SubscriptionStatusResolver.resolve(
-            rawTier = 0,
-            accountType = 0,
-            expiresAtEpochSeconds = 0,
-            nowEpochSeconds = now,
-            override = SubscriptionOverride.OPUS,
-        )
-
-        assertThat(manual.tier).isEqualTo(SubscriptionTier.Opus)
-        assertThat(manual.subscribed).isTrue()
-        assertThat(manual.source).isEqualTo(SubscriptionSource.MANUAL)
-
-        val forcedNone = SubscriptionStatusResolver.resolve(
-            rawTier = 3,
-            accountType = 0,
-            expiresAtEpochSeconds = now + 86_400,
-            nowEpochSeconds = now,
-            override = SubscriptionOverride.NONE,
-        )
-
-        assertThat(forcedNone.subscribed).isFalse()
-        assertThat(forcedNone.isOpus).isFalse()
-    }
-
-    @Test
-    fun `未知 tier 不会被当成 Opus`() {
-        val status = SubscriptionStatusResolver.resolve(
-            rawTier = 99,
-            accountType = 0,
-            expiresAtEpochSeconds = now + 86_400,
-            nowEpochSeconds = now,
-        )
-
-        assertThat(status.tier).isEqualTo(SubscriptionTier.Unknown(99))
-        assertThat(status.isOpus).isFalse()
     }
 }

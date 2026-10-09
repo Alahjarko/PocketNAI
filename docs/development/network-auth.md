@@ -50,8 +50,7 @@
   （首次请求可能要 1–2 次重试才成功；成功后的连接会被 OkHttp 复用）。
 - **重试的安全边界（红线）**：只有"**代理连接失败**（请求未发出）"或"**幂等请求（GET/HEAD）**"
   才换节点重试；**POST（生成、登录）绝不重发** —— 宁可让用户手动重试，也不重复扣费。
-- 排障工具：`SocksProxyProbeTest`（androidTest，**唯一允许联网的仪器化测试** ——
-  只发 GET 到 NovelAI 首页测 SOCKS 建连，不涉及生成）；运行时诊断看 logcat 的
+- 运行时代理诊断看 logcat 的
   `PocketNai/Proxy` tag（只记结构：模式/类型/端口匹配，**不记端点与凭据**）。
 - 流量：`ProxyTrafficListener`（EventListener body 计数）只挂在代理 client 上；
   公益模式每日 750 MB 上限（本机统计、跨天重置），超限后 `ProxyQuotaInterceptor`
@@ -68,11 +67,9 @@
   已保存的 PST 无法读取，必须同步 `res/xml` 的备份排除规则。
 - 登录错误与生成错误是**两套映射器**，不要合并：生成接口的 403 是"凭据失效"，
   登录接口的 403 是"风控/需要额外验证"。超时同理（`REQUEST_TIMEOUT` vs `TIMEOUT_UNCERTAIN`）。
-  两边都有用例钉住这个差异。
 - Access Key 派生的前 6 个字符必须按 **Unicode 码位**切，不能用 `take(6)`（按 UTF-16 单元）。
   `emoji-leading` / `emoji-inside` 两个向量专门守这条。
-- 改派生相关代码前先看 `DerivationDiagnosticTest`：它把 preSalt / BLAKE2b salt / Argon2 输出
-  分三步与参考实现对账，能立刻定位是哪一步跑偏。
+- 派生回归保留 `NovelAiAccessKeyDeriverTest` 的普通账号与 Unicode 固定向量，期望值来自独立参考实现。
 - 生成链路只认 `credentialStore.load()?.token`，不应该知道邮箱、密码或派生算法的存在。
 - **多账号**（2026-09-18）：每个账号的密文存在 `account_<id>_iv` / `account_<id>_ciphertext` 等键里，
   但**顶层的 `token_iv` / `token_ciphertext` / `token_type` / `token_hint_*` 必须继续同步维护**
@@ -82,7 +79,7 @@
   邮箱密码登录 —— **都先过 `/user/data` 验证，再落盘、再切换**。
   早期实现把粘来的 Token 不验证就保存并切换，粘错会把会话带进"已保存但不可用"的状态；
   两条路径都别绕过验证。登录路径的顺序与连接页一致：派生 → `/user/login` → 复验 → 保存，
-  登录失败不碰复验接口，复验失败不落盘。有单测钉住（`AccountAdderTest`）。
+  登录失败不碰复验接口，复验失败不落盘。`AccountAdderTest` 保留无效 Token 不覆盖原账号的回归。
 - `CredentialStore` 接口里的多账号方法带有**默认假实现**（如 `switchAccount` 直接返回 false）——
   不要依赖它们：只有 `KeystoreCredentialStore` 的实现是真的。以后加方法直接写进实现类，
   别再往接口里塞"默认返回失败"的占位实现（调用方会静默失效，且不会有编译错误提醒）。

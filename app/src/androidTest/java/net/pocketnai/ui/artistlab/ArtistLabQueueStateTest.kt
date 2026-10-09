@@ -2,6 +2,7 @@ package net.pocketnai.ui.artistlab
 
 import android.content.Context
 import android.content.ContextWrapper
+import android.app.ActivityManager
 import android.graphics.Bitmap
 import androidx.lifecycle.ViewModelStore
 import androidx.room.Room
@@ -10,17 +11,20 @@ import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.longOrNull
 import net.pocketnai.core.*
 import net.pocketnai.data.artistlab.ArtistLabStore
 import net.pocketnai.data.files.GenerationFileStore
 import net.pocketnai.data.local.PocketNaiDatabase
+import net.pocketnai.data.local.ArtistLabRunEntity
+import net.pocketnai.data.local.ArtistMixFavoriteEntity
 import net.pocketnai.data.network.NovelAiApi
 import net.pocketnai.data.repo.*
 import net.pocketnai.data.security.*
 import net.pocketnai.data.settings.*
 import net.pocketnai.domain.billing.*
+import net.pocketnai.domain.artistlab.*
+import net.pocketnai.data.artistlab.ArtistLabForegroundService
+import net.pocketnai.PocketNaiApplication
 import net.pocketnai.domain.image.*
 import net.pocketnai.domain.metadata.*
 import net.pocketnai.domain.model.*
@@ -36,7 +40,19 @@ import java.util.zip.ZipOutputStream
 /** 真实 ViewModel 调度 + 假 API + 内存库；不使用用户账号、草稿或历史。 */
 class ArtistLabQueueStateTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
-    private inner class Harness {
+    private class FakeBackground : ArtistLabBackgroundExecution {
+        var fail = false
+        var starts = 0
+        var stops = 0
+        var gate: CompletableDeferred<Unit>? = null
+        override suspend fun start(progress: StateFlow<ArtistLabProgress>, pause: () -> Unit) {
+            starts++
+            if (fail) throw ArtistLabBackgroundUnavailable()
+            gate?.await()
+        }
+        override fun stop() { stops++ }
+    }
+    private inner class Harness(val background: ArtistLabBackgroundExecution = FakeBackground()) {
         val name = "artist_lab_state_test_${UUID.randomUUID()}"
         val context = object : ContextWrapper(instrumentation.targetContext) {
             override fun getApplicationContext(): Context = this
@@ -89,7 +105,7 @@ class ArtistLabQueueStateTest {
                     object : ReferenceImageImporter { override suspend fun import(source: ReferenceSource, transform: ImageTransform?) = error("不得导入") },
                     object : ImageMetadataInspector { override suspend fun inspect(source: ReferenceSource) = error("不得读取图片") },
                     AccountBalanceRepository(api, credentials), settings, AnlasCostCalculator(NovelAiPaidAnlasFormula()), credentialStore = credentials)
-                lab = ArtistLabViewModel(store, repository, FavoriteImageRepository(database.favoriteImageDao()), generate, settings.artistLabEnabled)
+                lab = ArtistLabViewModel(store, repository, FavoriteImageRepository(database.favoriteImageDao()), generate, settings.artistLabEnabled, background)
                 states.put("generate", generate); states.put("lab", lab)
             }
         }
@@ -101,6 +117,13 @@ class ArtistLabQueueStateTest {
             waitFor { lab.approval.value != null }
         }
         fun close() {
+            main {
+                lab.pause()
+                release.complete(Unit)
+                (background as? FakeBackground)?.gate?.complete(Unit)
+            }
+            runBlocking { withTimeout(10_000) { while (lab.busy.value) delay(10) } }
+            main { background.stop() }
             main { states.clear() }
             database.close()
             // File 是独立命名的测试 cache 子目录。
@@ -108,30 +131,102 @@ class ArtistLabQueueStateTest {
         }
     }
 
-    @Test fun pauseWaitsForCurrentImageResumeKeepsPlanAndDoesNotOverwriteHome() = runBlocking<Unit> {
+    @Test fun mixFavoritesLinkImagesAcrossRunsAndKeepLegacyBookmarksAfterImageCleanup() = runBlocking<Unit> {
+        val h = Harness()
+        val observer = launch { h.lab.favoriteMixGallery.collect() }
+        try {
+            h.prepare(2); h.main { h.lab.confirm() }; h.waitFor { !h.lab.busy.value }
+            val run = h.store.dao.run(h.lab.selectedRun.value!!)!!
+            val draws = h.store.dao.draws(run.id)
+            val mix = h.store.json.decodeFromString<ArtistMix>(draws[0].mixJson)
+            val legacy = mix.prompt.replace(", ::", "::")
+            h.store.dao.saveMix(ArtistMixFavoriteEntity(legacy, 2))
+            h.store.dao.saveMix(ArtistMixFavoriteEntity(mix.prompt, 1))
+            h.store.dao.create(ArtistLabRunEntity("second-run", 3, run.configJson, "COMPLETED", ""),
+                listOf(draws[1].copy(id = "second-draw", runId = "second-run", mixJson = draws[0].mixJson)))
+            h.main { h.lab.select("second-run") }
+            h.waitFor { h.lab.favoriteMixGallery.value.singleOrNull()?.images?.size == 2 }
+            assertThat(h.lab.favoriteMixGallery.value.single().keys).containsExactly(legacy, mix.prompt)
+            h.repository.cleanupLabImages(draws.mapNotNull { it.imageId })
+            h.waitFor { h.lab.favoriteMixGallery.value.singleOrNull()?.images?.isEmpty() == true }
+            assertThat(h.store.dao.observeMixFavorites().first()).hasSize(2)
+            assertThat(h.store.dao.draws("second-run").single().imageId).isNull()
+            h.main { h.lab.removeMix(h.lab.favoriteMixGallery.value.single()) }
+            h.waitFor { h.lab.favoriteMixGallery.value.isEmpty() }
+            assertThat(h.store.dao.observeMixFavorites().first()).isEmpty()
+            assertThat(h.store.dao.run(run.id)).isNotNull()
+            assertThat(h.payloads).hasSize(2)
+        } finally { observer.cancelAndJoin(); h.close() }
+    }
+
+    @Test fun excludedArtistsPersistAndNewPlansOnlyUseEnabledPool() = runBlocking<Unit> {
         val h = Harness()
         try {
-            h.holdFirst = true; h.prepare(3)
-            h.main { h.lab.confirm() }
+            h.waitFor { h.lab.ready.value }
+            val entries = h.lab.catalogEntries.value
+            val kept = entries.first().tag
+            h.main { entries.drop(1).forEach { h.lab.setArtistEnabled(it.tag, false) } }
+            assertThat(h.lab.catalogCount.value).isEqualTo(1)
+            assertThat(ArtistLabStore(h.context, h.database).excludedArtists())
+                .containsExactlyElementsIn(entries.drop(1).map { it.tag })
+            h.main { h.lab.prepare("sfw, blue sky", "lowres", "123", "3", 2, 10, 30) }
+            h.waitFor { h.lab.message.value.contains("当前可用 1") }
+            assertThat(h.lab.approval.value).isNull()
+            h.main { h.lab.prepare("sfw, blue sky", "lowres", "123", "3", 1, 10, 30) }
+            h.waitFor { h.lab.approval.value != null }
+            h.main { h.lab.confirm() }; h.waitFor { !h.lab.busy.value }
+            val before = h.store.dao.draws(h.lab.selectedRun.value!!)
+            assertThat(before).hasSize(3)
+            assertThat(before.all { it.mixJson.contains(kept) }).isTrue()
+            h.main { h.lab.setArtistEnabled(entries[1].tag, true) }
+            assertThat(h.lab.catalogCount.value).isEqualTo(2)
+            assertThat(h.store.dao.draws(h.lab.selectedRun.value!!).map { it.mixJson }).isEqualTo(before.map { it.mixJson })
+        } finally { h.close() }
+    }
+
+    @Test fun backgroundStartupFailureNeverSendsOrLeavesGenerationReserved() = runBlocking<Unit> {
+        val background = FakeBackground().apply { fail = true }
+        val h = Harness(background)
+        try {
+            h.prepare(3); h.main { h.lab.confirm() }
+            h.waitFor { !h.lab.busy.value }
+            assertThat(h.payloads).isEmpty()
+            assertThat(h.lab.selectedRun.value).isNull()
+            assertThat(h.generate.state.value.artistLabActive).isFalse()
+            assertThat(background.starts).isEqualTo(1)
+            assertThat(background.stops).isEqualTo(1)
+        } finally { h.close() }
+    }
+
+    @Test fun realForegroundServiceCompletesFakeBatchWithHomeAndScreenOff() = runBlocking<Unit> {
+        val host = (instrumentation.targetContext.applicationContext as PocketNaiApplication).container.artistLabBackgroundExecution
+        check(host.session == null) { "不得影响已有抽卡批次" }
+        val h = Harness(host)
+        val automation = instrumentation.uiAutomation
+        fun shell(command: String) { automation.executeShellCommand(command).close() }
+        @Suppress("DEPRECATION")
+        fun foregroundRunning() = instrumentation.targetContext.getSystemService(ActivityManager::class.java)
+            .getRunningServices(100).any { it.service.className == ArtistLabForegroundService::class.java.name && it.foreground }
+        try {
+            // 测试仅临时借用 shell 的启动服务权限；发送端始终是 Harness 的假 API。
+            automation.adoptShellPermissionIdentity("android.permission.START_FOREGROUND_SERVICES_FROM_BACKGROUND")
+            h.holdFirst = true; h.prepare(3); h.main { h.lab.confirm() }
             withTimeout(10_000) { h.entered.await() }
-            h.main { h.generate.onPromptChange("home draft remains"); h.generate.generate(); h.lab.pause() }
-            assertThat(h.generate.state.value.canGenerate).isFalse()
-            assertThat(h.payloads).hasSize(1)
+            assertThat(foregroundRunning()).isTrue()
+            shell("input keyevent 3")
+            shell("input keyevent 223")
             h.release.complete(Unit)
             h.waitFor { !h.lab.busy.value }
-            val id = h.lab.selectedRun.value!!
-            val before = h.store.dao.draws(id)
-            assertThat(before.map { it.status }).containsExactly("SUCCEEDED", "PLANNED", "PLANNED").inOrder()
-            h.main { h.lab.prepareResume() }; h.waitFor { h.lab.approval.value != null }
-            assertThat(h.lab.approval.value!!.remaining).isEqualTo(2)
-            h.main { h.lab.confirm() }; h.waitFor { !h.lab.busy.value }
             assertThat(h.payloads).hasSize(3)
-            assertThat(h.store.dao.draws(id).map { it.mixJson }).isEqualTo(before.map { it.mixJson })
-            assertThat(h.store.dao.draws(id).all { it.status == "SUCCEEDED" }).isTrue()
-            assertThat(h.generate.state.value.promptTemplate).isEqualTo("home draft remains")
-            assertThat(h.generate.state.value.artistLabActive).isFalse()
-            assertThat(h.payloads.map { (it["parameters"] as JsonObject)["seed"]!!.jsonPrimitive.longOrNull }).containsExactly(123456789L, 123456789L, 123456789L)
-        } finally { h.close() }
+            assertThat(h.lab.progress.value.completed).isEqualTo(3)
+            assertThat(h.store.dao.draws(h.lab.selectedRun.value!!).all { it.status == "SUCCEEDED" }).isTrue()
+            h.waitFor { !foregroundRunning() }
+            assertThat(host.session).isNull()
+        } finally {
+            shell("input keyevent 224")
+            automation.dropShellPermissionIdentity()
+            h.close()
+        }
     }
 
     @Test fun uncertainSecondRequestStopsQueueAndResumeSkipsIt() = runBlocking<Unit> {
