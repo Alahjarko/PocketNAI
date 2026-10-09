@@ -16,6 +16,9 @@ import net.pocketnai.domain.model.ModelProfile
 import net.pocketnai.domain.model.ReferenceImage
 import net.pocketnai.domain.model.ReferenceRole
 import net.pocketnai.domain.model.applyQualityTags
+import net.pocketnai.domain.model.GenerationFamily
+import net.pocketnai.domain.model.ImageModel
+import net.pocketnai.domain.prompt.NovelAiTextPrompt
 
 /**
  * 构造 NovelAI `POST /ai/generate-image` 的请求体（规划书 3.3 与 6.1）。
@@ -122,7 +125,7 @@ object NovelAiRequestBuilder {
         // 质量标签按官方网页版的行为追加到提示词末尾，而不是交给服务端处理。
         // 官方 UI 会明确显示 "Added to the end of the prompt: ..."，
         // 因此这里必须真的改写提交给模型的正向提示词。
-        val positive = applyQualityTags(normalized.prompt, normalized.qualityTags)
+        val qualityPrompt = applyQualityTags(normalized.prompt, normalized.qualityTags)
         val negative = normalized.negativePrompt
 
         val baseImage = upstreamImages[ReferenceRole.IMG2IMG]?.firstOrNull()?.takeIf { it.isNotEmpty() }
@@ -133,6 +136,12 @@ object NovelAiRequestBuilder {
         val useInpaint = request.mode == GenerationMode.INPAINT &&
             baseImage != null &&
             maskImage != null
+        // V5 Curated inpainting actually uses V4.5; follow the requested API model.
+        val autoText = profile.model.family == GenerationFamily.V5 &&
+            (!useInpaint || profile.model == ImageModel.V5_FULL)
+        val positive = if (autoText) NovelAiTextPrompt.appendAutomatic(
+            qualityPrompt, normalized.characters, normalized.characters.any { !it.isBlank },
+        ) else qualityPrompt
         val directorSources = upstreamImages[ReferenceRole.DIRECTOR].orEmpty()
         val directors = request.referencesOf(ReferenceRole.DIRECTOR)
         // 数量对不上说明编码环节漏了图：宁可不发这组字段，也不发一个对不齐的数组。

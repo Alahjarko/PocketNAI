@@ -42,12 +42,12 @@ enum class QualityTagsOption(
 }
 
 /**
- * 把质量标签追加到提示词末尾。
+ * 把质量标签追加到基础描述末尾，显式 Text: 文字段之前。
  *
  * 拼接规则统一走 [PromptComposition.append]，因此"空提示词不产生开头逗号"这类
  * 边界情况和收藏片段的填入完全一致。
  */
 fun applyQualityTags(prompt: String, option: QualityTagsOption): String {
     val suffix = option.appendedText ?: return prompt
-    return net.pocketnai.domain.prompt.PromptComposition.append(prompt, suffix)
+    return net.pocketnai.domain.prompt.NovelAiTextPrompt.appendQuality(prompt, suffix)
 }

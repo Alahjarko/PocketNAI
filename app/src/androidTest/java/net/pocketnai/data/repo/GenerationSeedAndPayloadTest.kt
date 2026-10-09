@@ -21,6 +21,7 @@ import net.pocketnai.core.Outcome
 import net.pocketnai.data.files.GenerationFileStore
 import net.pocketnai.data.local.PocketNaiDatabase
 import net.pocketnai.data.network.NovelAiApi
+import net.pocketnai.data.network.NovelAiRequestBuilder
 import net.pocketnai.data.network.ZipImageExtractor
 import net.pocketnai.data.security.CredentialStore
 import net.pocketnai.data.security.CredentialHint
@@ -325,11 +326,19 @@ class GenerationSeedAndPayloadTest {
             net.pocketnai.domain.model.CharacterPrompt(prompt = "blue hair", negativePrompt = "hat", centerX = 0.2, centerY = 0.3),
             net.pocketnai.domain.model.CharacterPrompt(prompt = "red hair", negativePrompt = "glasses", centerX = 0.8, centerY = 0.7),
         )
-        val params = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V4_5_CURATED))
-            .copy(prompt = "two people", characters = characters)
-        val events = repository.generate(GenerationRequest(params = params), "two people").toList()
+        val original = "two people, a sign reads \"这是原文\", Text: 这是原文"
+        val params = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V5_FULL))
+            .copy(prompt = original, characters = characters)
+        val events = repository.generate(GenerationRequest(params = params), original).toList()
         val image = events.filterIsInstance<GenerationEvent.Final>().single().image
-        assertThat(repository.loadDetail(image.id)?.generation?.params?.characters).isEqualTo(characters)
+        val restored = repository.loadDetail(image.id)!!.generation
+        assertThat(restored.params.characters).isEqualTo(characters)
+        assertThat(restored.params.prompt).isEqualTo(original)
+        assertThat(restored.promptTemplate).isEqualTo(original)
+        val expected = "two people, a sign reads \"这是原文\", very aesthetic, masterpiece, no text Text: 这是原文"
+        assertThat(payloads.single()["input"]!!.jsonPrimitive.content).isEqualTo(expected)
+        assertThat(NovelAiRequestBuilder.build(ModelCatalog.profileOf(params.model), restored.params)["input"]!!.jsonPrimitive.content)
+            .isEqualTo(expected)
         for (key in listOf("v4_prompt", "v4_negative_prompt")) {
             val block = parametersOf(payloads.single())[key] as JsonObject
             val captions = (block["caption"] as JsonObject)["char_captions"] as kotlinx.serialization.json.JsonArray

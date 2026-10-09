@@ -1,7 +1,6 @@
 package net.pocketnai.data.network
 
 import com.google.common.truth.Truth.assertThat
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonArray
@@ -12,7 +11,6 @@ import net.pocketnai.domain.model.CharacterPrompt
 import net.pocketnai.domain.model.GenerationParams
 import net.pocketnai.domain.model.ImageModel
 import net.pocketnai.domain.model.ModelCatalog
-import net.pocketnai.domain.model.ModelProfile
 import net.pocketnai.domain.model.QualityTagsOption
 import org.junit.Test
 
@@ -24,46 +22,37 @@ import org.junit.Test
  */
 class NovelAiRequestBuilderTest {
 
-    private val v45 = ModelCatalog.profileOf(ImageModel.V4_5_CURATED)
-    private val v5 = ModelCatalog.profileOf(ImageModel.V5_CURATED)
-
-    private fun build(
-        profile: ModelProfile,
-        prompt: String = "1girl, silver hair",
-        negative: String = "lowres, bad anatomy",
-    ): JsonObject = NovelAiRequestBuilder.build(
-        profile,
-        GenerationParams.defaultsFor(profile).copy(
-            prompt = prompt,
-            negativePrompt = negative,
-            // 结构断言与质量标签解耦：追加行为由专门的用例覆盖，
-            // 否则每改一次质量标签文本都会连带打破这些字段级断言。
-            qualityTags = QualityTagsOption.NONE,
-        ),
-    )
+    private val v5 = ModelCatalog.profileOf(ImageModel.V5_FULL)
 
     @Test
-    fun `带独立角色时正确构造 char_captions 与 use_coords 且负向包含对应独立负向`() {
+    fun `V5漫画文字提取保留角色坐标与独立负向`() {
         val char1 = CharacterPrompt(
-            prompt = "1girl, blonde hair",
+            prompt = "1girl, blonde hair, says 「左边」",
             negativePrompt = "bad eyes",
             position = CharacterPosition.FAR_LEFT,
         )
         val char2 = CharacterPrompt(
-            prompt = "1boy, black hair",
+            prompt = "1boy, black hair, says ‘右边’",
             negativePrompt = "extra arms",
             position = CharacterPosition.FAR_RIGHT,
         )
-        val params = GenerationParams.defaultsFor(v45).copy(
-            prompt = "masterpiece",
+        val original = "The bottom of the screen reads \"这是一段测试文本\", speech bubble in the comic says “这是一个对话框”"
+        val params = GenerationParams.defaultsFor(v5).copy(
+            prompt = original,
             negativePrompt = "lowres",
-            characters = listOf(char1, char2),
-            qualityTags = QualityTagsOption.NONE,
+            // Opposite input order verifies that text follows coordinates, not array order.
+            characters = listOf(char2, char1),
+            qualityTags = QualityTagsOption.STANDARD,
         )
 
-        val parameters = NovelAiRequestBuilder.build(v45, params)["parameters"]!!.jsonObject
+        val payload = NovelAiRequestBuilder.build(v5, params)
+        val parameters = payload["parameters"]!!.jsonObject
         val v4Prompt = parameters["v4_prompt"]!!.jsonObject
         val v4Negative = parameters["v4_negative_prompt"]!!.jsonObject
+        val expected = original + ", very aesthetic, masterpiece, no text, teXt: 这是一个对话框\n\n这是一段测试文本\n\n左边\n\n右边"
+        assertThat(payload["input"]!!.jsonPrimitive.content).isEqualTo(expected)
+        assertThat(v4Prompt["caption"]!!.jsonObject["base_caption"]!!.jsonPrimitive.content).isEqualTo(expected)
+        assertThat(params.prompt).isEqualTo(original)
 
         assertThat(v4Prompt["use_coords"]!!.jsonPrimitive.boolean).isTrue()
         assertThat(v4Prompt["use_order"]!!.jsonPrimitive.boolean).isTrue()
@@ -72,22 +61,22 @@ class NovelAiRequestBuilderTest {
         assertThat(charCaptions).hasSize(2)
 
         val firstChar = charCaptions[0].jsonObject
-        assertThat(firstChar["char_caption"]!!.jsonPrimitive.content).isEqualTo("1girl, blonde hair")
+        assertThat(firstChar["char_caption"]!!.jsonPrimitive.content).isEqualTo(char2.prompt)
         val firstCenter = firstChar["centers"]!!.jsonArray[0].jsonObject
-        assertThat(firstCenter["x"]!!.jsonPrimitive.double).isEqualTo(0.15)
+        assertThat(firstCenter["x"]!!.jsonPrimitive.double).isEqualTo(0.85)
         assertThat(firstCenter["y"]!!.jsonPrimitive.double).isEqualTo(0.5)
 
         val secondChar = charCaptions[1].jsonObject
-        assertThat(secondChar["char_caption"]!!.jsonPrimitive.content).isEqualTo("1boy, black hair")
+        assertThat(secondChar["char_caption"]!!.jsonPrimitive.content).isEqualTo(char1.prompt)
         val secondCenter = secondChar["centers"]!!.jsonArray[0].jsonObject
-        assertThat(secondCenter["x"]!!.jsonPrimitive.double).isEqualTo(0.85)
+        assertThat(secondCenter["x"]!!.jsonPrimitive.double).isEqualTo(0.15)
         assertThat(secondCenter["y"]!!.jsonPrimitive.double).isEqualTo(0.5)
 
         // 负向提示词
         val negCharCaptions = v4Negative["caption"]!!.jsonObject["char_captions"]!!.jsonArray
         assertThat(negCharCaptions).hasSize(2)
-        assertThat(negCharCaptions[0].jsonObject["char_caption"]!!.jsonPrimitive.content).isEqualTo("bad eyes")
-        assertThat(negCharCaptions[1].jsonObject["char_caption"]!!.jsonPrimitive.content).isEqualTo("extra arms")
+        assertThat(negCharCaptions[0].jsonObject["char_caption"]!!.jsonPrimitive.content).isEqualTo("extra arms")
+        assertThat(negCharCaptions[1].jsonObject["char_caption"]!!.jsonPrimitive.content).isEqualTo("bad eyes")
         assertThat(v4Negative["legacy_uc"]!!.jsonPrimitive.boolean).isFalse()
     }
 }

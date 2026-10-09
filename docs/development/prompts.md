@@ -4,8 +4,16 @@
 
 ## 质量标签
 
-- 质量标签是**追加到提示词末尾的文本**（`very aesthetic, masterpiece, no text` 等），由客户端拼接，不是 API 开关。
+- 质量标签是**追加到基础描述末尾的文本**（`very aesthetic, masterpiece, no text` 等），由客户端拼接，不是 API 开关。存在显式 `Text:` 时插在文字段之前，不能成为待绘制文字的一部分。
 - 因此 `NovelAiRequestBuilder` 把 `qualityToggle` 固定发 `false`，避免服务端重复追加。
+
+## V5 图片文字（2026-10-09）
+
+- 官方V5前端会自动提取引号内文字，生成末尾的 `teXt:` 段。依据：[V5官方介绍](https://novelai.net/v5)、[文字渲染文档](https://docs.novelai.net/en/image/textrendering/)及当日公开前端 `_app-b1c0ffe38c343809.js` 的文字处理模块。
+- 统一入口是请求构造层的 `NovelAiTextPrompt`：先加质量标签，再处理V5自动文字；`input`与`v4_prompt.caption.base_caption`共用结果。草稿、历史原文、独立角色原文和负向提示词不改写。V4.5不自动提取；V5 Curated重绘实际回落V4.5，也不启用自动提取。
+- 支持普通双引号、弯双引号、日文引号及单引号；避免把单词里的撇号当开引号。文字用空行分隔，CJK占比与角色位置排序沿用官方规则；已有任意正向 `Text:` 段时不再自动追加。基础提示词分块只处理第一块，保留后续块。
+- 网页图片导入已有完整文字段时继续原样接收，不从历史里重复提取或擅自移除用户手写文字。None仍表示不追加质量标签。
+- 本次完成源码协议核对与隔离回归，未完成网页/App真实生图对照；文字准确率仍需实际出图验收。
 
 ## 提示词拼接
 

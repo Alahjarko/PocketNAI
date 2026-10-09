@@ -74,7 +74,7 @@
     <string name="generate_seed_fixed">固定</string>
     <string name="generate_quality_tags">质量标签</string>
     <string name="generate_quality_tags_hint">按当前模型规则追加到提示词末尾</string>
-    <string name="generate_quality_tags_appended">追加到提示词末尾：%1$s</string>
+    <string name="generate_quality_tags_appended">基础描述追加：%1$s</string>
     <string name="generate_quality_tags_none">不追加任何内容</string>
     <string name="generate_advanced">高级参数</string>
     <string name="generate_restore_model_defaults">恢复模型默认值</string>
