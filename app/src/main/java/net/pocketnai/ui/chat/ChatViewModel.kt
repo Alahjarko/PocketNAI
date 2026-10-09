@@ -8,6 +8,7 @@ import kotlinx.serialization.json.*
 import net.pocketnai.data.chat.*
 import net.pocketnai.domain.chat.*
 import net.pocketnai.domain.model.GenerationParams
+import net.pocketnai.domain.model.CharacterPrompt
 import java.util.UUID
 
 class ChatViewModel(
@@ -196,7 +197,8 @@ class ChatViewModel(
                                 "get_generation_settings" -> {
                                     val p = images.currentParams()
                                     result = buildJsonObject { put("model", p.model.apiModelId); put("width", p.size.width); put("height", p.size.height)
-                                        put("steps", p.steps); put("guidance", p.guidance); put("max_images_per_message", 1) }.toString()
+                                        put("steps", p.steps); put("guidance", p.guidance); put("max_images_per_message", 1)
+                                        put("max_characters", CharacterPrompt.limitFor(p.model)); put("use_coords", p.useCharacterCoordinates) }.toString()
                                 }
                                 "generate_image" -> {
                                     if (generated) throw ChatFailure("本条消息的图片生成次数已用完，请发送新消息")

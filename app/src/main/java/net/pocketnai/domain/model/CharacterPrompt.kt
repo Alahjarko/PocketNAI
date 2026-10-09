@@ -26,13 +26,9 @@ data class CharacterPrompt(
     ) : this(id, prompt, negativePrompt, position.x, position.y)
 
     companion object {
-        /**
-         * 角色数量上限。
-         *
-         * 界面支持二维画布与五档快捷站位，5 个是界面与请求共同遵守的上限
-         * （添加按钮、元数据导入截断都读这一个常量，别再各写一份）。
-         */
-        const val MAX_COUNT: Int = 5
+        /** 2026-10-09 public frontend: V5 32 characters, V4.5 6. */
+        const val MAX_COUNT: Int = 32
+        fun limitFor(model: ImageModel): Int = if (model.family == GenerationFamily.V5) MAX_COUNT else 6
     }
 }
 

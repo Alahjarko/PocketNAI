@@ -51,6 +51,10 @@ fun MultiCharacterSection(
     suggestionState: GenerateViewModel.UiState? = null,
     onSuggestionQuery: (String, String) -> Unit = { _, _ -> },
     canvasSize: ImageSizePreset = ImageSizePreset(1024, 1024),
+    maxCharacters: Int = CharacterPrompt.MAX_COUNT,
+    useCoordinates: Boolean = false,
+    onCoordinateModeChange: (Boolean) -> Unit = {},
+    macros: List<net.pocketnai.domain.model.PromptFavorite> = emptyList(),
 ) {
     var expanded by remember { mutableStateOf(characters.isNotEmpty()) }
     var positionsOpen by remember { mutableStateOf(false) }
@@ -63,11 +67,11 @@ fun MultiCharacterSection(
                 },
                 leadingIcon = { Icon(Icons.Default.Person, null, Modifier.size(FilterChipDefaults.IconSize)) },
                 label = {
-                    Text(if (characters.isEmpty()) "+ 添加独立角色 (0/${CharacterPrompt.MAX_COUNT})"
-                        else "独立角色 (${characters.size}/${CharacterPrompt.MAX_COUNT})" + if (expanded) " (收起)" else " (展开)")
+                    Text(if (characters.isEmpty()) "+ 添加独立角色 (0/$maxCharacters)"
+                        else "独立角色 (${characters.size}/$maxCharacters)" + if (expanded) " (收起)" else " (展开)")
                 },
             )
-            if (expanded && characters.isNotEmpty() && characters.size < CharacterPrompt.MAX_COUNT) {
+            if (expanded && characters.isNotEmpty() && characters.size < maxCharacters) {
                 TextButton(onClick = onAddCharacter) {
                     Icon(Icons.Default.Add, null, Modifier.size(16.dp))
                     Text("添加", Modifier.padding(start = 4.dp))
@@ -75,13 +79,19 @@ fun MultiCharacterSection(
             }
         }
         if (expanded && characters.isNotEmpty()) {
-            TextButton(onClick = { positionsOpen = true }) { Text("在画布上设置角色位置") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = !useCoordinates, onClick = { onCoordinateModeChange(false) }, label = { Text("AI 自动安排") })
+                FilterChip(selected = useCoordinates, onClick = { onCoordinateModeChange(true) }, label = { Text("手动位置") })
+            }
+            if (useCoordinates) TextButton(onClick = { positionsOpen = true }) { Text("在画布上设置角色位置") }
             characters.forEachIndexed { index, character ->
                 key(character.id) {
                     CharacterCard(
                         index, character, textRevision, suggestionState, onSuggestionQuery,
                         onUpdate = { onUpdateCharacter(index, it) },
                         onDelete = { onRemoveCharacter(index) },
+                        showPosition = useCoordinates,
+                        macros = macros,
                     )
                 }
             }
@@ -107,6 +117,8 @@ private fun CharacterCard(
     onSuggestionQuery: (String, String) -> Unit,
     onUpdate: (CharacterPrompt) -> Unit,
     onDelete: () -> Unit,
+    showPosition: Boolean,
+    macros: List<net.pocketnai.domain.model.PromptFavorite>,
 ) {
     var positive by remember(character.id, textRevision) {
         mutableStateOf(TextFieldValue(character.prompt, TextRange(character.prompt.length)))
@@ -141,6 +153,7 @@ private fun CharacterCard(
                 PromptTagSuggestions(
                     positive, focused, "character:${character.id}", state, onSuggestionQuery,
                     onFieldChange = { positive = it; onUpdate(character.copy(prompt = it.text)) },
+                    macros = macros,
                 )
             }
             CollapsedNegativePrompt("角色专属排除词", negative.text.isNotBlank()) {
@@ -156,19 +169,22 @@ private fun CharacterCard(
                     PromptTagSuggestions(
                         negative, negativeFocused, "character-negative:${character.id}", state, onSuggestionQuery,
                         onFieldChange = { negative = it; onUpdate(character.copy(negativePrompt = it.text)) },
+                        macros = macros,
                     )
                 }
             }
-            val selected = CharacterPosition.entries.firstOrNull {
-                it.x == character.centerX && it.y == character.centerY
-            }
-            Text("位置：" + (selected?.label ?: "x=${"%.2f".format(java.util.Locale.ROOT, character.centerX)} / y=${"%.2f".format(java.util.Locale.ROOT, character.centerY)}"),
-                style = MaterialTheme.typography.labelSmall)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                CharacterPosition.entries.forEach { pos ->
-                    FilterChip(selected = selected == pos,
-                        onClick = { onUpdate(character.copy(centerX = pos.x, centerY = pos.y)) },
-                        label = { Text(pos.label) })
+            if (showPosition) {
+                val selected = CharacterPosition.entries.firstOrNull {
+                    it.x == character.centerX && it.y == character.centerY
+                }
+                Text("位置：" + (selected?.label ?: "x=${"%.2f".format(java.util.Locale.ROOT, character.centerX)} / y=${"%.2f".format(java.util.Locale.ROOT, character.centerY)}"),
+                    style = MaterialTheme.typography.labelSmall)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    CharacterPosition.entries.forEach { pos ->
+                        FilterChip(selected = selected == pos,
+                            onClick = { onUpdate(character.copy(centerX = pos.x, centerY = pos.y)) },
+                            label = { Text(pos.label) })
+                    }
                 }
             }
         }

@@ -215,6 +215,7 @@ class AppContainer(application: Application) {
             // 那时这里读到的就是 false，生成回到已验证的 ZIP 链路。
             streamingEnabled = { settingsStore.streamingPreviewEnabled.value },
             onStreamingFailure = { settingsStore.recordStreamingFailure() },
+            promptMacros = { promptFavoriteRepository.snapshot() },
         )
     }
 

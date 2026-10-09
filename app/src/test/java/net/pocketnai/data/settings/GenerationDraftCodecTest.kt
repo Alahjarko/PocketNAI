@@ -25,17 +25,6 @@ import org.junit.Test
  */
 class GenerationDraftCodecTest {
 
-    @Test
-    fun `角色的二维坐标和长提示词在重启草稿后保留`() {
-        val character = net.pocketnai.domain.model.CharacterPrompt(
-            prompt = "long character tag, ".repeat(200), negativePrompt = "hat",
-            centerX = 0.12345, centerY = 0.98765,
-        )
-        val original = draftWith { it.copy(characters = listOf(character)) }
-        assertThat(GenerationDraftCodec.decode(GenerationDraftCodec.encode(original))?.params?.characters)
-            .containsExactly(character)
-    }
-
     private val profile = ModelCatalog.profileOf(ImageModel.V4_5_CURATED)
 
     private fun draftWith(
@@ -70,8 +59,10 @@ class GenerationDraftCodecTest {
                 baseSeed = 123456789L,
                 qualityTags = QualityTagsOption.LIGHT,
                 undesiredContentPresetIndex = 2,
+                useCharacterCoordinates = true,
+                characters = listOf(net.pocketnai.domain.model.CharacterPrompt(prompt = "long tag, ".repeat(200), centerX = 0.12345, centerY = 0.98765)),
             )
-        }
+        }.copy(references = listOf(reference("retained-director", ReferenceRole.DIRECTOR, 0)))
 
         val restored = GenerationDraftCodec.decode(GenerationDraftCodec.encode(original))
 
@@ -89,8 +80,11 @@ class GenerationDraftCodecTest {
         assertThat(params.baseSeed).isEqualTo(123456789L)
         assertThat(params.qualityTags).isEqualTo(QualityTagsOption.LIGHT)
         assertThat(params.undesiredContentPresetIndex).isEqualTo(2)
+        assertThat(params.useCharacterCoordinates).isTrue()
+        assertThat(params.characters).isEqualTo(original.params.characters)
         assertThat(restored.promptTemplate).isEqualTo("1girl, silver hair")
         assertThat(restored.negativeTemplate).isEqualTo("lowres")
+        assertThat(restored.references).isEqualTo(original.references)
     }
 
     @Test

@@ -20,6 +20,20 @@ data class GenerationRequest(
     /** Image2Img 的起点；未选择时为 null。 */
     val img2imgSource: ReferenceImage? get() = referencesOf(ReferenceRole.IMG2IMG).firstOrNull()
 
+    /** Editor material remains in the draft; only supported conditions enter this request. */
+    fun withActiveReferences(profile: ModelProfile): GenerationRequest {
+        val active = references.filter { reference -> when (reference.role) {
+            ReferenceRole.DIRECTOR -> profile.supportsDirectorReference
+            ReferenceRole.VIBE -> profile.supportsVibeTransfer
+            ReferenceRole.IMG2IMG -> profile.supportsImg2Img
+            ReferenceRole.INPAINT_MASK -> profile.supportsInpaint
+        } }
+        val activeMode = if (mode == GenerationMode.PRECISE_REFERENCE && !profile.supportsDirectorReference) {
+            if (active.any { it.role == ReferenceRole.IMG2IMG }) GenerationMode.IMG2IMG else GenerationMode.TXT2IMG
+        } else mode
+        return copy(mode = activeMode, references = active)
+    }
+
     /**
      * 参考图相关的阻塞问题。空列表表示可以安全提交。
      *

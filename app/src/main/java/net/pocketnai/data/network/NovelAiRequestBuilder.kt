@@ -27,18 +27,9 @@ import net.pocketnai.domain.prompt.NovelAiTextPrompt
  * 这里是纯 Kotlin（不依赖 OkHttp / Android），因此可以在 JVM 单元测试里逐字段断言请求体，
  * 尤其是 V4.5 / V5 要求的结构化 Prompt 不能出错。
  *
- * ## 结构化 Prompt 约定（规划书 3.3）
- * - `v4_prompt.caption.base_caption` = 处理后的正向提示词
- * - `v4_prompt.caption.char_captions` = 空数组
- * - `v4_negative_prompt.caption.base_caption` = 处理后的负向提示词
- * - `v4_negative_prompt.caption.char_captions` = 空数组
- * - 不启用自定义角色坐标（`use_coords = false`）
- *
- * ## 待协议探针核对（规划书 6.3）
- * 下面的字段集合是按公开 OpenAPI 与网页版行为整理的基线。首次用真实账户做本地脱敏探针时，
- * 需要逐项比对：`params_version`、`ucPreset` 的取值域、是否需要 `dynamic_thresholding`、
- * `legacy`、`controlnet_strength`、`add_original_image` 等兼容字段，以及 `v4_negative_prompt`
- * 是否需要 `legacy_uc`。修正只发生在本函数与 [ModelCatalog]，不影响其他层。
+ * 全局质量词、负向预设按当前模型显式展开；宏在预设之后展开，V5 自动文字最后追加。
+ * 角色正/负向数组对应，只提交正向非空的角色；use_coords 由用户的布局模式决定。
+ * tag_hint_qt / tag_hint_uc_preset 用稳定标识供图片导入，不发送遗留数值 ucPreset。
  */
 object NovelAiRequestBuilder {
 
@@ -118,6 +109,7 @@ object NovelAiRequestBuilder {
          * 我们走有文档的 SSE 端点，因此不依赖服务端的默认值。
          */
         streaming: Boolean = false,
+        preparedPrompts: net.pocketnai.domain.prompt.PromptTemplates.Prepared? = null,
     ): JsonObject {
         val params = request.params
         val normalized = profile.normalize(params)
@@ -125,8 +117,10 @@ object NovelAiRequestBuilder {
         // 质量标签按官方网页版的行为追加到提示词末尾，而不是交给服务端处理。
         // 官方 UI 会明确显示 "Added to the end of the prompt: ..."，
         // 因此这里必须真的改写提交给模型的正向提示词。
-        val qualityPrompt = applyQualityTags(normalized.prompt, normalized.qualityTags)
-        val negative = normalized.negativePrompt
+        val qualityPrompt = preparedPrompts?.positive ?: applyQualityTags(normalized.prompt, normalized.qualityTags, normalized.model)
+        val negative = preparedPrompts?.negative ?: net.pocketnai.domain.prompt.NovelAiPromptPresets.resolveNegative(
+            normalized.model, normalized.undesiredContentPresetIndex, qualityPrompt, normalized.negativePrompt,
+        )
 
         val baseImage = upstreamImages[ReferenceRole.IMG2IMG]?.firstOrNull()?.takeIf { it.isNotEmpty() }
         val maskImage = upstreamImages[ReferenceRole.INPAINT_MASK]?.firstOrNull()?.takeIf { it.isNotEmpty() }
@@ -140,7 +134,7 @@ object NovelAiRequestBuilder {
         val autoText = profile.model.family == GenerationFamily.V5 &&
             (!useInpaint || profile.model == ImageModel.V5_FULL)
         val positive = if (autoText) NovelAiTextPrompt.appendAutomatic(
-            qualityPrompt, normalized.characters, normalized.characters.any { !it.isBlank },
+            qualityPrompt, normalized.characters, normalized.useCharacterCoordinates,
         ) else qualityPrompt
         val directorSources = upstreamImages[ReferenceRole.DIRECTOR].orEmpty()
         val directors = request.referencesOf(ReferenceRole.DIRECTOR)
@@ -168,15 +162,19 @@ object NovelAiRequestBuilder {
             put("n_samples", normalized.sampleCount)
             put("seed", normalized.baseSeed)
 
-            put("ucPreset", normalized.undesiredContentPresetIndex)
+            // Presets are expanded client-side, as on the web. Do not send the obsolete numeric ucPreset.
+            put("ucPresetId", net.pocketnai.domain.prompt.NovelAiPromptPresets.preset(normalized.model, normalized.undesiredContentPresetIndex).id)
+            put("qualityPresetId", normalized.qualityTags.name.lowercase(java.util.Locale.ROOT))
+            put("tag_hint_uc_preset", net.pocketnai.domain.prompt.NovelAiPromptPresets.preset(normalized.model, normalized.undesiredContentPresetIndex).tagHint)
+            put("tag_hint_qt", normalized.qualityTags.tagHint)
             // 质量标签已经由本应用显式写进提示词，因此关闭服务端的自动追加，
             // 否则同一段文本可能被叠加两次。
             put("qualityToggle", false)
             put("negative_prompt", negative)
 
             // NovelAI 的 V4.5 / V5 结构化 Prompt（含多角色支持）。
-            put("v4_prompt", captionBlock(text = positive, characters = normalized.characters, isNegative = false))
-            put("v4_negative_prompt", captionBlock(text = negative, characters = normalized.characters, isNegative = true))
+            put("v4_prompt", captionBlock(text = positive, characters = normalized.characters, isNegative = false, useCoordinates = normalized.useCharacterCoordinates))
+            put("v4_negative_prompt", captionBlock(text = negative, characters = normalized.characters, isNegative = true, useCoordinates = normalized.useCharacterCoordinates))
 
             if (img2imgSource != null) {
                 put("image", img2imgSource)
@@ -400,8 +398,9 @@ object NovelAiRequestBuilder {
         text: String,
         characters: List<CharacterPrompt> = emptyList(),
         isNegative: Boolean,
+        useCoordinates: Boolean,
     ): JsonObject = buildJsonObject {
-        val activeCharacters = characters.filter { !it.isBlank }
+        val activeCharacters = characters.filter { it.prompt.isNotEmpty() }
         val hasCharacters = activeCharacters.isNotEmpty()
 
         put(
@@ -440,7 +439,7 @@ object NovelAiRequestBuilder {
             // 负向提示词不使用角色坐标，保留 legacy_uc = false 以匹配网页版行为。
             put("legacy_uc", false)
         } else {
-            put("use_coords", hasCharacters)
+            put("use_coords", useCoordinates && hasCharacters)
             put("use_order", true)
         }
     }

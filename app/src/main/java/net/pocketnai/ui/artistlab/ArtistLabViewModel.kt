@@ -151,12 +151,12 @@ class ArtistLabViewModel(
                 require(basePrompt.isNotBlank()) { "请填写固定的基础提示词" }
                 require(pool.size >= artistCount) { "当前可用 ${pool.size} 位画师，请减少每张画师数量或重新启用画师" }
                 require(!Regex("artist\\s*:", RegexOption.IGNORE_CASE).containsMatchIn(negative)) { "负面提示词中也请移除 artist:，保持画师对比一致" }
-                val base = generate.state.value.params.copy(prompt = basePrompt.trim(), negativePrompt = negative.trim(),
-                    baseSeed = fixedSeed, seedMode = SeedMode.FIXED, sampleCount = 1, characters = emptyList())
+                val base = repository.freezePromptTemplates(generate.state.value.params.copy(prompt = basePrompt.trim(), negativePrompt = negative.trim(),
+                    baseSeed = fixedSeed, seedMode = SeedMode.FIXED, sampleCount = 1, characters = emptyList(), useCharacterCoordinates = false))
                 ArtistLabPlanner.params(base, ArtistMix(emptyList()))
                 require(ModelCatalog.profileOf(base.model).normalize(base) == base) { "首页参数需要调整，请检查尺寸、采样器与步数" }
                 val config = ArtistLabConfig(GenerationDraftCodec.encode(GenerationDraft(base, base.prompt, base.negativePrompt)),
-                    artistCount, minTicks, maxTicks, drawCount, hash)
+                    artistCount, minTicks, maxTicks, drawCount, hash, templatesResolved = true)
                 val account = generate.artistLabAccount() ?: throw IllegalArgumentException("请先在设置中连接 NovelAI 账号")
                 _approval.value = LabApproval(config, base, generate.quoteForArtistLab(base), account, drawCount, artistPool = pool.toList())
                 _message.value = ""
@@ -173,7 +173,7 @@ class ArtistLabViewModel(
                 val config = store.json.decodeFromString<ArtistLabConfig>(run.configJson)
                 val draft = GenerationDraftCodec.decode(config.paramsJson) ?: error("参数无法恢复")
                 // Codec 会降级未知模型；抽卡复现不能默默接受这种变化。
-                check(GenerationDraftCodec.encode(draft) == config.paramsJson)
+                check(GenerationDraftCodec.matchesSnapshot(config.paramsJson))
                 val count = store.dao.draws(id).count { it.status == "PLANNED" }
                 if (count == 0) { _message.value = "没有待执行的抽卡；失败或待确认的请求不会重试"; return@launch }
                 val account = generate.artistLabAccount() ?: error("未连接")
@@ -221,7 +221,8 @@ class ArtistLabViewModel(
                     // 已发送的一张完成并落库后才允许取消协程；下一张永远不自动重试。
                     withContext(NonCancellable) {
                         try {
-                            val image = generate.generateForArtistLab(ArtistLabPlanner.params(approved.params, mix), approved.account) { generationId ->
+                            val image = generate.generateForArtistLab(ArtistLabPlanner.params(approved.params, mix), approved.account,
+                                templatesResolved = approved.config.templatesResolved) { generationId ->
                                 if (generate.artistLabAccount() != approved.account ||
                                     generate.quoteForArtistLab(approved.params).approvalKey() != approved.quote.approvalKey()) throw ArtistLabPreflightChanged()
                                 current = current.copy(generationId = generationId); store.dao.updateDraw(current)

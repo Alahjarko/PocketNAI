@@ -150,6 +150,7 @@ object NovelAiMetadataParser {
             comment?.obj("actual_prompts")?.string("prompt"),
         )
         val actualNegativePrompt = firstNonBlank(
+            comment?.obj("actual_prompts")?.obj("negative_prompt")?.string("base_caption"),
             comment?.obj("actual_prompts")?.obj("uc")?.string("base_caption"),
             comment?.obj("actual_prompts")?.string("uc"),
         )
@@ -173,6 +174,9 @@ object NovelAiMetadataParser {
             usedBaseImage = comment?.string("image") != null ||
                 comment?.string("image_") != null ||
                 comment?.bool("add_original_image") == true,
+            useCharacterCoordinates = comment?.obj("v4_prompt")?.bool("use_coords"),
+            qualityTagHint = comment?.int("tag_hint_qt"),
+            undesiredContentTagHint = comment?.int("tag_hint_uc_preset"),
         )
     }
 
@@ -195,6 +199,9 @@ object NovelAiMetadataParser {
         val positive = charCaptionsOf(comment?.obj("v4_prompt"))
         if (positive.isEmpty()) return emptyList()
         val negative = charCaptionsOf(comment?.obj("v4_negative_prompt"))
+        val actual = comment?.obj("actual_prompts")
+        val actualPositive = actual?.obj("prompt")?.array("char_captions")
+        val actualNegative = (actual?.obj("negative_prompt") ?: actual?.obj("uc"))?.array("char_captions")
         return positive.mapIndexed { index, caption ->
             val negativeCaption = negative.getOrNull(index)
             ImportedCharacter(
@@ -202,6 +209,8 @@ object NovelAiMetadataParser {
                 negativePrompt = negativeCaption?.text?.takeIf { it.isNotBlank() },
                 centerX = caption.centerX,
                 centerY = caption.centerY,
+                actualPrompt = (actualPositive?.getOrNull(index) as? JsonObject)?.string("char_caption"),
+                actualNegativePrompt = (actualNegative?.getOrNull(index) as? JsonObject)?.string("char_caption"),
             )
         }
     }

@@ -86,5 +86,16 @@ class NovelAiRequestBuilderDirectorTest {
         assertThat(values("director_reference_strength_values")).containsExactly(0.3, 0.6).inOrder()
         assertThat(values("director_reference_secondary_strength_values")).containsExactly(0.4, 0.7).inOrder()
         assertThat(values("director_reference_information_extracted")).containsExactly(0.5, 0.8).inOrder()
+        // Switching models retains editor material but activates it only on supported models.
+        val draft = GenerationRequest(params(), GenerationMode.PRECISE_REFERENCE,
+            listOf(director("a", 0), director("b", 1)))
+        val v5 = ModelCatalog.profileOf(ImageModel.V5_FULL)
+        val inactive = draft.copy(params = draft.params.copy(model = v5.model)).withActiveReferences(v5)
+        assertThat(inactive.references).isEmpty()
+        assertThat(inactive.mode).isEqualTo(GenerationMode.TXT2IMG)
+        assertThat(inactive.validate(v5)).isEmpty()
+        assertThat(draft.withActiveReferences(v45).references).isEqualTo(draft.references)
+        val standard = NovelAiRequestBuilder.build(v45, params().copy(qualityTags = QualityTagsOption.STANDARD))
+        assertThat(standard["input"]!!.jsonPrimitive.content).isEqualTo("1girl, very aesthetic, masterpiece, no text, -0.8::feet::, rating:general")
     }
 }

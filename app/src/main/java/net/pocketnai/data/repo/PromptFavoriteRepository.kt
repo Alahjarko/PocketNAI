@@ -3,6 +3,7 @@ package net.pocketnai.data.repo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import net.pocketnai.data.local.PromptFavoriteDao
 import net.pocketnai.data.local.PromptFavoriteEntity
@@ -27,6 +28,13 @@ class PromptFavoriteRepository(
 
     fun observeFavorites(): Flow<List<PromptFavorite>> =
         dao.observeFavorites().map { rows -> rows.map(::toDomain) }
+
+    suspend fun snapshot(): List<PromptFavorite> = withContext(Dispatchers.IO) { observeFavorites().first() }
+
+    suspend fun update(favorite: PromptFavorite, name: String, content: String, category: String) = withContext(Dispatchers.IO) {
+        if (content.isNotBlank()) dao.update(favorite.id, name.trim().ifBlank { favorite.name },
+            content.trim(), category.trim(), clock())
+    }
 
     /**
      * 新增一条收藏。

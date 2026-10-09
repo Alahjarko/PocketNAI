@@ -30,8 +30,31 @@ internal fun PromptTagSuggestions(
     state: GenerateViewModel.UiState,
     onQuery: (String, String) -> Unit,
     onFieldChange: (TextFieldValue) -> Unit,
+    macros: List<net.pocketnai.domain.model.PromptFavorite> = emptyList(),
 ) {
     DisposableEffect(target) { onDispose { onQuery("", target) } }
+    val macro = if (focused && field.selection.collapsed) {
+        Regex("(?<![^\\s,])@([^@,\\n]*)$").find(field.text.take(field.selection.end))
+    } else null
+    if (macro != null) {
+        LaunchedEffect(target) { onQuery("", target) }
+        val matches = macros.filter { it.name.contains(macro.groupValues[1], ignoreCase = true) }.take(20)
+        if (matches.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("提示词宏", style = MaterialTheme.typography.labelSmall)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                matches.forEach { saved ->
+                    AssistChip(onClick = {
+                        val nextCharacter = field.text.getOrNull(field.selection.end)
+                        val replacement = "!macro:${saved.name}!" +
+                            if (nextCharacter != null && !nextCharacter.isWhitespace() && nextCharacter != ',') ", " else ""
+                        val next = field.text.replaceRange(macro.range.first, field.selection.end, replacement)
+                        onFieldChange(TextFieldValue(next, TextRange(macro.range.first + replacement.length)))
+                    }, label = { Text(saved.name) })
+                }
+            }
+        }
+        return
+    }
     val fragment = if (focused && field.selection.collapsed) {
         PromptTagEditing.completionSpanAt(field.text, field.selection.end).textIn(field.text).trim()
     } else ""

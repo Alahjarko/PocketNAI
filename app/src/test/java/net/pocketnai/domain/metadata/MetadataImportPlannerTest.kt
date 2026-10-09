@@ -53,21 +53,42 @@ class MetadataImportPlannerTest {
         GenerationParams.defaultsFor(ModelCatalog.profileOf(model))
 
     @Test
-    fun `角色二维位置原样导入不再吸附五档`() {
-        // 官方是 5×5 网格（x=0.1/0.3/…），我们只有五档横排：吸附必须进 notes。
+    fun `网页漫画导入后修改台词保留角色而不复用旧文字段或叠加预设`() {
+        val prompt = "comic, says \"你好\""
+        val quality = "very aesthetic, masterpiece, no text"
+        val negative = "nsfw, lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page, bad hands"
+        val comment = """{
+            "prompt": "comic, says \"你好\", $quality, teXt: 你好",
+            "v4_prompt": {"use_coords":false,"caption":{"base_caption":"comic, says \"你好\", $quality, teXt: 你好",
+                "char_captions":[${PngFixture.charCaption("left girl", 0.1, 0.2)},${PngFixture.charCaption("right boy", 0.9, 0.8)}]}},
+            "v4_negative_prompt":{"caption":{"base_caption":"$negative","char_captions":[]}},
+            "tag_hint_qt":1,"tag_hint_uc_preset":2
+        }"""
         val plan = MetadataImportPlanner.plan(
-            metadata(
-                PngFixture.commentJson(
-                    charCaptions = "[${PngFixture.charCaption("left girl", 0.1, 0.2)}," +
-                        "${PngFixture.charCaption("right boy", 0.9, 0.8)}]",
-                ),
-            ),
-            currentParams(),
+            metadata(comment, source = "NovelAI Diffusion V5 0ADF9AB7"),
+            currentParams(ImageModel.V5_FULL),
             MetadataImportSelection(),
         )
 
         assertThat(plan.characters!!.map { it.centerX }).containsExactly(0.1, 0.9).inOrder()
         assertThat(plan.characters!!.map { it.centerY }).containsExactly(0.2, 0.8).inOrder()
         assertThat(plan.notes.filterIsInstance<MetadataImportNote.CharactersPositionSnapped>()).isEmpty()
+        assertThat(plan.prompt).isEqualTo(prompt)
+        assertThat(plan.qualityTags).isEqualTo(net.pocketnai.domain.model.QualityTagsOption.STANDARD)
+        assertThat(plan.negativePrompt).isEqualTo("bad hands")
+        assertThat(plan.undesiredContentPresetIndex).isEqualTo(0)
+        assertThat(plan.useCharacterCoordinates).isFalse()
+        val edited = currentParams(ImageModel.V5_FULL).copy(prompt = plan.prompt!!.replace("你好", "再见"),
+            negativePrompt = plan.negativePrompt!!, qualityTags = plan.qualityTags!!,
+            undesiredContentPresetIndex = plan.undesiredContentPresetIndex!!,
+            characters = plan.characters!!, useCharacterCoordinates = plan.useCharacterCoordinates!!)
+        val payload = net.pocketnai.data.network.NovelAiRequestBuilder.build(ModelCatalog.profileOf(edited.model), edited)
+        val parameters = payload["parameters"] as kotlinx.serialization.json.JsonObject
+        assertThat((payload["input"] as kotlinx.serialization.json.JsonPrimitive).content)
+            .isEqualTo("comic, says \"再见\", $quality, teXt: 再见")
+        assertThat((parameters["negative_prompt"] as kotlinx.serialization.json.JsonPrimitive).content).isEqualTo(negative)
+        // The deliberately capitalized manual marker is not the web's automatic marker.
+        val manual = "comic, says \"你好\", Text: 手写文字"
+        assertThat(net.pocketnai.domain.prompt.NovelAiTextPrompt.removeAutomatic(manual, emptyList(), false)).isEqualTo(manual)
     }
 }

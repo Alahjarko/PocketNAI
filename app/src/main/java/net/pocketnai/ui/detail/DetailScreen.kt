@@ -616,7 +616,8 @@ internal fun LazyListScope.detailInfoItems(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = position?.label ?: String.format(Locale.ROOT, "(%.2f, %.2f)", character.centerX, character.centerY),
+                        text = if (!generation.params.useCharacterCoordinates) "AI 自动安排"
+                            else position?.label ?: String.format(Locale.ROOT, "(%.2f, %.2f)", character.centerX, character.centerY),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

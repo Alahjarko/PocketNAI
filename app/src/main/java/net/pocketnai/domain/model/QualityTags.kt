@@ -27,11 +27,22 @@ enum class QualityTagsOption(
 
     val enabled: Boolean get() = appendedText != null
 
+    fun textFor(model: ImageModel): String? = when {
+        this == NONE -> null
+        model == ImageModel.V4_5_CURATED -> "very aesthetic, masterpiece, no text, -0.8::feet::, rating:general"
+        model.family == GenerationFamily.V4_5 -> STANDARD.appendedText
+        else -> appendedText
+    }
+
+    val tagHint: Int get() = when (this) { STANDARD -> 1; LIGHT -> 3; NONE -> 0 }
+
     companion object {
         val DEFAULT: QualityTagsOption = STANDARD
 
         /** 界面下拉的展示顺序，与官方一致：Standard / Light / None。 */
         val selectable: List<QualityTagsOption> = listOf(STANDARD, LIGHT, NONE)
+        fun selectableFor(model: ImageModel): List<QualityTagsOption> =
+            if (model.family == GenerationFamily.V5) selectable else listOf(STANDARD, NONE)
 
         fun fromNameOrNull(name: String?): QualityTagsOption? =
             entries.firstOrNull { it.name == name }
@@ -47,7 +58,7 @@ enum class QualityTagsOption(
  * 拼接规则统一走 [PromptComposition.append]，因此"空提示词不产生开头逗号"这类
  * 边界情况和收藏片段的填入完全一致。
  */
-fun applyQualityTags(prompt: String, option: QualityTagsOption): String {
-    val suffix = option.appendedText ?: return prompt
+fun applyQualityTags(prompt: String, option: QualityTagsOption, model: ImageModel = ImageModel.V5_FULL): String {
+    val suffix = option.textFor(model) ?: return prompt
     return net.pocketnai.domain.prompt.NovelAiTextPrompt.appendQuality(prompt, suffix)
 }

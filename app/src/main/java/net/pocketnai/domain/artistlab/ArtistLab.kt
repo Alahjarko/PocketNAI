@@ -45,6 +45,7 @@ data class ArtistLabConfig(
     val maxTicks: Int,
     val drawCount: Int,
     val catalogHash: String,
+    val templatesResolved: Boolean = false,
 ) {
     init {
         require(artistCount in 1..10)

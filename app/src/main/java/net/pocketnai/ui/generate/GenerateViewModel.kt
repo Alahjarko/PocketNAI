@@ -241,6 +241,9 @@ class GenerateViewModel(
         val allReferences: List<ReferenceImage>
             get() = listOfNotNull(referenceSource) + directorReferences + vibeReferences + inpaintReferences
 
+        val activeReferences: List<ReferenceImage>
+            get() = GenerationRequest(params, references = allReferences).withActiveReferences(profile).references
+
         /** 当前模型是否支持 Vibe Transfer（目前仅 V4.5）。 */
         val supportsVibeTransfer: Boolean get() = profile.supportsVibeTransfer
 
@@ -271,7 +274,7 @@ class GenerateViewModel(
                 // （旧版本曾允许移除底图后蒙版残留），绝不能按 INPAINT 提交 ——
                 // 那会发出"常规模型 ID + infill"的自相矛盾请求被服务端 400。
                 hasInpaintMask && inpaintBase != null -> GenerationMode.INPAINT
-                directorReferences.isNotEmpty() -> GenerationMode.PRECISE_REFERENCE
+                directorReferences.isNotEmpty() && supportsDirectorReference -> GenerationMode.PRECISE_REFERENCE
                 referenceSource != null -> GenerationMode.IMG2IMG
                 else -> GenerationMode.TXT2IMG
             }
@@ -391,7 +394,7 @@ class GenerateViewModel(
             nowEpochSeconds = clock() / 1000L,
             override = override,
         )
-        val vibes = state.vibeReferences
+        val vibes = state.activeReferences.filter { it.role == ReferenceRole.VIBE }
         val uncachedVibes = vibes.count { !repository.isVibeEncoded(it, state.params.model) }
         return AnlasPricingContext(
             params = state.params,
@@ -522,7 +525,7 @@ class GenerateViewModel(
 
     fun addCharacter() {
         _state.update { current ->
-            if (current.params.characters.size >= CharacterPrompt.MAX_COUNT) return@update current
+            if (current.params.characters.size >= CharacterPrompt.limitFor(current.params.model)) return@update current
             current.copy(params = current.params.copy(characters = current.params.characters + CharacterPrompt()))
         }
     }
@@ -541,10 +544,16 @@ class GenerateViewModel(
         _state.update { current ->
             val list = current.params.characters.toMutableList()
             if (index in list.indices) {
+                val moved = list[index].centerX != character.centerX || list[index].centerY != character.centerY
                 list[index] = character
-                current.copy(params = current.params.copy(characters = list))
+                current.copy(params = current.profile.normalize(current.params.copy(characters = list,
+                    useCharacterCoordinates = current.params.useCharacterCoordinates || moved)))
             } else current
         }
+    }
+
+    fun onCharacterCoordinateModeChange(enabled: Boolean) {
+        _state.update { it.copy(params = it.profile.normalize(it.params.copy(useCharacterCoordinates = enabled))) }
     }
 
     /**
@@ -594,7 +603,7 @@ class GenerateViewModel(
 
                 else -> null
             }
-            current.copy(params = migrated, modelSwitchNotice = notice, error = null)
+            current.copy(params = target.normalize(migrated), modelSwitchNotice = notice, error = null, referenceError = null)
         }
     }
 
@@ -976,6 +985,8 @@ class GenerateViewModel(
                 // 独立角色：整组替换而不是合并 —— 元数据里的角色词与位置是一套整体，
                 // 与当前草稿里的角色混在一起会得到谁也没画过的组合。
                 characters = plan.characters ?: state.params.characters,
+                useCharacterCoordinates = plan.useCharacterCoordinates ?: state.params.useCharacterCoordinates,
+                undesiredContentPresetIndex = plan.undesiredContentPresetIndex ?: state.params.undesiredContentPresetIndex,
             )
             val normalized = profile.normalize(updated)
             state.copy(
@@ -1449,8 +1460,8 @@ class GenerateViewModel(
         if (!snapshot.canGenerate) return
 
         // 规划书 8.3：先固定本次 Randomizer 展开结果，再作为请求快照提交。
-        val resolvedPrompt = repository.resolvePromptTemplate(snapshot.promptTemplate)
-        val resolvedNegative = repository.resolvePromptTemplate(snapshot.negativeTemplate)
+        val resolvedPrompt = snapshot.promptTemplate
+        val resolvedNegative = snapshot.negativeTemplate
         val frozen = snapshot.params.copy(
             prompt = resolvedPrompt,
             negativePrompt = resolvedNegative,
@@ -1458,7 +1469,7 @@ class GenerateViewModel(
         val request = GenerationRequest(
             params = frozen,
             mode = snapshot.mode,
-            references = snapshot.allReferences,
+            references = snapshot.activeReferences,
         )
 
         // 生成前快照：**不等待余额请求**，只取内存里已有的值（规划 §8.1）。
@@ -1574,10 +1585,12 @@ class GenerateViewModel(
     suspend fun generateForArtistLab(
         params: GenerationParams,
         accountFingerprint: String,
+        templatesResolved: Boolean = false,
         onStarted: suspend (String) -> Unit,
     ): net.pocketnai.domain.chat.ChatImage {
         check(_state.value.artistLabActive) { "抽卡队列尚未取得生成锁" }
-        return generateIsolated(params, {}, "画师抽卡", onStarted, fromArtistLab = true, expectedAccountFingerprint = accountFingerprint).single()
+        return generateIsolated(params, {}, "画师抽卡", onStarted, fromArtistLab = true,
+            expectedAccountFingerprint = accountFingerprint, templatesResolved = templatesResolved).single()
     }
 
     suspend fun generateForChat(
@@ -1592,6 +1605,7 @@ class GenerateViewModel(
         onStarted: suspend (String) -> Unit = {},
         fromArtistLab: Boolean = false,
         expectedAccountFingerprint: String? = null,
+        templatesResolved: Boolean = false,
     ): List<net.pocketnai.domain.chat.ChatImage> {
         if (_state.value.inFlight || _state.value.referenceBusy || (_state.value.artistLabActive && !fromArtistLab))
             throw net.pocketnai.domain.chat.ChatFailure("另一个图片任务正在执行，请等待完成")
@@ -1603,7 +1617,7 @@ class GenerateViewModel(
         try {
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                 repository.generate(GenerationRequest(params = params), params.prompt, expectedAccountFingerprint,
-                    beforeSend = { if (fromArtistLab) onStarted(it) }).collect { event ->
+                    beforeSend = { if (fromArtistLab) onStarted(it) }, templatesResolved = templatesResolved).collect { event ->
                     when (event) {
                         is GenerationEvent.Final -> {
                             val image = event.image

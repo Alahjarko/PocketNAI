@@ -80,14 +80,7 @@ fun VibeTransferPanel(
     ) {
 
         if (!state.supportsVibeTransfer) {
-            Text(
-                text = stringResource(
-                    R.string.generate_director_unsupported,
-                    state.profile.displayName,
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-            )
+            InactiveReferences(state.vibeReferences, viewModel::onVibeReferenceRemoved)
         } else {
             state.vibeReferences.forEach { reference ->
                 VibeEntry(

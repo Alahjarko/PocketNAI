@@ -97,4 +97,6 @@ data class GenerationEntity(
     val deletedAt: Long? = null,
     /** v8 新增；NULL 表示旧记录，可从原 PNG 恢复；[] 表示确实没有角色。 */
     val charactersJson: String? = null,
+    /** v11: null denotes the legacy mode (coordinates enabled whenever characters existed). */
+    val useCharacterCoordinates: Boolean? = null,
 )

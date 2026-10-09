@@ -38,6 +38,7 @@ object Mappers {
         prompt = generation.params.prompt,
         negativePrompt = generation.params.negativePrompt,
         charactersJson = HistoryCharacters.encode(generation.params.characters),
+        useCharacterCoordinates = generation.params.useCharacterCoordinates,
         modelApiId = generation.params.model.apiModelId,
         width = generation.params.size.width,
         height = generation.params.size.height,
@@ -82,6 +83,8 @@ object Mappers {
                 prompt = entity.prompt,
                 negativePrompt = entity.negativePrompt,
                 characters = HistoryCharacters.decode(entity.charactersJson),
+                useCharacterCoordinates = entity.useCharacterCoordinates
+                    ?: HistoryCharacters.decode(entity.charactersJson).any { !it.isBlank },
                 size = ImageSizePreset(width = entity.width, height = entity.height),
                 // 两列都为 NULL（v4 之前的记录，或没裁切过）时按"不裁切"降级。
                 outputSize = if (entity.outputWidth != null && entity.outputHeight != null) {

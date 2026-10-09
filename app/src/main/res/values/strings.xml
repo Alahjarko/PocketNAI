@@ -115,7 +115,7 @@
     <string name="generate_uc_preset">负面内容预设</string>
     <string name="favorites_button_negative">负向收藏夹</string>
     <string name="info_button_hint">查看说明</string>
-    <string name="prompt_tools_info">选中一段文字后：「强化 / 弱化」可为它包裹 NovelAI 的 {} / [] 语法；点输入框右上角的书签可把选中片段存成标签，不选中则收藏整条提示词。收藏夹里的内容可追加或整条替换到当前输入框。</string>
+    <string name="prompt_tools_info">选中文字后可用「强化 / 弱化」包裹 {} / []；书签可保存选中片段或整条提示词。输入 @ 可选择本地收藏作为提示词宏，也可以写 !macro:名称!，支持嵌套引用。官方随机语法为 ||选项一|选项二||；旧版 &lt;选项一|选项二&gt; 仍可使用。</string>
     <string name="generate_reference_section">参考图</string>
     <string name="generate_img2img_info">图生图把图片当作起点：模型在它的基础上重新生成，挂上底图后还可涂蒙版做局部重绘；不额外收费（与纯文字一致）。Precise Reference 与 Vibe Transfer 目前只有 V4.5 支持。</string>
     <string name="generate_mode_img2img">图生图</string>

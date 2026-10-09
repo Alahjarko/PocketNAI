@@ -26,6 +26,9 @@ interface PromptFavoriteDao {
     @Query("UPDATE prompt_favorites SET lastUsedAt = :usedAt WHERE id = :id")
     suspend fun markUsed(id: String, usedAt: Long)
 
+    @Query("UPDATE prompt_favorites SET name = :name, content = :content, category = :category, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun update(id: String, name: String, content: String, category: String, updatedAt: Long)
+
     /** 同一目标的同名收藏视为重复，用来避免反复收藏同一条内容堆出一串一样的条目。 */
     @Query(
         """

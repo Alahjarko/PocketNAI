@@ -131,14 +131,15 @@ fun CreateFavoriteDialog(
     kind: PromptFavoriteKind,
     onConfirm: (name: String, content: String, category: String) -> Unit,
     onDismiss: () -> Unit,
+    existing: PromptFavorite? = null,
 ) {
-    var content by remember { mutableStateOf("") }
-    var name by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf("") }
+    var content by remember(existing?.id) { mutableStateOf(existing?.content.orEmpty()) }
+    var name by remember(existing?.id) { mutableStateOf(existing?.name.orEmpty()) }
+    var category by remember(existing?.id) { mutableStateOf(existing?.category.orEmpty()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.favorite_create_title)) },
+        title = { Text(if (existing == null) stringResource(R.string.favorite_create_title) else "编辑片段") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
@@ -213,6 +214,8 @@ fun FavoritePickerDialog(
     onDelete: (PromptFavorite) -> Unit,
     onDismiss: () -> Unit,
     onDismissNotice: () -> Unit,
+    onEdit: (PromptFavorite) -> Unit = {},
+    onUseMacro: (PromptFavorite) -> Unit = {},
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -306,6 +309,8 @@ fun FavoritePickerDialog(
                                     onAppend = { onAppend(favorite) },
                                     onReplace = { onReplace(favorite) },
                                     onDelete = { onDelete(favorite) },
+                                    onEdit = { onEdit(favorite) },
+                                    onUseMacro = { onUseMacro(favorite) },
                                 )
                             }
                         }
@@ -327,6 +332,8 @@ private fun FavoriteRow(
     onAppend: () -> Unit,
     onReplace: () -> Unit,
     onDelete: () -> Unit,
+    onEdit: () -> Unit,
+    onUseMacro: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -370,6 +377,8 @@ private fun FavoriteRow(
                 Icon(Icons.Default.MoreVert, contentDescription = null)
             }
             DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                DropdownMenuItem(text = { Text("作为宏引用") }, onClick = { menuExpanded = false; onUseMacro() })
+                DropdownMenuItem(text = { Text("编辑") }, onClick = { menuExpanded = false; onEdit() })
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.favorites_action_replace)) },
                     onClick = {

@@ -35,7 +35,7 @@ import net.pocketnai.domain.model.SeedMode
 object GenerationDraftCodec {
 
     /** 结构版本。将来字段语义变化时递增，并在 [decode] 里做兼容处理。 */
-    const val CURRENT_VERSION: Int = 1
+    const val CURRENT_VERSION: Int = 2
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -81,6 +81,7 @@ object GenerationDraftCodec {
          */
         val references: List<ReferenceDto> = emptyList(),
         val characters: List<CharacterPrompt> = emptyList(),
+        val useCharacterCoordinates: Boolean? = null,
 
         /**
          * 旧版本（只支持一张图生图起点图时）的字段。
@@ -136,8 +137,19 @@ object GenerationDraftCodec {
                 ucPresetIndex = params.undesiredContentPresetIndex,
                 references = draft.references.map { it.toDto() },
                 characters = params.characters,
+                useCharacterCoordinates = params.useCharacterCoordinates,
             ),
         )
+    }
+
+    /** Batch snapshots must round-trip without normalization; tolerate only added optional fields. */
+    fun matchesSnapshot(raw: String): Boolean {
+        val decoded = decode(raw) ?: return false
+        val original = (json.parseToJsonElement(raw) as? kotlinx.serialization.json.JsonObject) ?: return false
+        val version = (original["version"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() ?: 1
+        if (version !in 1..CURRENT_VERSION) return false
+        val current = json.parseToJsonElement(encode(decoded)) as kotlinx.serialization.json.JsonObject
+        return original.filterKeys { it != "version" }.all { (key, value) -> current[key] == value }
     }
 
     private fun ReferenceImage.toDto(): ReferenceDto = ReferenceDto(
@@ -193,6 +205,7 @@ object GenerationDraftCodec {
                 profile.undesiredContentPresets.any { it.index == index }
             } ?: profile.defaultUndesiredContentPresetIndex,
             characters = dto.characters,
+            useCharacterCoordinates = dto.useCharacterCoordinates ?: dto.characters.any { !it.isBlank },
         )
 
         return GenerationDraft(

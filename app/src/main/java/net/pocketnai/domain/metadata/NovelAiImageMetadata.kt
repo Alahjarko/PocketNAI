@@ -36,12 +36,7 @@ data class NovelAiImageMetadata(
     /** Randomizer 展开后的实际提示词（`actual_prompts.prompt.base_caption`）；没有 Randomizer 时为 null。 */
     val actualPrompt: String?,
     val actualNegativePrompt: String?,
-    /**
-     * 角色提示词。
-     *
-     * ⚠️ 目前**只用于"检测到但暂不支持导入"的提示**：PocketNAI 还没有多角色提示词功能，
-     * 把角色词拼进基础提示词会丢掉角色独立反向词、位置坐标与数组顺序。
-     */
+    /** 独立角色的正/负向描述、坐标及可选实际随机结果。 */
     val characters: List<ImportedCharacter>,
     val settings: ImportedSettings,
     /**
@@ -53,6 +48,9 @@ data class NovelAiImageMetadata(
     val usedVibeReferences: Boolean,
     val usedDirectorReferences: Boolean,
     val usedBaseImage: Boolean,
+    val useCharacterCoordinates: Boolean? = null,
+    val qualityTagHint: Int? = null,
+    val undesiredContentTagHint: Int? = null,
 ) {
     /** 有提示词或有参数，才算"值得导入"。 */
     val hasImportableContent: Boolean
@@ -66,17 +64,14 @@ data class NovelAiImageMetadata(
     }
 }
 
-/**
- * 角色提示词（V4/V5 的 `v4_prompt.caption.char_captions`）。
- *
- * 解析出来是为了**如实告诉用户有几条**，而不是为了导入 ——
- * 详见 [NovelAiImageMetadata.characters] 的说明。
- */
+/** 图片中的结构化角色提示词，按数组顺序与负向角色配对。 */
 data class ImportedCharacter(
     val prompt: String,
     val negativePrompt: String?,
     val centerX: Double?,
     val centerY: Double?,
+    val actualPrompt: String? = null,
+    val actualNegativePrompt: String? = null,
 )
 
 /**

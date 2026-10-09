@@ -32,7 +32,13 @@ data class SizeConstraints(
 }
 
 /** Undesired Content 预设，对应 API 的 `ucPreset` 整数。 */
-data class UndesiredContentPreset(val index: Int, val displayName: String)
+data class UndesiredContentPreset(
+    val index: Int,
+    val displayName: String,
+    val id: String = "none",
+    val tagHint: Int = 0,
+    val prefix: String = "",
+)
 
 /**
  * 参数校验问题，用于在界面上标出具体是哪一项不合法（规划书 9.1）。
@@ -214,11 +220,29 @@ data class ModelProfile(
                 output.width in 1..normalizedSize.width && output.height in 1..normalizedSize.height
             },
             baseSeed = params.baseSeed.coerceIn(0L, GenerationParams.MAX_SEED),
+            qualityTags = if (params.qualityTags in QualityTagsOption.selectableFor(model)) params.qualityTags
+                else QualityTagsOption.STANDARD,
+            undesiredContentPresetIndex = params.undesiredContentPresetIndex.takeIf { index ->
+                undesiredContentPresets.any { it.index == index }
+            } ?: net.pocketnai.domain.prompt.NovelAiPromptPresets.NONE_INDEX,
+            characters = params.characters.map { character ->
+                fun coordinate(value: Double): Double {
+                    val clamped = if (value.isFinite()) value.coerceIn(0.0, 1.0) else 0.5
+                    return if (model.family == GenerationFamily.V4_5)
+                        (kotlin.math.floor(5 * clamped).toInt().coerceIn(0, 4) * 2 + 1) / 10.0
+                    else clamped
+                }
+                character.copy(centerX = coordinate(character.centerX), centerY = coordinate(character.centerY))
+            },
         )
     }
 
     /** 返回所有不合法项，空列表表示可以安全提交。 */
     fun validate(params: GenerationParams): List<ParamViolation> = buildList {
+        val maxCharacters = CharacterPrompt.limitFor(model)
+        if (params.characters.count { it.prompt.isNotEmpty() } > maxCharacters) {
+            add(ParamViolation.OutOfRange("characters", 0.0, maxCharacters.toDouble(), params.characters.size.toDouble()))
+        }
         if (!isCombinationSupported(params.sampler, params.noiseSchedule)) {
             add(ParamViolation.UnsupportedCombination(params.sampler, params.noiseSchedule))
         }

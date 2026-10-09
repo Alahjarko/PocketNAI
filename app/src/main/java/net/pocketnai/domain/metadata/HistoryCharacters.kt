@@ -15,12 +15,16 @@ object HistoryCharacters {
         raw?.let { runCatching { json.decodeFromString<List<CharacterPrompt>>(it) }.getOrNull() }
             ?: emptyList()
 
-    fun readLegacy(input: InputStream): List<CharacterPrompt> {
+    data class LegacySnapshot(val characters: List<CharacterPrompt> = emptyList(), val useCoordinates: Boolean = false)
+
+    fun readLegacy(input: InputStream): List<CharacterPrompt> = readLegacySnapshot(input).characters
+
+    fun readLegacySnapshot(input: InputStream): LegacySnapshot {
         val chunks = (PngTextChunks.read(input) as? PngTextChunks.Result.Read)?.chunks
-            ?: return emptyList()
-        val metadata = NovelAiMetadataParser.parse(chunks, json) ?: return emptyList()
+            ?: return LegacySnapshot()
+        val metadata = NovelAiMetadataParser.parse(chunks, json) ?: return LegacySnapshot()
         // 历史展示保留原坐标与顺序，不套用导入编辑器的五档吸附。
-        return metadata.characters.mapIndexed { index, character ->
+        val characters = metadata.characters.mapIndexed { index, character ->
             CharacterPrompt(
                 id = "legacy-character-$index",
                 prompt = character.prompt,
@@ -29,5 +33,6 @@ object HistoryCharacters {
                 centerY = character.centerY ?: 0.5,
             )
         }
+        return LegacySnapshot(characters, metadata.useCharacterCoordinates ?: characters.any { !it.isBlank })
     }
 }

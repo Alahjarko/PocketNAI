@@ -8,7 +8,7 @@
 
 生成单张 NovelAI 图片。prompt 与 negative_prompt 使用英文 tags。可选 model、width、height、seed、characters；没有指定的字段沿用用户设置。人物相关内容限明确成年且非露骨的表现。
 
-characters 最多 5 个，每个角色有 prompt、negative_prompt、x、y，位置范围 0–1。不要生成、修改或删除蒙版，不要擅自使用用户的参考图。
+characters 上限从 get_generation_settings 的 max_characters 读取：V4.5 为 6，V5 为 32。每个角色有 prompt、negative_prompt，可选 x、y，位置范围 0–1。省略坐标时由 AI 自动安排；需要手动布局时设置 use_coords=true 并给出 x/y，V4.5 的坐标落到 5×5 网格，V5 使用自由坐标。不要生成、修改或删除蒙版，不要擅自使用用户的参考图。
 
 默认在对话中展示生成卡片，等待用户点击后执行；用户主动开启“自动执行图片工具”时，本条消息最多执行一次生成。工具执行成功后返回图片索引与状态；图片会由应用显示在对话中，并保存到正常图库。
 

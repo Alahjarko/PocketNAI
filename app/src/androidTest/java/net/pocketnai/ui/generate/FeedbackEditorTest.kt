@@ -12,6 +12,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInputSelection
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.text.TextRange
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
@@ -34,6 +35,8 @@ class FeedbackEditorTest {
             var state by remember { mutableStateOf(GenerateViewModel.UiState(GenerationParams.defaultsFor(ModelCatalog.defaultProfile()))) }
             MaterialTheme {
                 MultiCharacterSection(listOf(character), {}, {}, { _, next -> character = next; updated = next },
+                    macros = listOf(net.pocketnai.domain.model.PromptFavorite("light", net.pocketnai.domain.model.PromptFavoriteKind.TAG,
+                        "光照", "soft lighting", "", net.pocketnai.domain.model.PromptTarget.POSITIVE, 0, 0, 0)),
                     suggestionState = state,
                     onSuggestionQuery = { fragment, target -> state = state.copy(
                         suggestions = if (fragment.isNotBlank()) listOf("blue hair") else emptyList(),
@@ -49,5 +52,9 @@ class FeedbackEditorTest {
         compose.onNodeWithText("角色专属排除词 · 已填写").performClick()
         compose.onAllNodes(hasSetTextAction()).assertCountEquals(2)
         compose.onNodeWithText("hat").assertIsDisplayed()
+        compose.onAllNodes(hasSetTextAction())[0].performTextReplacement("@光1.1::honkai: star rail,official art::")
+        compose.onAllNodes(hasSetTextAction())[0].performTextInputSelection(TextRange(2))
+        compose.onNodeWithText("光照").performClick()
+        compose.runOnIdle { assertThat(updated.prompt).isEqualTo("!macro:光照!, 1.1::honkai: star rail,official art::") }
     }
 }

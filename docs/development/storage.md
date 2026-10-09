@@ -6,7 +6,7 @@
 
 ## 数据库
 
-- 当前 schema 版本 **10**。新增表（如 `prompt_favorites`、`reference_images`、`favorite_images`）用独立 `CREATE TABLE`，
+- 当前 schema 版本 **11**。新增表（如 `prompt_favorites`、`reference_images`、`favorite_images`）用独立 `CREATE TABLE`，
   不要触碰既有表。v3 → v4 新增了 `reference_images` 表与 `generations.mode` 列（可空，见下）；
   v4 → v5 给 `generations` 加 `outputWidth/outputHeight`；v5 → v6 新增 `favorite_images` 表；
   v6 → v7 新增 `anlas_transactions` 表（Anlas 消耗流水，2026-09-18）。
@@ -23,6 +23,8 @@
 - **SQLite 的外键约束默认是关的**，应用里靠 Room 生成的实现执行 `PRAGMA foreign_keys = ON`
   才生效。因此仪器化迁移测试里要验证 `ON DELETE CASCADE`，必须自己在裸库上再执行一次
   `PRAGMA foreign_keys = ON`，否则测到的是"开关没开"而不是"级联没生效"（会误报失败）。
+
+- v10 → v11 仅给 generations 增加可空 useCharacterCoordinates 列，不重建表。NULL的旧快照沿用此前“有角色就启用坐标”的行为；从旧PNG恢复角色时同时恢复其use_coords。草稿DTO v2存同一字段，缺失时兼容旧草稿。
 
 ## 参考图的文件存储
 

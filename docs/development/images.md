@@ -109,16 +109,14 @@
 - 模型靠 `Source` 的哈希查表（`NovelAiModelHashes`，已用本机数据验证）——
   `Source` 的可读名字分不出 Curated/Full。认不出的 `Source` 保持当前模型不变。
 - **尺寸不是内置预设时不改成"最接近的"**：尺寸一变，同 Seed 也复现不出原图。
-- **质量标签去重**：按 `|` 分块，每块都以候选后缀结尾才剥离并沿用对应预设；
-  都不匹配就保留原文并把质量标签设为 `None`（否则会重复追加一次）。
-  用我们自己的后缀表（`QualityTagsOption.appendedText`），不要用官方那张表 ——
-  V4.5 Curated 的官方后缀与我们不同。
+- **质量标签去重**：先验证并还原自动文字段，再只识别基础块的完整模型后缀（兼容旧App后缀），保留官方随机块、后续角色块和手写Text。不匹配就保留原文并设None。
+- 负向 `tag_hint_uc_preset` 有效且完整前缀匹配时恢复预设与用户自定义部分；未知负向文本完整保留并设None，不能再叠加默认Heavy。
 - **导入后模板与提交值必须一致**：编辑器绑定的是 `promptTemplate`，
   而质量标签是在提交时追加到 `params.prompt` 的。只改一个会让标签翻倍。
 - **Characters 随提示词一起导入**（2026-09-19）：解析 `v4_prompt` / `v4_negative_prompt`
   的 `char_captions`，按 `CharacterPrompt` 落成"正/负向词 + 二维坐标"。
-  三条纪律：超出 `CharacterPrompt.MAX_COUNT`（5）的部分**截断并进 notes**；
-  有效 x/y 原样保留，不再吸附五档或丢弃纵坐标；越界坐标限制到 0–1 必须进 notes。
+  三条纪律：超出 `CharacterPrompt.limitFor(model)`（V4.5为6，V5为32）的部分**截断并进 notes**；
+  V5有效 x/y 原样保留；V4.5提交时沿用官方5×5网格；读取 `use_coords` 保留自动/手动布局；越界坐标限制到 0–1 必须进 notes。
   角色词**绝不拼进基础提示词**冒充导入。导入是**整组替换**当前角色，
   不是与草稿里的角色合并（混在一起会得到谁也没画过的组合）。
 - 导入**不自动生成**（同 Seed 同参数很容易再产出一张几乎一样的图，而那要花 Anlas）。
@@ -148,3 +146,8 @@
   连续 3 次自动关闭流式预览（`SettingsStore.recordStreamingFailure`），用户可在设置页重开；
 - DEBUG 诊断日志（tag `PocketNaiStream`）**只允许记结构**：事件名、data 长度、
   JSON 顶层键名、图片 magic —— 不得添加任何字段值。
+
+## 模型切换后的参考图（2026-10-10）
+
+- `UiState.allReferences` 是保留的编辑素材，草稿持久化与文件存活集合使用它；`activeReferences` 仅包含当前模型支持的条件，请求与报价使用它。
+- V4.5的Precise/Vibe切到V5后仍保留图片和数值，界面显示缩略图与暂不使用状态；不进入请求、不编码Vibe、不计附加费，也不把模式判为PRECISE_REFERENCE。切回V4.5恢复。模型不支持的新增入口继续不可用。

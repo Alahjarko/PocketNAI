@@ -120,6 +120,7 @@ class GenerationSeedAndPayloadTest {
         payloads: MutableList<JsonObject>,
         random: Random,
         fileStore: GenerationFileStore,
+        macros: List<net.pocketnai.domain.model.PromptFavorite> = emptyList(),
         idGenerator: () -> String = { "gen-test" },
     ) = GenerationRepository(
         api = FakeApi(payloads),
@@ -140,6 +141,7 @@ class GenerationSeedAndPayloadTest {
         random = random,
         clock = { 1_000L },
         idGenerator = idGenerator,
+        promptMacros = { macros },
     )
 
     /** 尺寸与 seed 都在 `parameters` 里，顶层只有 input / model / action。 */
@@ -321,21 +323,24 @@ class GenerationSeedAndPayloadTest {
     @Test
     fun charactersSurviveGenerationAndDetailReload() = runBlocking {
         val payloads = mutableListOf<JsonObject>()
-        val repository = repository(payloads, Random(1), GenerationFileStore(context))
+        val original = "two people, a sign reads \"这是原文\", Text: 这是原文"
+        val macro = net.pocketnai.domain.model.PromptFavorite("scene", net.pocketnai.domain.model.PromptFavoriteKind.TAG,
+            "场景", "two people, a sign reads \"这是原文\"", "", net.pocketnai.domain.model.PromptTarget.POSITIVE, 0, 0, 0)
+        val repository = repository(payloads, Random(1), GenerationFileStore(context), macros = listOf(macro))
         val characters = listOf(
             net.pocketnai.domain.model.CharacterPrompt(prompt = "blue hair", negativePrompt = "hat", centerX = 0.2, centerY = 0.3),
             net.pocketnai.domain.model.CharacterPrompt(prompt = "red hair", negativePrompt = "glasses", centerX = 0.8, centerY = 0.7),
         )
-        val original = "two people, a sign reads \"这是原文\", Text: 这是原文"
         val params = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V5_FULL))
-            .copy(prompt = original, characters = characters)
-        val events = repository.generate(GenerationRequest(params = params), original).toList()
+            .copy(prompt = "!macro:场景!, Text: 这是原文", characters = characters, useCharacterCoordinates = true)
+        val events = repository.generate(GenerationRequest(params = params), params.prompt).toList()
         val image = events.filterIsInstance<GenerationEvent.Final>().single().image
         val restored = repository.loadDetail(image.id)!!.generation
         assertThat(restored.params.characters).isEqualTo(characters)
         assertThat(restored.params.prompt).isEqualTo(original)
-        assertThat(restored.promptTemplate).isEqualTo(original)
-        val expected = "two people, a sign reads \"这是原文\", very aesthetic, masterpiece, no text Text: 这是原文"
+        assertThat(restored.promptTemplate).isEqualTo("!macro:场景!, Text: 这是原文")
+        assertThat(restored.params.useCharacterCoordinates).isTrue()
+        val expected = "two people, a sign reads \"这是原文\",, very aesthetic, masterpiece, no text Text: 这是原文"
         assertThat(payloads.single()["input"]!!.jsonPrimitive.content).isEqualTo(expected)
         assertThat(NovelAiRequestBuilder.build(ModelCatalog.profileOf(params.model), restored.params)["input"]!!.jsonPrimitive.content)
             .isEqualTo(expected)

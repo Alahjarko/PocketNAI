@@ -26,10 +26,10 @@ package net.pocketnai.domain.model
 object ModelCatalog {
 
     /** 待与官方网页版继续核对的配置版本号。 */
-    const val CONFIG_VERSION: String = "2026-09-14-qtag-resolution"
+    const val CONFIG_VERSION: String = "2026-10-09-web-prompts"
 
-    /** NovelAI 生成接口的 `params_version`，V4.5 / V5 使用 3。 */
-    private const val PARAMS_VERSION_V4_V5 = 3
+    /** NovelAI 生成接口的 `params_version`，当前网页前端使用 4。 */
+    private const val PARAMS_VERSION_V4_V5 = 4
 
     /** 尺寸边长必须是 64 的倍数。 */
     private const val DIMENSION_STEP = 64
@@ -132,14 +132,6 @@ object ModelCatalog {
         Sampler.DDIM to NATIVE_ONLY,
     )
 
-    /** ucPreset 的固定含义，四个模型一致。 */
-    private val UNDESIRED_CONTENT_PRESETS: List<UndesiredContentPreset> = listOf(
-        UndesiredContentPreset(index = 0, displayName = "Heavy"),
-        UndesiredContentPreset(index = 1, displayName = "Light"),
-        UndesiredContentPreset(index = 2, displayName = "Human Focus"),
-        UndesiredContentPreset(index = 3, displayName = "None"),
-    )
-
     private const val DEFAULT_UC_PRESET_INDEX = 0
 
     /**
@@ -191,7 +183,7 @@ object ModelCatalog {
         defaultNoiseSchedule = NoiseSchedule.KARRAS,
         samplerSchedules = SAMPLER_SCHEDULES,
         defaultQualityTags = QualityTagsOption.DEFAULT,
-        undesiredContentPresets = UNDESIRED_CONTENT_PRESETS,
+        undesiredContentPresets = net.pocketnai.domain.prompt.NovelAiPromptPresets.forModel(model),
         defaultUndesiredContentPresetIndex = DEFAULT_UC_PRESET_INDEX,
         promptSoftLimitChars = promptSoftLimitChars,
         supportsMultilingualPrompt = supportsMultilingualPrompt,

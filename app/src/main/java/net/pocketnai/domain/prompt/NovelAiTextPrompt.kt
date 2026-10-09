@@ -12,16 +12,43 @@ object NovelAiTextPrompt {
     )
     private val quotes = mapOf('"' to '"', '“' to '”', '「' to '」', '\'' to '\'', '‘' to '’')
 
+    /** The case-sensitive marker and an exact quotation match prove this was web-generated. */
+    fun removeAutomatic(prompt: String, characters: List<CharacterPrompt>, useCoordinates: Boolean): String =
+        PromptChunks.split(prompt).joinToString("|") { base ->
+            val found = Regex(marker.pattern.replace("text:", "teXt:")).find(base)
+                ?: return@joinToString base
+            val before = base.substring(0, found.range.first)
+            val generated = appendAutomatic(before, characters, useCoordinates)
+            val expected = generated.substringAfter("teXt: ", missingDelimiterValue = "")
+            if (expected.isNotEmpty() && base.substring(found.range.last + 1).trim() == expected) {
+                before.trimEnd { it.isWhitespace() || it == ',' }
+            } else base
+        }
+
+    fun stripQuality(prompt: String, suffix: String): String? {
+        val parts = PromptChunks.split(prompt).toMutableList()
+        val base = parts[0]
+        val found = marker.find(base)
+        val before = (if (found == null) base else base.substring(0, found.range.first)).trimEnd()
+        val stripped = when {
+            before == suffix -> ""
+            before.endsWith(", $suffix") -> before.dropLast(suffix.length + 2).trimEnd()
+            else -> return null
+        }
+        parts[0] = stripped + if (found == null) "" else base.substring(found.range.first)
+        return parts.joinToString("|")
+    }
+
     /** Quality tags belong to the base caption, never to the literal text to be drawn. */
     fun appendQuality(prompt: String, suffix: String): String {
         val end = firstChunkEnd(prompt)
         val base = prompt.substring(0, end)
         val found = marker.find(base)
-        if (found == null) return PromptComposition.append(base, suffix) + prompt.substring(end)
-        val before = base.substring(0, found.range.first).trimEnd { it.isWhitespace() || it == ',' }
+        if (found == null) return PromptComposition.append(base, suffix, preserveWhitespace = true) + prompt.substring(end)
+        val before = base.substring(0, found.range.first)
         val tail = base.substring(found.range.first)
         val boundary = if (found.range.first == 0) ", " else ""
-        return PromptComposition.append(before, suffix) + boundary + tail + prompt.substring(end)
+        return PromptComposition.append(before, suffix, preserveWhitespace = true) + boundary + tail + prompt.substring(end)
     }
 
     /** Append only once; an explicit text block in any positive caption opts out. */
@@ -39,7 +66,7 @@ object NovelAiTextPrompt {
             it in '\uff00'..'\uff9f' || it in '\u4e00'..'\u9faf' || it in '\u3400'..'\u4dbf' }
         val pieces = (if (cjk.toDouble() / text.length > 0.3) groups.map { it.reversed() } else groups).flatten()
         val prepared = "teXt: " + pieces.joinToString("\n\n")
-        return PromptComposition.append(base.trimEnd { it.isWhitespace() || it == ',' }, prepared) + prompt.substring(end)
+        return PromptComposition.append(base.trimEnd { it.isWhitespace() || it == ',' }, prepared, preserveWhitespace = true) + prompt.substring(end)
     }
 
     private fun extractQuotes(text: String): List<String> {

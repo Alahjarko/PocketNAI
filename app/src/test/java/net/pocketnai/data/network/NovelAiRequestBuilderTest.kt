@@ -43,6 +43,7 @@ class NovelAiRequestBuilderTest {
             // Opposite input order verifies that text follows coordinates, not array order.
             characters = listOf(char2, char1),
             qualityTags = QualityTagsOption.STANDARD,
+            useCharacterCoordinates = true,
         )
 
         val payload = NovelAiRequestBuilder.build(v5, params)
@@ -78,5 +79,14 @@ class NovelAiRequestBuilderTest {
         assertThat(negCharCaptions[0].jsonObject["char_caption"]!!.jsonPrimitive.content).isEqualTo("extra arms")
         assertThat(negCharCaptions[1].jsonObject["char_caption"]!!.jsonPrimitive.content).isEqualTo("bad eyes")
         assertThat(v4Negative["legacy_uc"]!!.jsonPrimitive.boolean).isFalse()
+        val negative = "nsfw, lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page, lowres"
+        assertThat(parameters["negative_prompt"]!!.jsonPrimitive.content).isEqualTo(negative)
+        assertThat(v4Negative["caption"]!!.jsonObject["base_caption"]!!.jsonPrimitive.content).isEqualTo(negative)
+        assertThat(parameters.containsKey("ucPreset")).isFalse()
+        assertThat(parameters["tag_hint_uc_preset"]!!.jsonPrimitive.content).isEqualTo("2")
+        val automatic = NovelAiRequestBuilder.build(v5, params.copy(useCharacterCoordinates = false,
+            characters = params.characters + CharacterPrompt(negativePrompt = "unused")))["parameters"]!!.jsonObject["v4_prompt"]!!.jsonObject
+        assertThat(automatic["use_coords"]!!.jsonPrimitive.boolean).isFalse()
+        assertThat(automatic["caption"]!!.jsonObject["char_captions"]!!.jsonArray).hasSize(2)
     }
 }

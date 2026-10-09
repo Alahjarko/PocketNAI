@@ -115,6 +115,8 @@ data class MetadataImportPlan(
     val qualityTags: QualityTagsOption? = null,
     /** 导入的独立角色（正/负向词 + 位置）；null 表示不动现有角色。 */
     val characters: List<CharacterPrompt>? = null,
+    val useCharacterCoordinates: Boolean? = null,
+    val undesiredContentPresetIndex: Int? = null,
     val notes: List<MetadataImportNote> = emptyList(),
 ) {
     /** 有没有任何一项真的会改动状态。 */
@@ -171,7 +173,15 @@ object MetadataImportPlanner {
             if (chosen != null) {
                 // 质量标签去重：认出来就剥掉并沿用对应预设，认不出来就原样保留 + 预设设为 None。
                 // 这一步必须在 cleanImports 之前，与官方前端的顺序一致。
-                val deduped = stripKnownQualityTags(chosen)
+                val importedCharacters = metadata.characters.map { character -> CharacterPrompt(
+                    prompt = if (selection.useActualPrompt) character.actualPrompt ?: character.prompt else character.prompt,
+                    negativePrompt = character.negativePrompt.orEmpty(),
+                    centerX = character.centerX ?: DEFAULT_CENTER, centerY = character.centerY ?: DEFAULT_CENTER,
+                ) }
+                val editable = net.pocketnai.domain.prompt.NovelAiTextPrompt.removeAutomatic(
+                    chosen, importedCharacters, metadata.useCharacterCoordinates ?: false,
+                )
+                val deduped = stripKnownQualityTags(editable, model = targetModel, hint = metadata.qualityTagHint)
                 val cleaned = if (selection.cleanImports) CleanImports.clean(deduped.text) else deduped.text
 
                 prompt = cleaned
@@ -187,6 +197,7 @@ object MetadataImportPlanner {
 
         // ---- 反向提示词 ----
         var negativePrompt: String? = null
+        var undesiredContentPresetIndex: Int? = null
         if (selection.negativePrompt) {
             val uc = if (selection.useActualPrompt && !metadata.actualNegativePrompt.isNullOrBlank()) {
                 metadata.actualNegativePrompt
@@ -194,9 +205,11 @@ object MetadataImportPlanner {
                 metadata.negativePrompt
             }
             if (uc != null) {
-                negativePrompt = uc
-                // 服务端的 UC 预设不在元数据里，无法恢复；这里如实说明，而不是猜一个。
-                notes += MetadataImportNote.UndesiredContentPresetNotRestorable
+                val restored = net.pocketnai.domain.prompt.NovelAiPromptPresets.restoreNegative(
+                    targetModel, metadata.undesiredContentTagHint, metadata.prompt.orEmpty(), uc,
+                )
+                negativePrompt = restored.first
+                undesiredContentPresetIndex = restored.second
             }
         }
 
@@ -287,23 +300,23 @@ object MetadataImportPlanner {
 
         // ---- 独立角色：跟着"提示词"那一项走（角色词也是提示词，不该拆成两个勾选项） ----
         var characters: List<CharacterPrompt>? = null
-        if (selection.prompt && metadata.characters.isNotEmpty()) {
+        if (selection.prompt && prompt != null) {
             var adjustedCount = 0
-            val eligible = metadata.characters.filterNot { it.prompt.isBlank() && it.negativePrompt.isNullOrBlank() }
-            val applied = eligible.take(CharacterPrompt.MAX_COUNT).map { character ->
+            val eligible = metadata.characters.filter { it.prompt.isNotEmpty() }
+            val applied = eligible.take(CharacterPrompt.limitFor(targetModel)).map { character ->
                 val rawX = character.centerX ?: DEFAULT_CENTER
                 val rawY = character.centerY ?: DEFAULT_CENTER
                 val x = rawX.coerceIn(0.0, 1.0)
                 val y = rawY.coerceIn(0.0, 1.0)
                 if (x != rawX || y != rawY) adjustedCount++
                 CharacterPrompt(
-                    prompt = cleanIfRequested(character.prompt, selection),
-                    negativePrompt = cleanIfRequested(character.negativePrompt.orEmpty(), selection),
+                    prompt = cleanIfRequested(if (selection.useActualPrompt) character.actualPrompt ?: character.prompt else character.prompt, selection),
+                    negativePrompt = cleanIfRequested(if (selection.useActualPrompt) character.actualNegativePrompt ?: character.negativePrompt.orEmpty() else character.negativePrompt.orEmpty(), selection),
                     centerX = x,
                     centerY = y,
                 )
             }
-            characters = applied.takeIf { it.isNotEmpty() }
+            characters = applied
             if (applied.isNotEmpty()) {
                 notes += MetadataImportNote.CharactersImported(applied.size)
                 if (applied.size < eligible.size) {
@@ -337,6 +350,8 @@ object MetadataImportPlanner {
             seed = seed,
             qualityTags = qualityTags,
             characters = characters,
+            useCharacterCoordinates = if (characters != null) metadata.useCharacterCoordinates ?: false else null,
+            undesiredContentPresetIndex = undesiredContentPresetIndex,
             notes = notes.toList(),
         )
 
@@ -347,48 +362,21 @@ object MetadataImportPlanner {
         }
     }
 
-    /**
-     * 质量标签去重。
-     *
-     * ## 官方算法（2026-09-14 从官方前端反解）
-     * 把提示词按 `|` 切成若干"块"，对每个候选预设要求**每一块**都以该后缀结尾
-     * （或整块就等于后缀）；全部满足才剥掉并采用这个预设，否则一个都不动。
-     * 官方前端对不匹配的兜底是 `qualityPresetId = "none"` —— 也就是"别再追加了"。
-     *
-     * ## 为什么按块而不是整串
-     * 官方会**给每一块都追加质量标签**，所以正常产物的每一块末尾都有它。
-     * 我们不做 prompt chunk 编辑，但用户可能从网页端复制带 `|` 的提示词过来，
-     * 因此这里照样按块判断，行为与官方一致。
-     *
-     * ## 为什么不用"看见 masterpiece 就删"
-     * 那种模糊匹配会删掉用户自己写的词。这里要求的是**完整的后缀序列**，
-     * 而且删的正是我们自己会追加的那一段（[QualityTagsOption.appendedText]）。
-     */
+    /** Only recognize an exact suffix in the base caption, preserving manual text and randomizers. */
     fun stripKnownQualityTags(
         prompt: String,
         candidates: List<QualityTagsOption> = QualityTagsOption.selectable,
+        model: ImageModel = ImageModel.V5_FULL,
+        hint: Int? = null,
     ): QualityTagStripResult {
-        val segments = prompt.split(CHUNK_SEPARATOR)
-        for (option in candidates) {
-            val suffix = option.appendedText ?: continue
-            val stripped = segments.map { stripSuffix(it, suffix) } ?: continue
-            if (stripped.all { it != null }) {
-                return QualityTagStripResult(
-                    text = stripped.filterNotNull().joinToString(CHUNK_SEPARATOR),
-                    option = option,
-                )
+        for (option in candidates.filter { hint == null || it.tagHint == hint }) {
+            // Recognize current model suffixes and legacy App suffixes without rewriting unknown text.
+            for (suffix in listOfNotNull(option.textFor(model), option.appendedText).distinct()) {
+                val stripped = net.pocketnai.domain.prompt.NovelAiTextPrompt.stripQuality(prompt, suffix)
+                if (stripped != null) return QualityTagStripResult(stripped, option)
             }
         }
         return QualityTagStripResult(text = prompt, option = null)
-    }
-
-    /** 单块去后缀：等于后缀 → 空串；以 `, 后缀` 结尾 → 去掉；否则 null（不匹配）。 */
-    private fun stripSuffix(segment: String, suffix: String): String? {
-        val trimmed = segment.trimEnd()
-        if (trimmed == suffix) return ""
-        val tail = "$SEPARATOR$suffix"
-        if (!trimmed.endsWith(tail)) return null
-        return trimmed.dropLast(tail.length).trimEnd()
     }
 
     /** Clean Imports 作用于整份提示词，角色词也是提示词，同样处理。 */
@@ -396,11 +384,6 @@ object MetadataImportPlanner {
         if (selection.cleanImports) CleanImports.clean(text) else text
 
     data class QualityTagStripResult(val text: String, val option: QualityTagsOption?)
-
-    /** 官方前端用的 prompt chunk 分隔符。 */
-    private const val CHUNK_SEPARATOR = "|"
-
-    private const val SEPARATOR = ", "
 
     /** 元数据里没写中心点时的默认值（与我们自己的默认站位一致）。 */
     private const val DEFAULT_CENTER = 0.5

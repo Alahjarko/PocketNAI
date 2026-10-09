@@ -22,6 +22,7 @@ object ImageChatTools {
             put("model", buildJsonObject { put("type", "string"); put("enum", JsonArray(ImageModel.entries.map { JsonPrimitive(it.apiModelId) })) })
             put("width", number("integer", 256.0, 2048.0)); put("height", number("integer", 256.0, 2048.0))
             put("seed", number("integer", 0.0, GenerationParams.MAX_SEED.toDouble()))
+            put("use_coords", buildJsonObject { put("type", "boolean"); put("description", "false: AI 自动安排角色；true: 使用角色 x/y 坐标") })
             put("characters", buildJsonObject {
                 put("type", "array"); put("maxItems", CharacterPrompt.MAX_COUNT)
                 put("items", buildJsonObject {
@@ -41,7 +42,7 @@ object ImageChatTools {
         if (call.name != "generate_image") throw ChatFailure("未知图片工具")
         val obj = runCatching { Json.parseToJsonElement(call.arguments) as? JsonObject }.getOrNull()
             ?: throw ChatFailure("模型提供的图片参数格式不正确")
-        if (obj.keys.any { it !in setOf("prompt", "negative_prompt", "model", "width", "height", "seed", "characters") })
+        if (obj.keys.any { it !in setOf("prompt", "negative_prompt", "model", "width", "height", "seed", "characters", "use_coords") })
             throw ChatFailure("模型提供了不支持的图片参数")
         val prompt = obj.string("prompt")?.trim()?.takeIf { it.isNotEmpty() && it.length <= 16000 }
             ?: throw ChatFailure("图片正向提示词为空或过长")
@@ -57,7 +58,7 @@ object ImageChatTools {
             ?.takeIf { it in 0..GenerationParams.MAX_SEED } ?: throw ChatFailure("Seed 超出范围")
         val characters = if ("characters" !in obj) emptyList() else {
             val rows = obj["characters"] as? JsonArray ?: throw ChatFailure("角色参数必须是数组")
-            if (rows.size > CharacterPrompt.MAX_COUNT) throw ChatFailure("最多支持 5 个角色")
+            if (rows.size > CharacterPrompt.limitFor(model)) throw ChatFailure("当前模型最多支持 ${CharacterPrompt.limitFor(model)} 个角色")
             rows.mapIndexed { index, row ->
                 val role = row as? JsonObject ?: throw ChatFailure("角色参数格式错误")
                 val text = role.string("prompt")?.takeIf { it.isNotBlank() && it.length <= 8000 } ?: throw ChatFailure("角色提示词为空或过长")
@@ -68,8 +69,14 @@ object ImageChatTools {
                 CharacterPrompt("${call.id}-$index", text, role.string("negative_prompt").orEmpty(), coord("x"), coord("y"))
             }
         }
+        val explicitCoordinates = (obj["characters"] as? JsonArray)?.any { row ->
+            (row as? JsonObject)?.let { "x" in it || "y" in it } == true
+        } ?: false
+        val useCoordinates = if ("use_coords" in obj) (obj["use_coords"] as? JsonPrimitive)?.booleanOrNull
+            ?: throw ChatFailure("use_coords 必须为布尔值") else explicitCoordinates
         val params = start.copy(prompt = prompt, negativePrompt = negative, size = size, outputSize = null,
             sampleCount = 1, qualityTags = QualityTagsOption.NONE, characters = characters,
+            useCharacterCoordinates = useCoordinates,
             seedMode = if (seed == null) SeedMode.RANDOM else SeedMode.FIXED, baseSeed = seed ?: 0L)
         if (profile.validate(params).any { it !is ParamViolation.PromptTooLong }) throw ChatFailure("图片尺寸或参数不合法，请按 64 像素步长选择画布")
         return params

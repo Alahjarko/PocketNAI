@@ -116,6 +116,10 @@ class PromptFavoritesViewModel(
         viewModelScope.launch { repository.markUsed(favorite.id) }
     }
 
+    fun edit(favorite: PromptFavorite, name: String, content: String, category: String) {
+        viewModelScope.launch { repository.update(favorite, name, content, category) }
+    }
+
     fun delete(favorite: PromptFavorite) {
         viewModelScope.launch { repository.delete(favorite.id) }
     }

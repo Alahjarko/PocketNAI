@@ -83,15 +83,7 @@ fun PreciseReferencePanel(
     ) {
 
         if (!state.supportsDirectorReference) {
-            // 不支持时只说明原因，不放任何会失败的操作入口。
-            Text(
-                text = stringResource(
-                    R.string.generate_director_unsupported,
-                    state.profile.displayName,
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-            )
+            InactiveReferences(state.directorReferences, viewModel::onDirectorReferenceRemoved)
         } else {
             state.directorReferences.forEach { reference ->
                 DirectorEntry(

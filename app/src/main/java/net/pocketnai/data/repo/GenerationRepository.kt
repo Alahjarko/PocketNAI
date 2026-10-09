@@ -110,6 +110,7 @@ class GenerationRepository(
     private val clock: () -> Long = System::currentTimeMillis,
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
     private val random: Random = Random.Default,
+    private val promptMacros: suspend () -> List<net.pocketnai.domain.model.PromptFavorite> = { emptyList() },
 ) {
 
     fun observeGenerations(): Flow<List<GenerationSummary>> =
@@ -143,6 +144,7 @@ class GenerationRepository(
         promptTemplate: String,
         expectedAccountFingerprint: String? = null,
         beforeSend: suspend (String) -> Unit = {},
+        templatesResolved: Boolean = false,
     ): Flow<GenerationEvent> = flow {
         val generationId = idGenerator()
         val startedAt = clock()
@@ -162,7 +164,14 @@ class GenerationRepository(
             return@flow
         }
 
-        val normalized = profile.normalize(params)
+        val frozenPrompts = try {
+            if (templatesResolved) null else net.pocketnai.domain.prompt.PromptTemplates.prepare(profile.normalize(params), promptMacros(), random)
+        } catch (e: IllegalArgumentException) {
+            emit(GenerationEvent.FatalError(generationId, AppError.of(ErrorCode.INVALID_PARAMS,
+                detail = "提示词宏不存在、重名、循环引用或展开后过长，请检查收藏片段。")))
+            return@flow
+        }
+        val normalized = profile.normalize(frozenPrompts?.params ?: params)
         val blockingViolations = profile.validate(normalized)
             .filterNot { it is ParamViolation.PromptTooLong }
         if (blockingViolations.isNotEmpty()) {
@@ -267,6 +276,7 @@ class GenerationRepository(
             request = request.copy(params = effectiveParams),
             upstreamImages = encodedImages,
             streaming = useStreaming,
+            preparedPrompts = frozenPrompts?.prepared,
         )
 
         // flowOn 会缓冲 Started，不能依赖下游事件处理先于 POST 完成。
@@ -453,25 +463,27 @@ class GenerationRepository(
         val imageEntity = dao.findImage(imageId) ?: return@withContext null
         val generationEntity = dao.findGeneration(imageEntity.generationId) ?: return@withContext null
         val generation = Mappers.toDomain(generationEntity) ?: return@withContext null
-        val characters = if (generationEntity.charactersJson == null) {
+        val legacy = if (generationEntity.charactersJson == null) {
             try {
                 fileStore.resolve(imageEntity.relativePath).inputStream().buffered()
-                    .use(HistoryCharacters::readLegacy)
+                    .use(HistoryCharacters::readLegacySnapshot)
             } catch (e: IOException) {
-                emptyList()
+                HistoryCharacters.LegacySnapshot()
             } catch (e: SecurityException) {
-                emptyList()
+                HistoryCharacters.LegacySnapshot()
             }
         } else {
-            generation.params.characters
+            null
         }
+        val characters = legacy?.characters ?: generation.params.characters
         // 参考图单独查一次再拼装：画廊与历史的查询不 join 它，避免影响瀑布流。
         val references = dao.findReferences(generation.id).mapNotNull(Mappers::toDomain)
         ImageDetail(
             image = Mappers.toDomain(imageEntity),
             generation = generation.copy(
                 references = references,
-                params = generation.params.copy(characters = characters),
+                params = generation.params.copy(characters = characters,
+                    useCharacterCoordinates = generationEntity.useCharacterCoordinates ?: legacy?.useCoordinates ?: characters.any { !it.isBlank }),
             ),
         )
     }
@@ -778,9 +790,8 @@ class GenerationRepository(
         )
     }
 
-    /** 展开 Prompt Randomizer 模板，得到本次实际提交的提示词（规划书 8.3）。 */
-    fun resolvePromptTemplate(template: String): String =
-        PromptRandomizer.resolve(template, random)
+    suspend fun freezePromptTemplates(params: GenerationParams): GenerationParams =
+        net.pocketnai.domain.prompt.PromptTemplates.resolve(params, promptMacros(), random)
 
     private suspend fun failGeneration(generationId: String, error: AppError) {
         dao.updateStatus(

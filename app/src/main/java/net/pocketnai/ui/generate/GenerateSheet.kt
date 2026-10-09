@@ -55,6 +55,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.favorites.CreateFavoriteDialog
 import net.pocketnai.ui.favorites.FavoritePickerDialog
+import net.pocketnai.domain.model.CharacterPrompt
 import net.pocketnai.ui.favorites.PromptFavoritesViewModel
 import net.pocketnai.ui.favorites.SaveFavoriteDialog
 import net.pocketnai.domain.model.PromptFavorite
@@ -140,6 +141,7 @@ fun GenerateSheet(
     var pickerTarget by remember { mutableStateOf(PromptTarget.POSITIVE) }
     // 从收藏夹里"新建"时弹出的表单。
     var createFavoriteOpen by remember { mutableStateOf(false) }
+    var editingFavorite by remember { mutableStateOf<PromptFavorite?>(null) }
     var balanceDialogOpen by remember { mutableStateOf(false) }
 
     // 费用预估由 ViewModel 从"参数 + 余额"派生，这里是纯展示。
@@ -212,6 +214,7 @@ fun GenerateSheet(
                 field = promptField,
                 focused = promptFocused,
                 target = "base",
+                macros = favoritesState.favorites,
                 state = state,
                 onQuery = viewModel::onSuggestionFragmentChange,
                 onFieldChange = { next ->
@@ -284,6 +287,10 @@ fun GenerateSheet(
                 suggestionState = state,
                 onSuggestionQuery = viewModel::onSuggestionFragmentChange,
                 canvasSize = state.params.size,
+                maxCharacters = CharacterPrompt.limitFor(state.params.model),
+                useCoordinates = state.params.useCharacterCoordinates,
+                onCoordinateModeChange = viewModel::onCharacterCoordinateModeChange,
+                macros = favoritesState.favorites,
             )
 
             CollapsedNegativePrompt(
@@ -313,6 +320,7 @@ fun GenerateSheet(
                     field = negativeField,
                     focused = negativeFocused,
                     target = "base-negative",
+                    macros = favoritesState.favorites,
                     state = state,
                     onQuery = viewModel::onSuggestionFragmentChange,
                     onFieldChange = { next ->
@@ -408,7 +416,7 @@ fun GenerateSheet(
                 DropdownSelector(
                     label = stringResource(R.string.generate_quality_tags),
                     selectedText = state.params.qualityTags.displayName,
-                    options = QualityTagsOption.selectable,
+                    options = QualityTagsOption.selectableFor(state.params.model),
                     optionLabel = { it.displayName },
                     onSelect = viewModel::onQualityTagsChange,
                     modifier = Modifier.weight(1f),
@@ -426,7 +434,7 @@ fun GenerateSheet(
                 )
             }
             Text(
-                text = state.params.qualityTags.appendedText?.let {
+                text = state.params.qualityTags.textFor(state.params.model)?.let {
                     stringResource(R.string.generate_quality_tags_appended, it)
                 } ?: stringResource(R.string.generate_quality_tags_none),
                 style = MaterialTheme.typography.bodySmall,
@@ -642,6 +650,13 @@ fun GenerateSheet(
             onDelete = favoritesViewModel::delete,
             onDismiss = { pickerOpen = false },
             onDismissNotice = favoritesViewModel::dismissNotice,
+            onEdit = { editingFavorite = it; pickerOpen = false },
+            onUseMacro = { favorite ->
+                val current = if (pickerTarget == PromptTarget.POSITIVE) state.promptTemplate else state.negativeTemplate
+                viewModel.replacePromptText(pickerTarget, PromptComposition.append(current, "!macro:${favorite.name}!"))
+                favoritesViewModel.markUsed(favorite)
+                pickerOpen = false
+            },
         )
     }
 
@@ -662,6 +677,14 @@ fun GenerateSheet(
             },
             onDismiss = { createFavoriteOpen = false },
         )
+    }
+
+    editingFavorite?.let { favorite ->
+        CreateFavoriteDialog(kind = favorite.kind, existing = favorite,
+            onConfirm = { name, content, category ->
+                favoritesViewModel.edit(favorite, name, content, category)
+                editingFavorite = null; pickerOpen = true
+            }, onDismiss = { editingFavorite = null; pickerOpen = true })
     }
 
     if (balanceDialogOpen) {
@@ -768,7 +791,7 @@ private fun SheetHeader(
                             append(" · ")
                             append(preciseReferenceMarker)
                         }
-                        if (state.vibeReferences.isNotEmpty()) {
+                        if (state.supportsVibeTransfer && state.vibeReferences.isNotEmpty()) {
                             append(" · ")
                             append(vibeMarker)
                         }

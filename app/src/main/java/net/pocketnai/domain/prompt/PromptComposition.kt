@@ -23,9 +23,9 @@ object PromptComposition {
      * - [current] 为空：返回 [addition]，**不会**留下开头多余的逗号；
      * - 两者都有内容：用 [SEPARATOR] 连接，并去掉各自首尾空白。
      */
-    fun append(current: String, addition: String): String {
-        val base = current.trim()
-        val extra = addition.trim()
+    fun append(current: String, addition: String, preserveWhitespace: Boolean = false): String {
+        val base = if (preserveWhitespace) current else current.trim()
+        val extra = if (preserveWhitespace) addition else addition.trim()
         return when {
             extra.isEmpty() -> current
             base.isEmpty() -> extra

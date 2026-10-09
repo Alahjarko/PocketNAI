@@ -22,16 +22,16 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class MigrationTest {
 
-    @Test fun migrate8To9AddsChatAndKeepsImageHistory() {
-        helper.createDatabase("chat-migration-test", 8).use { db ->
+    @Test fun migrate10To11KeepsHistoryAndAddsOptionalCoordinateMode() {
+        helper.createDatabase("prompt-migration-test", 10).use { db ->
             db.execSQL("""INSERT INTO generations (id,createdAt,updatedAt,status,title,promptTemplate,mode,prompt,negativePrompt,modelApiId,width,height,sampleCount,steps,guidance,cfgRescale,sampler,noiseSchedule,seedMode,baseSeed,qualityTags,qualityTagsEnabled,ucPresetIndex,modelConfigVersion,requestSnapshotVersion,charactersJson)
                 VALUES ('old',1,1,'SUCCEEDED','old title','sfw','TXT2IMG','sfw','','nai-diffusion-4-5-curated',832,1216,1,23,7.0,0.0,'k_euler_ancestral','karras','FIXED',42,'NONE',0,0,'v1',3,'[]')""")
             db.execSQL("""INSERT INTO generated_images (id,generationId,ordinal,seed,relativePath,width,height,byteSize,sha256,metadataJson,createdAt,exportedUri)
                 VALUES ('old-image','old',1,42,'generations/old/0001.png',832,1216,1024,'sha',NULL,1,NULL)""")
         }
-        helper.runMigrationsAndValidate("chat-migration-test", 9, true, PocketNaiDatabase.MIGRATION_8_9).use { db ->
-            db.query("SELECT title,charactersJson FROM generations WHERE id='old'").use {
-                assertThat(it.moveToFirst()).isTrue(); assertThat(it.getString(0)).isEqualTo("old title"); assertThat(it.getString(1)).isEqualTo("[]")
+        helper.runMigrationsAndValidate("prompt-migration-test", 11, true, PocketNaiDatabase.MIGRATION_10_11).use { db ->
+            db.query("SELECT title,charactersJson,useCharacterCoordinates FROM generations WHERE id='old'").use {
+                assertThat(it.moveToFirst()).isTrue(); assertThat(it.getString(0)).isEqualTo("old title"); assertThat(it.getString(1)).isEqualTo("[]"); assertThat(it.isNull(2)).isTrue()
             }
             db.query("SELECT COUNT(*) FROM generated_images").use { assertThat(it.moveToFirst()).isTrue(); assertThat(it.getInt(0)).isEqualTo(1) }
             db.execSQL("INSERT INTO chat_conversations VALUES ('chat','title',2,'[]')")

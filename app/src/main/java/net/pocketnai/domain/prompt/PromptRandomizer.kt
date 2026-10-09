@@ -5,7 +5,7 @@ import kotlin.random.Random
 /**
  * 本地 Prompt Randomizer（规划书 8.3）。
  *
- * 语法是 PocketNAI 自己的约定，因为 NovelAI 的提示词语法没有随机选项：
+ * 尖括号是旧版 PocketNAI 的本地语法；官方 `||a|b||` 保留给服务端解析：
  * - `<a|b|c>`：每次生成时从候选中随机取一个；
  * - `\<`：转义，输出字面量 `<`；
  * - 不支持嵌套，`<` 与 `>` 之间不允许再出现 `<`。
@@ -71,6 +71,12 @@ object PromptRandomizer {
         while (index < prompt.length) {
             val ch = prompt[index]
             when {
+                prompt.startsWith("||", index) -> {
+                    val end = prompt.indexOf("||", index + 2)
+                    val until = if (end < 0) prompt.length else end + 2
+                    literal.append(prompt, index, until)
+                    index = until
+                }
                 ch == ESCAPE && index + 1 < prompt.length && prompt[index + 1] == OPEN -> {
                     literal.append(OPEN)
                     index += 2

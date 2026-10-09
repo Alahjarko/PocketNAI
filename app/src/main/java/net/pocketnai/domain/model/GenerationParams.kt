@@ -78,6 +78,8 @@ data class GenerationParams(
     val qualityTags: QualityTagsOption,
     val undesiredContentPresetIndex: Int,
     val characters: List<CharacterPrompt> = emptyList(),
+    /** New drafts use AI placement; legacy snapshots explicitly restore their old coordinate mode. */
+    val useCharacterCoordinates: Boolean = false,
 ) {
     /**
      * 把"这一次生成实际使用的 seed"定下来。
