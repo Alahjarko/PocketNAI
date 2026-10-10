@@ -84,6 +84,11 @@ class OutputImageProcessorTest {
         val original = buildCanvas()
         file.writeBytes(original)
 
+        // 普通生成没有裁切/重绘时保持原字节，避免无意改动所有生成产物。
+        val untouched = OutputImageProcessor().apply(listOf(extractedFrom(file, original, 1920, 1088)), null, null).single()
+        assertThat(file.readBytes()).isEqualTo(original)
+        assertThat(untouched.sha256).isEqualTo(Hashing.sha256(original))
+
         val result = OutputImageProcessor().apply(
             images = listOf(extractedFrom(file, original, 1920, 1088)),
             crop = PixelRegion(x = 0, y = 4, width = 1920, height = 1080),
@@ -112,6 +117,7 @@ class OutputImageProcessorTest {
         val chunks = PngTextWriter.readTextChunks(bytes).associate { it.keyword to it.text }
         assertThat(chunks["Software"]).isEqualTo("NovelAI")
         assertThat(chunks["Source"]).isEqualTo("NovelAI Diffusion V5 DB276663")
+        assertThat(chunks["Generation_time"]).isEqualTo("1.5")
         assertThat(chunks["Comment"]).contains(""""width":1920,"height":1088""")
         assertThat(chunks).doesNotContainKey("UnknownTool")
 

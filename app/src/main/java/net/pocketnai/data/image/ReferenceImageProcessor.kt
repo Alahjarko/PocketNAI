@@ -44,7 +44,7 @@ import java.io.IOException
  * 解码 / 绘制 / 编码 API 并把失败翻译成错误码。这样"算错尺寸"这类最难查的问题不会藏在这一层。
  *
  * ## base64 的生命周期
- * [encodeBase64] 返回的字符串只允许用于构造当次请求体，不写数据库、不写日志、不长期驻留
+ * [encodeBase64] 返回的字符串只用于当次请求与局部重绘回图合成，不写数据库、不写日志、不长期驻留
  * （见 AGENTS.md 的安全约束）。
  *
  * ## 已知限制
@@ -97,8 +97,9 @@ class ReferenceImageProcessor(
         val decoded = decodeSampled(file, factor = 1)
             ?: return@withContext Outcome.Failure(AppError.of(ErrorCode.REFERENCE_DECODE_FAILED))
 
+        var rendered: Bitmap? = null
         try {
-            val rendered = if (transform == null) {
+            rendered = if (transform == null) {
                 decoded
             } else {
                 render(decoded, transform)
@@ -115,6 +116,7 @@ class ReferenceImageProcessor(
             }
             Outcome.Success(Base64.encodeToString(bytes, Base64.NO_WRAP))
         } finally {
+            if (rendered !== decoded) rendered?.recycle()
             decoded.recycle()
         }
     }
@@ -263,9 +265,11 @@ class ReferenceImageProcessor(
                     placement.destination.x + placement.destination.width,
                     placement.destination.y + placement.destination.height,
                 ),
-                Paint(Paint.FILTER_BITMAP_FLAG),
+                Paint(if (transform is ImageTransform.MaskCover) 0 else Paint.FILTER_BITMAP_FLAG),
             )
-            output
+            if (transform is ImageTransform.MaskCover) {
+                snapInpaintMaskToLatentGrid(output).also { if (it !== output) output.recycle() }
+            } else output
         } catch (e: OutOfMemoryError) {
             // 画布与源图同时驻留内存，低端机上有可能撑不住。
             null

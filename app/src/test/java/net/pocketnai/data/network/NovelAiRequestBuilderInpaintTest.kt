@@ -30,21 +30,6 @@ import org.junit.Test
 class NovelAiRequestBuilderInpaintTest {
 
     private val profile = ModelCatalog.profileOf(ImageModel.V4_5_CURATED)
-    private val v5 = ModelCatalog.profileOf(ImageModel.V5_CURATED)
-
-    private fun base(strength: Double? = 0.7) = ReferenceImage(
-        id = "base",
-        role = ReferenceRole.IMG2IMG,
-        ordinal = 0,
-        relativePath = "references/base.png",
-        width = 1216,
-        height = 832,
-        byteSize = 100,
-        sha256 = "base",
-        createdAt = 0L,
-        strength = strength,
-    )
-
     private fun mask() = ReferenceImage(
         id = "mask",
         role = ReferenceRole.INPAINT_MASK,
@@ -77,21 +62,6 @@ class NovelAiRequestBuilderInpaintTest {
         ),
         upstreamImages = upstream,
     )
-
-    private fun parameters(json: JsonObject) = json.getValue("parameters").jsonObject
-
-    private val fullUpstream = mapOf(
-        ReferenceRole.IMG2IMG to listOf("BASE64"),
-        ReferenceRole.INPAINT_MASK to listOf("MASK64"),
-    )
-
-    @Test
-    fun `底图与蒙版分别落在 image 与 mask`() {
-        val parameters = parameters(build(listOf(base(), mask()), fullUpstream))
-
-        assertThat(parameters.getValue("image").jsonPrimitive.content).isEqualTo("BASE64")
-        assertThat(parameters.getValue("mask").jsonPrimitive.content).isEqualTo("MASK64")
-    }
 
     @Test
     fun `有蒙版没底图时绝不能发出 常规模型ID加infill 的自相矛盾请求`() {

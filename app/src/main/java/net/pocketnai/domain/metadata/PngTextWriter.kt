@@ -153,7 +153,7 @@ object PocketNaiOutputMetadata {
         "source",
         "description",
         "comment",
-        "generation_time",
+        "generationtime",
         "title",
     )
 

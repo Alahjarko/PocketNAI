@@ -12,7 +12,7 @@
      跑单测 → 构建 APK（带下一个构建号）→ 建 Release 并上传，一条龙，不用等云端排队；
   2. 云端 `.github/workflows/build-release.yml` 保留为备份，在 Actions 页面**手动触发**
      （workflow_dispatch）。之前的"push 即构建"已取消：与本地发布并行会撞号，且云端排队慢。
-  两条路径发布后都只保留最近 3 个 Release。固定分享链接（永远指向最新构建，适合直接发给用户）：
+  两条路径均保留既有 Release 与标签，不自动清理旧版本（用户2026-10-10明确要求，先前删除是特殊情况）。删除只能按用户另行指定的版本和范围执行。固定分享链接（永远指向最新构建，适合直接发给用户）：
   `https://github.com/Alahjarko/PocketNAI/releases/latest/download/PocketNAI.apk`。
 - **签名密钥绝不能换**：两条路径都必须用本机那把 debug keystore，与所有既有安装签名一致 ——
   换了密钥，新包在用户手机上**无法覆盖安装**，只能卸载重装（丢历史与凭据）。

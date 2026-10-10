@@ -45,6 +45,9 @@ sealed interface ImageTransform {
     /** 铺满 [target]，保持比例、裁剪多余边缘。用于 Image2Img。 */
     data class Cover(val target: PixelSize) : ImageTransform
 
+    /** 与底图 Cover 共用裁切坐标，蒙版最近邻缩放后对齐 8px 网格，禁止柔化提交图。 */
+    data class MaskCover(val target: PixelSize) : ImageTransform
+
     /** 完整放进 [canvas]，不足处留黑。用于已确定画布尺寸的场合。 */
     data class Letterbox(val canvas: PixelSize) : ImageTransform
 
@@ -90,6 +93,7 @@ object ImageGeometry {
     fun placementFor(transform: ImageTransform, source: PixelSize): ImagePlacement =
         when (transform) {
             is ImageTransform.Cover -> centerCrop(source, transform.target)
+            is ImageTransform.MaskCover -> centerCrop(source, transform.target)
             is ImageTransform.Letterbox -> letterbox(source, transform.canvas)
             ImageTransform.DirectorCanvas -> letterbox(source, directorCanvas(source))
         }

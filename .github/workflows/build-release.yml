@@ -106,13 +106,3 @@ jobs:
             --title "0.1.$RUN_NUMBER" \
             --notes "$NOTES" \
             PocketNAI.apk
-
-      # 只保留最近 3 个构建，避免 Release 列表越堆越长。
-      - name: Prune old releases
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release list --limit 100 --json tagName --jq '.[3:][] | .tagName' \
-            | while read -r tag; do
-                [ -n "$tag" ] && gh release delete "$tag" --yes --cleanup-tag
-              done

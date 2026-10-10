@@ -7,7 +7,7 @@
   两条发布路径不会撞号。
   APK 用本机的 debug keystore 签名：与用户手机上所有既有安装一致，
   可以直接覆盖安装、不丢数据（这是"应用内更新"能工作的前提）。
-  发布后只保留最近 3 个 Release，与云端一致。
+  发布保留既有 Release 与标签；旧版本仅按用户单独指定的范围删除。
 
 .EXAMPLE
   pwsh -NoProfile -File scripts\publish-release.ps1
@@ -98,13 +98,6 @@ Set-Content -Path $notesFile -Value $notes -Encoding utf8
 Write-Host "→ 创建 Release build-$next…"
 & $gh release create "build-$next" $stage --title "0.1.$next" --notes-file $notesFile
 Assert-LastExit "创建 Release"
-
-# ---- 5. 只保留最近 3 个构建 ----
-Write-Host "→ 清理旧构建（保留最近 3 个）…"
-$stale = @(& $gh release list --limit 100 --json tagName --jq '.[3:][] | .tagName')
-foreach ($tag in $stale) {
-    if ($tag) { & $gh release delete $tag --yes --cleanup-tag | Out-Null }
-}
 
 Write-Host ""
 Write-Host "✔ 发布完成"

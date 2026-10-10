@@ -14,15 +14,15 @@ import java.io.File
 import java.io.IOException
 
 /**
- * 生成结果的后处理：按自定义分辨率把画布裁成用户要的最终尺寸。
+ * 生成结果的后处理：局部重绘先与原图融合，再按自定义尺寸裁切。
  *
  * ## 为什么在落盘之前做
  * 历史目录里的文件、数据库里的宽高、缩略图缓存与相册导出都以落盘那一刻的文件为准。
  * 先落盘再裁等于要把"已提交"的东西改一遍，而数据库事务、哈希与文件三者的一致性
  * 都要重新保证一次 —— 越晚改越容易留下不一致。
  *
- * ## 不裁切时一个字节都不动
- * 没有裁切请求时直接返回原列表：不重新编码 PNG，因此 SHA-256、体积与压缩痕迹
+ * ## 普通生成不裁切时一个字节都不动
+ * 没有裁切或重绘合成请求时直接返回原列表：不重新编码 PNG，因此 SHA-256、体积与压缩痕迹
  * 都与服务端产物完全一致（预设尺寸的历史记录因此完全不受新功能影响）。
  *
  * ## 元数据必须保住
@@ -47,9 +47,43 @@ class OutputImageProcessor {
         images: List<ZipImageExtractor.ExtractedImage>,
         crop: PixelRegion?,
         canvas: PixelSize?,
+        inpaint: InpaintSource? = null,
+        onInpaintFailure: (Int) -> Unit = {},
     ): List<ZipImageExtractor.ExtractedImage> {
-        if (crop == null || canvas == null) return images
-        return images.map { image -> cropImage(image, crop, canvas) ?: image }
+        if (inpaint == null && (crop == null || canvas == null)) return images
+        return images.map { image ->
+            val blended = if (inpaint == null) image else blendImage(image, inpaint) ?: image.also {
+                // 服务端已经返回，不能丢失产物，更不能重发生成；保留原始结果并报告本地处理失败。
+                onInpaintFailure(image.ordinal)
+            }
+            if (crop == null || canvas == null) blended else cropImage(blended, crop, canvas) ?: blended
+        }
+    }
+
+    private fun blendImage(
+        image: ZipImageExtractor.ExtractedImage,
+        source: InpaintSource,
+    ): ZipImageExtractor.ExtractedImage? {
+        var bitmap: Bitmap? = null
+        return try {
+            val original = image.file.readBytes()
+            bitmap = BitmapFactory.decodeByteArray(original, 0, original.size, BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+                inMutable = true
+            }) ?: return null
+            if (!InpaintCompositor.composite(bitmap, source)) return null
+            val encoded = encodePng(bitmap) ?: return null
+            val bytes = PngTextWriter.withTextChunks(encoded, preservedChunks(original))
+            writeAtomically(image.file, bytes)
+            image.copy(byteSize = bytes.size.toLong(), sha256 = Hashing.sha256(bytes),
+                width = bitmap.width, height = bitmap.height)
+        } catch (_: IOException) {
+            null
+        } catch (_: OutOfMemoryError) {
+            null
+        } finally {
+            bitmap?.recycle()
+        }
     }
 
     private fun cropImage(

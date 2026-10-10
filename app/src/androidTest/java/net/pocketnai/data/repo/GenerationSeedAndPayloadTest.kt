@@ -1,7 +1,9 @@
 package net.pocketnai.data.repo
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.util.Base64
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -75,7 +77,10 @@ class GenerationSeedAndPayloadTest {
             destinationZip: File,
         ): Outcome<Unit> {
             payloads += payload
-            val bitmap = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
+            val params = payload.getValue("parameters").jsonObject
+            val inpaint = payload["action"]?.jsonPrimitive?.content == "infill"
+            val bitmap = Bitmap.createBitmap(if (inpaint) params.getValue("width").jsonPrimitive.content.toInt() else 64,
+                if (inpaint) params.getValue("height").jsonPrimitive.content.toInt() else 64, Bitmap.Config.ARGB_8888)
             bitmap.eraseColor(Color.GREEN)
             val png = ByteArrayOutputStream().use { buffer ->
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, buffer)
@@ -84,7 +89,10 @@ class GenerationSeedAndPayloadTest {
             bitmap.recycle()
             ZipOutputStream(destinationZip.outputStream()).use { zip ->
                 zip.putNextEntry(ZipEntry("image_0.png"))
-                zip.write(png)
+                zip.write(if (inpaint) net.pocketnai.domain.metadata.PngTextWriter.withTextChunks(png, listOf(
+                    net.pocketnai.domain.metadata.PngTextChunks.TextChunk("Software", "NovelAI"),
+                    net.pocketnai.domain.metadata.PngTextChunks.TextChunk("Comment", """{"prompt":"sfw, blue sky"}"""),
+                )) else png)
                 zip.closeEntry()
             }
             return Outcome.Success(Unit)
@@ -142,7 +150,96 @@ class GenerationSeedAndPayloadTest {
         clock = { 1_000L },
         idGenerator = idGenerator,
         promptMacros = { macros },
+        referenceEncoder = net.pocketnai.data.image.ReferenceImageProcessor(context, fileStore),
     )
+
+    /** 原请求载荷测试改成设备端完整链路，覆盖回图融合、裁切和历史一致性。 */
+    @Test fun inpaintKeepsOriginalOutsideMaskAndBlendsBeforeHistoryCrop() = runBlocking<Unit> {
+        val payloads = mutableListOf<JsonObject>()
+        val id = "inpaint-output-test-" + java.util.UUID.randomUUID()
+        val root = File(context.cacheDir, id).apply { mkdirs() }
+        val isolatedContext = object : android.content.ContextWrapper(context) {
+            override fun getApplicationContext(): android.content.Context = this
+            override fun getFilesDir(): File = File(root, "files").apply { mkdirs() }
+            override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
+        }
+        val files = GenerationFileStore(isolatedContext)
+        val defaults = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V5_FULL))
+        val width = defaults.size.width
+        val height = defaults.size.height
+        // 用户真实原图 878×1280 与 832×1216 画布不同，旧代码只缩底图、没有缩蒙版。
+        val sourceWidth = 878
+        val sourceHeight = 1280
+        val params = defaults.copy(prompt = "sfw, blue sky", seedMode = SeedMode.FIXED, baseSeed = 1234,
+            outputSize = net.pocketnai.domain.model.ImageSizePreset(width, height - 8),
+            qualityTags = net.pocketnai.domain.model.QualityTagsOption.NONE)
+        val base = Bitmap.createBitmap(sourceWidth, sourceHeight, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLUE) }
+        val bytes = ByteArrayOutputStream().use { buffer ->
+            base.compress(Bitmap.CompressFormat.PNG, 100, buffer)
+            buffer.toByteArray()
+        }
+        base.recycle()
+        val hash = net.pocketnai.core.Hashing.sha256(bytes)
+        files.writeReference(hash, bytes)
+        val mask = (net.pocketnai.data.image.MaskImageProcessor(context, files).render(
+            listOf(net.pocketnai.domain.inpaint.MaskStroke(isErase = false, radius = 100f, points = listOf(
+                net.pocketnai.domain.inpaint.MaskPoint(sourceWidth / 2f, sourceHeight / 3f),
+                net.pocketnai.domain.inpaint.MaskPoint(sourceWidth / 2f, sourceHeight * 2 / 3f),
+            ))), net.pocketnai.domain.image.PixelSize(sourceWidth, sourceHeight), 0f) as Outcome.Success).value
+        fun reference(role: net.pocketnai.domain.model.ReferenceRole, path: String, sha: String, size: Long) =
+            net.pocketnai.domain.model.ReferenceImage(role.name, role, 0, path, sourceWidth, sourceHeight, size, sha, 0, strength = 1.0)
+        val refs = listOf(reference(net.pocketnai.domain.model.ReferenceRole.IMG2IMG,
+            files.referenceRelativePath(hash), hash, bytes.size.toLong()),
+            reference(net.pocketnai.domain.model.ReferenceRole.INPAINT_MASK, mask.relativePath, mask.sha256, mask.byteSize))
+        try {
+            val repo = repository(payloads, Random(1), files) { id }
+            val events = repo.generate(GenerationRequest(params, net.pocketnai.domain.model.GenerationMode.INPAINT, refs), params.prompt).toList()
+            assertThat(events.filterIsInstance<GenerationEvent.ItemError>()).isEmpty()
+            val image = events.filterIsInstance<GenerationEvent.Final>().single().image
+            assertThat(payloads).hasSize(1)
+            val payload = payloads.single()
+            assertThat(payload.getValue("action").jsonPrimitive.content).isEqualTo("infill")
+            assertThat(payload.getValue("model").jsonPrimitive.content).isEqualTo(ImageModel.V5_FULL.inpaintingApiModelId)
+            val sent = parametersOf(payload)
+            assertThat(sent.getValue("seed").jsonPrimitive.longOrNull).isEqualTo(1234L)
+            fun decodeField(field: String): Bitmap {
+                val png = Base64.decode(sent.getValue(field).jsonPrimitive.content, Base64.DEFAULT)
+                return BitmapFactory.decodeByteArray(png, 0, png.size)
+            }
+            val submittedMask = decodeField("mask")
+            val boundaryX = width / 2 - 132
+            assertThat(submittedMask.width).isEqualTo(width)
+            assertThat(submittedMask.height).isEqualTo(height)
+            assertThat(submittedMask.getPixel(boundaryX, height / 2)).isEqualTo(Color.BLACK)
+            assertThat(submittedMask.getPixel(width / 2, height / 2)).isEqualTo(Color.WHITE)
+            submittedMask.recycle()
+            val submittedBase = decodeField("image")
+            assertThat(submittedBase.getPixel(10, 10)).isEqualTo(Color.BLUE)
+            submittedBase.recycle()
+            val output = files.resolve(image.privateFilePath)
+            val decoded = BitmapFactory.decodeFile(output.absolutePath)
+            assertThat(decoded.width).isEqualTo(width)
+            assertThat(decoded.height).isEqualTo(height - 8)
+            assertThat(decoded.getPixel(10, 0)).isEqualTo(Color.BLUE)
+            assertThat(decoded.getPixel(width / 2, height / 2 - 4)).isEqualTo(Color.GREEN)
+            val edge = decoded.getPixel(boundaryX, height / 2 - 4)
+            assertThat(Color.green(edge)).isIn(1..254)
+            assertThat(Color.blue(edge)).isIn(1..254)
+            assertThat(Color.alpha(edge)).isEqualTo(255)
+            decoded.recycle()
+            val saved = output.readBytes()
+            assertThat(image.sha256).isEqualTo(net.pocketnai.core.Hashing.sha256(saved))
+            assertThat(image.byteSize).isEqualTo(saved.size.toLong())
+            val chunks = net.pocketnai.domain.metadata.PngTextWriter.readTextChunks(saved).associate { it.keyword to it.text }
+            assertThat(chunks["Software"]).isEqualTo("NovelAI")
+            assertThat(chunks["Comment"]).contains("sfw, blue sky")
+            assertThat(repo.loadDetail(image.id)!!.generation.params.baseSeed).isEqualTo(1234L)
+            // 仅在测试专用缓存中保存对比图，供设备截图/像素核对，不写用户历史。
+            output.copyTo(File(context.cacheDir, "inpaint-regression.png"), overwrite = true)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
 
     /** 尺寸与 seed 都在 `parameters` 里，顶层只有 input / model / action。 */
     private fun parametersOf(payload: JsonObject): JsonObject =

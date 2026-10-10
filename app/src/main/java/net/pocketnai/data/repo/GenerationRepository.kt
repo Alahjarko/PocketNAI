@@ -394,11 +394,24 @@ class GenerationRepository(
                 )
             }
         }
+        // 与请求体共用同一份已归一化底图/蒙版，避免草稿或参考文件变化影响回图合成。
+        val inpaintSource = if (request.mode == GenerationMode.INPAINT) {
+            val base = encodedImages[ReferenceRole.IMG2IMG]?.firstOrNull()
+            val mask = encodedImages[ReferenceRole.INPAINT_MASK]?.firstOrNull()
+            if (base != null && mask != null) net.pocketnai.data.image.InpaintSource(base, mask) else null
+        } else null
+        val blendFailures = mutableListOf<Int>()
         val processed = outputImageProcessor.apply(
             images = extracted.images,
             crop = outputCrop,
             canvas = PixelSize(effectiveParams.size.width, effectiveParams.size.height),
+            inpaint = inpaintSource,
+            onInpaintFailure = { blendFailures += it },
         )
+        for (ordinal in blendFailures) {
+            emit(GenerationEvent.ItemError(generationId, ordinal, AppError.of(ErrorCode.UNKNOWN,
+                detail = "局部重绘边缘合成失败，已保留服务器原图；未重发生成请求。")))
+        }
         val committed = try {
             fileStore.commitImages(generationId, processed)
         } catch (e: IOException) {
@@ -982,11 +995,8 @@ class GenerationRepository(
         ReferenceRole.VIBE -> ImageTransform.Letterbox(
             PixelSize(reference.width, reference.height),
         )
-        // 蒙版**不做任何几何变换**：生成它的时候就与输出尺寸严格一致，
-        // 一旦在这里缩放就会与底图错位（而且是那种"看着差不多、其实整体偏了几像素"的错位）。
-        ReferenceRole.INPAINT_MASK -> ImageTransform.Letterbox(
-            PixelSize(reference.width, reference.height),
-        )
+        // 编辑器在原图上涂抹，原图未必等于生成画布；必须与底图使用相同裁切坐标。
+        ReferenceRole.INPAINT_MASK -> ImageTransform.MaskCover(normalized.size.toPixelSize())
     }
 
     /**

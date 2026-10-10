@@ -29,9 +29,9 @@ import java.io.IOException
  * ## 硬边，没有抗锯齿；提交前对齐隐空间网格
  * 蒙版是"涂了 / 没涂"的二值语义。抗锯齿会在边界产生一圈半透明像素，
  * 而服务端怎么解释这些像素是未知的。因此画笔一律 `isAntiAlias = false`，
- * 落盘前再做一次 8×8 网格对齐（见 [snapToLatentGrid]）—— 否则任意精度的
- * 边界经服务端下采样后会产生"半涂半不涂"的隐空间边缘格，模型在那里
- * 发明过渡材质（用户实测的"白色不明材质边界"就是这么来的）。
+ * 落盘前再做一次 8×8 网格对齐（见 [snapInpaintMaskToLatentGrid]），匹配网页端的提交蒙版。
+ * 这只负责请求精度；成图边缘还需要 [InpaintCompositor] 与原图柔化融合，
+ * 不能把网格对齐当作消除所有边缘异常的保证。
  * 编辑器的实时预览保持平滑（差距最多半格 4px），网格对齐只作用于落盘的提交图。
  *
  * ## 扩张就是"半径加大"
@@ -65,7 +65,7 @@ class MaskImageProcessor(
             paintStrokes(bitmap, strokes, dilationPx)
             // 提交前把蒙版对齐到隐空间网格（8×8 像素一格）。编辑器里的实时预览
             // 仍是平滑的；落盘的这份才是提交图，必须与服务端的下采样对齐。
-            val output = snapToLatentGrid(bitmap)
+            val output = snapInpaintMaskToLatentGrid(bitmap)
             if (output !== bitmap) {
                 bitmap.recycle()
                 bitmap = output
@@ -161,33 +161,6 @@ class MaskImageProcessor(
         }
     }
 
-    /**
-     * 把蒙版对齐到 8×8 隐空间网格：最近邻缩到 1/8 再最近邻放回。
-     *
-     * 这是官方前端蒙版管线的等价物（它们提交前先把蒙版量化到 1/8）：
-     * 服务端在隐空间（分辨率的 1/8）解释蒙版，我们的任意精度边界经服务端
-     * 下采样后会产生"半涂半不涂"的边缘格，模型就在那圈里发明过渡材质
-     * （2026-09-14 用户实测：蒙版边缘生成一坨白色不明材质）。
-     * 预先把每个格子定死成纯黑或纯白，无论服务端怎么下采样，看到的都是确定值。
-     *
-     * 输入是硬边二值图（无抗锯齿），最近邻缩放保持二值，不需要再阈值化。
-     * 尺寸不能被 8 整除时原样返回（生成尺寸都是 64 的倍数，这只是防御）。
-     */
-    private fun snapToLatentGrid(source: Bitmap): Bitmap {
-        if (source.width % LATENT_CELL != 0 || source.height % LATENT_CELL != 0) {
-            return source
-        }
-        val cells = Bitmap.createScaledBitmap(
-            source,
-            source.width / LATENT_CELL,
-            source.height / LATENT_CELL,
-            false,
-        )
-        val snapped = Bitmap.createScaledBitmap(cells, source.width, source.height, false)
-        cells.recycle()
-        return snapped
-    }
-
     /** 便于诊断：把笔画渲染成一张仅用于界面预览的位图（不落盘）。 */
     fun renderPreview(
         strokes: List<MaskStroke>,
@@ -208,11 +181,33 @@ class MaskImageProcessor(
         /** 蒙版扩张的可选范围（位图像素）。上限对应官方那句"涂太靠边会泄漏，把蒙版扩大一些"。 */
         val DILATION_RANGE: ClosedFloatingPointRange<Float> = 0f..24f
 
-        /** 隐空间网格的边长（像素）：蒙版按它对齐，与官方前端一致。 */
-        private const val LATENT_CELL = 8
     }
 }
 
 /** 仅供界面显示：把位图坐标点四舍五入，避免累积浮点误差。 */
 internal fun MaskPoint.rounded(): MaskPoint =
     MaskPoint(kotlin.math.round(x), kotlin.math.round(y))
+
+/**
+ * 把蒙版对齐到 8×8 隐空间网格：最近邻缩到 1/8 再最近邻放回。
+ *
+ * 2026-10-10 核对官方前端：编辑器使用 1/8 蒙版，提交时最近邻放回画布尺寸。
+ * 此处保持同样的硬边网格；回图融合另用柔化蒙版，不改变提交的黑白值。
+ *
+ * 输入是硬边二值图（无抗锯齿），最近邻缩放保持二值，不需要再阈值化。
+ * 编辑器可保留原图的任意尺寸，不能被 8 整除时先原样返回；提交缩放后再次对齐。
+ */
+internal fun snapInpaintMaskToLatentGrid(source: Bitmap): Bitmap {
+    if (source.width % 8 != 0 || source.height % 8 != 0) {
+        return source
+    }
+    val cells = Bitmap.createScaledBitmap(
+        source,
+        source.width / 8,
+        source.height / 8,
+        false,
+    )
+    val snapped = Bitmap.createScaledBitmap(cells, source.width, source.height, false)
+    cells.recycle()
+    return snapped
+}
