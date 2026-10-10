@@ -10,7 +10,8 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -26,7 +27,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class GenerationSheetGestureTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private var scrollOffset = 0
 
     private fun showSheet() {
@@ -59,5 +60,11 @@ class GenerationSheetGestureTest {
         compose.onNodeWithTag("form").performTouchInput { swipeUp() }
         compose.runOnIdle { assertThat(scrollOffset).isGreaterThan(0) }
         compose.onNodeWithContentDescription("收起生成设置").assertIsDisplayed()
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithContentDescription("展开生成设置").assertIsDisplayed()
+        assertThat(compose.activity.isFinishing).isFalse()
+        compose.onNodeWithContentDescription("展开生成设置").performClick()
+        compose.onNodeWithContentDescription("收起生成设置").assertIsDisplayed()
+        compose.runOnIdle { assertThat(scrollOffset).isGreaterThan(0) }
     }
 }

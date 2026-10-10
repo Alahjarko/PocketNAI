@@ -26,6 +26,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -48,6 +49,7 @@ import net.pocketnai.ui.motion.sharedImage
 import net.pocketnai.ui.motion.sharedImageRequest
 import net.pocketnai.ui.motion.LocalImageMotion
 import net.pocketnai.ui.motion.ImageOriginPreview
+import net.pocketnai.ui.motion.imageMotionChrome
 import net.pocketnai.domain.chat.*
 import java.io.File
 import kotlinx.coroutines.delay
@@ -119,7 +121,7 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
         input = TextFieldValue("")
         focus.clearFocus(); keyboard?.hide()
     }
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    ChatPageLayout(header = {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box {
                 IconButton(onClick = { menuOpen = true }, modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)) {
@@ -144,7 +146,8 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
             }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-        LazyColumn(state = list, modifier = Modifier.weight(1f).fillMaxWidth().testTag("chat-messages"),
+    }, messages = {
+        LazyColumn(state = list, modifier = Modifier.fillMaxSize().testTag("chat-messages"),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (entries.isEmpty()) item {
                 Column(Modifier.fillMaxWidth().padding(vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally,
@@ -182,6 +185,7 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                 }
             } }
         }
+    }, composer = {
         if (!following && entries.isNotEmpty()) TextButton(onClick = { following = true }, modifier = Modifier.align(Alignment.End).testTag("chat-follow-latest")) {
             Icon(Icons.Default.KeyboardArrowDown, null); Text("回到最新")
         }
@@ -223,7 +227,7 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
             }
           }
         }
-    }
+    })
     if (settingsOpen) ChatSettingsDialog(viewModel) { settingsOpen = false }
     if (sessionsOpen) ModalBottomSheet(onDismissRequest = { sessionsOpen = false }) {
         Text("历史对话", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(20.dp))
@@ -264,6 +268,24 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
             }
         }
     } }
+}
+
+/** Opaque foreground regions also cover shared images travelling in the root overlay. */
+@Composable
+internal fun ChatPageLayout(
+    header: @Composable ColumnScope.() -> Unit,
+    messages: @Composable () -> Unit,
+    composer: @Composable ColumnScope.() -> Unit,
+) {
+    val background = MaterialTheme.colorScheme.background
+    Column(Modifier.fillMaxSize().background(background)) {
+        Column(Modifier.fillMaxWidth().imageMotionChrome(zIndex = 2f).background(background), content = header)
+        Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) { messages() }
+        // Include the gaps around the rounded editor and the "latest" button, not just
+        // the editor surface: offscreen message pixels must not show through those gaps.
+        Column(Modifier.fillMaxWidth().testTag("chat-composer-region")
+            .imageMotionChrome(zIndex = 2f).background(background), content = composer)
+    }
 }
 
 @Composable

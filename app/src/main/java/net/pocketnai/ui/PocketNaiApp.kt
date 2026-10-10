@@ -24,10 +24,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Casino
@@ -55,6 +55,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
@@ -409,23 +412,36 @@ internal fun PocketNaiPageFrame(
     route: String,
     chatEnabled: Boolean,
     artistLabEnabled: Boolean,
+    keyboardInsets: WindowInsets = WindowInsets.ime,
     content: @Composable () -> Unit,
 ) {
     val keyboardPage = route == Routes.CHAT || route == Routes.ARTIST_LAB
-    val hideBottomBar = keyboardPage && WindowInsets.isImeVisible
+    val ime = if (keyboardPage) keyboardInsets else WindowInsets(0, 0, 0, 0)
+    val density = LocalDensity.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val rail = maxWidth >= 600.dp
         Row(Modifier.fillMaxSize()) {
             if (rail && route in Routes.tabs) PocketNaiNavRail(navController, route, chatEnabled, artistLabEnabled)
             Scaffold(
-                modifier = Modifier.weight(1f).then(if (keyboardPage) Modifier.imePadding() else Modifier),
+                modifier = Modifier.weight(1f),
                 bottomBar = {
-                    if (!rail && route in Routes.tabs && !hideBottomBar)
-                        PocketNaiBottomBar(navController, route, chatEnabled, artistLabEnabled)
+                    if (!rail && route in Routes.tabs) {
+                        // Its layout height stays stable even while the keyboard covers it.
+                        // Only draw the exposed strip; no IME flag removes/recreates this slot.
+                        Box(Modifier.imageMotionChrome(zIndex = 3f).drawWithContent {
+                            val exposedHeight = (size.height - ime.getBottom(density)).coerceAtLeast(0f)
+                            if (exposedHeight > 0f) clipRect(bottom = exposedHeight) { this@drawWithContent.drawContent() }
+                        }) {
+                            PocketNaiBottomBar(navController, route, chatEnabled, artistLabEnabled)
+                        }
+                    }
                 },
             ) { padding ->
                 Box(Modifier.fillMaxSize()) {
-                    ImageMotionViewport(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) { content() }
+                    // Consume the stable navigation height first. IME padding adds only the
+                    // remainder: content avoidance is max(navigation height, keyboard height).
+                    ImageMotionViewport(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
+                        .then(if (keyboardPage) Modifier.windowInsetsPadding(ime) else Modifier)) { content() }
                     Spacer(Modifier.fillMaxWidth().height(padding.calculateTopPadding()).align(Alignment.TopCenter)
                         .imageMotionChrome(zIndex = 4f).background(MaterialTheme.colorScheme.background))
                 }
@@ -443,7 +459,7 @@ private fun PocketNaiBottomBar(
 ) {
     val specs = tabSpecs(chatEnabled, artistLabEnabled)
 
-    NavigationBar(modifier = Modifier.testTag("bottom-navigation").imageMotionChrome(zIndex = 3f)) {
+    NavigationBar(modifier = Modifier.testTag("bottom-navigation")) {
         specs.forEach { spec ->
             NavigationBarItem(
                 selected = currentRoute == spec.route,

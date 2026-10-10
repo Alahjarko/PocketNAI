@@ -1,5 +1,6 @@
 package net.pocketnai.ui.home
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -116,4 +117,9 @@ internal fun GenerationSheetScaffold(
         },
         content = content,
     )
+    // Register after the gallery's handlers: the expanded foreground panel closes first.
+    // Includes an opening animation, so back cannot leave halfway through expanding.
+    BackHandler(enabled = expanded || sheetState.targetValue == SheetValue.Expanded) {
+        scope.launch { sheetState.partialExpand() }
+    }
 }
