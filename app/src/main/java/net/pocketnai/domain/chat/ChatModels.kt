@@ -45,6 +45,14 @@ data class ChatEntry(
     }
 }
 
+/** An interrupted display draft may be kept, but its incomplete calls are never actionable. */
+fun interruptedChatEntry(id: String, partial: JsonObject?, notice: String): ChatEntry? {
+    if (partial == null) return null
+    val wire = JsonObject(ChatProtocol.assistant(partial).filterKeys { it != "tool_calls" })
+    val entry = ChatEntry(id, wire, notice = notice)
+    return entry.takeIf { it.content.isNotBlank() || it.reasoning.isNotBlank() }
+}
+
 @Serializable
 data class ToolCall(val id: String, val name: String, val arguments: String)
 

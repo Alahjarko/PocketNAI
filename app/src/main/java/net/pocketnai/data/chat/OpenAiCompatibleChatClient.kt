@@ -70,21 +70,27 @@ class OpenAiCompatibleChatClient(
                         lastEmission = now
                     }
                 }
-                var totalBytes = 0L
-                while (!source.exhausted() && !done) {
-                    currentCoroutineContext().ensureActive()
-                    val line = source.readUtf8LineStrict(256 * 1024)
-                    totalBytes += line.toByteArray(Charsets.UTF_8).size
-                    if (totalBytes > MAX_RESPONSE_BYTES) throw ChatFailure("模型回复过长")
-                    if (line.isEmpty()) consume()
-                    else if (line.startsWith("data:")) {
-                        if (event.isNotEmpty()) event.append('\n')
-                        event.append(line.removePrefix("data:").trimStart())
+                try {
+                    var totalBytes = 0L
+                    while (!source.exhausted() && !done) {
+                        currentCoroutineContext().ensureActive()
+                        val line = source.readUtf8LineStrict(256 * 1024)
+                        totalBytes += line.toByteArray(Charsets.UTF_8).size
+                        if (totalBytes > MAX_RESPONSE_BYTES) throw ChatFailure("模型回复过长")
+                        if (line.isEmpty()) consume()
+                        else if (line.startsWith("data:")) {
+                            if (event.isNotEmpty()) event.append('\n')
+                            event.append(line.removePrefix("data:").trimStart())
+                        }
                     }
+                    if (event.isNotEmpty()) consume()
+                    if (!done) throw ChatFailure("流式连接中断，未自动重试或执行工具")
+                    accumulator.complete().withoutSecret(apiKey)
+                } finally {
+                    // Throttling must not discard the last received chunk on stop/EOF/error.
+                    // This remains a display draft: complete() still guards all executable calls.
+                    onPartial(accumulator.message().withoutSecret(apiKey))
                 }
-                if (event.isNotEmpty()) consume()
-                if (!done) throw ChatFailure("流式连接中断，未自动重试或执行工具")
-                accumulator.complete().withoutSecret(apiKey).also(onPartial)
             }
         }
     }

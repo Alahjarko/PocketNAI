@@ -23,7 +23,7 @@ fun ChatTextReader(title: String, text: String, onDismiss: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     var copyNotice by remember { mutableStateOf<String?>(null) }
     val pages by produceState<List<String>?>(null, text) {
-        value = withContext(Dispatchers.Default) { ChatTextLayout.pages(text) }
+        value = withContext(Dispatchers.Default) { markdownReaderPages(text) }
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
       Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
@@ -39,7 +39,7 @@ fun ChatTextReader(title: String, text: String, onDismiss: () -> Unit) {
         LazyColumn(Modifier.fillMaxWidth().weight(1f).testTag("chat-full-reader"),
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             itemsIndexed(pages.orEmpty(), key = { index, _ -> index }, contentType = { _, _ -> "paragraph" }) { _, page ->
-                SelectionContainer { Text(page, style = MaterialTheme.typography.bodyLarge) }
+                ChatMarkdownText(page)
             }
         }
        }

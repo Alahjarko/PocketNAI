@@ -17,7 +17,7 @@ object ImageChatTools {
     }
     val schema = buildJsonArray {
         add(function("get_generation_settings", "读取当前图像模型和画布设置，不读取任何密钥。", buildJsonObject {}, emptyList()))
-        add(function("generate_image", "根据用户要求生成一张非露骨 NovelAI 图片；可能消耗 Anlas。", buildJsonObject {
+        add(function("generate_image", "根据用户要求生成一张 NovelAI 图片；可能消耗 Anlas。", buildJsonObject {
             put("prompt", text("English positive tags")); put("negative_prompt", text("English negative tags"))
             put("model", buildJsonObject { put("type", "string"); put("enum", JsonArray(ImageModel.entries.map { JsonPrimitive(it.apiModelId) })) })
             put("width", number("integer", 256.0, 2048.0)); put("height", number("integer", 256.0, 2048.0))
@@ -36,7 +36,10 @@ object ImageChatTools {
         }, listOf("prompt", "negative_prompt")))
     }
 
-    private val forbiddenTags = Regex("(?i)(?<![a-z])(?:sexual intercourse|oral sex|anal sex|penetration|ejaculation|penis|vagina|genitals|rape|child sexual|underage sexual)(?![a-z])")
+    // 工具对提示词内容不预设立场：NovelAI 本身支持 NSFW，是否放行由服务端与账号策略决定，
+    // 应用不做题材拦截（2026-10-10 起）。唯一的底线是涉及未成年人的性内容 ——
+    // 这也为 NovelAI 服务条款所禁止，不属于"立场"。
+    private val childSafetyTags = Regex("(?i)(?<![a-z])(?:child sexual|underage sexual)(?![a-z])")
 
     fun parse(call: ToolCall, base: GenerationParams): GenerationParams {
         if (call.name != "generate_image") throw ChatFailure("未知图片工具")
@@ -47,7 +50,8 @@ object ImageChatTools {
         val prompt = obj.string("prompt")?.trim()?.takeIf { it.isNotEmpty() && it.length <= 16000 }
             ?: throw ChatFailure("图片正向提示词为空或过长")
         val negative = obj.string("negative_prompt") ?: throw ChatFailure("图片缺少逆向提示词")
-        if (negative.length > 16000 || forbiddenTags.containsMatchIn(prompt)) throw ChatFailure("此图片工具仅支持非露骨创作")
+        if (negative.length > 16000) throw ChatFailure("图片逆向提示词过长")
+        if (childSafetyTags.containsMatchIn(prompt)) throw ChatFailure("不支持涉及未成年人的性内容")
         val model = obj.string("model")?.let { ImageModel.fromApiModelId(it) ?: throw ChatFailure("不支持该图像模型") } ?: base.model
         val profile = ModelCatalog.profileOf(model)
         val start = if (model == base.model) base else GenerationParams.defaultsFor(profile)
@@ -62,7 +66,7 @@ object ImageChatTools {
             rows.mapIndexed { index, row ->
                 val role = row as? JsonObject ?: throw ChatFailure("角色参数格式错误")
                 val text = role.string("prompt")?.takeIf { it.isNotBlank() && it.length <= 8000 } ?: throw ChatFailure("角色提示词为空或过长")
-                if (forbiddenTags.containsMatchIn(text)) throw ChatFailure("此图片工具仅支持非露骨创作")
+                if (childSafetyTags.containsMatchIn(text)) throw ChatFailure("不支持涉及未成年人的性内容")
                 fun coord(key: String): Double = if (key !in role) 0.5 else
                     (role[key] as? JsonPrimitive)?.doubleOrNull?.takeIf { it.isFinite() && it in 0.0..1.0 }
                         ?: throw ChatFailure("角色位置必须在 0–1 之间")

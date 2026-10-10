@@ -3,7 +3,6 @@ package net.pocketnai.ui.chat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.DragInteraction
-import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
@@ -18,7 +17,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -27,15 +25,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.window.Dialog
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -54,11 +49,23 @@ import net.pocketnai.domain.chat.*
 import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import android.content.Intent
+import android.speech.RecognizerIntent
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenImage: (String) -> Unit) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
+    // Streaming chunks belong to their own lazy item, not the header/editor/history.
+    val chrome = remember(viewModel) { viewModel.state.map { it.copy(partial = null) }.distinctUntilChanged() }
+    val state by chrome.collectAsStateWithLifecycle(initialValue = viewModel.state.value.copy(partial = null))
     val config by viewModel.config.collectAsStateWithLifecycle()
     var settingsOpen by remember { mutableStateOf(false) }
     var sessionsOpen by remember { mutableStateOf(false) }
@@ -69,6 +76,17 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
     var viewingAttachment by remember { mutableStateOf<ChatAttachment?>(null) }
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    var voiceError by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val voiceAvailable = remember(context) { Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).resolveActivity(context.packageManager) != null }
+    val voice = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { words ->
+            val start = input.selection.min
+            val end = input.selection.max
+            val next = input.text.replaceRange(start, end, words)
+            input = TextFieldValue(next, androidx.compose.ui.text.TextRange(start + words.length))
+        }
+    }
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let { viewModel.addPhoto(it.toString()) } }
     var menuOpen by remember { mutableStateOf(false) }
     var deleteId by remember { mutableStateOf<String?>(null) }
@@ -96,19 +114,22 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
             }
         }
     }
-    // 同一个协程顺序跟随，流式 token 不会取消并重启滚动动画。
+    // Follow actual layout changes, without a 160ms polling jump or token-triggered resets.
     LaunchedEffect(list) {
-        while (true) {
-            delay(160)
-            if (!following || list.isScrollInProgress || reading != null) continue
+        snapshotFlow {
             val info = list.layoutInfo
-            val last = info.visibleItemsInfo.lastOrNull() ?: continue
-            if (last.index < info.totalItemsCount - 1) list.animateScrollToItem(info.totalItemsCount - 1)
-            else {
-                val distance = (last.offset + last.size - info.viewportEndOffset).coerceAtLeast(0).toFloat()
-                if (distance > 0) {
-                    if (busy) list.scrollBy(distance)
-                    else list.animateScrollBy(distance, tween(160))
+            val last = info.visibleItemsInfo.lastOrNull()
+            Triple(following && reading == null, info.totalItemsCount,
+                if (last == null) 0 else if (last.index < info.totalItemsCount - 1) Int.MAX_VALUE
+                else (last.offset + last.size - info.viewportEndOffset).coerceAtLeast(0))
+        }.collect { (follow, count, distance) ->
+            if (follow && count > 0 && distance > 0) {
+                try {
+                    if (distance == Int.MAX_VALUE) list.scrollToItem(count - 1)
+                    else list.animateScrollBy(distance.toFloat(), tween(if (busy) 96 else 160))
+                } catch (_: CancellationException) {
+                    // User dragging wins the scroll mutex; the follow observer stays alive.
+                    currentCoroutineContext().ensureActive()
                 }
             }
         }
@@ -119,7 +140,6 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
         following = true
         viewModel.send(input.text)
         input = TextFieldValue("")
-        focus.clearFocus(); keyboard?.hide()
     }
     ChatPageLayout(header = {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -134,10 +154,10 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                 }
             }
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(Modifier.size(34.dp).background(Color(0xFFFF8866), CircleShape), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.AutoAwesome, null, tint = Color(0xFF28150C), modifier = Modifier.size(22.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Default.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Text(config.assistantName.ifBlank { "绘伴" }, style = MaterialTheme.typography.titleMedium, maxLines = 1)
                 }
-                Text(config.assistantName.ifBlank { "绘伴" }, style = MaterialTheme.typography.titleMedium, maxLines = 1)
                 if (config.model.isNotBlank()) Text(config.model, style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -158,12 +178,12 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                     if (!viewModel.hasKey()) OutlinedButton(onClick = { settingsOpen = true }) { Text("连接 LLM") }
                 }
             }
-            items(entries, key = { it.id }, contentType = { "message" }) { entry ->
+            items(entries, key = { it.id }, contentType = { it.role }) { entry ->
                 ChatMessageBubble(entry, resolveImage, onOpenImage, onRead = { title, text -> reading = title to text }, onOpenAttachment = { viewingAttachment = it })
             }
-            state.partial?.let { partial -> item(key = "partial", contentType = "message") {
-                ChatMessageBubble(ChatEntry("partial", partial), resolveImage, onOpenImage, streaming = true)
-            } }
+            if (state.busy) item(key = "partial", contentType = "streaming") {
+                StreamingChatMessage(viewModel, resolveImage, onOpenImage) { title, text -> reading = title to text }
+            }
             state.pending?.let { pending -> item {
                 Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -177,7 +197,7 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                     }
                 }
             } }
-            if (state.busy) item { Text(state.phase, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            if (state.busy) item(key = "activity", contentType = "activity") { ChatReplyIndicator(state.phase) }
             state.error?.let { error -> item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
@@ -185,13 +205,13 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                 }
             } }
         }
+    }, floating = {
+        ChatJumpToLatest(visible = !following && (entries.isNotEmpty() || state.busy), onClick = { following = true })
     }, composer = {
-        if (!following && entries.isNotEmpty()) TextButton(onClick = { following = true }, modifier = Modifier.align(Alignment.End).testTag("chat-follow-latest")) {
-            Icon(Icons.Default.KeyboardArrowDown, null); Text("回到最新")
-        }
-        Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = RoundedCornerShape(28.dp),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp).testTag("chat-composer")) {
-          Column {
+        ChatComposer(value = input, onValueChange = { input = it }, assistantName = config.assistantName,
+            busy = state.busy, generating = state.generating, importing = state.importingAttachment,
+            hasAttachments = state.draftAttachments.isNotEmpty(), onSend = { submit() }, onStop = viewModel::stop,
+            attachments = {
             if (state.draftAttachments.isNotEmpty()) LazyRow(Modifier.fillMaxWidth().testTag("chat-attachment-strip"),
                 contentPadding = PaddingValues(start = 14.dp, top = 12.dp, end = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(state.draftAttachments, key = { it.id }) { attachment ->
@@ -206,7 +226,7 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                 }
             }
             if (state.importingAttachment) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 20.dp))
-            Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            }, leadingActions = {
                 Box {
                     IconButton(onClick = { focus.clearFocus(); keyboard?.hide(); attachmentMenu = true }, enabled = !state.busy && !state.importingAttachment,
                         modifier = Modifier.testTag("chat-attach-button")) { Icon(Icons.Default.Add, "添加图片") }
@@ -215,20 +235,20 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                         DropdownMenuItem(text = { Text("从软件画廊选择") }, onClick = { attachmentMenu = false; galleryPicker = true })
                     }
                 }
-                TextField(value = input, onValueChange = { input = it }, modifier = Modifier.weight(1f).testTag("chat-input"),
-                    placeholder = { Text("给 ${config.assistantName.ifBlank { "绘伴" }} 发消息", maxLines = 1) }, maxLines = 5,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send), keyboardActions = KeyboardActions(onSend = { submit() }),
-                    colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent))
-                if (state.busy) IconButton(onClick = viewModel::stop, enabled = !state.generating) { Icon(Icons.Default.Stop, "停止回复") }
-                else IconButton(onClick = { submit() }, enabled = !state.importingAttachment && (input.text.isNotBlank() || state.draftAttachments.isNotEmpty()), modifier = Modifier.testTag("chat-send")) {
-                    Icon(Icons.AutoMirrored.Filled.Send, "发送", tint = MaterialTheme.colorScheme.primary)
+                if (voiceAvailable) IconButton(onClick = {
+                    runCatching { voice.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+                    }) }.onFailure { voiceError = true }
+                }, enabled = !state.busy && !state.importingAttachment) {
+                    Icon(Icons.Default.MicNone, "语音输入")
                 }
-            }
-          }
-        }
+            })
     })
     if (settingsOpen) ChatSettingsDialog(viewModel) { settingsOpen = false }
+    if (voiceError) AlertDialog(onDismissRequest = { voiceError = false }, title = { Text("语音输入暂不可用") },
+        text = { Text("当前设备未提供系统语音识别服务，可以使用输入法的语音输入。") },
+        confirmButton = { TextButton(onClick = { voiceError = false }) { Text("确定") } })
     if (sessionsOpen) ModalBottomSheet(onDismissRequest = { sessionsOpen = false }) {
         Text("历史对话", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(20.dp))
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 500.dp)) {
@@ -275,17 +295,29 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
 internal fun ChatPageLayout(
     header: @Composable ColumnScope.() -> Unit,
     messages: @Composable () -> Unit,
+    floating: @Composable BoxScope.() -> Unit = {},
     composer: @Composable ColumnScope.() -> Unit,
 ) {
     val background = MaterialTheme.colorScheme.background
     Column(Modifier.fillMaxSize().background(background)) {
         Column(Modifier.fillMaxWidth().imageMotionChrome(zIndex = 2f).background(background), content = header)
-        Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) { messages() }
-        // Include the gaps around the rounded editor and the "latest" button, not just
+        Box(Modifier.weight(1f).fillMaxWidth().clipToBounds().testTag("chat-message-viewport")) {
+            messages()
+            floating()
+        }
+        // Include the gaps around the rounded editor, not just
         // the editor surface: offscreen message pixels must not show through those gaps.
         Column(Modifier.fillMaxWidth().testTag("chat-composer-region")
             .imageMotionChrome(zIndex = 2f).background(background), content = composer)
     }
+}
+
+@Composable
+private fun StreamingChatMessage(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenImage: (String) -> Unit,
+    onRead: (String, String) -> Unit) {
+    val partialFlow = remember(viewModel) { viewModel.state.map { it.partial }.distinctUntilChanged() }
+    val partial by partialFlow.collectAsStateWithLifecycle(initialValue = viewModel.state.value.partial)
+    partial?.let { ChatMessageBubble(ChatEntry("partial", it), resolveImage, onOpenImage, streaming = true, onRead = onRead) }
 }
 
 @Composable
@@ -320,27 +352,41 @@ fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenIm
                     BoundedChatText(entry.reasoning, "思考过程", streaming, onRead, small = true)
                 }
             }
-            if (entry.content.isNotBlank()) Surface(shape = RoundedCornerShape(24.dp),
-                color = if (user) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth(if (user) 0.86f else 0.92f)) {
-                BoundedChatText(entry.content, if (user) "我的消息" else "回复全文", streaming, onRead)
+            if (entry.content.isNotBlank()) {
+                if (user) Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth(0.86f)) {
+                    BoundedChatText(entry.content, "我的消息", streaming, onRead, markdown = false)
+                } else BoundedChatText(entry.content, "回复全文", streaming, onRead)
             }
+            if (!streaming && !user && entry.content.isNotBlank()) ChatCopyAction(entry.content)
+            entry.notice?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
 }
 
 @Composable
 private fun BoundedChatText(text: String, title: String, streaming: Boolean,
-    onRead: (String, String) -> Unit, small: Boolean = false) {
+    onRead: (String, String) -> Unit, small: Boolean = false, markdown: Boolean = true) {
     val long = remember(text) { ChatTextLayout.isLong(text) }
-    val visible = remember(text, streaming) { if (streaming) ChatTextLayout.liveTail(text) else if (long) ChatTextLayout.preview(text) else text }
-    Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp)) {
-        if (streaming && long) Text("正在回复 · ${text.length} 字 · 显示最新片段", style = MaterialTheme.typography.labelSmall,
+    val visible = remember(text) { if (long) ChatTextLayout.preview(text) else text }
+    Column(Modifier.padding(horizontal = if (markdown && !small) 0.dp else 18.dp, vertical = if (markdown && !small) 8.dp else 14.dp)) {
+        if (markdown) ChatMarkdownText(visible, streaming, small)
+        else SelectionContainer { Text(visible, style = MaterialTheme.typography.bodyLarge) }
+        if (streaming && long) Text("正在回复 · ${text.length} 字", style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        SelectionContainer { Text(visible, style = if (small) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyLarge,
-            overflow = TextOverflow.Ellipsis) }
-        if (!streaming && long) TextButton(onClick = { onRead(title, text) }, modifier = Modifier.testTag("chat-read-full")) {
-            Text("查看全文（${text.length} 字）")
+        if (long) TextButton(onClick = { onRead(if (streaming) "已收到内容" else title, text) }, modifier = Modifier.testTag("chat-read-full")) {
+            Text(if (streaming) "查看已收到内容（${text.length} 字）" else "查看全文（${text.length} 字）")
         }
+    }
+}
+
+@Composable
+private fun ChatCopyAction(text: String) {
+    val clipboard = LocalClipboardManager.current
+    var copied by remember(text) { mutableStateOf(false) }
+    LaunchedEffect(copied) { if (copied) { delay(1600); copied = false } }
+    IconButton(onClick = { copied = runCatching { clipboard.setText(AnnotatedString(text)) }.isSuccess }, modifier = Modifier.size(32.dp)) {
+        Icon(if (copied) Icons.Default.Check else Icons.Default.ContentCopy, if (copied) "已复制" else "复制回复",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
     }
 }

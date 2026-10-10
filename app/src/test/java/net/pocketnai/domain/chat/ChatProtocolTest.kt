@@ -15,12 +15,27 @@ class ChatProtocolTest {
         assertThat((cleaned["tool_calls"] as JsonArray).first().jsonObject["n"]!!.jsonPrimitive.int).isEqualTo(42)
         assertThat(wire.toString()).contains(placeholder)
     }
-    @Test fun `DeepSeek与Moonshot思考默认启用且不传温度`() {
+    @Test fun `DeepSeek与Moonshot思考默认启用且图片工具不预设内容立场`() {
         listOf(LlmConfig(model = "deepseek-flash"), LlmConfig(model = "kimi-k2.6")).forEach {
             val body = ChatProtocol.request(it, listOf(wireMessage("user", "hello")), ImageChatTools.schema)
             assertThat((body["thinking"] as JsonObject).string("type")).isEqualTo("enabled")
             assertThat(body.containsKey("temperature")).isFalse()
             assertThat(body.string("tool_choice")).isEqualTo("auto")
+        }
+        // 2026-10-10 起图片工具不拦截题材（NovelAI 本身支持 NSFW，由服务端与账号策略决定），
+        // 唯一底线是涉及未成年人的性内容。
+        val base = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V4_5_CURATED))
+        fun call(prompt: String, negative: String = "lowres") = ToolCall("c1", "generate_image",
+            buildJsonObject { put("prompt", prompt); put("negative_prompt", negative) }.toString())
+        assertThat(ImageChatTools.parse(call("1girl, penis, ejaculation"), base).prompt)
+            .isEqualTo("1girl, penis, ejaculation")
+        runCatching { ImageChatTools.parse(call("child sexual content"), base) }.exceptionOrNull().also {
+            assertThat(it).isInstanceOf(ChatFailure::class.java)
+            assertThat(it).hasMessageThat().contains("未成年")
+        }
+        runCatching { ImageChatTools.parse(call("1girl", "x".repeat(16001)), base) }.exceptionOrNull().also {
+            assertThat(it).isInstanceOf(ChatFailure::class.java)
+            assertThat(it).hasMessageThat().contains("逆向提示词过长")
         }
     }
     @Test fun `回传assistant完整思考与工具id而不丢签名字段`() {
@@ -45,5 +60,10 @@ class ChatProtocolTest {
         assertThat(fixed.entries.first().wire).isEqualTo(wire)
         assertThat(fixed.entries.last().wire.string("tool_call_id")).isEqualTo("one")
         assertThat(fixed.recoverInterruptedTools()).isEqualTo(fixed)
+        val stopped = interruptedChatEntry("stopped", wire, "回复已停止")!!
+        assertThat(stopped.reasoning).isEqualTo("original")
+        assertThat(stopped.calls).isEmpty()
+        assertThat(stopped.notice).isEqualTo("回复已停止")
+        assertThat(interruptedChatEntry("empty", wireMessage("assistant", ""), "回复已停止")).isNull()
     }
 }

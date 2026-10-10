@@ -153,6 +153,12 @@ class ChatViewModel(
                 store.save(chat)
                 _state.update { it.copy(current = chat) }
             }
+            suspend fun preserveInterruptedReply(notice: String) {
+                interruptedChatEntry(UUID.randomUUID().toString(), _state.value.partial, notice)?.let { entry ->
+                    chat = chat.copy(entries = chat.entries + entry)
+                    _state.update { it.copy(current = chat, partial = null) }
+                }
+            }
             try {
                 val token = settings.apiKey()?.takeIf { it.isNotBlank() } ?: throw ChatFailure("请先配置 LLM API Key")
                 val userText = text.trim().ifEmpty { "请看看这些图片。" }
@@ -178,11 +184,14 @@ class ChatViewModel(
                     if (!withinContext(listOf(wireMessage("system", systemPrompt)) + chat.entries.map { it.wire })) throw ChatFailure("对话上下文过长，请新建对话；历史消息仍可完整阅读")
                     val messages = listOf(wireMessage("system", systemPrompt)) + attachments.messages(chat.entries, imageCache)
                     val reply = api.complete(cfg, token, messages, ImageChatTools.schema) { partial ->
-                        _state.update { it.copy(partial = partial.withoutSecret(token)) }
+                        val cleaned = partial.withoutSecret(token)
+                        _state.update { it.copy(partial = cleaned,
+                            phase = if (cleaned.string("content").isNullOrBlank()) "正在思考" else "正在回复") }
                     }
                     val assistant = ChatEntry(UUID.randomUUID().toString(), ChatProtocol.assistant(reply).withoutSecret(token))
                     chat = chat.copy(entries = chat.entries + assistant)
-                    _state.update { it.copy(partial = null) }; persist()
+                    // Replace the stream and publish its final entry in one frame, before disk IO.
+                    _state.update { it.copy(current = chat, partial = null) }; persist()
                     if (assistant.calls.isEmpty()) {
                         if (assistant.content.isBlank()) throw ChatFailure("模型只返回了思考内容，没有最终回复；请检查输出 Tokens")
                         break
@@ -236,16 +245,25 @@ class ChatViewModel(
                     if (round == 5) throw ChatFailure("工具轮次已达到上限，请发送新消息")
                 }
             } catch (e: CancellationException) {
-                withContext(NonCancellable) { chat = chat.recoverInterruptedTools(); runCatching { persist() } }
+                withContext(NonCancellable) {
+                    chat = chat.recoverInterruptedTools()
+                    preserveInterruptedReply("回复已停止")
+                    runCatching { persist() }
+                }
             } catch (e: ChatFailure) {
                 withContext(NonCancellable) {
                     chat = chat.recoverInterruptedTools()
+                    preserveInterruptedReply("回复未完成")
                     runCatching { persist() }
                 }
                 _state.update { it.copy(error = e.userMessage) }
             }
             catch (_: Exception) {
-                withContext(NonCancellable) { chat = chat.recoverInterruptedTools(); runCatching { persist() } }
+                withContext(NonCancellable) {
+                    chat = chat.recoverInterruptedTools()
+                    preserveInterruptedReply("回复未完成")
+                    runCatching { persist() }
+                }
                 _state.update { it.copy(error = "对话任务失败，未自动重试") }
             }
             finally {

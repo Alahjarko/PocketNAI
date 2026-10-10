@@ -165,6 +165,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.coil.compose)
+    implementation(libs.markdown.renderer)
 
     // 只用于本地派生 NovelAI Access Key（BLAKE2b + Argon2id）。
     // 直接实例化原语，不在系统里注册或替换任何 Provider。

@@ -6,7 +6,7 @@
 
 ## generate_image
 
-生成单张 NovelAI 图片。prompt 与 negative_prompt 使用英文 tags。可选 model、width、height、seed、characters；没有指定的字段沿用用户设置。人物相关内容限明确成年且非露骨的表现。
+生成单张 NovelAI 图片。prompt 与 negative_prompt 使用英文 tags。可选 model、width、height、seed、characters；没有指定的字段沿用用户设置。人物相关内容须为明确成年形象；工具本身不拦截题材，能否生成以 NovelAI 服务端与账号策略为准。
 
 characters 上限从 get_generation_settings 的 max_characters 读取：V4.5 为 6，V5 为 32。每个角色有 prompt、negative_prompt，可选 x、y，位置范围 0–1。省略坐标时由 AI 自动安排；需要手动布局时设置 use_coords=true 并给出 x/y，V4.5 的坐标落到 5×5 网格，V5 使用自由坐标。不要生成、修改或删除蒙版，不要擅自使用用户的参考图。
 
