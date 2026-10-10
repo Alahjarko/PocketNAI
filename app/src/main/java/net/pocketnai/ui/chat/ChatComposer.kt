@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
@@ -38,6 +39,9 @@ internal fun ChatComposer(
     attachments: @Composable () -> Unit = {},
     leadingActions: @Composable RowScope.() -> Unit = {},
 ) {
+    // 发送即收回输入法（2026-10-10 用户要求，原约定"发送不主动收起键盘"废止）；
+    // 停止按钮不动键盘。
+    val keyboard = LocalSoftwareKeyboardController.current
     Surface(modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).testTag("chat-composer"),
         color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(24.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))) {
@@ -48,7 +52,7 @@ internal fun ChatComposer(
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary), maxLines = 6,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { if (!busy) onSend() }),
+                keyboardActions = KeyboardActions(onSend = { if (!busy) { keyboard?.hide(); onSend() } }),
                 decorationBox = { inner ->
                     Box(Modifier.heightIn(min = 26.dp)) {
                         if (value.text.isEmpty()) Text("给 ${assistantName.ifBlank { "绘伴" }} 发消息",
@@ -60,7 +64,7 @@ internal fun ChatComposer(
             Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 10.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 leadingActions()
                 Spacer(Modifier.weight(1f))
-                FilledIconButton(onClick = if (busy) onStop else onSend,
+                FilledIconButton(onClick = if (busy) onStop else ({ keyboard?.hide(); onSend() }),
                     enabled = if (busy) !generating else !importing && (value.text.isNotBlank() || hasAttachments),
                     shape = CircleShape, modifier = Modifier.size(40.dp).testTag(if (busy) "chat-stop" else "chat-send")) {
                     Crossfade(busy, animationSpec = tween(120), label = "chat-send-stop") { stopping ->

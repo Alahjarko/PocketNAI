@@ -18,6 +18,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,8 +55,14 @@ fun GenerateButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 点击即收回输入法（2026-10-10 用户要求）：生成/去连接都是"离开编辑"的动作，
+    // 键盘继续悬着只会挡住画廊与状态行。
+    val keyboard = LocalSoftwareKeyboardController.current
     Button(
-        onClick = { if (!inFlight && enabled) onClick() },
+        onClick = {
+            keyboard?.hide()
+            if (!inFlight && enabled) onClick()
+        },
         enabled = enabled || inFlight,
         shape = RoundedCornerShape(16.dp),
         elevation = ButtonDefaults.buttonElevation(
