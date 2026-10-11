@@ -175,7 +175,6 @@ class GenerateViewModel(
          * 用词是"观察到的"而不是"本次扣费"：同一账户可能在别处同时消费、
          * 期间可能充值，服务端更新也可能有延迟。
          */
-        val lastObservedChange: ObservedBalanceChange? = null,
         /** 当前可点的标签建议；补全失败或不适用时为空。 */
         val suggestions: List<String> = emptyList(),
         /**
@@ -274,8 +273,8 @@ class GenerateViewModel(
                 // （旧版本曾允许移除底图后蒙版残留），绝不能按 INPAINT 提交 ——
                 // 那会发出"常规模型 ID + infill"的自相矛盾请求被服务端 400。
                 hasInpaintMask && inpaintBase != null -> GenerationMode.INPAINT
-                directorReferences.isNotEmpty() && supportsDirectorReference -> GenerationMode.PRECISE_REFERENCE
                 referenceSource != null -> GenerationMode.IMG2IMG
+                directorReferences.isNotEmpty() && supportsDirectorReference -> GenerationMode.PRECISE_REFERENCE
                 else -> GenerationMode.TXT2IMG
             }
 
@@ -413,11 +412,7 @@ class GenerateViewModel(
             },
             hasBaseImage = state.referenceSource != null,
             // 只有 Precise Reference 的参考图按张收费；图生图的起点图不额外收费。
-            referenceImageCount = if (state.mode == GenerationMode.PRECISE_REFERENCE) {
-                state.directorReferences.size
-            } else {
-                0
-            },
+            referenceImageCount = state.activeReferences.count { it.role == ReferenceRole.DIRECTOR },
             vibeCount = vibes.size,
             uncachedVibeCount = uncachedVibes,
             // 官方式子把 Strength 当作基础费用的乘数；图生图/重绘用的是请求里真正发出去的那个值：
@@ -892,8 +887,7 @@ class GenerateViewModel(
                             id = idGenerator(),
                             createdAt = clock(),
                         ),
-                        // 图生图与 Precise Reference 互斥：挂上起点图就清掉另一类。
-                        directorReferences = emptyList(),
+                        // 起点图与 Precise/Vibe 条件可并用，保留已选条件。
                         // 换底图必须作废旧蒙版：蒙版是按上一张底图的尺寸裁的，留着就会错位。
                         inpaintReferences = emptyList(),
                         // 自定义模式下尺寸由用户说了算：底图会被 Cover 到那个画布，
@@ -1080,9 +1074,7 @@ class GenerateViewModel(
                                 id = idGenerator(),
                                 createdAt = clock(),
                             ),
-                            // 重绘与参考条件互斥（服务端拒绝混用）；
-                            // 同时作废上一次的蒙版 —— 新底图需要重新涂。
-                            directorReferences = emptyList(),
+                            // Precise 可与重绘并用；新底图仍必须作废旧蒙版。
                             vibeReferences = emptyList(),
                             inpaintReferences = emptyList(),
                         )
@@ -1102,7 +1094,6 @@ class GenerateViewModel(
         _state.update { current ->
             current.copy(
                 inpaintReferences = listOf(mask),
-                directorReferences = emptyList(),
                 vibeReferences = emptyList(),
             )
         }
@@ -1130,8 +1121,8 @@ class GenerateViewModel(
     /**
      * 添加一张 Precise Reference。
      *
-     * 导入时**就补齐黑边**（[ImageTransform.Letterbox] 到官方要求的三种画布之一），
-     * 因此缩略图看到的就是实际提交的那张图；提交时再套一次同样的 Letterbox 是恒等变换。
+     * 导入时用 [ImageTransform.DirectorCanvas] 等比缩放并补齐黑边，
+     * 因此缩略图看到的就是实际提交的那张图；提交时再次处理标准画布是恒等变换。
      */
     fun onDirectorReferencePicked(source: ReferenceSource) {
         val current = _state.value
@@ -1171,16 +1162,12 @@ class GenerateViewModel(
                             strength = profile.defaultDirectorStrength,
                             secondaryStrength = profile.defaultDirectorFidelity,
                             informationExtracted = profile.defaultDirectorInfoExtracted,
-                            directorKind = DirectorReferenceKind.CHARACTER,
+                            directorKind = DirectorReferenceKind.DEFAULT,
                         )
                         state.copy(
                             referenceBusy = false,
-                            // 与图生图互斥。
-                            referenceSource = null,
-                            // 与服务端约束一致：Vibe 与 Precise Reference 不能混用；
-                            // 重绘同样不能与参考条件混用。
+                            // Precise 是附加条件，保留起点图及蒙版；仅与 Vibe 互斥。
                             vibeReferences = emptyList(),
-                            inpaintReferences = emptyList(),
                             directorReferences = state.directorReferences + reference,
                         )
                     }
@@ -1491,7 +1478,6 @@ class GenerateViewModel(
                 completedImages = 0,
                 error = null,
                 modelSwitchNotice = null,
-                lastObservedChange = null,
             )
         }
 
@@ -1669,7 +1655,7 @@ class GenerateViewModel(
     }
 
     /**
-     * 生成结束后强制刷新一次余额，并给出"本次观察到的余额变化"（规划 §8.3）。
+     * 生成结束后强制刷新余额，观察到的变化仅供本地消耗流水使用。
      *
      * 刷新失败或缺少前快照时不给确定数字 —— 宁可说"待确认"。
      * 余额刷新无论如何都不会覆盖生成错误。
@@ -1694,7 +1680,6 @@ class GenerateViewModel(
             maxPreSnapshotAgeMillis = session?.maxPreSnapshotAgeMillis
                 ?: ObservedBalanceChange.DEFAULT_MAX_PRE_SNAPSHOT_AGE_MS,
         )
-        _state.update { it.copy(lastObservedChange = change) }
 
         if (completionConfirmed && anlasLedgerRepository != null) {
             val spent = when (change) {
@@ -1721,10 +1706,6 @@ class GenerateViewModel(
                 generationId = generationId,
             )
         }
-    }
-
-    fun dismissObservedChange() {
-        _state.update { it.copy(lastObservedChange = null) }
     }
 
     /**

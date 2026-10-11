@@ -172,3 +172,28 @@ artist: lyoung0j
 artist: inosia
 artist: toymark
 artist: aruk
+artist: ariko
+artist: arus
+artist: coomlee
+artist: cuboon
+artist: fukahire (ruinon)
+artist: hanekoto
+artist: haruri
+artist: hibiki-147
+artist: jademoon
+artist: kantoku
+artist: kazezz
+artist: lell
+artist: momoko (momopoco)
+artist: morikura en
+artist: mungduck
+artist: namie-kun
+artist: oda kogane
+artist: pibag
+artist: rakizuuu
+artist: shiratama (shiratamaco)
+artist: tiv
+artist: xnnagu
+artist: yohaku
+artist: yotte
+artist: yoyopipa

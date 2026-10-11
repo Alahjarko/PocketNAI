@@ -5,7 +5,6 @@ import androidx.compose.ui.res.stringResource
 import net.pocketnai.R
 import net.pocketnai.data.repo.BalanceState
 import net.pocketnai.domain.billing.GenerationCostEstimate
-import net.pocketnai.domain.billing.ObservedBalanceChange
 import net.pocketnai.domain.billing.SubscriptionBalance
 import java.text.NumberFormat
 
@@ -17,7 +16,6 @@ import java.text.NumberFormat
  *
  * 措辞纪律（规划 §3.2）：
  * - 生成前一律叫"预计费用"；
- * - 生成后一律叫"本次观察到的余额变化"；
  * - 不出现"精确价格""正式账单""一定扣除"。
  */
 @Composable
@@ -83,32 +81,6 @@ fun BalanceState.compactLabel(): String? {
     } else {
         anlas
     }
-}
-
-@Composable
-fun ObservedBalanceChange.summaryLabel(): String = when (this) {
-    is ObservedBalanceChange.AnlasDecreased -> if (requestedImageCount > 1) {
-        stringResource(
-            R.string.observed_change_anlas_batch,
-            totalSpent,
-            requestedImageCount,
-        )
-    } else {
-        stringResource(
-            R.string.observed_change_anlas,
-            totalSpent,
-            subscriptionSpent,
-            purchasedSpent,
-        )
-    }
-
-    is ObservedBalanceChange.V5AllowanceChanged ->
-        stringResource(R.string.observed_change_v5, beforePercent, afterPercent)
-
-    // 整数百分比前后相同不代表没有消耗，只能说"暂未观察到"。
-    is ObservedBalanceChange.NoVisibleChange -> stringResource(R.string.observed_change_none)
-
-    is ObservedBalanceChange.Ambiguous -> stringResource(R.string.observed_change_ambiguous)
 }
 
 /** Anlas 用千位分隔符显示，数字很长时更容易读。 */

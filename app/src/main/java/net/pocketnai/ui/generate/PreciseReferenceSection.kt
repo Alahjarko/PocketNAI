@@ -38,6 +38,7 @@ import coil.compose.AsyncImage
 import net.pocketnai.R
 import net.pocketnai.domain.image.ReferenceSource
 import net.pocketnai.domain.model.DirectorReferenceKind
+import net.pocketnai.domain.model.ModelProfile
 import net.pocketnai.domain.model.ReferenceImage
 import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.common.LabeledSlider
@@ -48,8 +49,8 @@ import net.pocketnai.ui.common.LabeledSlider
  *
  * ## 与图生图的区别
  * 图生图把源图当作**起点**（整张图重新长出来），Precise Reference 把参考图当作**条件**
- * （角色或画风），生成仍从空白开始。两者用不同的请求字段、甚至不同的 `action`，
- * 因此界面上一挂上其中一类就清掉另一类。
+ * （角色或画风）。两者可以同时使用，Precise 也可以附加到局部重绘；
+ * 请求 action 由起点图与蒙版决定，参考条件独立附加。
  *
  * ## 缩略图就是提交图
  * 导入时已经按官方要求补齐黑边（1024×1536 / 1536×1024 / 1472×1472），
@@ -88,7 +89,7 @@ fun PreciseReferencePanel(
             state.directorReferences.forEach { reference ->
                 DirectorEntry(
                     reference = reference,
-                    range = state.profile.directorReferenceRange.let { it.min..it.max },
+                    profile = state.profile,
                     onKindChange = { viewModel.onDirectorKindChanged(reference.id, it) },
                     onStrengthChange = { viewModel.onDirectorStrengthChanged(reference.id, it) },
                     onFidelityChange = { viewModel.onDirectorFidelityChanged(reference.id, it) },
@@ -164,7 +165,7 @@ fun PreciseReferencePanel(
 @Composable
 private fun DirectorEntry(
     reference: ReferenceImage,
-    range: ClosedFloatingPointRange<Double>,
+    profile: ModelProfile,
     onKindChange: (DirectorReferenceKind) -> Unit,
     onStrengthChange: (Double) -> Unit,
     onFidelityChange: (Double) -> Unit,
@@ -172,6 +173,7 @@ private fun DirectorEntry(
     onRemove: () -> Unit,
 ) {
     val container = LocalAppContainer.current
+    val range = profile.directorReferenceRange.let { it.min..it.max }
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(
@@ -198,22 +200,7 @@ private fun DirectorEntry(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    // 两种取用方式直接对应请求里的 caption，不是纯粹的界面偏好。
-                    DirectorKind.entries.forEach { kind ->
-                        AssistChip(
-                            onClick = { onKindChange(kind.value) },
-                            label = { Text(stringResource(kind.labelRes)) },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = if (reference.directorKind == kind.value) {
-                                    MaterialTheme.colorScheme.secondaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.surface
-                                },
-                            ),
-                        )
-                    }
-                }
+
             }
             IconButton(onClick = onRemove) {
                 Icon(
@@ -223,9 +210,26 @@ private fun DirectorEntry(
             }
         }
 
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // 参考类型与官网 caption 对应，单独一行避免小屏挤压。
+            DirectorKind.entries.forEach { kind ->
+                AssistChip(
+                    onClick = { onKindChange(kind.value) },
+                    label = { Text(stringResource(kind.labelRes)) },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = if ((reference.directorKind ?: DirectorReferenceKind.DEFAULT) == kind.value) {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        },
+                    ),
+                )
+            }
+        }
+
         LabeledSlider(
             label = stringResource(R.string.generate_reference_strength),
-            value = reference.strength ?: range.start,
+            value = reference.strength ?: profile.defaultDirectorStrength,
             onValueChange = onStrengthChange,
             valueRange = range,
             decimals = 2,
@@ -233,7 +237,7 @@ private fun DirectorEntry(
         )
         LabeledSlider(
             label = stringResource(R.string.generate_reference_fidelity),
-            value = reference.secondaryStrength ?: range.start,
+            value = reference.secondaryStrength ?: profile.defaultDirectorFidelity,
             onValueChange = onFidelityChange,
             valueRange = range,
             decimals = 2,
@@ -241,7 +245,7 @@ private fun DirectorEntry(
         )
         LabeledSlider(
             label = stringResource(R.string.generate_reference_information),
-            value = reference.informationExtracted ?: range.start,
+            value = reference.informationExtracted ?: profile.defaultDirectorInfoExtracted,
             onValueChange = onInformationChange,
             valueRange = range,
             decimals = 2,
@@ -253,6 +257,7 @@ private fun DirectorEntry(
 /** 取用方式：界面枚举与请求取值、文案的对应关系集中在这里。 */
 private enum class DirectorKind(val value: DirectorReferenceKind, val labelRes: Int) {
     CHARACTER(DirectorReferenceKind.CHARACTER, R.string.generate_reference_kind_character_short),
+    STYLE(DirectorReferenceKind.STYLE, R.string.generate_reference_kind_style_short),
     CHARACTER_STYLE(
         DirectorReferenceKind.CHARACTER_AND_STYLE,
         R.string.generate_reference_kind_character_style_short,

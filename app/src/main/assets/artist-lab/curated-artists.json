@@ -1,6 +1,6 @@
 {
   "schema_version": 3,
-  "review_date": "2026-10-07",
+  "review_date": "2026-10-11",
   "selection_policy": {
     "min_danbooru_post_count": 50,
     "danbooru_category": 1,
@@ -10,7 +10,8 @@
     "danbooru_verification": "Pinned 2026-10-06 Danbooru-derived artist tag metadata; live API unavailable. Snapshot count, not live reading.",
     "content_scope": "Adult-oriented authors are eligible; artwork quality, identity and modern style are reviewed independently of content rating.",
     "activity_scope": "At least one dated public work or verified official creator update in the preceding year; not limited to Pixiv uploads.",
-    "expansion_focus": "Painterly rendering, soft color transitions, skin and fabric detail; retain multiple modern rendering directions."
+    "expansion_focus": "Painterly rendering, soft color transitions, skin and fabric detail; retain multiple modern rendering directions.",
+    "activity_date_basis": "Each entry retains its own review date; new entries reviewed 2026-10-11 require activity on or after 2025-10-11."
   },
   "artists": [
     {
@@ -10975,6 +10976,1066 @@
       },
       "review_status": "accepted",
       "review_date": "2026-10-07"
+    },
+    {
+      "danbooru_tag": "ariko",
+      "display_name": "ARiKo",
+      "danbooru_post_count": 93,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "uhouho14"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/ariko",
+      "pixiv_id": "12819711",
+      "pixiv_profile_url": "https://www.pixiv.net/users/12819711",
+      "pixiv_display_name": "ARiKo",
+      "feature_url": "https://www.pixiv.net/users/12819711",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/12819711",
+        "https://twitter.com/AAAAAAriko"
+      ],
+      "latest_pixiv_work_date": "2026-10-10",
+      "latest_activity_date": "2026-10-10",
+      "activity_evidence_url": "https://www.pixiv.net/users/12819711/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "150660684",
+          "147714988"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/150660684",
+          "https://www.pixiv.net/artworks/147714988"
+        ],
+        "style_notes": "细密衣饰、高光与柔和明暗，保留清晰的二次元人物五官。"
+      }
+    },
+    {
+      "danbooru_tag": "arus",
+      "display_name": "Arus",
+      "danbooru_post_count": 72,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/arus",
+      "pixiv_id": "20552885",
+      "pixiv_profile_url": "https://www.pixiv.net/users/20552885",
+      "pixiv_display_name": "Arus",
+      "feature_url": "https://www.pixiv.net/users/20552885",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/20552885",
+        "https://twitter.com/Arus_27"
+      ],
+      "latest_pixiv_work_date": "2026-09-12",
+      "latest_activity_date": "2026-09-12",
+      "activity_evidence_url": "https://www.pixiv.net/users/20552885/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "149583757",
+          "143710066"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/149583757",
+          "https://www.pixiv.net/artworks/143710066"
+        ],
+        "style_notes": "暖色室内环境光、柔和布料塑形与现代日系人物。"
+      }
+    },
+    {
+      "danbooru_tag": "coomlee",
+      "display_name": "Coomlee",
+      "danbooru_post_count": 84,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/coomlee",
+      "pixiv_id": "67339917",
+      "pixiv_profile_url": "https://www.pixiv.net/users/67339917",
+      "pixiv_display_name": "Coomlee",
+      "feature_url": "https://www.pixiv.net/users/67339917",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/67339917",
+        "https://twitter.com/kaomili"
+      ],
+      "latest_pixiv_work_date": "2026-10-04",
+      "latest_activity_date": "2026-10-04",
+      "activity_evidence_url": "https://www.pixiv.net/users/67339917/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "150450866",
+          "149330378"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/150450866",
+          "https://www.pixiv.net/artworks/149330378"
+        ],
+        "style_notes": "树影和环境色交织，发丝、花叶与服装层次丰富。"
+      }
+    },
+    {
+      "danbooru_tag": "cuboon",
+      "display_name": "cuboon",
+      "danbooru_post_count": 929,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "mismi"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/cuboon",
+      "pixiv_id": "8545",
+      "pixiv_profile_url": "https://www.pixiv.net/users/8545",
+      "pixiv_display_name": "cuboon",
+      "feature_url": "https://www.pixiv.net/users/8545",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/8545",
+        "https://twitter.com/cuboon",
+        "https://pawoo.net/oauth_authentications/8545?provider=pixiv"
+      ],
+      "latest_pixiv_work_date": "2026-10-02",
+      "latest_activity_date": "2026-10-02",
+      "activity_evidence_url": "https://www.pixiv.net/users/8545/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "150369240",
+          "148505838"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/150369240",
+          "https://www.pixiv.net/artworks/148505838"
+        ],
+        "style_notes": "清晰轮廓与成块阴影，人物衣装有体积感，补充稳定的游戏角色上色。"
+      }
+    },
+    {
+      "danbooru_tag": "fukahire_(ruinon)",
+      "display_name": "フカヒレ / Fukahire",
+      "danbooru_post_count": 717,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "fukahire_sanba"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/fukahire_(ruinon)",
+      "pixiv_id": "58338",
+      "pixiv_profile_url": "https://www.pixiv.net/users/58338",
+      "pixiv_display_name": "フカヒレ",
+      "feature_url": "https://www.pixiv.net/users/58338",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/58338",
+        "https://twitter.com/fuka_hire"
+      ],
+      "latest_pixiv_work_date": "2026-02-08",
+      "latest_activity_date": "2026-02-08",
+      "activity_evidence_url": "https://www.pixiv.net/users/58338/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "140898960",
+          "139903412"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/140898960",
+          "https://www.pixiv.net/artworks/139903412"
+        ],
+        "style_notes": "浅蓝紫色环境与透明感装饰，发丝、裙摆和人物表情细腻。"
+      }
+    },
+    {
+      "danbooru_tag": "hanekoto",
+      "display_name": "はねこと / Hanekoto",
+      "danbooru_post_count": 737,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/hanekoto",
+      "pixiv_id": "2106422",
+      "pixiv_profile_url": "https://www.pixiv.net/users/2106422",
+      "pixiv_display_name": "はねこと：お隣の天使様アニメ化",
+      "feature_url": "https://www.pixiv.net/users/2106422",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/2106422",
+        "https://twitter.com/hanekoto2424",
+        "https://portal.circle.ms/Circle/Index/10079585"
+      ],
+      "latest_pixiv_work_date": "2025-10-27",
+      "latest_activity_date": "2025-10-27",
+      "activity_evidence_url": "https://www.pixiv.net/users/2106422/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "136757591",
+          "136757481"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/136757591",
+          "https://www.pixiv.net/artworks/136757481"
+        ],
+        "style_notes": "清透逆光与自然室内光，服装褶皱和眼部描绘柔和。"
+      }
+    },
+    {
+      "danbooru_tag": "haruri",
+      "display_name": "HARURI",
+      "danbooru_post_count": 644,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "mullpull"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/haruri",
+      "pixiv_id": "14772638",
+      "pixiv_profile_url": "https://www.pixiv.net/users/14772638",
+      "pixiv_display_name": "HARURI",
+      "feature_url": "https://www.pixiv.net/users/14772638",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/14772638",
+        "https://twitter.com/HARURI52",
+        "https://www.instagram.com/harurillust"
+      ],
+      "latest_pixiv_work_date": "2026-09-11",
+      "latest_activity_date": "2026-09-11",
+      "activity_evidence_url": "https://www.pixiv.net/users/14772638/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "149533684",
+          "149496294"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/149533684",
+          "https://www.pixiv.net/artworks/149496294"
+        ],
+        "style_notes": "低饱和衣饰与干净肤色，人物高光和布料边缘细致。"
+      }
+    },
+    {
+      "danbooru_tag": "hibiki-147",
+      "display_name": "Hibiki-147",
+      "danbooru_post_count": 51,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/hibiki-147",
+      "pixiv_id": "14768514",
+      "pixiv_profile_url": "https://www.pixiv.net/users/14768514",
+      "pixiv_display_name": "Hibiki-147",
+      "feature_url": "https://www.pixiv.net/users/14768514",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/14768514",
+        "https://twitter.com/147_hibiki"
+      ],
+      "latest_pixiv_work_date": "2026-10-09",
+      "latest_activity_date": "2026-10-09",
+      "activity_evidence_url": "https://www.pixiv.net/users/14768514/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "150645161",
+          "145771608"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/150645161",
+          "https://www.pixiv.net/artworks/145771608"
+        ],
+        "style_notes": "紫色暖光融合，人物发丝、服装与环境的明暗过渡柔和。"
+      }
+    },
+    {
+      "danbooru_tag": "jademoon",
+      "display_name": "jademoon",
+      "danbooru_post_count": 73,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/jademoon",
+      "pixiv_id": "12563125",
+      "pixiv_profile_url": "https://www.pixiv.net/users/12563125",
+      "pixiv_display_name": "jademoon",
+      "feature_url": "https://www.pixiv.net/users/12563125",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/12563125",
+        "https://twitter.com/jademoon412",
+        "https://www.instagram.com/jademoon_illust"
+      ],
+      "latest_pixiv_work_date": "2026-07-03",
+      "latest_activity_date": "2026-07-03",
+      "activity_evidence_url": "https://www.pixiv.net/users/12563125/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "146742175",
+          "145611927"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/146742175",
+          "https://www.pixiv.net/artworks/145611927"
+        ],
+        "style_notes": "暖色皮肤与细密幻想衣饰，高光、花饰与背景颜色呼应。"
+      }
+    },
+    {
+      "danbooru_tag": "kantoku",
+      "display_name": "カントク / Kantoku",
+      "danbooru_post_count": 2465,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "afterschool_of_the_5th_year"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/kantoku",
+      "pixiv_id": "1565632",
+      "pixiv_profile_url": "https://www.pixiv.net/users/1565632",
+      "pixiv_display_name": "カントク",
+      "feature_url": "https://www.pixiv.net/users/1565632",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/1565632",
+        "https://twitter.com/kantoku_5th"
+      ],
+      "latest_pixiv_work_date": "2024-03-13",
+      "latest_activity_date": "2026-09-23",
+      "activity_evidence_url": "https://kantoku.fanbox.cc/posts/12643084",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "116885044",
+          "98870078"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/116885044",
+          "https://www.pixiv.net/artworks/98870078"
+        ],
+        "style_notes": "明亮自然光、清晰五官与细致制服纹理，柔和阴影保持日系人物感。"
+      }
+    },
+    {
+      "danbooru_tag": "kazezz",
+      "display_name": "KazeZz",
+      "danbooru_post_count": 94,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "kazezeze"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/kazezz",
+      "pixiv_id": "89304014",
+      "pixiv_profile_url": "https://www.pixiv.net/users/89304014",
+      "pixiv_display_name": "KazeZz",
+      "feature_url": "https://www.pixiv.net/users/89304014",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/89304014",
+        "https://twitter.com/KazeZz6"
+      ],
+      "latest_pixiv_work_date": "2026-05-07",
+      "latest_activity_date": "2026-05-07",
+      "activity_evidence_url": "https://www.pixiv.net/users/89304014/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "144480736",
+          "141275718"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/144480736",
+          "https://www.pixiv.net/artworks/141275718"
+        ],
+        "style_notes": "干净轮廓、细致金属衣饰与低饱和阴影，游戏角色辨识度强。"
+      }
+    },
+    {
+      "danbooru_tag": "lell",
+      "display_name": "Lell",
+      "danbooru_post_count": 74,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "lella_nyam",
+        "hikary2007",
+        "hiruel"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/lell",
+      "pixiv_id": "2781502",
+      "pixiv_profile_url": "https://www.pixiv.net/users/2781502",
+      "pixiv_display_name": "Lell",
+      "feature_url": "https://www.pixiv.net/users/2781502",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/2781502",
+        "https://twitter.com/Lell_a_L"
+      ],
+      "latest_pixiv_work_date": "2026-09-07",
+      "latest_activity_date": "2026-09-07",
+      "activity_evidence_url": "https://www.pixiv.net/users/2781502/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "149399166",
+          "149069180"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/149399166",
+          "https://www.pixiv.net/artworks/149069180"
+        ],
+        "style_notes": "浅色柔光和装饰性光点，头发与衣装使用柔和色块塑形。"
+      }
+    },
+    {
+      "danbooru_tag": "momoko_(momopoco)",
+      "display_name": "ももこ / Momoco",
+      "danbooru_post_count": 1570,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "momoco_(momoco_haru)"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/momoko_(momopoco)",
+      "pixiv_id": "1113943",
+      "pixiv_profile_url": "https://www.pixiv.net/users/1113943",
+      "pixiv_display_name": "ももこ",
+      "feature_url": "https://www.pixiv.net/users/1113943",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/1113943",
+        "https://twitter.com/momoco_haru"
+      ],
+      "latest_pixiv_work_date": "2023-04-23",
+      "latest_activity_date": "2026-09-01",
+      "activity_evidence_url": "https://asap-synergy.com/momoco/",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "107429786",
+          "105681985"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/107429786",
+          "https://www.pixiv.net/artworks/105681985"
+        ],
+        "style_notes": "通透肌肤、精细发丝、布料与皮革高光，现代日系人物比例。"
+      }
+    },
+    {
+      "danbooru_tag": "morikura_en",
+      "display_name": "森倉円 / Morikura En",
+      "danbooru_post_count": 752,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/morikura_en",
+      "pixiv_id": "177784",
+      "pixiv_profile_url": "https://www.pixiv.net/users/177784",
+      "pixiv_display_name": "森倉円",
+      "feature_url": "https://www.pixiv.net/users/177784",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/177784",
+        "https://twitter.com/morikuraen"
+      ],
+      "latest_pixiv_work_date": "2024-07-29",
+      "latest_activity_date": "2026-08-06",
+      "activity_evidence_url": "https://morikuraen.fanbox.cc/posts/12381370",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "120975473",
+          "120941694"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/120975473",
+          "https://www.pixiv.net/artworks/120941694"
+        ],
+        "style_notes": "柔和明亮色彩、通透眼睛和细腻发丝，环境光与人物融合。"
+      }
+    },
+    {
+      "danbooru_tag": "mungduck",
+      "display_name": "Mungduck",
+      "danbooru_post_count": 87,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/mungduck",
+      "pixiv_id": "18213685",
+      "pixiv_profile_url": "https://www.pixiv.net/users/18213685",
+      "pixiv_display_name": "Mungduck",
+      "feature_url": "https://www.pixiv.net/users/18213685",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/18213685",
+        "https://twitter.com/mungduck",
+        "https://www.instagram.com/mungduck_"
+      ],
+      "latest_pixiv_work_date": "2026-09-23",
+      "latest_activity_date": "2026-09-23",
+      "activity_evidence_url": "https://www.pixiv.net/users/18213685/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "150023432",
+          "148798532"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/150023432",
+          "https://www.pixiv.net/artworks/148798532"
+        ],
+        "style_notes": "浅蓝灰环境、细密饰物与柔和肌肤过渡，人物服装层次丰富。"
+      }
+    },
+    {
+      "danbooru_tag": "namie-kun",
+      "display_name": "Namie",
+      "danbooru_post_count": 622,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/namie-kun",
+      "pixiv_id": "3829860",
+      "pixiv_profile_url": "https://www.pixiv.net/users/3829860",
+      "pixiv_display_name": "Namie",
+      "feature_url": "https://www.pixiv.net/users/3829860",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/3829860",
+        "https://twitter.com/Namgoreng"
+      ],
+      "latest_pixiv_work_date": "2025-03-10",
+      "latest_activity_date": "2026-07-19",
+      "activity_evidence_url": "https://namie.fanbox.cc/posts/12275877",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "128064585",
+          "99088673"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/128064585",
+          "https://www.pixiv.net/artworks/99088673"
+        ],
+        "style_notes": "明亮粉蓝配色、通透幻想装饰和轻盈角色造型。"
+      }
+    },
+    {
+      "danbooru_tag": "oda_kogane",
+      "display_name": "Oda Kogane",
+      "danbooru_post_count": 53,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/oda_kogane",
+      "pixiv_id": "12419303",
+      "pixiv_profile_url": "https://www.pixiv.net/users/12419303",
+      "pixiv_display_name": "Oda Kogane",
+      "feature_url": "https://www.pixiv.net/users/12419303",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/12419303",
+        "https://twitter.com/oda_koden"
+      ],
+      "latest_pixiv_work_date": "2025-12-23",
+      "latest_activity_date": "2025-12-23",
+      "activity_evidence_url": "https://www.pixiv.net/users/12419303/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "137626047",
+          "136485470"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/137626047",
+          "https://www.pixiv.net/artworks/136485470"
+        ],
+        "style_notes": "暖色轮廓光与有笔触的阴影，人物面部保持日系简化。"
+      }
+    },
+    {
+      "danbooru_tag": "pibag",
+      "display_name": "Pibag",
+      "danbooru_post_count": 95,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/pibag",
+      "pixiv_id": "99009257",
+      "pixiv_profile_url": "https://www.pixiv.net/users/99009257",
+      "pixiv_display_name": "Pibag",
+      "feature_url": "https://www.pixiv.net/users/99009257",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/99009257",
+        "https://twitter.com/PB___q",
+        "https://www.instagram.com/_pibag_"
+      ],
+      "latest_pixiv_work_date": "2026-10-05",
+      "latest_activity_date": "2026-10-05",
+      "activity_evidence_url": "https://www.pixiv.net/users/99009257/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "150496158",
+          "148695591"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/150496158",
+          "https://www.pixiv.net/artworks/148695591"
+        ],
+        "style_notes": "黄绿逆光与丰富环境反射，服装及皮肤明暗过渡细腻。"
+      }
+    },
+    {
+      "danbooru_tag": "rakizuuu",
+      "display_name": "Rakizuuu",
+      "danbooru_post_count": 60,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "rizzchan"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/rakizuuu",
+      "pixiv_id": "86341486",
+      "pixiv_profile_url": "https://www.pixiv.net/users/86341486",
+      "pixiv_display_name": "Rakizuuu",
+      "feature_url": "https://www.pixiv.net/users/86341486",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/86341486",
+        "https://twitter.com/Rizzchan_xD"
+      ],
+      "latest_pixiv_work_date": "2026-10-10",
+      "latest_activity_date": "2026-10-10",
+      "activity_evidence_url": "https://www.pixiv.net/users/86341486/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "150684650",
+          "150130309"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/150684650",
+          "https://www.pixiv.net/artworks/150130309"
+        ],
+        "style_notes": "柔和暖色光影与细发丝，人物和环境有统一氛围。"
+      }
+    },
+    {
+      "danbooru_tag": "shiratama_(shiratamaco)",
+      "display_name": "しらたま / Shiratama",
+      "danbooru_post_count": 946,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "sarico"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/shiratama_(shiratamaco)",
+      "pixiv_id": "705370",
+      "pixiv_profile_url": "https://www.pixiv.net/users/705370",
+      "pixiv_display_name": "しらたま❄",
+      "feature_url": "https://www.pixiv.net/users/705370",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/705370",
+        "https://twitter.com/shiratamacaron"
+      ],
+      "latest_pixiv_work_date": "2026-08-14",
+      "latest_activity_date": "2026-08-14",
+      "activity_evidence_url": "https://www.pixiv.net/users/705370/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "147843864",
+          "147401563"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/147843864",
+          "https://www.pixiv.net/artworks/147401563"
+        ],
+        "style_notes": "轻柔浅色、精致眼睛和小饰物，偏可爱日系人物而非写实。"
+      }
+    },
+    {
+      "danbooru_tag": "tiv",
+      "display_name": "Tiv",
+      "danbooru_post_count": 497,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/tiv",
+      "pixiv_id": "35081",
+      "pixiv_profile_url": "https://www.pixiv.net/users/35081",
+      "pixiv_display_name": "Tiv",
+      "feature_url": "https://www.pixiv.net/users/35081",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/35081",
+        "https://twitter.com/tiv_",
+        "https://www.instagram.com/tiv_0225",
+        "https://portal.circle.ms/Circle/Index/10122315"
+      ],
+      "latest_pixiv_work_date": "2023-12-30",
+      "latest_activity_date": "2026-01-31",
+      "activity_evidence_url": "https://tiv.fanbox.cc/posts/11332264",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "106476729",
+          "106403631"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/106476729",
+          "https://www.pixiv.net/artworks/106403631"
+        ],
+        "style_notes": "通透粉蓝光色与细线条，制服、人物表情和环境自然融合。"
+      }
+    },
+    {
+      "danbooru_tag": "xnnagu",
+      "display_name": "XNNAGU",
+      "danbooru_post_count": 341,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "syngeloussier"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/xnnagu",
+      "pixiv_id": "5553075",
+      "pixiv_profile_url": "https://www.pixiv.net/users/5553075",
+      "pixiv_display_name": "XNNAGU",
+      "feature_url": "https://www.pixiv.net/users/5553075",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/5553075",
+        "https://twitter.com/XNNAGU"
+      ],
+      "latest_pixiv_work_date": "2026-09-09",
+      "latest_activity_date": "2026-09-09",
+      "activity_evidence_url": "https://www.pixiv.net/users/5553075/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "149451552",
+          "147832311"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/149451552",
+          "https://www.pixiv.net/artworks/147832311"
+        ],
+        "style_notes": "柔和肤色阴影与干净服装线条，游戏人物五官精致。"
+      }
+    },
+    {
+      "danbooru_tag": "yohaku",
+      "display_name": "YOHAKU",
+      "danbooru_post_count": 84,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/yohaku",
+      "pixiv_id": "16331597",
+      "pixiv_profile_url": "https://www.pixiv.net/users/16331597",
+      "pixiv_display_name": "YOHAKU",
+      "feature_url": "https://www.pixiv.net/users/16331597",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/16331597",
+        "https://twitter.com/YH_0w0"
+      ],
+      "latest_pixiv_work_date": "2026-10-05",
+      "latest_activity_date": "2026-10-05",
+      "activity_evidence_url": "https://www.pixiv.net/users/16331597/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "150465456",
+          "147784218"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/150465456",
+          "https://www.pixiv.net/artworks/147784218"
+        ],
+        "style_notes": "柔和散景、细腻侧光与发丝，偏日系人物近景。"
+      }
+    },
+    {
+      "danbooru_tag": "yotte",
+      "display_name": "YOTTE",
+      "danbooru_post_count": 95,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "yogurt_(yott_parfait)",
+        "parfait_(ryunghu)"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/yotte",
+      "pixiv_id": "1262853",
+      "pixiv_profile_url": "https://www.pixiv.net/users/1262853",
+      "pixiv_display_name": "YOTTE",
+      "feature_url": "https://www.pixiv.net/users/1262853",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/1262853",
+        "https://twitter.com/yotte615"
+      ],
+      "latest_pixiv_work_date": "2026-09-28",
+      "latest_activity_date": "2026-09-28",
+      "activity_evidence_url": "https://www.pixiv.net/users/1262853/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "150226234",
+          "149574199"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/150226234",
+          "https://www.pixiv.net/artworks/149574199"
+        ],
+        "style_notes": "柔和蓝灰背景和清晰人物轮廓，发丝、衣装及面部层次完整。"
+      }
+    },
+    {
+      "danbooru_tag": "yoyopipa",
+      "display_name": "yoyopipa",
+      "danbooru_post_count": 54,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/yoyopipa",
+      "pixiv_id": "64087228",
+      "pixiv_profile_url": "https://www.pixiv.net/users/64087228",
+      "pixiv_display_name": "yoyopipa",
+      "feature_url": "https://www.pixiv.net/users/64087228",
+      "identity_evidence": "本人 Pixiv 署名、关联社交账号与规范标签/别名交叉核对，所选作品作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/64087228",
+        "https://twitter.com/pipa_yoyo"
+      ],
+      "latest_pixiv_work_date": "2026-04-17",
+      "latest_activity_date": "2026-04-17",
+      "activity_evidence_url": "https://www.pixiv.net/users/64087228/illustrations",
+      "review_date": "2026-10-11",
+      "review_status": "accepted",
+      "work_review": {
+        "scope": "Two manually inspected public 250px representative thumbnails; content rating is not an artist exclusion rule.",
+        "sample_count": 2,
+        "no_ai_generated_samples": true,
+        "ai_verification_scope": "Pixiv samples not marked AI generated (aiType != 2); not an independent provenance audit.",
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "140925225",
+          "135560795"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/140925225",
+          "https://www.pixiv.net/artworks/135560795"
+        ],
+        "style_notes": "蓝紫氛围与细密服饰、光点，现代游戏角色插画。"
+      }
     }
   ],
   "exclusions": [
@@ -11037,5 +12098,24 @@
       "tenebscuro": "本轮代表作主要为漫画与拟兽卡通，暂不加入。",
       "unsfrau": "本轮样本塑形和衣料层次未达到本轮扩充方向，暂不加入。"
     }
-  }
+  },
+  "incremental_reviews": [
+    {
+      "date": "2026-10-11",
+      "profile_candidates": 54,
+      "visual_candidates": 33,
+      "added": 25,
+      "excluded_this_round": {
+        "aqwariate": "人物比例和塑形偏欧美写实，与本轮方向不符。",
+        "sa-baaa": "面部和人体塑形偏写实，本轮不加入。",
+        "yuriniel": "样本人物造型方向混合，本轮暂不加入。",
+        "shigre": "样本以环境和背景为主，人物质感证据不足。",
+        "rurukichi": "本轮样本是草图和宣传裁图，不足以判断完整人物上色。",
+        "hanagata": "本轮样本偏Q版与强图形设计，不符合本轮重点。",
+        "kongya": "本轮样本偏Q版和平面卡通，本轮暂不加入。",
+        "yan.c": "本轮人物造型偏硬朗漫画，不符合此次柔和人物质感重点。"
+      },
+      "basis": "User-enabled 156-artist selection from 2026-10-11. No previously excluded artist re-enabled. 250px previews inspected; no NovelAI generation."
+    }
+  ]
 }

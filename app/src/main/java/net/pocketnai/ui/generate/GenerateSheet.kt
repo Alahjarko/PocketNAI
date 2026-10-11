@@ -71,7 +71,6 @@ import net.pocketnai.ui.billing.BalanceDetailDialog
 import net.pocketnai.ui.billing.compactLabel
 import net.pocketnai.ui.billing.detailLabel
 import net.pocketnai.ui.billing.shortLabel
-import net.pocketnai.ui.billing.summaryLabel
 import net.pocketnai.ui.common.credentialInvalidMessageRes
 import net.pocketnai.R
 import net.pocketnai.domain.model.ModelCatalog
@@ -572,14 +571,6 @@ fun GenerateSheet(
                 )
             }
 
-            // 生成后核对：只报"观察到的余额变化"，不说成账单（余额规划 §3.2）。
-            state.lastObservedChange?.let { change ->
-                NoticeCard(
-                    text = stringResource(R.string.observed_change_title) + "：" + change.summaryLabel(),
-                    onDismiss = viewModel::dismissObservedChange,
-                )
-            }
-
             // 参考图放在内容区最底部：它只在需要图生图/参考条件时才用，
             // 不该挡在每次都要写的提示词前面。三个面板合并成一张带页签的卡片
             // （2026-09-21 界面减负），互斥清理仍由 ViewModel 在挂图时做。
@@ -787,7 +778,7 @@ private fun SheetHeader(
                             append(" · ")
                             append(img2imgMarker)
                         }
-                        if (state.mode == GenerationMode.PRECISE_REFERENCE) {
+                        if (state.supportsDirectorReference && state.directorReferences.isNotEmpty()) {
                             append(" · ")
                             append(preciseReferenceMarker)
                         }

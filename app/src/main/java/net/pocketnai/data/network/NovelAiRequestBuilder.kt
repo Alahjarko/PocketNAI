@@ -139,7 +139,7 @@ object NovelAiRequestBuilder {
         val directorSources = upstreamImages[ReferenceRole.DIRECTOR].orEmpty()
         val directors = request.referencesOf(ReferenceRole.DIRECTOR)
         // 数量对不上说明编码环节漏了图：宁可不发这组字段，也不发一个对不齐的数组。
-        val useDirector = request.mode == GenerationMode.PRECISE_REFERENCE &&
+        val useDirector = profile.supportsDirectorReference &&
             directorSources.size == directors.size &&
             directors.isNotEmpty()
 
@@ -223,8 +223,8 @@ object NovelAiRequestBuilder {
      * 数组之间**按下标一一对应**，因此任何一项缺失都不能"跳过"，
      * 否则后面对齐会整体错位。这也是为什么这里逐项都有兜底值而不是 `mapNotNull`。
      *
-     * `director_reference_descriptions[].caption.base_caption` 用 `character`
-     * 或 `character&style`（官方字段说明给出），前者只取角色、后者连画风一起取。
+     * `director_reference_descriptions[].caption.base_caption` 对应官网的
+     * `character`、`style` 或 `character&style` 三种取用方式。
      */
     private fun JsonObjectBuilder.appendDirectorReferences(
         profile: ModelProfile,
@@ -245,13 +245,12 @@ object NovelAiRequestBuilder {
                                     put(
                                         "base_caption",
                                         (reference.directorKind
-                                            ?: DirectorReferenceKind.CHARACTER).apiValue,
+                                            ?: DirectorReferenceKind.DEFAULT).apiValue,
                                     )
                                     put("char_captions", buildJsonArray { })
                                 },
                             )
-                            put("use_coords", false)
-                            put("use_order", true)
+                            put("legacy_uc", false)
                         },
                     )
                 }
@@ -269,7 +268,8 @@ object NovelAiRequestBuilder {
             "director_reference_secondary_strength_values",
             buildJsonArray {
                 references.forEach {
-                    add(strengthRange.clamp(it.secondaryStrength ?: profile.defaultDirectorFidelity))
+                    // 界面/草稿保存 Fidelity；官网发送的是它的反值，而非滑块原值。
+                    add(1.0 - strengthRange.clamp(it.secondaryStrength ?: profile.defaultDirectorFidelity))
                 }
             },
         )

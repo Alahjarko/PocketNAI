@@ -17,7 +17,6 @@ assert hashlib.sha256(raw).hexdigest() == "516f690003c3f31c0c5647fe3f2e9216ca46b
 rows = {row[0]: row for row in csv.reader(raw.decode("utf-8-sig").splitlines()) if len(row) >= 4}
 review_bytes = (target / "curated-artists.json").read_bytes()
 review = json.loads(review_bytes)
-active_since = (date.fromisoformat(review["review_date"]) - timedelta(days=365)).isoformat()
 selected = []
 for artist in review["artists"]:
     tag = artist["danbooru_tag"]
@@ -25,6 +24,9 @@ for artist in review["artists"]:
     assert row and row[1] == "1", f"Not a canonical Danbooru artist: {tag}"
     assert int(row[2]) >= 50 and int(row[2]) == artist["danbooru_post_count"], f"Invalid post count: {tag}"
     assert artist["review_status"] == "accepted" and artist["identity_evidence"], f"Unreviewed identity: {tag}"
+    # 增量审核不能把旧条目冒充为今日重新核对；活动窗口以各条目的审核日为准。
+    reviewed_on = artist.get("review_date", review["review_date"])
+    active_since = (date.fromisoformat(reviewed_on) - timedelta(days=365)).isoformat()
     activity_date = artist.get("latest_activity_date", artist.get("latest_pixiv_work_date"))
     assert date.fromisoformat(activity_date) >= date.fromisoformat(active_since) and artist["activity_evidence_url"], f"Inactive artist: {tag}"
     work_review = artist.get("work_review", artist.get("sfw_review"))

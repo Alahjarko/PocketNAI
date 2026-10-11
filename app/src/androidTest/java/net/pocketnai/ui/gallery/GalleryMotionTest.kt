@@ -65,6 +65,11 @@ class GalleryMotionTest {
         var images by mutableStateOf(listOf(image("old-a", now - 3 * 86400000L), image("old-b", now - 3 * 86400000L - 1000, true), image("old-c", now - 3 * 86400000L - 2000, true)) +
             (0..11).map { image("deep-$it", now - 4 * 86400000L - it * 1000, it % 3 != 0) })
         var jobs by mutableStateOf(emptyList<GenerationSummary>())
+        var showLab by mutableStateOf(false)
+        var labStatus by mutableStateOf("RUNNING")
+        var labImage by mutableStateOf<GalleryItem?>(null)
+        var labId by mutableStateOf("lab-running")
+        var labOpened = false
         var finished = false
         lateinit var motion: ImageMotionState
         compose.mainClock.autoAdvance = false
@@ -73,6 +78,13 @@ class GalleryMotionTest {
                 MaterialTheme {
                     ImageMotionRoot {
                         motion = LocalImageMotion.current!!
+                        if (showLab) {
+                            net.pocketnai.ui.artistlab.ArtistLabResultImage(
+                                labId, 0, labStatus, labImage, 832f / 1216f, { file }, { labOpened = true },
+                                Modifier.width(180.dp).testTag("lab-image"),
+                            )
+                            return@ImageMotionRoot
+                        }
                         val nav = rememberNavController()
                         NavHost(nav, "home", enterTransition = { imagePageEnter() }, exitTransition = { imagePageExit() }) {
                             composable("home") {
@@ -214,6 +226,35 @@ class GalleryMotionTest {
             compose.onNodeWithText("结果待确认").assertExists()
             compose.onAllNodesWithContentDescription("生成中").assertCountEquals(0)
             screenshot("uncertain")
+            // The lab uses the same reveal mechanism. Keep its planned bounds across decoding,
+            // terminate uncertain results, and do not replay the reveal for historical cards.
+            compose.runOnUiThread { showLab = true }
+            compose.mainClock.advanceTimeBy(1000)
+            compose.onNodeWithContentDescription("生成中").assertExists()
+            val labBounds = compose.onNodeWithTag("lab-image").fetchSemanticsNode().boundsInRoot
+            screenshot("lab-pending")
+            compose.runOnUiThread { labStatus = "SUCCEEDED"; labImage = image("lab-result", now) }
+            compose.waitUntil(5000) {
+                compose.mainClock.advanceTimeBy(100)
+                compose.onAllNodesWithContentDescription("生成中").fetchSemanticsNodes().isEmpty() &&
+                    compose.onAllNodesWithContentDescription("图片已就绪").fetchSemanticsNodes().isEmpty()
+            }
+            assertThat(compose.onNodeWithTag("lab-image").fetchSemanticsNode().boundsInRoot).isEqualTo(labBounds)
+            compose.onNodeWithContentDescription("第 1 张").performClick()
+            assertThat(labOpened).isTrue()
+            screenshot("lab-revealed")
+            compose.runOnUiThread { labId = "lab-uncertain"; labImage = null; labStatus = "RUNNING" }
+            compose.mainClock.advanceTimeBy(300)
+            compose.onNodeWithContentDescription("生成中").assertExists()
+            compose.runOnUiThread { labStatus = "UNCERTAIN" }
+            compose.mainClock.advanceTimeBy(300)
+            compose.onNodeWithText("结果待确认").assertExists()
+            compose.onAllNodesWithContentDescription("生成中").assertCountEquals(0)
+            compose.onAllNodesWithContentDescription("图片已就绪").assertCountEquals(0)
+            compose.runOnUiThread { labId = "lab-history"; labImage = image("historical", now); labStatus = "SUCCEEDED" }
+            compose.mainClock.advanceTimeBy(300)
+            compose.onAllNodesWithContentDescription("生成中").assertCountEquals(0)
+            compose.onAllNodesWithContentDescription("图片已就绪").assertCountEquals(0)
         } finally { dir.deleteRecursively() }
     }
 

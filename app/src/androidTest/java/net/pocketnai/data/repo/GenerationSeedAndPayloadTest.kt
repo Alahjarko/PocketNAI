@@ -1,5 +1,11 @@
 package net.pocketnai.data.repo
 
+import net.pocketnai.domain.model.GenerationMode
+import net.pocketnai.domain.model.ReferenceRole
+import net.pocketnai.domain.model.ReferenceImage
+import net.pocketnai.ui.generate.GenerateViewModel
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.delay
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -17,6 +23,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import net.pocketnai.core.Outcome
@@ -153,6 +161,227 @@ class GenerationSeedAndPayloadTest {
         referenceEncoder = net.pocketnai.data.image.ReferenceImageProcessor(context, fileStore),
     )
 
+    /** 用官网的预处理尺寸和 Fidelity 反值作为断言，不从待测实现推导期望值。 */
+    @Test fun preciseReferenceMatchesWebGeometryFidelityAndHistory() = runBlocking<Unit> {
+        val id = "precise-reference-test-" + java.util.UUID.randomUUID()
+        val root = File(context.cacheDir, id).apply { mkdirs() }
+        val isolated = object : android.content.ContextWrapper(context) {
+            override fun getApplicationContext(): android.content.Context = this
+            override fun getFilesDir(): File = File(root, "files").apply { mkdirs() }
+            override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
+        }
+        val files = GenerationFileStore(isolated)
+        val processor = net.pocketnai.data.image.ReferenceImageProcessor(isolated, files)
+        val sizes = listOf(256 to 384, 512 to 256, 450 to 500, 400 to 400)
+        val colors = listOf(Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW)
+        val strengths = listOf(0.3, 0.6, 0.9, null)
+        val fidelities = listOf(1.0, 0.0, 0.65, null)
+        val information = listOf(0.5, 0.8, 1.0, null)
+        val kinds = listOf(net.pocketnai.domain.model.DirectorReferenceKind.CHARACTER,
+            net.pocketnai.domain.model.DirectorReferenceKind.STYLE,
+            net.pocketnai.domain.model.DirectorReferenceKind.CHARACTER_AND_STYLE, null)
+        val payloads = mutableListOf<JsonObject>()
+        try {
+            val references = sizes.mapIndexed { index, (width, height) ->
+                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply { eraseColor(colors[index]) }
+                val bytes = ByteArrayOutputStream().use { buffer ->
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, buffer)
+                    buffer.toByteArray()
+                }
+                bitmap.recycle()
+                val input = File(files.resolve("inputs").apply { mkdirs() }, "$index.png").apply { writeBytes(bytes) }
+                val prepared = (processor.import(net.pocketnai.domain.image.ReferenceSource.LocalPath("inputs/$index.png"),
+                    net.pocketnai.domain.image.ImageTransform.DirectorCanvas) as Outcome.Success).value
+                assertThat(input.readBytes()).isEqualTo(bytes)
+                net.pocketnai.domain.model.ReferenceImage("ref-$index", net.pocketnai.domain.model.ReferenceRole.DIRECTOR,
+                    index, prepared.relativePath, prepared.width, prepared.height, prepared.byteSize, prepared.sha256, 0,
+                    strength = strengths[index], secondaryStrength = fidelities[index],
+                    informationExtracted = information[index], directorKind = kinds[index])
+            }
+            val profile = ModelCatalog.profileOf(ImageModel.V4_5_FULL)
+            val params = GenerationParams.defaultsFor(profile).copy(prompt = "sfw, a traveler",
+                seedMode = SeedMode.FIXED, baseSeed = 321)
+            val draft = net.pocketnai.domain.model.GenerationDraft(params, params.prompt, "", references)
+            val restored = net.pocketnai.data.settings.GenerationDraftCodec.decode(
+                net.pocketnai.data.settings.GenerationDraftCodec.encode(draft))!!
+            assertThat(restored.references.map { it.secondaryStrength }).isEqualTo(fidelities)
+            val repo = repository(payloads, Random(1), files) { id }
+            val request = GenerationRequest(restored.params, net.pocketnai.domain.model.GenerationMode.PRECISE_REFERENCE, restored.references)
+            val events = repo.generate(request, params.prompt).toList()
+            val image = events.filterIsInstance<GenerationEvent.Final>().single().image
+            assertThat(payloads).hasSize(1)
+            assertThat(payloads.single().getValue("action").jsonPrimitive.content).isEqualTo("generate")
+            val sent = parametersOf(payloads.single())
+            fun values(key: String) = sent.getValue(key).jsonArray.map { it.jsonPrimitive.double }
+            assertThat(values("director_reference_strength_values")).containsExactly(0.3, 0.6, 0.9, 1.0).inOrder()
+            val secondary = values("director_reference_secondary_strength_values")
+            listOf(0.0, 1.0, 0.35, 0.0).forEachIndexed { index, expected ->
+                assertThat(secondary[index]).isWithin(1e-12).of(expected)
+            }
+            assertThat(values("director_reference_information_extracted")).containsExactly(0.5, 0.8, 1.0, 1.0).inOrder()
+            val descriptions = sent.getValue("director_reference_descriptions").jsonArray.map { it.jsonObject }
+            assertThat(descriptions.map { it.getValue("caption").jsonObject.getValue("base_caption").jsonPrimitive.content })
+                .containsExactly("character", "style", "character&style", "character&style").inOrder()
+            descriptions.forEach { description ->
+                assertThat(description.keys).containsExactly("caption", "legacy_uc")
+                assertThat(description.getValue("legacy_uc").jsonPrimitive.content).isEqualTo("false")
+            }
+            val expectedSizes = listOf(1024 to 1536, 1536 to 1024, 1472 to 1472, 1472 to 1472)
+            val encoded = sent.getValue("director_reference_images").jsonArray
+            assertThat(encoded).hasSize(4)
+            encoded.forEachIndexed { index, value ->
+                val png = Base64.decode(value.jsonPrimitive.content, Base64.DEFAULT)
+                val decoded = BitmapFactory.decodeByteArray(png, 0, png.size)
+                val (width, height) = expectedSizes[index]
+                assertThat(decoded.width to decoded.height).isEqualTo(width to height)
+                assertThat(decoded.getPixel(width / 2, height / 2)).isEqualTo(colors[index])
+                if (index == 0 || index == 3) assertThat(decoded.getPixel(0, 0)).isEqualTo(colors[index])
+                if (index == 1) {
+                    assertThat(decoded.getPixel(width / 2, 0)).isEqualTo(Color.BLACK)
+                    assertThat(decoded.getPixel(0, height / 2)).isEqualTo(Color.GREEN)
+                    assertThat(decoded.getPixel(width / 2, 128)).isEqualTo(Color.GREEN)
+                }
+                if (index == 2) {
+                    assertThat(decoded.getPixel(0, height / 2)).isEqualTo(Color.BLACK)
+                    assertThat(decoded.getPixel(width / 2, 0)).isEqualTo(Color.BLUE)
+                    assertThat(decoded.getPixel(74, height / 2)).isEqualTo(Color.BLUE)
+                }
+                decoded.recycle()
+            }
+            assertThat(repo.loadDetail(image.id)!!.generation.references.map { it.secondaryStrength }).isEqualTo(fidelities)
+            // 保留先前的模型切换防线：素材留在草稿，V5 不提交 Precise Ref。
+            val v5 = ModelCatalog.profileOf(ImageModel.V5_FULL)
+            val inactive = request.copy(params = params.copy(model = v5.model)).withActiveReferences(v5)
+            assertThat(inactive.references).isEmpty()
+            assertThat(inactive.mode).isEqualTo(net.pocketnai.domain.model.GenerationMode.TXT2IMG)
+            assertThat(inactive.validate(v5)).isEmpty()
+            assertThat(request.withActiveReferences(profile).references).isEqualTo(references)
+            // 同一组 Precise 条件也必须进入 img2img 请求，不能因主模式改变而丢失。
+            val base = references[0].copy(id = "base", role = ReferenceRole.IMG2IMG, strength = 0.7)
+            val mixed = request.copy(mode = GenerationMode.IMG2IMG, references = listOf(base) + references)
+            val mixedDraft = draft.copy(references = mixed.references)
+            val mixedRestored = net.pocketnai.data.settings.GenerationDraftCodec.decode(
+                net.pocketnai.data.settings.GenerationDraftCodec.encode(mixedDraft))!!
+            val mixedRepo = repository(payloads, Random(1), files) { "$id-mixed" }
+            val mixedEvents = mixedRepo.generate(mixed.copy(references = mixedRestored.references), params.prompt).toList()
+            val mixedImage = mixedEvents.filterIsInstance<GenerationEvent.Final>().single().image
+            assertThat(payloads).hasSize(2)
+            assertThat(payloads.last().getValue("action").jsonPrimitive.content).isEqualTo("img2img")
+            val mixedSent = parametersOf(payloads.last())
+            assertThat(mixedSent.getValue("image").jsonPrimitive.content).isNotEmpty()
+            assertThat(mixedSent.getValue("strength").jsonPrimitive.double).isEqualTo(0.7)
+            assertThat(mixedSent.getValue("director_reference_images")).isEqualTo(sent.getValue("director_reference_images"))
+            assertThat(mixedSent.getValue("director_reference_secondary_strength_values"))
+                .isEqualTo(sent.getValue("director_reference_secondary_strength_values"))
+            val mixedHistory = mixedRepo.loadDetail(mixedImage.id)!!.generation
+            assertThat(mixedHistory.mode).isEqualTo(GenerationMode.IMG2IMG)
+            assertThat(mixedHistory.references.map { it.role }).containsExactly(ReferenceRole.IMG2IMG,
+                ReferenceRole.DIRECTOR, ReferenceRole.DIRECTOR, ReferenceRole.DIRECTOR, ReferenceRole.DIRECTOR)
+            val v5Mixed = mixed.copy(params = params.copy(model = v5.model)).withActiveReferences(v5)
+            assertThat(v5Mixed.references).containsExactly(base)
+            assertThat(v5Mixed.mode).isEqualTo(GenerationMode.IMG2IMG)
+            val conflicting = mixed.copy(references = mixed.references + base.copy(id = "vibe", role = ReferenceRole.VIBE))
+            assertThat(conflicting.validate(profile)).contains(
+                net.pocketnai.domain.model.ReferenceViolation.ConflictingWithMode(GenerationMode.PRECISE_REFERENCE))
+            checkReferenceSelectionAndQuote(isolated, processor, mixedRepo, params)
+
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+
+    /** 复现选图的两种先后顺序，使用隔离偏好与假 API，不接触用户草稿或账号。 */
+    private suspend fun checkReferenceSelectionAndQuote(
+        isolated: android.content.Context,
+        processor: net.pocketnai.data.image.ReferenceImageProcessor,
+        repo: GenerationRepository,
+        params: GenerationParams,
+    ) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val prefix = "reference-combo-" + java.util.UUID.randomUUID()
+        val preferenceNames = mutableSetOf<String>()
+        val testContext = object : android.content.ContextWrapper(isolated) {
+            override fun getApplicationContext(): android.content.Context = this
+            override fun getSharedPreferences(name: String, mode: Int): android.content.SharedPreferences {
+                val scoped = "$prefix-$name"
+                preferenceNames += scoped
+                return context.getSharedPreferences(scoped, mode)
+            }
+        }
+        val preferences = net.pocketnai.data.settings.GenerationDraftPreferences(testContext)
+        preferences.save(net.pocketnai.domain.model.GenerationDraft(params, params.prompt, "", emptyList()))
+        val settings = net.pocketnai.data.settings.SettingsStore(testContext)
+        settings.setSubscriptionOverride(net.pocketnai.domain.billing.SubscriptionOverride.OPUS)
+        val credentials = object : CredentialStore {
+            override fun hasCredential() = false
+            override fun load(): StoredCredential? = null
+            override fun hint(): CredentialHint? = null
+            override fun save(credential: StoredCredential) = error("不得保存凭据")
+            override fun clear() = Unit
+        }
+        val store = androidx.lifecycle.ViewModelStore()
+        lateinit var vm: GenerateViewModel
+        fun main(block: () -> Unit) = instrumentation.runOnMainSync(block)
+        suspend fun imported(block: () -> Unit) {
+            main(block)
+            withTimeout(10_000) { while (vm.state.value.referenceBusy) delay(10) }
+            assertThat(vm.state.value.referenceError).isNull()
+        }
+        val source = net.pocketnai.domain.image.ReferenceSource.LocalPath("inputs/0.png")
+        try {
+            main {
+                vm = GenerateViewModel(repo, net.pocketnai.ui.state.GenerationDraftStore(),
+                    net.pocketnai.ui.state.GenerationPreviewStore(), preferences,
+                    net.pocketnai.domain.prompt.TagSuggestionSource { _, _ -> emptyList() }, processor,
+                    object : net.pocketnai.domain.metadata.ImageMetadataInspector {
+                        override suspend fun inspect(source: net.pocketnai.domain.image.ReferenceSource) =
+                            net.pocketnai.domain.metadata.MetadataProbeResult.NotNovelAi
+                    }, AccountBalanceRepository(FakeApi(mutableListOf()), credentials), settings)
+                store.put("generate", vm)
+            }
+            imported { vm.onReferencePicked(source) }
+            val base = vm.state.value.referenceSource
+            imported { vm.onDirectorReferencePicked(source) }
+            assertThat(vm.state.value.referenceSource).isEqualTo(base)
+            assertThat(vm.state.value.directorReferences).hasSize(1)
+            assertThat(vm.state.value.mode).isEqualTo(GenerationMode.IMG2IMG)
+            val quote = withTimeout(10_000) { vm.costEstimate.first {
+                it is net.pocketnai.domain.billing.GenerationCostEstimate.EstimatedAnlas && it.batchTotal == 5L
+            } }
+            assertThat((quote as net.pocketnai.domain.billing.GenerationCostEstimate.EstimatedAnlas).batchTotal).isEqualTo(5L)
+            val director = vm.state.value.directorReferences.single()
+            imported { vm.onReferencePicked(source) }
+            assertThat(vm.state.value.directorReferences).containsExactly(director)
+            imported { vm.onInpaintBasePicked(source) }
+            assertThat(vm.state.value.directorReferences).containsExactly(director)
+            val mask = director.copy(id = "mask", role = ReferenceRole.INPAINT_MASK)
+            main { vm.onInpaintMaskRendered(mask) }
+            imported { vm.onDirectorReferencePicked(source) }
+            assertThat(vm.state.value.inpaintReferences).containsExactly(mask)
+            assertThat(vm.state.value.mode).isEqualTo(GenerationMode.INPAINT)
+            withTimeout(10_000) { vm.costEstimate.first {
+                it is net.pocketnai.domain.billing.GenerationCostEstimate.EstimatedAnlas && it.batchTotal == 10L
+            } }
+            main { vm.onModelSelected(ImageModel.V5_FULL) }
+            assertThat(vm.state.value.directorReferences).hasSize(2)
+            assertThat(vm.state.value.activeReferences.map { it.role }).containsExactly(ReferenceRole.IMG2IMG, ReferenceRole.INPAINT_MASK)
+            main { vm.onModelSelected(ImageModel.V4_5_FULL) }
+            val inpaintBase = vm.state.value.referenceSource
+            imported { vm.onVibeReferencePicked(source) }
+            assertThat(vm.state.value.referenceSource).isEqualTo(inpaintBase)
+            assertThat(vm.state.value.directorReferences).isEmpty()
+            assertThat(vm.state.value.vibeReferences).hasSize(1)
+            assertThat(vm.state.value.mode).isEqualTo(GenerationMode.IMG2IMG)
+            imported { vm.onDirectorReferencePicked(source) }
+            assertThat(vm.state.value.referenceSource).isEqualTo(inpaintBase)
+            assertThat(vm.state.value.vibeReferences).isEmpty()
+        } finally {
+            main { store.clear() }
+            preferenceNames.forEach { context.deleteSharedPreferences(it) }
+        }
+    }
+
     /** 原请求载荷测试改成设备端完整链路，覆盖回图融合、裁切和历史一致性。 */
     @Test fun inpaintKeepsOriginalOutsideMaskAndBlendsBeforeHistoryCrop() = runBlocking<Unit> {
         val payloads = mutableListOf<JsonObject>()
@@ -164,7 +393,7 @@ class GenerationSeedAndPayloadTest {
             override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
         }
         val files = GenerationFileStore(isolatedContext)
-        val defaults = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V5_FULL))
+        val defaults = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V4_5_FULL))
         val width = defaults.size.width
         val height = defaults.size.height
         // 用户真实原图 878×1280 与 832×1216 画布不同，旧代码只缩底图、没有缩蒙版。
@@ -190,7 +419,8 @@ class GenerationSeedAndPayloadTest {
             net.pocketnai.domain.model.ReferenceImage(role.name, role, 0, path, sourceWidth, sourceHeight, size, sha, 0, strength = 1.0)
         val refs = listOf(reference(net.pocketnai.domain.model.ReferenceRole.IMG2IMG,
             files.referenceRelativePath(hash), hash, bytes.size.toLong()),
-            reference(net.pocketnai.domain.model.ReferenceRole.INPAINT_MASK, mask.relativePath, mask.sha256, mask.byteSize))
+            reference(net.pocketnai.domain.model.ReferenceRole.INPAINT_MASK, mask.relativePath, mask.sha256, mask.byteSize),
+            reference(ReferenceRole.DIRECTOR, files.referenceRelativePath(hash), hash, bytes.size.toLong()))
         try {
             val repo = repository(payloads, Random(1), files) { id }
             val events = repo.generate(GenerationRequest(params, net.pocketnai.domain.model.GenerationMode.INPAINT, refs), params.prompt).toList()
@@ -199,8 +429,13 @@ class GenerationSeedAndPayloadTest {
             assertThat(payloads).hasSize(1)
             val payload = payloads.single()
             assertThat(payload.getValue("action").jsonPrimitive.content).isEqualTo("infill")
-            assertThat(payload.getValue("model").jsonPrimitive.content).isEqualTo(ImageModel.V5_FULL.inpaintingApiModelId)
+            assertThat(payload.getValue("model").jsonPrimitive.content).isEqualTo(ImageModel.V4_5_FULL.inpaintingApiModelId)
             val sent = parametersOf(payload)
+            assertThat(sent.getValue("director_reference_images").jsonArray).hasSize(1)
+            assertThat(sent.getValue("director_reference_secondary_strength_values").jsonArray.single().jsonPrimitive.double)
+                .isEqualTo(0.0)
+            assertThat(repo.loadDetail(image.id)!!.generation.references.map { it.role })
+                .containsExactly(ReferenceRole.IMG2IMG, ReferenceRole.INPAINT_MASK, ReferenceRole.DIRECTOR)
             assertThat(sent.getValue("seed").jsonPrimitive.longOrNull).isEqualTo(1234L)
             fun decodeField(field: String): Bitmap {
                 val png = Base64.decode(sent.getValue(field).jsonPrimitive.content, Base64.DEFAULT)

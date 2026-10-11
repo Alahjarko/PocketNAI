@@ -988,9 +988,7 @@ class GenerationRepository(
         normalized: GenerationParams,
     ): ImageTransform = when (reference.role) {
         ReferenceRole.IMG2IMG -> ImageTransform.Cover(normalized.size.toPixelSize())
-        ReferenceRole.DIRECTOR -> ImageTransform.Letterbox(
-            ImageGeometry.directorCanvas(PixelSize(reference.width, reference.height)),
-        )
+        ReferenceRole.DIRECTOR -> ImageTransform.DirectorCanvas
         // Vibe 走 encode-vibe 编码，几何变换在编码前不做：官方也是把原图交给编码接口。
         ReferenceRole.VIBE -> ImageTransform.Letterbox(
             PixelSize(reference.width, reference.height),

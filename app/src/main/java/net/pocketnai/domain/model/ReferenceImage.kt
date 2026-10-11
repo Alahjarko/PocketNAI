@@ -14,8 +14,8 @@ enum class GenerationMode {
      * Precise Reference（API 字段叫 `director_reference_*`）。
      *
      * 与图生图的语义完全不同：图生图把源图当作生成的起点，整张图要重新长出来；
-     * Precise Reference 把参考图当作条件（角色或画风），生成仍从空白开始。
-     * 因此它不是一个"带图的文生图"，而是独立的一种模式。
+     * Precise Reference 把参考图当作条件（角色或画风）。此模式表示无起点图；
+     * 有起点图/蒙版时使用 IMG2IMG/INPAINT 模式，DIRECTOR 条件仍可附加。
      */
     PRECISE_REFERENCE,
 
@@ -68,20 +68,13 @@ enum class ReferenceRole {
 
 /**
  * Precise Reference 的取用方式，直接对应 `director_reference_descriptions[].caption.base_caption`
- * 的两个取值（来自官方 OpenAPI 字段说明）。
+ * 的三个取值（2026-10-11 核对官方前端）。
  */
 enum class DirectorReferenceKind(val apiValue: String) {
     /** 只取角色。 */
     CHARACTER("character"),
 
-    /**
-     * 只取画风（官方文档里的 Style Reference）。
-     *
-     * ⚠️ `"style"` 这个取值是**推断**的：OpenAPI 的字段说明只给出了 `character` 与
-     * `character&style` 两个可用值（那份说明是写给 Character Reference 的），
-     * 而官方文档明确列出三种参考类型（Character / Style / Character & Style）。
-     * 真机核对后如果服务端不接受，改这一个字符串即可。
-     */
+    /** 只取画风。 */
     STYLE("style"),
 
     /** 角色与画风一起取。 */
@@ -89,6 +82,9 @@ enum class DirectorReferenceKind(val apiValue: String) {
     ;
 
     companion object {
+        /** 与官网新添加参考图的初值一致，不覆盖已有参考图明确保存的类型。 */
+        val DEFAULT = CHARACTER_AND_STYLE
+
         fun fromApiValueOrDefault(value: String?): DirectorReferenceKind =
             entries.firstOrNull { it.apiValue == value } ?: CHARACTER
     }
@@ -130,7 +126,7 @@ data class ReferenceImage(
     val strength: Double? = null,
     /** Vibe / Director 的 Information Extracted。 */
     val informationExtracted: Double? = null,
-    /** Precise Reference 的 Fidelity（API 里的 `director_reference_secondary_strength_values`）。 */
+    /** 界面 Fidelity；保留既有字段名。请求 secondary_strength_values = 1 - 此值。 */
     val secondaryStrength: Double? = null,
     /** 仅 [ReferenceRole.DIRECTOR] 使用。 */
     val directorKind: DirectorReferenceKind? = null,

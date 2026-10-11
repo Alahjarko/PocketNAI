@@ -64,10 +64,8 @@ data class GenerationRequest(
             if (referencesOf(ReferenceRole.INPAINT_MASK).isEmpty()) {
                 add(ReferenceViolation.MissingInpaintMask)
             }
-            // 底图 + 蒙版是重绘的全部输入，再挂参考条件只会被服务端拒绝。
-            if (referencesOf(ReferenceRole.DIRECTOR).isNotEmpty() ||
-                referencesOf(ReferenceRole.VIBE).isNotEmpty()
-            ) {
+            // Precise 支持与重绘并用；Vibe 的重绘限制保持不变。
+            if (referencesOf(ReferenceRole.VIBE).isNotEmpty()) {
                 add(ReferenceViolation.ConflictingWithMode(GenerationMode.INPAINT))
             }
         }
@@ -88,6 +86,9 @@ data class GenerationRequest(
             add(ReferenceViolation.TooMany(ReferenceRole.VIBE, vibes, profile.maxVibeReferences))
         }
         val directors = referencesOf(ReferenceRole.DIRECTOR).size
+        if (directors > 0 && vibes > 0) {
+            add(ReferenceViolation.ConflictingWithMode(GenerationMode.PRECISE_REFERENCE))
+        }
         if (directors > profile.maxDirectorReferences) {
             add(
                 ReferenceViolation.TooMany(

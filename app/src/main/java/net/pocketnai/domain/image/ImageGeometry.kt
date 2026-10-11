@@ -4,6 +4,7 @@ import net.pocketnai.domain.model.ImageSizePreset
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.abs
 
 /** 像素尺寸。domain 层不依赖 Android，因此自带一个最小的表示。 */
 data class PixelSize(val width: Int, val height: Int) {
@@ -81,9 +82,6 @@ object ImageGeometry {
     /** 单张参考图编码后的体积上限（base64 之前）。 */
     const val MAX_REFERENCE_FILE_BYTES: Long = 8L * 1024 * 1024
 
-    /** 正方形判定带：长宽比落在 [1/CANVAS_SQUARE_BAND, CANVAS_SQUARE_BAND] 内视为方图。 */
-    private const val CANVAS_SQUARE_BAND = 1.1
-
     /** Precise Reference 官方要求的三种画布（规划书 3.3，来自 OpenAPI 的字段说明）。 */
     val DIRECTOR_PORTRAIT: PixelSize = PixelSize(1024, 1536)
     val DIRECTOR_LANDSCAPE: PixelSize = PixelSize(1536, 1024)
@@ -95,7 +93,7 @@ object ImageGeometry {
             is ImageTransform.Cover -> centerCrop(source, transform.target)
             is ImageTransform.MaskCover -> centerCrop(source, transform.target)
             is ImageTransform.Letterbox -> letterbox(source, transform.canvas)
-            ImageTransform.DirectorCanvas -> letterbox(source, directorCanvas(source))
+            ImageTransform.DirectorCanvas -> directorPlacement(source)
         }
 
     /**
@@ -150,14 +148,28 @@ object ImageGeometry {
         )
     }
 
-    /** Precise Reference 的三选一画布：竖图 / 横图 / 方图。 */
-    fun directorCanvas(source: PixelSize): PixelSize {
-        val ratio = source.aspectRatio
-        return when {
-            ratio >= CANVAS_SQUARE_BAND -> DIRECTOR_LANDSCAPE
-            ratio <= 1.0 / CANVAS_SQUARE_BAND -> DIRECTOR_PORTRAIT
-            else -> DIRECTOR_SQUARE
-        }
+    /** 官网选择长宽比绝对差最小的画布，等距时保留列表前项。 */
+    fun directorCanvas(source: PixelSize): PixelSize =
+        listOf(DIRECTOR_PORTRAIT, DIRECTOR_LANDSCAPE, DIRECTOR_SQUARE)
+            .minBy { abs(it.aspectRatio - source.aspectRatio) }
+
+    /** Precise Ref 小图也要放大填满一边，否则角色会缩在大黑框中，损失有效占比。 */
+    private fun directorPlacement(source: PixelSize): ImagePlacement {
+        val canvas = directorCanvas(source)
+        val wider = source.aspectRatio > canvas.aspectRatio
+        val width = if (wider) canvas.width else (canvas.height * source.aspectRatio).roundToInt()
+        val height = if (wider) (canvas.width / source.aspectRatio).roundToInt() else canvas.height
+        val fittedWidth = width.coerceIn(1, canvas.width)
+        val fittedHeight = height.coerceIn(1, canvas.height)
+        return ImagePlacement(
+            source = PixelRegion(0, 0, source.width, source.height),
+            canvas = canvas,
+            destination = PixelRegion(
+                ((canvas.width - fittedWidth) / 2.0).roundToInt(),
+                ((canvas.height - fittedHeight) / 2.0).roundToInt(),
+                fittedWidth, fittedHeight,
+            ),
+        )
     }
 
     /**

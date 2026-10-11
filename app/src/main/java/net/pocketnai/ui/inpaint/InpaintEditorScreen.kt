@@ -47,7 +47,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
@@ -130,12 +131,19 @@ fun InpaintEditorScreen(
         viewHeight = viewSize.height.toFloat(),
     )
 
-    val inkBitmap = remember(maskSize.width, maskSize.height) {
-        Bitmap.createBitmap(maskSize.width, maskSize.height, Bitmap.Config.ARGB_8888)
+    // 已完成路径缓存为不可变快照；松手、撤销和扩张都直接参与当前帧绘制。
+    // 不在 LaunchedEffect 中改写同一张 Bitmap，避免像素已变但 Canvas 未失效。
+    val committedPaths = remember(strokes.toList()) {
+        strokes.map { it to it.toBitmapPath() }
     }
-    // 笔画或扩张一变就整层重画（笔画很少，成本可接受）。
-    LaunchedEffect(strokes.toList(), dilation) {
-        renderInk(inkBitmap, strokes.toList(), dilation)
+    val inkPaint = remember {
+        Paint().apply {
+            isAntiAlias = false
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+            color = Color.BLACK
+        }
     }
 
     val overlayColor = MaterialTheme.colorScheme.primary.toArgb()
@@ -267,21 +275,19 @@ fun InpaintEditorScreen(
                                     PorterDuff.Mode.SRC_IN,
                                 )
                             }
-                            native.drawBitmap(inkBitmap, null, destination, overlay)
-
-                            // 正在画的这一笔单独画，避免整层重绘带来的延迟。
-                            currentStroke?.let { stroke ->
-                                val live = Paint().apply {
-                                    isAntiAlias = false
-                                    style = Paint.Style.STROKE
-                                    strokeCap = Paint.Cap.ROUND
-                                    strokeJoin = Paint.Join.ROUND
-                                    strokeWidth = MaskGeometry.effectiveRadius(stroke, dilation) * SCALE
-                                    color = overlayColor
-                                    alpha = (255 * OVERLAY_ALPHA).toInt()
-                                }
-                                native.drawPath(stroke.toViewPath(transform), live)
+                            // 已提交笔画与当前笔画先合成同一墨迹层，再统一染色与透明度。
+                            // 橡皮只清除该层；底图不受影响，松手前后笔宽和重叠区也一致。
+                            val layer = native.saveLayer(destination, overlay)
+                            native.clipRect(destination)
+                            native.translate(transform.offsetX, transform.offsetY)
+                            native.scale(transform.scale, transform.scale)
+                            committedPaths.forEach { (stroke, path) ->
+                                native.drawInk(stroke, path, dilation, inkPaint)
                             }
+                            currentStroke?.let { stroke ->
+                                native.drawInk(stroke, stroke.toBitmapPath(), dilation, inkPaint)
+                            }
+                            native.restoreToCount(layer)
                         }
                     }
                 }
@@ -346,13 +352,15 @@ fun InpaintEditorScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (strokes.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.inpaint_empty_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
+                // 始终保留同一行高度，否则第一笔落下后底图会重新 Fit，整幅画面跳动。
+                Text(
+                    text = stringResource(R.string.inpaint_empty_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = if (strokes.isEmpty()) Modifier else Modifier
+                        .alpha(0f)
+                        .clearAndSetSemantics { },
+                )
             }
         }
     }
@@ -438,35 +446,12 @@ private fun decode(relativePath: String, resolve: (String) -> File): Bitmap? = r
     BitmapFactory.decodeFile(file.absolutePath)
 }.getOrNull()
 
-/**
- * 把笔画重放进墨迹层。
- *
- * 扩张通过"半径偏移"实现（见 [MaskGeometry.effectiveRadius]），因此这里不做任何形态学运算 ——
- * 这也是滑块能实时预览的原因。
- *
- * 用 `xfermode` 而不是 `blendMode`：后者是 API 29+，而本项目 minSdk 是 26。
- */
-private fun renderInk(bitmap: Bitmap, strokes: List<MaskStroke>, dilation: Float) {
-    val canvas = Canvas(bitmap)
-    canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-
-    val paint = Paint().apply {
-        isAntiAlias = false
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-        strokeJoin = Paint.Join.ROUND
-        color = Color.BLACK
-    }
-    strokes.forEach { stroke ->
-        if (!stroke.isDrawable) return@forEach
-        paint.strokeWidth = MaskGeometry.effectiveRadius(stroke, dilation) * SCALE
-        paint.xfermode = if (stroke.isErase) {
-            PorterDuffXfermode(PorterDuff.Mode.CLEAR)
-        } else {
-            null
-        }
-        canvas.drawPath(stroke.toBitmapPath(), paint)
-    }
+/** 在独立墨迹层中绘制，所有坐标和笔宽均为原图像素。 */
+private fun Canvas.drawInk(stroke: MaskStroke, path: Path, dilation: Float, paint: Paint) {
+    if (!stroke.isDrawable) return
+    paint.strokeWidth = MaskGeometry.effectiveRadius(stroke, dilation) * SCALE
+    paint.xfermode = if (stroke.isErase) PorterDuffXfermode(PorterDuff.Mode.CLEAR) else null
+    drawPath(path, paint)
 }
 
 private fun MaskStroke.toBitmapPath(): Path = Path().apply {
@@ -477,20 +462,6 @@ private fun MaskStroke.toBitmapPath(): Path = Path().apply {
         lineTo(points.first().x + 0.01f, points.first().y)
     } else {
         points.drop(1).forEach { lineTo(it.x, it.y) }
-    }
-}
-
-private fun MaskStroke.toViewPath(transform: MaskGeometry.FitTransform): Path = Path().apply {
-    if (points.isEmpty()) return@apply
-    val first = transform.toView(points.first())
-    moveTo(first.x, first.y)
-    if (points.size == 1) {
-        lineTo(first.x + 0.01f, first.y)
-    } else {
-        points.drop(1).forEach { point ->
-            val scaled = transform.toView(point)
-            lineTo(scaled.x, scaled.y)
-        }
     }
 }
 

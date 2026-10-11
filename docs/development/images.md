@@ -5,17 +5,20 @@
 ## 参考图的请求形态
 
 - 图生图：`action` 换成 `img2img`，`parameters.image` + `parameters.strength`。
-- Precise Reference：`action` 保持 `generate`，发 `director_reference_*` **五个数组**。
+- Precise Reference：发 `director_reference_*` **五个数组**，作为附加条件独立于生成模式。无底图时 `action=generate`；与图生图合用时为 `img2img`；与局部重绘合用时为 `infill`（仍用专用 inpainting 模型）。
   数组按下标一一对应，**任何一项缺失都不能跳过**（必须补默认值），
   否则"这个角色的强度"会落到"那个角色"上，而服务端不报错。
-- 黑边补齐在**导入时**做（`ImageTransform.DirectorCanvas`），缩略图因此就是提交图；
-  提交时再套一次同样的 Letterbox 是恒等变换，不要"聪明地"跳过。
+- Precise 的 `secondaryStrength` 在界面、草稿和历史中保存 **Fidelity 原值**；仅在请求构造时转换为 `1 − Fidelity`。默认 Fidelity 1 对应线上 `secondary_strength` 0，不可直接发送原值。五个数组保持同序，描述为 `caption` + `legacy_uc: false`。
+- Precise 新导入默认取「角色与画风」，保留已有明确的取用类型；界面支持角色、画风及两者。缺省滑块显示与请求共同使用模型默认值。
+- 参考画布从 1024×1536、1536×1024、1472×1472 中按长宽比绝对差最小选择，等距取前项。导入时用 `ImageTransform.DirectorCanvas` 等比放大或缩小、居中补黑边，不能沿用禁止放大小图的普通 Letterbox。提交时再次处理标准画布是恒等变换，缩略图因此就是提交图。
+- 旧版已补黑边的素材不能可靠恢复原始边界，不自动裁切；需要重新选择原图才能应用新的导入规则。2026-10-11 官网源码核对与验证范围见[Precise Reference 核对记录](../precise-reference-audit-2026-10-11.md)。
 - Vibe Transfer：`action` 也保持 `generate`，发 `reference_*_multiple` **三个数组**，
   内容是 `encode-vibe` 的产物 base64（实测服务端收编码产物，不收原图）。
   编码缓存在 `files/vibes/<hash>.vibe`，键含模型 + 图片 sha256 + Information Extracted。
 - **Vibe 与 Precise Reference 不能同时发**：服务端会拒绝
   （`cannot mix reference and director_reference at the same time`）。界面必须互斥。
-  Vibe 与图生图可以同时发。
+  图生图可分别与 Vibe 或 Precise 同时发。添加 Precise 不清底图/蒙版，添加底图不清 Precise；换底图仍须作废旧蒙版。模式按重绘、图生图、单独 Precise、文生图判定。
+  Precise 附加费按当前模型实际启用的 DIRECTOR 数量计算，不依赖模式是否为 PRECISE_REFERENCE。
 
 ## 局部重绘（Inpaint）
 
@@ -42,7 +45,9 @@
 - 原图远离混合边缘的区域保持原像素；白名单里的 NovelAI 文本元数据保留，合成/裁切后重算尺寸、体积与哈希。合成失败保留服务器产物并通过 `ItemError` 提示，不能丢图或重发请求。来源与验证见[重绘边缘核对记录](../inpaint-edge-audit-2026-10-10.md)。
 - 扩张用"笔刷半径加 N"实现（Minkowski 和），**不要**改成对位图做形态学卷积 ——
   那样会毁掉实时预览。橡皮不参与扩张。
-- 重绘与参考条件（Precise Reference / Vibe）互斥；换底图必须作废旧蒙版，
+- 蒙版编辑预览（2026-10-11）：缓存已完成笔画的路径，在同一绘制帧中合成已完成笔画和当前笔画，最后统一透明叠加；橡皮只清除独立墨迹层。不得在 `LaunchedEffect` 中修改同一 Bitmap 后依赖下一次触摸刷新。实时与已提交笔画统一使用原图坐标，再整体缩放，避免松手后笔宽变化。
+- 空蒙版提示隐藏时保留原布局高度，不能因首笔完成、撤销或清空改变画布尺寸并重新 Fit 底图。
+- 重绘支持附加 Precise Reference（2026-10-11 官方文档与前端源码核对）；Vibe 的重绘限制保持不变。换底图必须作废旧蒙版，
   **移除底图同理**（`onRemoveReference` 连坐清蒙版）。蒙版与底图必须同时在场：
   缺底图的残留蒙版曾经漏过校验，发出"常规模型 ID + infill"的自相矛盾请求被
   服务端 400（技术决策记录 §18.5）。校验侧有 `MissingInpaintBase` 兜底，

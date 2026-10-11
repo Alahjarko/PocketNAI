@@ -24,7 +24,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -34,11 +33,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
-import net.pocketnai.ui.motion.sharedImage
-import net.pocketnai.ui.motion.sharedImageRequest
-import net.pocketnai.ui.motion.LocalImageMotion
-import net.pocketnai.ui.motion.ImageOriginPreview
 import net.pocketnai.domain.model.GenerationParams
 import net.pocketnai.domain.artistlab.ArtistLabConfig
 import net.pocketnai.domain.artistlab.ArtistLabForm
@@ -55,7 +49,6 @@ import kotlin.random.Random
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ArtistLabScreen(vm: ArtistLabViewModel, currentParams: GenerationParams, resolve: (String) -> File, onOpen: (String) -> Unit) {
-    val imageMotion = LocalImageMotion.current
     val runs by vm.runs.collectAsStateWithLifecycle()
     val selected by vm.selectedRun.collectAsStateWithLifecycle()
     val cards by vm.cards.collectAsStateWithLifecycle()
@@ -147,11 +140,11 @@ fun ArtistLabScreen(vm: ArtistLabViewModel, currentParams: GenerationParams, res
                                 tint = if (card.favorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    if (card.image != null) AsyncImage(sharedImageRequest(resolve(card.image.relativePath)), "第 ${card.draw.ordinal + 1} 张",
-                        Modifier.fillMaxWidth().aspectRatio(card.image.aspectRatio.coerceIn(0.65f, 1.5f)).sharedImage(card.image.imageId).clickable { imageMotion?.preview = ImageOriginPreview(card.image.imageId, resolve(card.image.relativePath), card.image.aspectRatio, "抽卡结果"); onOpen(card.image.imageId) }, contentScale = ContentScale.Crop)
-                    else Box(Modifier.fillMaxWidth().height(90.dp), contentAlignment = Alignment.Center) {
-                        Text(if (card.draw.status == "RUNNING") "生成中…" else if (card.draw.status == "FAILED") "生成失败" else "结果待确认")
-                    }
+                    ArtistLabResultImage(
+                        drawId = card.draw.id, ordinal = card.draw.ordinal, status = card.draw.status, image = card.image,
+                        plannedAspectRatio = (snapshot ?: currentParams).targetSize.let { it.width.toFloat() / it.height },
+                        resolve = resolve, onOpen = onOpen,
+                    )
                     Text(card.mix.artists.joinToString(", ") { it.tag.removePrefix("artist: ") }, Modifier.padding(10.dp, 0.dp, 10.dp, 10.dp),
                         style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }

@@ -1,5 +1,15 @@
 package net.pocketnai.ui.generate
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import net.pocketnai.domain.model.ReferenceRole
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,9 +40,10 @@ import net.pocketnai.ui.common.SectionHeader
  * 在表单底部连占三屏（2026-09-21 界面减负）。
  *
  * ## 互斥关系不由页签表达
- * 页签只是"看哪个面板"：图生图与 Vibe 本来就允许同时挂，互斥的只有
- * "图生图 vs Precise Reference"（连请求的 action 都不同），清理由 ViewModel 在挂图时做。
- * 各页签上已挂内容的数量直接标在页签文字里，切走也能看到。
+ * 页签只是"看哪个面板"：图生图可以分别搭配 Precise Reference 或 Vibe。
+ * Precise 与 Vibe 互斥，清理由 ViewModel 在挂图时做。
+ * 底色表示该功能当前是否生效，可同时亮起；短下划线表示正在查看的面板。
+ * 保留但不受当前模型支持的素材仍显示数量，不点亮。
  *
  * ## 说明文字的归宿
  * 三个面板原来的整段说明收进标题旁的 ⓘ（见 `SectionHeader` 的 infoText），
@@ -81,6 +92,13 @@ fun ReferenceTabsSection(
         ) {
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 ReferenceTab.entries.forEachIndexed { index, option ->
+                    val active = state.activeReferences.any { it.role == option.role }
+                    val background = if (active) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surface
+                    val foreground = if (active) MaterialTheme.colorScheme.onPrimaryContainer
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    val status = stringResource(if (active) R.string.generate_reference_active
+                        else R.string.generate_reference_inactive)
                     SegmentedButton(
                         selected = tab == option,
                         onClick = { tab = option },
@@ -88,14 +106,28 @@ fun ReferenceTabsSection(
                             index = index,
                             count = ReferenceTab.entries.size,
                         ),
-                        // 默认的选中对勾与文字里的"已挂 ✓"会撞车，关掉它。
+                        // 查看哪个面板与启用了哪些功能是两个状态，底色只跟随后者。
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = background,
+                            inactiveContainerColor = background,
+                            activeContentColor = foreground,
+                            inactiveContentColor = foreground,
+                        ),
+                        modifier = Modifier.semantics { stateDescription = status },
                         icon = {},
                     ) {
-                        Text(
-                            text = option.label(state),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(
+                                text = option.label(state),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Box(Modifier.width(18.dp).height(2.dp).background(
+                                if (tab == option) foreground else Color.Transparent,
+                                RoundedCornerShape(1.dp),
+                            ))
+                        }
                     }
                 }
             }
@@ -127,17 +159,18 @@ fun ReferenceTabsSection(
     }
 }
 
-private enum class ReferenceTab { IMG2IMG, PRECISE, VIBE }
+private enum class ReferenceTab(val role: ReferenceRole) {
+    IMG2IMG(ReferenceRole.IMG2IMG), PRECISE(ReferenceRole.DIRECTOR), VIBE(ReferenceRole.VIBE)
+}
 
-/** 页签文字：名称 + 已挂数量（图生图只有一张，用 ✓ 表示）。 */
+/** 页签文字显示素材数量，实际启用状态由底色表达。 */
 @Composable
 private fun ReferenceTab.label(state: GenerateViewModel.UiState): String = when (this) {
     ReferenceTab.IMG2IMG ->
-        stringResource(R.string.generate_mode_img2img) +
-            if (state.referenceSource != null) " ✓" else ""
+        stringResource(R.string.generate_mode_img2img)
 
     ReferenceTab.PRECISE ->
-        stringResource(R.string.generate_precise_reference_short) +
+        stringResource(R.string.generate_precise_tab) +
             if (state.directorReferences.isNotEmpty()) " (${state.directorReferences.size})" else ""
 
     ReferenceTab.VIBE ->

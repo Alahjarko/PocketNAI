@@ -156,7 +156,7 @@
 
     <!-- Precise Reference -->
     <string name="generate_director_title">参考图 · Precise Reference</string>
-    <string name="generate_director_hint">参考图在这里是条件而不是起点：让模型按参考图里的角色或画风去画，生成仍从空白开始。与上面的图生图互斥，挂上其中一类会清空另一类。</string>
+    <string name="generate_director_hint">参考图用于参考角色或画风，可与图生图、局部重绘同时使用。不能与 Vibe 同时使用，添加其中一类会移除另一类。</string>
     <string name="generate_director_unsupported">%1$s 不支持 Precise Reference（目前只有 V4.5 支持），请切换到 V4.5 模型。</string>
     <string name="generate_director_slots">已添加 %1$d / %2$d 张</string>
     <string name="generate_director_cost_hint">每张 5 Anlas</string>
@@ -455,4 +455,7 @@
     <string name="proxy_custom_incomplete">地址和端口还没填完整。</string>
     <string name="error_proxy_quota_exceeded">公益代理的今日额度（750 MB）已用完，明天恢复；也可以在设置里改用自定义代理。</string>
     <string name="nav_artist_lab">抽卡</string>
+    <string name="generate_precise_tab">Precise</string>
+    <string name="generate_reference_active">已启用</string>
+    <string name="generate_reference_inactive">未启用</string>
 </resources>
