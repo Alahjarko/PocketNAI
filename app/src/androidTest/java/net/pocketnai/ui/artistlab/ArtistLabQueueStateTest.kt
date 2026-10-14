@@ -180,6 +180,12 @@ class ArtistLabQueueStateTest {
             assertThat(before.all { it.mixJson.contains(kept) }).isTrue()
             h.main { h.lab.setArtistEnabled(entries[1].tag, true) }
             assertThat(h.lab.catalogCount.value).isEqualTo(2)
+            h.main { h.lab.importCatalog(net.pocketnai.domain.artistlab.ArtistCatalogImport.parse("artist: imported_example")) }
+            h.waitFor { !h.lab.catalogImporting.value }
+            assertThat(h.lab.catalogCount.value).isEqualTo(3)
+            assertThat(ArtistLabStore(h.context, h.database).catalogEntries().last().tag).isEqualTo("artist: imported example")
+            assertThat(ArtistLabStore(h.context, h.database).excludedArtists()).doesNotContain(kept)
+            assertThat(ArtistLabStore(h.context, h.database).excludedArtists()).contains(entries[2].tag)
             assertThat(h.store.dao.draws(h.lab.selectedRun.value!!).map { it.mixJson }).isEqualTo(before.map { it.mixJson })
         } finally { h.close() }
     }

@@ -9,7 +9,7 @@ import net.pocketnai.domain.artistlab.ArtistCatalogExport
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-enum class ArtistCatalogExportFormat { TEXT, JSON, ZIP }
+enum class ArtistCatalogExportFormat { TEXT, JSON, ZIP, TEMPLATE }
 
 class ArtistCatalogExporter(context: Context) {
     private val app = context.applicationContext
@@ -20,6 +20,7 @@ class ArtistCatalogExporter(context: Context) {
         val output = checkNotNull(app.contentResolver.openOutputStream(uri, "wt"))
         output.use {
             when (format) {
+                ArtistCatalogExportFormat.TEMPLATE -> it.write(net.pocketnai.domain.artistlab.ArtistCatalogImport.template.toByteArray(Charsets.UTF_8))
                 ArtistCatalogExportFormat.TEXT -> it.write(tags.toByteArray(Charsets.UTF_8))
                 ArtistCatalogExportFormat.JSON -> it.write(configuration.toByteArray(Charsets.UTF_8))
                 ArtistCatalogExportFormat.ZIP -> ZipOutputStream(it).use { zip ->

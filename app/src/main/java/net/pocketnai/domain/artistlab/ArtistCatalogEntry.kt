@@ -6,4 +6,11 @@ import kotlinx.serialization.Serializable
 data class ArtistArtworkPreview(val asset: String, val sourceUrl: String)
 
 @Serializable
-data class ArtistCatalogEntry(val tag: String, val name: String, val previews: List<ArtistArtworkPreview>)
+data class ArtistCatalogEntry(
+    val tag: String,
+    val name: String = "",
+    val previews: List<ArtistArtworkPreview> = emptyList(),
+    val sourceName: String = "",
+    val profileUrl: String = "",
+    val notes: String = "",
+)

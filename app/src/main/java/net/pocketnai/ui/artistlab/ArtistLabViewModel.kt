@@ -86,6 +86,10 @@ class ArtistLabViewModel(
     val catalogEntries = _catalogEntries.asStateFlow()
     private val _excludedArtists = MutableStateFlow(store.excludedArtists())
     val excludedArtists = _excludedArtists.asStateFlow()
+    private val _catalogImporting = MutableStateFlow(false)
+    val catalogImporting = _catalogImporting.asStateFlow()
+    private val _catalogMessage = MutableStateFlow("")
+    val catalogMessage = _catalogMessage.asStateFlow()
     private val _form = MutableStateFlow(store.loadForm())
     val form = _form.asStateFlow()
     fun updateForm(form: ArtistLabForm) { _form.value = form }
@@ -93,6 +97,7 @@ class ArtistLabViewModel(
     private var pool: List<String> = emptyList()
     private var allArtists: List<String> = emptyList()
     private var hash: String = ""
+    private var catalogRevision = 0
     private val mixCache = object : LinkedHashMap<String, ArtistMix>(256, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ArtistMix>?) = size > 10_000
     }
@@ -130,9 +135,10 @@ class ArtistLabViewModel(
     fun dismissApproval() { _approval.value = null }
 
     fun setArtistEnabled(tag: String, enabled: Boolean) {
-        if (tag !in allArtists) return
+        if (_catalogImporting.value || tag !in allArtists) return
         val excluded = if (enabled) _excludedArtists.value - tag else _excludedArtists.value + tag
         store.saveExcludedArtists(excluded)
+        catalogRevision++
         _excludedArtists.value = excluded
         pool = allArtists.filterNot { it in excluded }
         _catalogCount.value = pool.size
@@ -140,10 +146,34 @@ class ArtistLabViewModel(
         if (!_busy.value) _approval.value = null
     }
 
-    fun prepare(basePrompt: String, negative: String, seed: String, count: String, artistCount: Int, minTicks: Int, maxTicks: Int) {
-        if (_busy.value || !_ready.value || !enabled.value) return
+    fun importCatalog(selection: ArtistCatalogSelection) {
+        if (!_ready.value || _busy.value || _catalogImporting.value) return
+        _catalogImporting.value = true
+        catalogRevision++
+        _catalogMessage.value = ""
+        _approval.value = null
         viewModelScope.launch {
             try {
+                val previous = allArtists.size
+                val merged = store.importCatalog(selection)
+                allArtists = merged.artists.map { it.tag }
+                hash = net.pocketnai.core.Hashing.sha256(allArtists.joinToString("\n", postfix = "\n").toByteArray(Charsets.UTF_8))
+                _catalogEntries.value = merged.artists
+                _excludedArtists.value = merged.excluded.toSet()
+                pool = allArtists.filterNot { it in _excludedArtists.value }
+                _catalogCount.value = pool.size
+                _catalogMessage.value = "已加入 ${allArtists.size - previous} 位画师，已有画师的启用状态已保留"
+            } catch (e: IllegalArgumentException) { _catalogMessage.value = e.message ?: "画师文件格式不正确" }
+            catch (_: Exception) { _catalogMessage.value = "画师库保存未完成，请重试" }
+            finally { _catalogImporting.value = false }
+        }
+    }
+
+    fun prepare(basePrompt: String, negative: String, seed: String, count: String, artistCount: Int, minTicks: Int, maxTicks: Int) {
+        if (_busy.value || _catalogImporting.value || !_ready.value || !enabled.value) return
+        viewModelScope.launch {
+            try {
+                val revision = catalogRevision
                 val fixedSeed = seed.toLongOrNull()?.takeIf { it in 0..GenerationParams.MAX_SEED }
                     ?: throw IllegalArgumentException("Seed 请填写 0～4294967295 的整数")
                 val drawCount = count.toIntOrNull()?.takeIf { it in 1..10_000 }
@@ -158,7 +188,9 @@ class ArtistLabViewModel(
                 val config = ArtistLabConfig(GenerationDraftCodec.encode(GenerationDraft(base, base.prompt, base.negativePrompt)),
                     artistCount, minTicks, maxTicks, drawCount, hash, templatesResolved = true)
                 val account = generate.artistLabAccount() ?: throw IllegalArgumentException("请先在设置中连接 NovelAI 账号")
-                _approval.value = LabApproval(config, base, generate.quoteForArtistLab(base), account, drawCount, artistPool = pool.toList())
+                val quote = generate.quoteForArtistLab(base)
+                if (revision != catalogRevision || _catalogImporting.value) return@launch
+                _approval.value = LabApproval(config, base, quote, account, drawCount, artistPool = pool.toList())
                 _message.value = ""
             } catch (e: IllegalArgumentException) { _message.value = e.message ?: "请检查参数" }
         }
@@ -184,7 +216,7 @@ class ArtistLabViewModel(
 
     fun confirm() {
         val approved = _approval.value ?: return
-        if (_busy.value || !enabled.value) return
+        if (_busy.value || _catalogImporting.value || !enabled.value) return
         _approval.value = null
         if (generate.artistLabAccount() != approved.account ||
             generate.quoteForArtistLab(approved.params).approvalKey() != approved.quote.approvalKey()) {

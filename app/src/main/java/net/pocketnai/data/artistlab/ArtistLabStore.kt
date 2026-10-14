@@ -9,6 +9,8 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import net.pocketnai.domain.artistlab.ArtistLabForm
 import net.pocketnai.domain.artistlab.ArtistCatalogEntry
+import net.pocketnai.domain.artistlab.ArtistCatalogImport
+import net.pocketnai.domain.artistlab.ArtistCatalogSelection
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.int
@@ -27,11 +29,32 @@ class ArtistLabStore(context: Context, val database: PocketNaiDatabase) {
     fun excludedArtists(): Set<String> = catalogPrefs.getStringSet("excluded", emptySet()).orEmpty().toSet()
     fun saveExcludedArtists(tags: Set<String>) { catalogPrefs.edit().putStringSet("excluded", tags.toSet()).apply() }
 
-    suspend fun catalogEntries(): List<ArtistCatalogEntry> = withContext(Dispatchers.IO) {
+    private fun importedEntries(): List<ArtistCatalogEntry> = catalogPrefs.getString("imported", null)?.let {
+        ArtistCatalogImport.parse(it).artists
+    }.orEmpty()
+
+    private suspend fun builtInEntries(): List<ArtistCatalogEntry> = withContext(Dispatchers.IO) {
         val bytes = assets.open("artist-lab/previews.json").use { it.readBytes() }
         val source = assets.open("artist-lab/source.json").bufferedReader().use { json.parseToJsonElement(it.readText()).jsonObject }
         check(net.pocketnai.core.Hashing.sha256(bytes) == source.getValue("previews_sha256").jsonPrimitive.content)
         json.decodeFromString<List<ArtistCatalogEntry>>(bytes.toString(Charsets.UTF_8))
+    }
+
+    suspend fun catalogEntries(): List<ArtistCatalogEntry> = withContext(Dispatchers.IO) {
+        (builtInEntries() + importedEntries()).distinctBy { it.tag }
+    }
+
+    suspend fun importCatalog(incoming: ArtistCatalogSelection): ArtistCatalogSelection = withContext(Dispatchers.IO) {
+        val builtIn = builtInEntries()
+        val merged = ArtistCatalogImport.merge(catalogEntries(), excludedArtists(), incoming)
+        val builtInTags = builtIn.map { it.tag }.toSet()
+        val custom = ArtistCatalogSelection(artists = merged.artists.filterNot { it.tag in builtInTags })
+        val encoded = json.encodeToString(custom)
+        require(encoded.toByteArray(Charsets.UTF_8).size <= ArtistCatalogImport.MAX_BYTES) { "自定义画师数据总量不能超过 2 MiB" }
+        val edit = catalogPrefs.edit().putStringSet("excluded", merged.excluded.toSet())
+        if (custom.artists.isEmpty()) edit.remove("imported") else edit.putString("imported", encoded)
+        check(edit.commit()) { "保存失败" }
+        merged
     }
 
     suspend fun catalog(): Pair<List<String>, String> = withContext(Dispatchers.IO) {
@@ -40,7 +63,8 @@ class ArtistLabStore(context: Context, val database: PocketNaiDatabase) {
         val metadata = json.parseToJsonElement(source).jsonObject
         val hash = metadata.getValue("pool_sha256").jsonPrimitive.content
         val tags = net.pocketnai.core.ArtistCatalog.validate(bytes, metadata.getValue("count").jsonPrimitive.int, hash)
-        tags to hash
+        val merged = (tags + importedEntries().map { it.tag }).distinct()
+        merged to net.pocketnai.core.Hashing.sha256(merged.joinToString("\n", postfix = "\n").toByteArray(Charsets.UTF_8))
     }
 
     /** 恢复仅关联已落盘图片；没收到最终图的请求不重发。 */
