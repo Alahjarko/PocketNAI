@@ -55,3 +55,5 @@ if preview_index.exists():
 if not (target / "LICENSE-2.0.txt").exists():
     (target / "LICENSE-2.0.txt").write_bytes(urllib.request.urlopen("https://www.apache.org/licenses/LICENSE-2.0.txt", timeout=30).read())
 print(json.dumps({"count": len(selected), "min_post_count": min(int(rows[a["danbooru_tag"]][2]) for a in review["artists"]), "pool_sha256": hashlib.sha256(out.encode()).hexdigest()}))
+from artist_catalog_expansion import apply_live_expansion
+apply_live_expansion()

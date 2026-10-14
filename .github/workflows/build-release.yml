@@ -87,6 +87,30 @@ jobs:
           PNAI_VERSION_NAME: 0.1.${{ steps.build_number.outputs.number }}
         run: ./gradlew :app:assembleRelease
 
+      - name: Verify signing compatibility with latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          PREVIOUS_DIR="$RUNNER_TEMP/previous-pocketnai-release"
+          mkdir -p "$PREVIOUS_DIR"
+          gh release download --repo "$GITHUB_REPOSITORY" \
+            --pattern PocketNAI.apk --dir "$PREVIOUS_DIR"
+          APKSIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+          "$APKSIGNER" verify --print-certs "$PREVIOUS_DIR/PocketNAI.apk" > "$RUNNER_TEMP/previous-cert.txt"
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/release/app-release.apk > "$RUNNER_TEMP/current-cert.txt"
+          python3 - "$RUNNER_TEMP/previous-cert.txt" "$RUNNER_TEMP/current-cert.txt" <<'PY'
+          import pathlib, re, sys
+          def certificates(path):
+              values = re.findall(r"^Signer #\d+ certificate SHA-256 digest: ([0-9a-f]{64})$", pathlib.Path(path).read_text(), re.M)
+              if not values:
+                  raise SystemExit("APK signing certificate could not be verified")
+              return set(values)
+          if certificates(sys.argv[1]) != certificates(sys.argv[2]):
+              raise SystemExit("Signing certificate differs from latest release; refusing to publish")
+          print("Signing certificate matches the latest release")
+          PY
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}

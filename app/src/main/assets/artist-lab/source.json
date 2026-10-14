@@ -5,13 +5,20 @@
   "url": "https://huggingface.co/datasets/HDiffusion/historical-danbooru-tag-counts/resolve/0f256e51b8affc379e5181f42c9dab41ceb00e4e/danbooru-2026-10-06.csv",
   "license": "Apache-2.0",
   "source_sha256": "516f690003c3f31c0c5647fe3f2e9216ca46bb81fc5e26d8d1a7cb5c1372a448",
-  "pool_sha256": "69663189595aa171eae4a9261d110dbc12a768f353c9b6bc9656ad93d2d31562",
-  "count": 199,
+  "pool_sha256": "0911414a7f83086ae7ea241dd17bce0d4f48d078eb1a932c62c78fd3ffe217f7",
+  "count": 223,
   "min_post_count": 50,
   "review_date": "2026-10-11",
   "review_sha256": "4ee244d97cc6890a5c16649fe8d432ef0c4d91b18f7a74551679e33860a9d3d4",
   "selection": "reviewed modern artists with emphasis on painterly rendering, soft colors, skin and fabric; category=1; post_count>=50; recent activity; manual artwork review; adult-oriented authors are eligible",
-  "verification_scope": "Pinned Danbooru-derived metadata snapshot; live Danbooru API unavailable. Public artist profiles, representative artworks and official activity metadata; not a NovelAI output evaluation.",
-  "previews_sha256": "322b97e3c9647418790ed17d20e5c7cadc7ea5148fd4a3134cbe4dc8306f7450",
-  "preview_images": 398
+  "verification_scope": "Historical reviewed artists use the pinned Danbooru-derived snapshot; live-expansion.json records separately checked live Danbooru tags, X account activity and followers. Representative thumbnails were visually reviewed; no NovelAI generation or style-mixing evaluation.",
+  "previews_sha256": "75bc242ebbd45145ffbadaa727a352239ebf5615e12ee62be9ba5398313e2945",
+  "preview_images": 446,
+  "live_expansion": {
+    "path": "live-expansion.json",
+    "sha256": "c995162501c6b38d5579760ab14387f9142cbf7c2dd8d4ab4eda3dd1e88a55a6",
+    "count": 24,
+    "checked_at": "2026-10-14T16:46:42.337710+00:00",
+    "source": "Danbooru tag and artist records; public X profiles"
+  }
 }

@@ -4,6 +4,8 @@
 
 ## 检查更新与发布（GitHub Release）
 
+- 云端 workflow 在发布前下载上一版 `PocketNAI.apk`，用 `apksigner verify --print-certs` 校验两包并比较签名证书SHA-256集合；不一致或无法核验时停止发布，不能以另一把可用密钥替代。用于比较的旧包只读，不覆盖或删除既有Release。
+
 - 从2026-10-09起，两条发布路径均使用 `:app:assembleRelease`，产物为 `app/build/outputs/apk/release/app-release.apk`。启用R8与资源优化，关闭调试开销；`release`继续使用既有debug keystore或CI显式指定的同一密钥，不能另建签名。调试包仍用于日常设备测试，冷启动性能需用同签名优化包另行实测。[Compose官方性能说明](https://developer.android.com/develop/ui/compose/performance)
 
 - Git 提交的作者与提交者使用用户账号 `Alahjarko`，邮箱使用已核实的 GitHub noreply 地址 `143304950+Alahjarko@users.noreply.github.com`；仅设置仓库级 Git 配置，不使用 `PocketNAI Dev` 或其他通用团队身份。

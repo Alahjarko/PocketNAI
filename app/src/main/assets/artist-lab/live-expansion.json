@@ -1,0 +1,1604 @@
+{
+  "schema_version": 1,
+  "checked_at": "2026-10-14T16:46:42.337710+00:00",
+  "active_since": "2024-10-14",
+  "selection": "Anime character art; exclude Western, photorealistic and abstract concept-focused samples; adult-oriented authors eligible. Public X followers >=50000 is this batch working threshold, not a universal quality metric.",
+  "artists": [
+    {
+      "entry": {
+        "tag": "artist: shirabi",
+        "name": "しらび",
+        "previews": [
+          {
+            "asset": "c8282ab4ef06b428-0.jpg",
+            "sourceUrl": "https://x.com/shirabii/status/2095421544650420608"
+          },
+          {
+            "asset": "c8282ab4ef06b428-1.jpg",
+            "sourceUrl": "https://x.com/bunko_dengeki/status/2076960401217221068"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/shirabii",
+        "notes": "画风初筛：清楚线条与较轻的明暗，角色脸型、头发和服饰保持日系动画比例。\nX页面关注者约 691.6K；来源：https://x.com/shirabii\n最近可见账号活动：2026-10-14；原帖：https://x.com/shirabii/status/2110331236044714381\nDanbooru 类别1规范标签，核查时作品数 1051；画师记录：https://danbooru.donmai.us/artists/14435\n代表作：https://danbooru.donmai.us/posts/12122803；https://danbooru.donmai.us/posts/11935375；https://danbooru.donmai.us/posts/11893426\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 699721,
+        "name": "shirabi",
+        "post_count": 1051,
+        "category": 1,
+        "created_at": "2013-02-25T09:40:07.183-05:00",
+        "updated_at": "2019-09-01T23:54:46.005-04:00",
+        "is_deprecated": false,
+        "words": [
+          "shirabi"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=shirabi&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/14435",
+      "checked_at": "2026-10-14T16:17:57.797585+00:00",
+      "x_profile_url": "https://x.com/shirabii",
+      "followers_approx": 691600,
+      "followers_display": "691.6K",
+      "latest_account_activity": {
+        "url": "https://x.com/shirabii/status/2110331236044714381",
+        "date": "2026-10-14T11:25:49.388000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/12122803",
+          "https://danbooru.donmai.us/posts/11935375",
+          "https://danbooru.donmai.us/posts/11893426"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "c8282ab4ef06b428-0.jpg",
+          "source_url": "https://x.com/shirabii/status/2095421544650420608",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12122803",
+          "download_url": "https://cdn.donmai.us/180x180/b5/93/b5939cbda342b13b0c1e82f726210be9.jpg",
+          "sha256": "f47403d69094506ce37d329bdcbcd994acf55243c9d90611eb2aa7b5ff417e08"
+        },
+        {
+          "asset": "c8282ab4ef06b428-1.jpg",
+          "source_url": "https://x.com/bunko_dengeki/status/2076960401217221068",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/11935375",
+          "download_url": "https://cdn.donmai.us/180x180/97/07/9707257f18f3eda538450b839353e5d6.jpg",
+          "sha256": "61947618c8277bc2d0d92f26b3e4d858e78555416ed9908e6fb81ecec4a54ff0"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: misaki kurehito",
+        "name": "深崎暮人",
+        "previews": [
+          {
+            "asset": "3d2f9e34a24d6656-0.jpg",
+            "sourceUrl": "https://x.com/growupshow/status/2103870653401268653"
+          },
+          {
+            "asset": "3d2f9e34a24d6656-1.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/12155188"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/kurehito_r18",
+        "notes": "画风初筛：柔和肤色、细腻发丝与睫毛，校服和配饰有层次；仍是明显的动漫脸。\nX页面关注者约 52.6K；来源：https://x.com/kurehito_r18\n最近可见账号活动：2026-07-18；原帖：https://x.com/kurehito_r18/status/2078450739106684965\nDanbooru 类别1规范标签，核查时作品数 1317；画师记录：https://danbooru.donmai.us/artists/9078\n代表作：https://danbooru.donmai.us/posts/12267732；https://danbooru.donmai.us/posts/12155188；https://danbooru.donmai.us/posts/12155163\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 425804,
+        "name": "misaki_kurehito",
+        "post_count": 1317,
+        "category": 1,
+        "created_at": "2013-02-28T05:03:30.677-05:00",
+        "updated_at": "2019-09-01T12:14:38.856-04:00",
+        "is_deprecated": false,
+        "words": [
+          "misaki",
+          "kurehito"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=misaki_kurehito&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/9078",
+      "checked_at": "2026-10-14T16:17:57.798306+00:00",
+      "x_profile_url": "https://x.com/kurehito_r18",
+      "followers_approx": 52600,
+      "followers_display": "52.6K",
+      "latest_account_activity": {
+        "url": "https://x.com/kurehito_r18/status/2078450739106684965",
+        "date": "2026-07-18T12:04:06.607000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/12267732",
+          "https://danbooru.donmai.us/posts/12155188",
+          "https://danbooru.donmai.us/posts/12155163"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "3d2f9e34a24d6656-0.jpg",
+          "source_url": "https://x.com/growupshow/status/2103870653401268653",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12267732",
+          "download_url": "https://cdn.donmai.us/180x180/1a/fc/1afc6070872b85af6032ab10d5d102fa.jpg",
+          "sha256": "6c8d1077792e83baa583957050c84135ff216583d153687aff347bec0af5c3a2"
+        },
+        {
+          "asset": "3d2f9e34a24d6656-1.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/12155188",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12155188",
+          "download_url": "https://cdn.donmai.us/180x180/36/b7/36b7ba2d3a9d6d88049faf466a1721be.jpg",
+          "sha256": "3f707b508203357316d1a6ec4b891e47c289e56567027902f767b0566ed36c19"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: coffee-kizoku",
+        "name": "珈琲貴族",
+        "previews": [
+          {
+            "asset": "3f305402a98c29b2-0.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/11444767"
+          },
+          {
+            "asset": "3f305402a98c29b2-1.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/10750080"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/coffeekizoku",
+        "notes": "画风初筛：清透环境光、细致头发和较干净的肤色；部分样本有传统商业萌系气质。\nX页面关注者约 152.6K；来源：https://x.com/coffeekizoku\n最近可见账号活动：2026-10-14；原帖：https://x.com/coffeekizoku/status/2110375992439247191\nDanbooru 类别1规范标签，核查时作品数 903；画师记录：https://danbooru.donmai.us/artists/12313\n代表作：https://danbooru.donmai.us/posts/11444767；https://danbooru.donmai.us/posts/10750080；https://danbooru.donmai.us/posts/10227711\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 409342,
+        "name": "coffee-kizoku",
+        "post_count": 903,
+        "category": 1,
+        "created_at": "2013-02-28T04:40:11.930-05:00",
+        "updated_at": "2019-09-01T19:36:56.521-04:00",
+        "is_deprecated": false,
+        "words": [
+          "coffee",
+          "kizoku"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=coffee-kizoku&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/12313",
+      "checked_at": "2026-10-14T16:17:57.798656+00:00",
+      "x_profile_url": "https://x.com/coffeekizoku",
+      "followers_approx": 152600,
+      "followers_display": "152.6K",
+      "latest_account_activity": {
+        "url": "https://x.com/coffeekizoku/status/2110375992439247191",
+        "date": "2026-10-14T14:23:40.144000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/11444767",
+          "https://danbooru.donmai.us/posts/10750080",
+          "https://danbooru.donmai.us/posts/10227711"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "3f305402a98c29b2-0.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/11444767",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/11444767",
+          "download_url": "https://cdn.donmai.us/180x180/79/4b/794bc6b60bffe7f9676e9df729e87bdd.jpg",
+          "sha256": "bd174f8478494c7b1930b45bfe47955485bcfd9723230b6861d06a75530b7e6b"
+        },
+        {
+          "asset": "3f305402a98c29b2-1.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/10750080",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/10750080",
+          "download_url": "https://cdn.donmai.us/180x180/07/3d/073d5cb10ab3dc3ceb0a40298e9a5592.jpg",
+          "sha256": "e2138414469b4efd583c1c5bbfc7e2805ba1a83c150ea3aab8e5aec4305eafce"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: ishikei",
+        "name": "石恵",
+        "previews": [
+          {
+            "asset": "3d8a0c26dacaf99d-0.jpg",
+            "sourceUrl": "https://x.com/ishi_kei/status/2074096178795536738"
+          },
+          {
+            "asset": "3d8a0c26dacaf99d-1.jpg",
+            "sourceUrl": "https://x.com/ishi_kei/status/2074324557234844032"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/ishi_kei",
+        "notes": "画风初筛：肌肤中间调、头发和服装塑形较细；虽有体积感，样本脸部仍为二次元比例。\nX页面关注者约 368.6K；来源：https://x.com/ishi_kei\n最近可见账号活动：2026-10-14；原帖：https://x.com/ishi_kei/status/2110296065522213061\nDanbooru 类别1规范标签，核查时作品数 1716；画师记录：https://danbooru.donmai.us/artists/5207\n代表作：https://danbooru.donmai.us/posts/11762701；https://danbooru.donmai.us/posts/11762692\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 16696,
+        "name": "ishikei",
+        "post_count": 1716,
+        "category": 1,
+        "created_at": "2013-02-28T11:52:00.313-05:00",
+        "updated_at": "2019-09-02T10:04:10.639-04:00",
+        "is_deprecated": false,
+        "words": [
+          "ishikei"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=ishikei&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/5207",
+      "checked_at": "2026-10-14T16:18:03.255958+00:00",
+      "x_profile_url": "https://x.com/ishi_kei",
+      "followers_approx": 368600,
+      "followers_display": "368.6K",
+      "latest_account_activity": {
+        "url": "https://x.com/ishi_kei/status/2110296065522213061",
+        "date": "2026-10-14T09:06:04.082000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/11762701",
+          "https://danbooru.donmai.us/posts/11762692"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "3d8a0c26dacaf99d-0.jpg",
+          "source_url": "https://x.com/ishi_kei/status/2074096178795536738",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/11762701",
+          "download_url": "https://cdn.donmai.us/180x180/21/68/216874048d0372e3b12e3404c0e91906.jpg",
+          "sha256": "80cc029b198f611e3d7a319de71d80a093aecdbd5baa00ab9d69767744cacaf2"
+        },
+        {
+          "asset": "3d8a0c26dacaf99d-1.jpg",
+          "source_url": "https://x.com/ishi_kei/status/2074324557234844032",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/11762692",
+          "download_url": "https://cdn.donmai.us/180x180/64/08/6408f39e11ba69d65246142fcc91119d.jpg",
+          "sha256": "005fb3fcd6d4aa361eb5ef2d6068447d984284efb3d5f789162fbd938c32f543"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: tomose shunsaku",
+        "name": "トモセシュンサク",
+        "previews": [
+          {
+            "asset": "66a9be8b91bf593f-0.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/12282337"
+          },
+          {
+            "asset": "66a9be8b91bf593f-1.jpg",
+            "sourceUrl": "https://x.com/tomose_shunsaku/status/2103400127188914566"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/tomose_shunsaku",
+        "notes": "画风初筛：鲜明眼睛和发色、制服细节、清楚的明暗；表情和人物姿态较丰富。\nX页面关注者约 325.2K；来源：https://x.com/tomose_shunsaku\n最近可见账号活动：2026-09-25；原帖：https://x.com/tomose_shunsaku/status/2103400127188914566\nDanbooru 类别1规范标签，核查时作品数 1957；画师记录：https://danbooru.donmai.us/artists/11537\n代表作：https://danbooru.donmai.us/posts/12282337；https://danbooru.donmai.us/posts/12282156；https://danbooru.donmai.us/posts/12273488\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 404745,
+        "name": "tomose_shunsaku",
+        "post_count": 1957,
+        "category": 1,
+        "created_at": "2013-02-28T12:09:33.977-05:00",
+        "updated_at": "2019-09-01T09:59:27.416-04:00",
+        "is_deprecated": false,
+        "words": [
+          "tomose",
+          "shunsaku"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=tomose_shunsaku&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/11537",
+      "checked_at": "2026-10-14T16:18:04.819348+00:00",
+      "x_profile_url": "https://x.com/tomose_shunsaku",
+      "followers_approx": 325200,
+      "followers_display": "325.2K",
+      "latest_account_activity": {
+        "url": "https://x.com/tomose_shunsaku/status/2103400127188914566",
+        "date": "2026-09-25T08:24:04.263000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/12282337",
+          "https://danbooru.donmai.us/posts/12282156",
+          "https://danbooru.donmai.us/posts/12273488"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "66a9be8b91bf593f-0.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/12282337",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12282337",
+          "download_url": "https://cdn.donmai.us/180x180/43/bd/43bd7452f74310a825587115971ee293.jpg",
+          "sha256": "f06497c5a6f741fc735cb5fffccddd76d22dab002a5956b5fe876dcde2d4b446"
+        },
+        {
+          "asset": "66a9be8b91bf593f-1.jpg",
+          "source_url": "https://x.com/tomose_shunsaku/status/2103400127188914566",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12282156",
+          "download_url": "https://cdn.donmai.us/180x180/6b/cd/6bcd2b37fa0b1b4b06bc2f66111a0ac2.jpg",
+          "sha256": "21add504ee93045c81ad2e8675b8b7fcf6dc0390dedca7dec7c4564076daf3c7"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: tsunako",
+        "name": "つなこ",
+        "previews": [
+          {
+            "asset": "906066063687a5d3-0.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/11980646"
+          },
+          {
+            "asset": "906066063687a5d3-1.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/11980585"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/panda_kabe",
+        "notes": "画风初筛：圆润角色、亮色和可爱的表情；本次样本多为漫画条与Q版，可再按个人喜好筛。\nX页面关注者约 91.1K；来源：https://x.com/panda_kabe\n最近可见账号活动：2026-10-12；原帖：https://x.com/panda_kabe/status/2109617572723442004\nDanbooru 类别1规范标签，核查时作品数 2237；画师记录：https://danbooru.donmai.us/artists/9703\n代表作：https://danbooru.donmai.us/posts/11980646；https://danbooru.donmai.us/posts/11980585；https://danbooru.donmai.us/posts/11980574\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 397061,
+        "name": "tsunako",
+        "post_count": 2237,
+        "category": 1,
+        "created_at": "2013-02-28T16:45:09.367-05:00",
+        "updated_at": "2019-09-02T08:41:20.886-04:00",
+        "is_deprecated": false,
+        "words": [
+          "tsunako"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=tsunako&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/9703",
+      "checked_at": "2026-10-14T16:18:05.202084+00:00",
+      "x_profile_url": "https://x.com/panda_kabe",
+      "followers_approx": 91100,
+      "followers_display": "91.1K",
+      "latest_account_activity": {
+        "url": "https://x.com/panda_kabe/status/2109617572723442004",
+        "date": "2026-10-12T12:09:58.793000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/11980646",
+          "https://danbooru.donmai.us/posts/11980585",
+          "https://danbooru.donmai.us/posts/11980574"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "906066063687a5d3-0.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/11980646",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/11980646",
+          "download_url": "https://cdn.donmai.us/180x180/e4/6a/e46aba493cbb1fe6de3a979862153ddb.jpg",
+          "sha256": "a6ee3db08f2a57b47d2b69b66acb05cdbb6006ac4d3f8a5243bcec630eebd5fd"
+        },
+        {
+          "asset": "906066063687a5d3-1.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/11980585",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/11980585",
+          "download_url": "https://cdn.donmai.us/180x180/0a/a6/0aa6223d50c41c219af8cde9f433b7e0.jpg",
+          "sha256": "9a159a5be0d3a29245d5ca24fe3f080e94ad24b7da5802d8ae7217e1b7f6c951"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: kazutake hazano",
+        "name": "和武はざの",
+        "previews": [
+          {
+            "asset": "49e29776dc2dfec5-0.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/11853779"
+          },
+          {
+            "asset": "49e29776dc2dfec5-1.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/11844748"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/TEIGI_3",
+        "notes": "画风初筛：细密服饰、轻柔色彩和人物动作；装饰性与萌系特征比较明显。\nX页面关注者约 462.2K；来源：https://x.com/TEIGI_3\n最近可见账号活动：2026-10-11；原帖：https://x.com/TEIGI_3/status/2109193710324052246\nDanbooru 类别1规范标签，核查时作品数 874；画师记录：https://danbooru.donmai.us/artists/71432\n代表作：https://danbooru.donmai.us/posts/11853779；https://danbooru.donmai.us/posts/11844748；https://danbooru.donmai.us/posts/10838648\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 1269106,
+        "name": "kazutake_hazano",
+        "post_count": 874,
+        "category": 1,
+        "created_at": "2014-03-24T23:23:34.406-04:00",
+        "updated_at": "2019-09-01T18:09:41.155-04:00",
+        "is_deprecated": false,
+        "words": [
+          "kazutake",
+          "hazano"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=kazutake_hazano&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/71432",
+      "checked_at": "2026-10-14T16:18:10.281473+00:00",
+      "x_profile_url": "https://x.com/TEIGI_3",
+      "followers_approx": 462200,
+      "followers_display": "462.2K",
+      "latest_account_activity": {
+        "url": "https://x.com/TEIGI_3/status/2109193710324052246",
+        "date": "2026-10-11T08:05:42.122000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/11853779",
+          "https://danbooru.donmai.us/posts/11844748",
+          "https://danbooru.donmai.us/posts/10838648"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "49e29776dc2dfec5-0.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/11853779",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/11853779",
+          "download_url": "https://cdn.donmai.us/180x180/98/d9/98d9cf6653efc4b9fcd81ace0070af2e.jpg",
+          "sha256": "ef31e36984f52364f7b7042fe9a4238753a0cd969e22a87a07100f85b26f6797"
+        },
+        {
+          "asset": "49e29776dc2dfec5-1.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/11844748",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/11844748",
+          "download_url": "https://cdn.donmai.us/180x180/b7/7f/b77fc7659cb3fbcfe61d55c44d1df295.jpg",
+          "sha256": "1db4baa6773eb728cbc6f265c4c95d2c05c157a9118a0572dbe172f7af3a5183"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: neco",
+        "name": "neco",
+        "previews": [
+          {
+            "asset": "767361ef3a17e718-0.jpg",
+            "sourceUrl": "https://x.com/neco_person/status/2090373382672200159"
+          },
+          {
+            "asset": "767361ef3a17e718-1.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/12002153"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/neco_person",
+        "notes": "画风初筛：冷色、简洁轮廓、黑色服饰剪裁与机械感；本次样本神态偏冷，列为次选。\nX页面关注者约 376.4K；来源：https://x.com/neco_person\n最近可见账号活动：2026-10-14；原帖：https://x.com/neco_person/status/2110316209556295955\nDanbooru 类别1规范标签，核查时作品数 502；画师记录：https://danbooru.donmai.us/artists/79558\n代表作：https://danbooru.donmai.us/posts/12031996；https://danbooru.donmai.us/posts/12002153；https://danbooru.donmai.us/posts/11932912\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 575526,
+        "name": "neco",
+        "post_count": 502,
+        "category": 1,
+        "created_at": "2013-02-27T22:40:40.096-05:00",
+        "updated_at": "2019-09-02T00:34:10.257-04:00",
+        "is_deprecated": false,
+        "words": [
+          "neco"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=neco&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/79558",
+      "checked_at": "2026-10-14T16:18:11.985604+00:00",
+      "x_profile_url": "https://x.com/neco_person",
+      "followers_approx": 376400,
+      "followers_display": "376.4K",
+      "latest_account_activity": {
+        "url": "https://x.com/neco_person/status/2110316209556295955",
+        "date": "2026-10-14T10:26:06.794000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/12031996",
+          "https://danbooru.donmai.us/posts/12002153",
+          "https://danbooru.donmai.us/posts/11932912"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "767361ef3a17e718-0.jpg",
+          "source_url": "https://x.com/neco_person/status/2090373382672200159",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12031996",
+          "download_url": "https://cdn.donmai.us/180x180/9c/15/9c1532c1aa91bd54d4353b9b94aa5c26.jpg",
+          "sha256": "f84c6a3c508ec9b641bd63329d6e3cdd8a45e88b80b956549d4106b2ab11d792"
+        },
+        {
+          "asset": "767361ef3a17e718-1.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/12002153",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12002153",
+          "download_url": "https://cdn.donmai.us/180x180/10/5b/105b414b3a8d8df538c7a093f33def54.jpg",
+          "sha256": "2f7a9065c77515e13962b976c11bc585df2fe80ed063a0fe63791e29b3884115"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: miyase mahiro",
+        "name": "宮瀬まひろ",
+        "previews": [
+          {
+            "asset": "6632a569244279fb-0.jpg",
+            "sourceUrl": "https://x.com/miyase_mahiro/status/2093618384663711803"
+          },
+          {
+            "asset": "6632a569244279fb-1.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/12077957"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/miyase_mahiro",
+        "notes": "画风初筛：窗边光、服装褶皱、皮肤与头发色阶丰富；面部仍是清楚的 anime 比例。\nX页面关注者约 351K；来源：https://x.com/miyase_mahiro\n最近可见账号活动：2026-10-14；原帖：https://x.com/miyase_mahiro/status/2110315065492844771\nDanbooru 类别1规范标签，核查时作品数 979；画师记录：https://danbooru.donmai.us/artists/7848\n代表作：https://danbooru.donmai.us/posts/12088838；https://danbooru.donmai.us/posts/12077957；https://danbooru.donmai.us/posts/12060092\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 388510,
+        "name": "miyase_mahiro",
+        "post_count": 979,
+        "category": 1,
+        "created_at": "2013-02-28T09:04:43.517-05:00",
+        "updated_at": "2019-09-01T14:19:55.202-04:00",
+        "is_deprecated": false,
+        "words": [
+          "miyase",
+          "mahiro"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=miyase_mahiro&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/7848",
+      "checked_at": "2026-10-14T16:18:18.012403+00:00",
+      "x_profile_url": "https://x.com/miyase_mahiro",
+      "followers_approx": 351000,
+      "followers_display": "351K",
+      "latest_account_activity": {
+        "url": "https://x.com/miyase_mahiro/status/2110315065492844771",
+        "date": "2026-10-14T10:21:34.028000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/12088838",
+          "https://danbooru.donmai.us/posts/12077957",
+          "https://danbooru.donmai.us/posts/12060092"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "6632a569244279fb-0.jpg",
+          "source_url": "https://x.com/miyase_mahiro/status/2093618384663711803",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12088838",
+          "download_url": "https://cdn.donmai.us/180x180/c8/bb/c8bbd118b68f9b70348bc4d1a41c5584.jpg",
+          "sha256": "4ad5d4a5b1946ff7b28d4eeea9dc482c38d4fb61fc7202aa4d8634c3391efe97"
+        },
+        {
+          "asset": "6632a569244279fb-1.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/12077957",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12077957",
+          "download_url": "https://cdn.donmai.us/180x180/79/95/799541cb7e2cdefa4224edb08c791d45.jpg",
+          "sha256": "d5ac6487c3d37c852703656a99b689eece6d4502d54b84797ecd625e7a11d757"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: tony taka",
+        "name": "Tony",
+        "previews": [
+          {
+            "asset": "ebfec7ede88ce72e-0.jpg",
+            "sourceUrl": "https://x.com/Tony_WorksPR/status/1582293514351960064"
+          },
+          {
+            "asset": "ebfec7ede88ce72e-1.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/7388236"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/Tony_T2ARTWORKS",
+        "notes": "画风初筛：传统日系商业插画的亮色和动漫脸；年代感及面部偏好需要用户再筛。\nX页面关注者约 112.1K；来源：https://x.com/Tony_T2ARTWORKS\n最近可见账号活动：2026-07-29；原帖：https://x.com/Tony_T2ARTWORKS/status/2082476416697077858\nDanbooru 类别1规范标签，核查时作品数 3177；画师记录：https://danbooru.donmai.us/artists/13778\n代表作：https://danbooru.donmai.us/posts/11639429；https://danbooru.donmai.us/posts/7388236；https://danbooru.donmai.us/posts/6914313\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 465291,
+        "name": "tony_taka",
+        "post_count": 3177,
+        "category": 1,
+        "created_at": "2013-02-28T17:46:45.087-05:00",
+        "updated_at": "2019-09-02T05:59:37.804-04:00",
+        "is_deprecated": false,
+        "words": [
+          "tony",
+          "taka"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=tony_taka&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/13778",
+      "checked_at": "2026-10-14T16:18:18.508322+00:00",
+      "x_profile_url": "https://x.com/Tony_T2ARTWORKS",
+      "followers_approx": 112100,
+      "followers_display": "112.1K",
+      "latest_account_activity": {
+        "url": "https://x.com/Tony_T2ARTWORKS/status/2082476416697077858",
+        "date": "2026-07-29T14:40:42.938000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/11639429",
+          "https://danbooru.donmai.us/posts/7388236",
+          "https://danbooru.donmai.us/posts/6914313"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "ebfec7ede88ce72e-0.jpg",
+          "source_url": "https://x.com/Tony_WorksPR/status/1582293514351960064",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/11639429",
+          "download_url": "https://cdn.donmai.us/180x180/68/e4/68e4e4171ac27cda5e9912a95d49f1f9.jpg",
+          "sha256": "ce5e8d5846ac8231c2ea07b630224772e6063a2b49fc525f68f61f17cb5bb618"
+        },
+        {
+          "asset": "ebfec7ede88ce72e-1.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/7388236",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/7388236",
+          "download_url": "https://cdn.donmai.us/180x180/b5/97/b597e48f09bded09288edd1f7dcd3029.jpg",
+          "sha256": "617bc84dbf2e517185f9e257666d7fad5d7eeaf126ce61d10f7732dd82d18478"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: u35",
+        "name": "U35／うみこ",
+        "previews": [
+          {
+            "asset": "b4c62efe76da1556-0.jpg",
+            "sourceUrl": "https://x.com/anime_chiramune/status/1973327037965410327"
+          },
+          {
+            "asset": "b4c62efe76da1556-1.jpg",
+            "sourceUrl": "https://x.com/shukura_fb/status/2107772933649371286"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/umiko35",
+        "notes": "画风初筛：清爽配色、柔和肤色、自然笑容与人物互动；适合先观察其面部和光影方向。\nX页面关注者约 126.4K；来源：https://x.com/umiko35\n最近可见账号活动：2026-10-08；原帖：https://x.com/umiko35/status/2108155078159052939\nDanbooru 类别1规范标签，核查时作品数 408；画师记录：https://danbooru.donmai.us/artists/26495\n代表作：https://danbooru.donmai.us/posts/12338929；https://danbooru.donmai.us/posts/12334926；https://danbooru.donmai.us/posts/12295179\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 1402719,
+        "name": "u35",
+        "post_count": 408,
+        "category": 1,
+        "created_at": "2017-01-21T21:47:37.472-05:00",
+        "updated_at": "2019-09-02T12:46:01.136-04:00",
+        "is_deprecated": false,
+        "words": [
+          "u35"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=u35&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/26495",
+      "checked_at": "2026-10-14T16:18:21.519566+00:00",
+      "x_profile_url": "https://x.com/umiko35",
+      "followers_approx": 126400,
+      "followers_display": "126.4K",
+      "latest_account_activity": {
+        "url": "https://x.com/umiko35/status/2108155078159052939",
+        "date": "2026-10-08T11:18:32.917000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/12338929",
+          "https://danbooru.donmai.us/posts/12334926",
+          "https://danbooru.donmai.us/posts/12295179"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "b4c62efe76da1556-0.jpg",
+          "source_url": "https://x.com/anime_chiramune/status/1973327037965410327",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12338929",
+          "download_url": "https://cdn.donmai.us/180x180/2c/44/2c44c26d3b27b0b7851a59a571d0920e.jpg",
+          "sha256": "47734b34c5764d5ba180ea51966e0ce300fc97502c8c9c7d95fecbc5fa8ce265"
+        },
+        {
+          "asset": "b4c62efe76da1556-1.jpg",
+          "source_url": "https://x.com/shukura_fb/status/2107772933649371286",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12334926",
+          "download_url": "https://cdn.donmai.us/180x180/fd/50/fd50ff76304460ece9babc1b9227f3e7.jpg",
+          "sha256": "aea756322b9cb85730cb03e435c72801621e662003aeb9c25514ed3d59c548a9"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: baffu",
+        "name": "Baffu",
+        "previews": [
+          {
+            "asset": "dedb52e4ff825bf3-0.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/11828557"
+          },
+          {
+            "asset": "dedb52e4ff825bf3-1.jpg",
+            "sourceUrl": "https://twitter.com/bonnie_3404/status/2011358234762952960"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/bonnie_3404",
+        "notes": "画风初筛：线条与阴影简洁，笑容和人物互动比较鲜活；部分作品偏漫画式表达。\nX页面关注者约 804K；来源：https://x.com/bonnie_3404\n最近可见账号活动：2026-10-12；原帖：https://x.com/bonnie_3404/status/2109728360867979709\nDanbooru 类别1规范标签，核查时作品数 856；画师记录：https://danbooru.donmai.us/artists/121032\n代表作：https://danbooru.donmai.us/posts/11828557；https://danbooru.donmai.us/posts/10608463；https://danbooru.donmai.us/posts/10222565\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 1321053,
+        "name": "baffu",
+        "post_count": 856,
+        "category": 1,
+        "created_at": "2015-06-11T14:44:15.536-04:00",
+        "updated_at": "2019-09-01T21:01:13.375-04:00",
+        "is_deprecated": false,
+        "words": [
+          "baffu"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=baffu&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/121032",
+      "checked_at": "2026-10-14T16:18:25.909140+00:00",
+      "x_profile_url": "https://x.com/bonnie_3404",
+      "followers_approx": 804000,
+      "followers_display": "804K",
+      "latest_account_activity": {
+        "url": "https://x.com/bonnie_3404/status/2109728360867979709",
+        "date": "2026-10-12T19:30:12.745000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/11828557",
+          "https://danbooru.donmai.us/posts/10608463",
+          "https://danbooru.donmai.us/posts/10222565"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "dedb52e4ff825bf3-0.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/11828557",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/11828557",
+          "download_url": "https://cdn.donmai.us/180x180/0c/6a/0c6adf56685b156659b14235a9ca8e3c.jpg",
+          "sha256": "267bb50e09e684a8163c3c502bf147b667a93847005e413b5daf680c3fe24431"
+        },
+        {
+          "asset": "dedb52e4ff825bf3-1.jpg",
+          "source_url": "https://twitter.com/bonnie_3404/status/2011358234762952960",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/10608463",
+          "download_url": "https://cdn.donmai.us/180x180/4e/8b/4e8b8212b1931b58b65ae046787fdb9e.jpg",
+          "sha256": "15b8bee7d947d69ab2da80a0368ddc1cfa525a0b88d759b5cd1441ff0393abd3"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: blue gk",
+        "name": "Blue_Gk",
+        "previews": [
+          {
+            "asset": "d2905dc7ed3362d4-0.jpg",
+            "sourceUrl": "https://x.com/bgfb0321/status/1983132999320256720"
+          },
+          {
+            "asset": "d2905dc7ed3362d4-1.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/11283010"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/bgfb0321",
+        "notes": "画风初筛：头发轮廓、黑白线稿和服装塑形较突出；本次样本以黑白为主，彩色笔触证据较少。\nX页面关注者约 384.3K；来源：https://x.com/bgfb0321\n最近可见账号活动：2026-10-14；原帖：https://x.com/bgfb0321/status/2110263809462116482\nDanbooru 类别1规范标签，核查时作品数 364；画师记录：https://danbooru.donmai.us/artists/121958\n代表作：https://danbooru.donmai.us/posts/11871302；https://danbooru.donmai.us/posts/11283010；https://danbooru.donmai.us/posts/11282952\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 1322281,
+        "name": "blue_gk",
+        "post_count": 364,
+        "category": 1,
+        "created_at": "2015-06-21T03:38:38.444-04:00",
+        "updated_at": "2019-09-01T22:54:07.051-04:00",
+        "is_deprecated": false,
+        "words": [
+          "blue",
+          "gk"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=blue_gk&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/121958",
+      "checked_at": "2026-10-14T16:18:31.965291+00:00",
+      "x_profile_url": "https://x.com/bgfb0321",
+      "followers_approx": 384300,
+      "followers_display": "384.3K",
+      "latest_account_activity": {
+        "url": "https://x.com/bgfb0321/status/2110263809462116482",
+        "date": "2026-10-14T06:57:53.638000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/11871302",
+          "https://danbooru.donmai.us/posts/11283010",
+          "https://danbooru.donmai.us/posts/11282952"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "d2905dc7ed3362d4-0.jpg",
+          "source_url": "https://x.com/bgfb0321/status/1983132999320256720",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/11871302",
+          "download_url": "https://cdn.donmai.us/180x180/79/38/79380ba04e30620d4264dcba68e706e9.jpg",
+          "sha256": "38b872c25d9f3f736263d2d3d07fd16a2c52a455b61bb7c2959d27b3756ad99d"
+        },
+        {
+          "asset": "d2905dc7ed3362d4-1.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/11283010",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/11283010",
+          "download_url": "https://cdn.donmai.us/180x180/e1/bb/e1bb77c21e888137fea9f36e2b3fc225.jpg",
+          "sha256": "6ba614809e88793c3a16a1d0b13c33d9fe67c074ef59d237b91f4b7108dcbdac"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: mishima kurone",
+        "name": "三嶋くろね",
+        "previews": [
+          {
+            "asset": "5929564d97bdc036-0.jpg",
+            "sourceUrl": "https://x.com/mishima_kurone/status/2028815951039533100"
+          },
+          {
+            "asset": "5929564d97bdc036-1.jpg",
+            "sourceUrl": "https://x.com/kadokawasneaker/status/2099422909609775210"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/mishima_kurone",
+        "notes": "画风初筛：清爽萌系、脸部表情和幻想服饰；本次样本可见角色群像与较细配饰。\nX页面关注者约 455.4K；来源：https://x.com/mishima_kurone\n最近可见账号活动：2026-09-14；原帖：https://x.com/mishima_kurone/status/2099481532679459151\nDanbooru 类别1规范标签，核查时作品数 1486；画师记录：https://danbooru.donmai.us/artists/45593\n代表作：https://danbooru.donmai.us/posts/12285101；https://danbooru.donmai.us/posts/12193888；https://danbooru.donmai.us/posts/11940805\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 545395,
+        "name": "mishima_kurone",
+        "post_count": 1486,
+        "category": 1,
+        "created_at": "2013-02-28T04:06:03.506-05:00",
+        "updated_at": "2019-09-01T08:36:25.369-04:00",
+        "is_deprecated": false,
+        "words": [
+          "mishima",
+          "kurone"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=mishima_kurone&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/45593",
+      "checked_at": "2026-10-14T16:18:33.949674+00:00",
+      "x_profile_url": "https://x.com/mishima_kurone",
+      "followers_approx": 455400,
+      "followers_display": "455.4K",
+      "latest_account_activity": {
+        "url": "https://x.com/mishima_kurone/status/2099481532679459151",
+        "date": "2026-09-14T12:52:58.528000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/12285101",
+          "https://danbooru.donmai.us/posts/12193888",
+          "https://danbooru.donmai.us/posts/11940805"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "5929564d97bdc036-0.jpg",
+          "source_url": "https://x.com/mishima_kurone/status/2028815951039533100",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12285101",
+          "download_url": "https://cdn.donmai.us/180x180/d5/ad/d5ad58445ed1749cfc7048dafcb376ad.jpg",
+          "sha256": "0a46cf99129edf9b4401fea370d49499ffd6ecedf33c90a09d6f005532a88f6d"
+        },
+        {
+          "asset": "5929564d97bdc036-1.jpg",
+          "source_url": "https://x.com/kadokawasneaker/status/2099422909609775210",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12193888",
+          "download_url": "https://cdn.donmai.us/180x180/bf/19/bf196aee67f6f824e0dd02f531c7b262.jpg",
+          "sha256": "e7275d503377c53e1d9b04bfb86c09f9c6c93abe3bf42f6a56178172e0f7041b"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: sakura oriko",
+        "name": "桜おりこ",
+        "previews": [
+          {
+            "asset": "66e13ebb6ac73e4a-0.jpg",
+            "sourceUrl": "https://x.com/sakura_oriko/status/2109568237520449898"
+          },
+          {
+            "asset": "66e13ebb6ac73e4a-1.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/12311878"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/sakura_oriko",
+        "notes": "画风初筛：柔和粉彩、圆润脸型和轻盈装饰；甜美萌系特征较明显。\nX页面关注者约 129K；来源：https://x.com/sakura_oriko\n最近可见账号活动：2026-10-13；原帖：https://x.com/sakura_oriko/status/2109936318717575568\nDanbooru 类别1规范标签，核查时作品数 1522；画师记录：https://danbooru.donmai.us/artists/67901\n代表作：https://danbooru.donmai.us/posts/12369272；https://danbooru.donmai.us/posts/12311878；https://danbooru.donmai.us/posts/12311876\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 1393230,
+        "name": "sakura_oriko",
+        "post_count": 1522,
+        "category": 1,
+        "created_at": "2016-11-14T15:35:32.736-05:00",
+        "updated_at": "2019-09-02T07:46:48.208-04:00",
+        "is_deprecated": false,
+        "words": [
+          "sakura",
+          "oriko"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=sakura_oriko&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/67901",
+      "checked_at": "2026-10-14T16:18:36.042436+00:00",
+      "x_profile_url": "https://x.com/sakura_oriko",
+      "followers_approx": 129000,
+      "followers_display": "129K",
+      "latest_account_activity": {
+        "url": "https://x.com/sakura_oriko/status/2109936318717575568",
+        "date": "2026-10-13T09:16:33.760000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/12369272",
+          "https://danbooru.donmai.us/posts/12311878",
+          "https://danbooru.donmai.us/posts/12311876"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "66e13ebb6ac73e4a-0.jpg",
+          "source_url": "https://x.com/sakura_oriko/status/2109568237520449898",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12369272",
+          "download_url": "https://cdn.donmai.us/180x180/66/8a/668a2718ae08abacd26965c2224a1428.jpg",
+          "sha256": "efe9dfaef882c36b3d622a62266cdadb19cfb74d5f5a25d950419f105101b226"
+        },
+        {
+          "asset": "66e13ebb6ac73e4a-1.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/12311878",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12311878",
+          "download_url": "https://cdn.donmai.us/180x180/49/30/493030daf9a977ab8ea2f543d009b390.jpg",
+          "sha256": "43f751cb4669213c0ea0857d259278d21f3bf162f59fa7569ee91191eb4ababf"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: akakura",
+        "name": "赤倉",
+        "previews": [
+          {
+            "asset": "a2f3116d7da2e69b-0.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/12276196"
+          },
+          {
+            "asset": "a2f3116d7da2e69b-1.jpg",
+            "sourceUrl": "https://x.com/akakura1341/status/2099698267324060057"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/akakura1341",
+        "notes": "画风初筛：细腻头发、服饰和明亮眼部，少女插画与男角都保持二次元结构。\nX页面关注者约 626K；来源：https://x.com/akakura1341\n最近可见账号活动：2026-10-09；原帖：https://x.com/akakura1341/status/2108473180058964002\nDanbooru 类别1规范标签，核查时作品数 395；画师记录：https://danbooru.donmai.us/artists/108368\n代表作：https://danbooru.donmai.us/posts/12276196；https://danbooru.donmai.us/posts/12195238；https://danbooru.donmai.us/posts/12046762\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 1276082,
+        "name": "akakura",
+        "post_count": 395,
+        "category": 1,
+        "created_at": "2014-05-25T14:08:17.454-04:00",
+        "updated_at": "2019-09-02T01:20:48.105-04:00",
+        "is_deprecated": false,
+        "words": [
+          "akakura"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=akakura&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/108368",
+      "checked_at": "2026-10-14T16:18:42.450839+00:00",
+      "x_profile_url": "https://x.com/akakura1341",
+      "followers_approx": 626000,
+      "followers_display": "626K",
+      "latest_account_activity": {
+        "url": "https://x.com/akakura1341/status/2108473180058964002",
+        "date": "2026-10-09T08:22:34.320000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/12276196",
+          "https://danbooru.donmai.us/posts/12195238",
+          "https://danbooru.donmai.us/posts/12046762"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "a2f3116d7da2e69b-0.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/12276196",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12276196",
+          "download_url": "https://cdn.donmai.us/180x180/7b/d6/7bd66167db7f2832c22278bca26b10b7.jpg",
+          "sha256": "af03273017cd37982ca02967f8677198921b26bb7a25aab2605013cbdd50639d"
+        },
+        {
+          "asset": "a2f3116d7da2e69b-1.jpg",
+          "source_url": "https://x.com/akakura1341/status/2099698267324060057",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12195238",
+          "download_url": "https://cdn.donmai.us/180x180/0a/bc/0abc296461c84dbe308a5626b6283c15.jpg",
+          "sha256": "903983bc7f57cd0437b52a47fed2e4511aad6916c9ec0d17e1f39200f2393511"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: rity",
+        "name": "Rity",
+        "previews": [
+          {
+            "asset": "7748625f99828b26-0.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/11393847"
+          },
+          {
+            "asset": "7748625f99828b26-1.jpg",
+            "sourceUrl": "https://x.com/k_rity/status/2054487283248890060"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/k_rity",
+        "notes": "画风初筛：紫粉环境色、细致服饰和轻盈角色造型；本次部分样本是同作不同版本。\nX页面关注者约 287.5K；来源：https://x.com/k_rity\n最近可见账号活动：2026-10-02；原帖：https://x.com/k_rity/status/2105996043863417261\nDanbooru 类别1规范标签，核查时作品数 318；画师记录：https://danbooru.donmai.us/artists/177023\n代表作：https://danbooru.donmai.us/posts/11393847；https://danbooru.donmai.us/posts/11366289；https://danbooru.donmai.us/posts/10478286\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 1496147,
+        "name": "rity",
+        "post_count": 318,
+        "category": 1,
+        "created_at": "2018-10-12T09:22:58.397-04:00",
+        "updated_at": "2019-08-31T04:36:16.778-04:00",
+        "is_deprecated": false,
+        "words": [
+          "rity"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=rity&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/177023",
+      "checked_at": "2026-10-14T16:18:44.332510+00:00",
+      "x_profile_url": "https://x.com/k_rity",
+      "followers_approx": 287500,
+      "followers_display": "287.5K",
+      "latest_account_activity": {
+        "url": "https://x.com/k_rity/status/2105996043863417261",
+        "date": "2026-10-02T12:19:19.028000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/11393847",
+          "https://danbooru.donmai.us/posts/11366289",
+          "https://danbooru.donmai.us/posts/10478286"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "7748625f99828b26-0.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/11393847",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/11393847",
+          "download_url": "https://cdn.donmai.us/180x180/f1/e3/f1e3be83989ced721ae82f2f1466b649.jpg",
+          "sha256": "c715f7f3e5c404f6e55e0be1cb4377ac5c5c1d0eee86a274103b8a5aee4b3f68"
+        },
+        {
+          "asset": "7748625f99828b26-1.jpg",
+          "source_url": "https://x.com/k_rity/status/2054487283248890060",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/11366289",
+          "download_url": "https://cdn.donmai.us/180x180/9e/b9/9eb996938415a0a24c823658e6ce6e61.jpg",
+          "sha256": "b3ec20d41c4753ec7ae1433eb5c252ba3d835907c3b7fc3bb888e7d84c0165ff"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: azuuru",
+        "name": "あずーる",
+        "previews": [
+          {
+            "asset": "4087d48f4b7e8635-0.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/12267626"
+          },
+          {
+            "asset": "4087d48f4b7e8635-1.jpg",
+            "sourceUrl": "https://x.com/azure_0608_sub/status/2098023893181341799"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/azure_0608_sub",
+        "notes": "画风初筛：角色服装剪裁、较轻的色阶与头发高光；设定稿与单幅角色样本都保留 anime 脸型。\nX页面关注者约 281.5K；来源：https://x.com/azure_0608_sub\n最近可见账号活动：2026-09-23；原帖：https://x.com/azure_0608_sub/status/2102638063214325916\nDanbooru 类别1规范标签，核查时作品数 542；画师记录：https://danbooru.donmai.us/artists/4396\n代表作：https://danbooru.donmai.us/posts/12267626；https://danbooru.donmai.us/posts/12165662；https://danbooru.donmai.us/posts/12139120\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 1410082,
+        "name": "azuuru",
+        "post_count": 542,
+        "category": 1,
+        "created_at": "2017-03-09T11:10:01.743-05:00",
+        "updated_at": "2019-09-02T04:35:40.487-04:00",
+        "is_deprecated": false,
+        "words": [
+          "azuuru"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=azuuru&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/4396",
+      "checked_at": "2026-10-14T16:18:49.541319+00:00",
+      "x_profile_url": "https://x.com/azure_0608_sub",
+      "followers_approx": 281500,
+      "followers_display": "281.5K",
+      "latest_account_activity": {
+        "url": "https://x.com/azure_0608_sub/status/2102638063214325916",
+        "date": "2026-09-23T05:55:54.053000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/12267626",
+          "https://danbooru.donmai.us/posts/12165662",
+          "https://danbooru.donmai.us/posts/12139120"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "4087d48f4b7e8635-0.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/12267626",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12267626",
+          "download_url": "https://cdn.donmai.us/180x180/6f/e0/6fe085a6824f4472cd75bba11f69f169.jpg",
+          "sha256": "64901446436fa5ff293eeb7516d791757c0e4e16b03a8a555519379cb98782c4"
+        },
+        {
+          "asset": "4087d48f4b7e8635-1.jpg",
+          "source_url": "https://x.com/azure_0608_sub/status/2098023893181341799",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12165662",
+          "download_url": "https://cdn.donmai.us/180x180/ee/13/ee139f01fab8ddcf04d225fe9f196742.jpg",
+          "sha256": "b54c01f79d9c63edb627b8548f2d6ee4ebd41b497966c6f6b2baa55982ddd927"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: amashiro natsuki",
+        "name": "甘城なつき",
+        "previews": [
+          {
+            "asset": "f6d503fc1b66f92c-0.jpg",
+            "sourceUrl": "https://x.com/amsrntk3/status/2108952660363931824"
+          },
+          {
+            "asset": "f6d503fc1b66f92c-1.jpg",
+            "sourceUrl": "https://x.com/amsrntk3/status/2094405308747788394"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/amsrntk3",
+        "notes": "画风初筛：柔和肤色、亮眼高光与服饰配色；本次样本含Q版与正常比例，Q版倾向由用户再筛。\nX页面关注者约 626.4K；来源：https://x.com/amsrntk3\n最近可见账号活动：2026-10-11；原帖：https://x.com/amsrntk3/status/2109221451111014405\nDanbooru 类别1规范标签，核查时作品数 493；画师记录：https://danbooru.donmai.us/artists/91462\n代表作：https://danbooru.donmai.us/posts/12357145；https://danbooru.donmai.us/posts/12104134；https://danbooru.donmai.us/posts/11656718\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 1296350,
+        "name": "amashiro_natsuki",
+        "post_count": 493,
+        "category": 1,
+        "created_at": "2014-11-13T22:49:38.717-05:00",
+        "updated_at": "2019-09-02T01:14:08.702-04:00",
+        "is_deprecated": false,
+        "words": [
+          "amashiro",
+          "natsuki"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=amashiro_natsuki&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/91462",
+      "checked_at": "2026-10-14T16:18:50.094041+00:00",
+      "x_profile_url": "https://x.com/amsrntk3",
+      "followers_approx": 626400,
+      "followers_display": "626.4K",
+      "latest_account_activity": {
+        "url": "https://x.com/amsrntk3/status/2109221451111014405",
+        "date": "2026-10-11T09:55:56.041000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/12357145",
+          "https://danbooru.donmai.us/posts/12104134",
+          "https://danbooru.donmai.us/posts/11656718"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "f6d503fc1b66f92c-0.jpg",
+          "source_url": "https://x.com/amsrntk3/status/2108952660363931824",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12357145",
+          "download_url": "https://cdn.donmai.us/180x180/c9/cc/c9ccbfa6f2277655c6e5ae59b90ee69a.jpg",
+          "sha256": "f4a2fb57c905248a8c4a84e70aa32abd9d6f90675c92683d08c5a50c7e077aa9"
+        },
+        {
+          "asset": "f6d503fc1b66f92c-1.jpg",
+          "source_url": "https://x.com/amsrntk3/status/2094405308747788394",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12104134",
+          "download_url": "https://cdn.donmai.us/180x180/73/ba/73ba09dc7c90ee4dd63308da9a824c5a.jpg",
+          "sha256": "a369451eb478102a9669d809ca8e90e10445af9e6f600aed37ff4dde1c999bc4"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: sakura hiyori",
+        "name": "桜ひより",
+        "previews": [
+          {
+            "asset": "c699723fc4716526-0.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/12363699"
+          },
+          {
+            "asset": "c699723fc4716526-1.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/12363698"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/hiyori_skr",
+        "notes": "画风初筛：面部表情较丰富，眼睛、头发与针织衣料细节清楚；明暗较柔和。\nX页面关注者约 156.2K；来源：https://x.com/hiyori_skr\n最近可见账号活动：2026-10-14；原帖：https://x.com/hiyori_skr/status/2110170734555525385\nDanbooru 类别1规范标签，核查时作品数 616；画师记录：https://danbooru.donmai.us/artists/118175\n代表作：https://danbooru.donmai.us/posts/12363699；https://danbooru.donmai.us/posts/12363698；https://danbooru.donmai.us/posts/12309724\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 1310855,
+        "name": "sakura_hiyori",
+        "post_count": 616,
+        "category": 1,
+        "created_at": "2015-03-24T15:44:36.197-04:00",
+        "updated_at": "2019-09-01T15:14:16.455-04:00",
+        "is_deprecated": false,
+        "words": [
+          "sakura",
+          "hiyori"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=sakura_hiyori&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/118175",
+      "checked_at": "2026-10-14T16:18:50.567174+00:00",
+      "x_profile_url": "https://x.com/hiyori_skr",
+      "followers_approx": 156200,
+      "followers_display": "156.2K",
+      "latest_account_activity": {
+        "url": "https://x.com/hiyori_skr/status/2110170734555525385",
+        "date": "2026-10-14T00:48:02.851000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/12363699",
+          "https://danbooru.donmai.us/posts/12363698",
+          "https://danbooru.donmai.us/posts/12309724"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "c699723fc4716526-0.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/12363699",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12363699",
+          "download_url": "https://cdn.donmai.us/180x180/7b/09/7b097c1abcc4140c2c69b359c46dca5e.jpg",
+          "sha256": "a78da8081af77c8633f894cff217d53ecf43be3a68f593ace5eae67b2bae14df"
+        },
+        {
+          "asset": "c699723fc4716526-1.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/12363698",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12363698",
+          "download_url": "https://cdn.donmai.us/180x180/d0/74/d074b25b099db1484eaeea422d876b2c.jpg",
+          "sha256": "be46163be818aa9fa944f7366d368e8c5792fd6c96d4415edb14ec91f96a093f"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: pan (mimi)",
+        "name": "ぱん",
+        "previews": [
+          {
+            "asset": "58d82ed9c9b34639-0.jpg",
+            "sourceUrl": "https://x.com/panno_mimi/status/2097999206430728638"
+          },
+          {
+            "asset": "58d82ed9c9b34639-1.jpg",
+            "sourceUrl": "https://x.com/panno_mimi/status/2088563865948979485"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/panno_mimi",
+        "notes": "画风初筛：高明度配色、柔和描边与萌系眼睛；眼睛偏大，甜美倾向较强。\nX页面关注者约 248.1K；来源：https://x.com/panno_mimi\n最近可见账号活动：2026-10-04；原帖：https://x.com/panno_mimi/status/2106708981033111896\nDanbooru 类别1规范标签，核查时作品数 682；画师记录：https://danbooru.donmai.us/artists/19979\n代表作：https://danbooru.donmai.us/posts/12167606；https://danbooru.donmai.us/posts/12002098；https://danbooru.donmai.us/posts/11264103\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 448013,
+        "name": "pan_(mimi)",
+        "post_count": 682,
+        "category": 1,
+        "created_at": "2013-02-28T17:50:25.644-05:00",
+        "updated_at": "2019-09-01T22:31:47.191-04:00",
+        "is_deprecated": false,
+        "words": [
+          "pan",
+          "mimi"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=pan_%28mimi%29&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/19979",
+      "checked_at": "2026-10-14T16:18:56.780214+00:00",
+      "x_profile_url": "https://x.com/panno_mimi",
+      "followers_approx": 248100,
+      "followers_display": "248.1K",
+      "latest_account_activity": {
+        "url": "https://x.com/panno_mimi/status/2106708981033111896",
+        "date": "2026-10-04T11:32:16.495000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/12167606",
+          "https://danbooru.donmai.us/posts/12002098",
+          "https://danbooru.donmai.us/posts/11264103"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "58d82ed9c9b34639-0.jpg",
+          "source_url": "https://x.com/panno_mimi/status/2097999206430728638",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12167606",
+          "download_url": "https://cdn.donmai.us/180x180/83/2f/832f64d7b029a1d86927fa4d7fa6ef71.jpg",
+          "sha256": "4b5bdf2c5b2b952670468ac38adcb1d3efebd16276ea57b11a06eea1b6ee9dfe"
+        },
+        {
+          "asset": "58d82ed9c9b34639-1.jpg",
+          "source_url": "https://x.com/panno_mimi/status/2088563865948979485",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12002098",
+          "download_url": "https://cdn.donmai.us/180x180/24/de/24de419fc7cd5f63cad81999e408ff2f.jpg",
+          "sha256": "38878bb28d5837f0e811894bd2f9e3358767a0bce08eb6cc107f81e012e3621b"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: noco (adamas)",
+        "name": "NOCO",
+        "previews": [
+          {
+            "asset": "5235ed401979bd19-0.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/12345737"
+          },
+          {
+            "asset": "5235ed401979bd19-1.jpg",
+            "sourceUrl": "https://danbooru.donmai.us/posts/12345735"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/NOCO9999",
+        "notes": "画风初筛：幻想服饰、角色轮廓与动漫式面部；部分样本为游戏设定或立绘。\nX页面关注者约 150.2K；来源：https://x.com/NOCO9999\n最近可见账号活动：2026-10-14；原帖：https://x.com/NOCO9999/status/2110294540338770348\nDanbooru 类别1规范标签，核查时作品数 647；画师记录：https://danbooru.donmai.us/artists/25513\n代表作：https://danbooru.donmai.us/posts/12345737；https://danbooru.donmai.us/posts/12345735；https://danbooru.donmai.us/posts/12337880\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 1433098,
+        "name": "noco_(adamas)",
+        "post_count": 647,
+        "category": 1,
+        "created_at": "2017-08-15T23:22:52.775-04:00",
+        "updated_at": "2019-09-02T06:02:04.495-04:00",
+        "is_deprecated": false,
+        "words": [
+          "noco",
+          "adamas"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=noco_%28adamas%29&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/25513",
+      "checked_at": "2026-10-14T16:18:57.274885+00:00",
+      "x_profile_url": "https://x.com/NOCO9999",
+      "followers_approx": 150200,
+      "followers_display": "150.2K",
+      "latest_account_activity": {
+        "url": "https://x.com/NOCO9999/status/2110294540338770348",
+        "date": "2026-10-14T09:00:00.450000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/12345737",
+          "https://danbooru.donmai.us/posts/12345735",
+          "https://danbooru.donmai.us/posts/12337880"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "5235ed401979bd19-0.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/12345737",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12345737",
+          "download_url": "https://cdn.donmai.us/180x180/1b/af/1baf66d84a8f441ade70611d12f85e09.jpg",
+          "sha256": "d22f2f50bc4d920a0d77c995a8a3e2ccc8628282f47f9c01ef126b8e305455f0"
+        },
+        {
+          "asset": "5235ed401979bd19-1.jpg",
+          "source_url": "https://danbooru.donmai.us/posts/12345735",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12345735",
+          "download_url": "https://cdn.donmai.us/180x180/08/b1/08b105d7daf8146fd3583a05ccc89dab.jpg",
+          "sha256": "899789895a5b91471d6877db97d94bdedf37790f2a1d8cd20c3455c1612dd3f1"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: nishizawa",
+        "name": "西沢5㍉",
+        "previews": [
+          {
+            "asset": "7d38efef612d6b4d-0.jpg",
+            "sourceUrl": "https://x.com/wanwangomigomi/status/2074771271532048872"
+          },
+          {
+            "asset": "7d38efef612d6b4d-1.jpg",
+            "sourceUrl": "https://x.com/wanwangomigomi/status/2046167581808308615"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/wanwangomigomi",
+        "notes": "画风初筛：表情、日常服装和人物互动较鲜活；部分样本偏漫画，单幅上色仍有清楚层次。\nX页面关注者约 743.9K；来源：https://x.com/wanwangomigomi\n最近可见账号活动：2026-09-26；原帖：https://x.com/wanwangomigomi/status/2103881727156572234\nDanbooru 类别1规范标签，核查时作品数 464；画师记录：https://danbooru.donmai.us/artists/37368\n代表作：https://danbooru.donmai.us/posts/11782914；https://danbooru.donmai.us/posts/11203879；https://danbooru.donmai.us/posts/10478122\n仅根据公开账号与至多三条代表作缩略图初筛，部分为同作不同页；未测试 NovelAI 识别和混合效果。NSFW创作经历不作为淘汰条件。"
+      },
+      "tag_record": {
+        "id": 507769,
+        "name": "nishizawa",
+        "post_count": 464,
+        "category": 1,
+        "created_at": "2013-02-26T01:47:40.267-05:00",
+        "updated_at": "2019-09-01T22:42:52.059-04:00",
+        "is_deprecated": false,
+        "words": [
+          "nishizawa"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=nishizawa&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/37368",
+      "checked_at": "2026-10-14T16:19:04.367943+00:00",
+      "x_profile_url": "https://x.com/wanwangomigomi",
+      "followers_approx": 743900,
+      "followers_display": "743.9K",
+      "latest_account_activity": {
+        "url": "https://x.com/wanwangomigomi/status/2103881727156572234",
+        "date": "2026-09-26T16:17:46.643000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/11782914",
+          "https://danbooru.donmai.us/posts/11203879",
+          "https://danbooru.donmai.us/posts/10478122"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "7d38efef612d6b4d-0.jpg",
+          "source_url": "https://x.com/wanwangomigomi/status/2074771271532048872",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/11782914",
+          "download_url": "https://cdn.donmai.us/180x180/34/7d/347de960685932e11a090234b105d26c.jpg",
+          "sha256": "8b714e64d7f43c03204bac0982a1002634815cde843d16167be968306b5ca927"
+        },
+        {
+          "asset": "7d38efef612d6b4d-1.jpg",
+          "source_url": "https://x.com/wanwangomigomi/status/2046167581808308615",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/11203879",
+          "download_url": "https://cdn.donmai.us/180x180/19/c3/19c3f4b3963bad1066a060ac842cfa11.jpg",
+          "sha256": "f542e73662e22ad2dcf368b951e16cc67d0670e2bb5dcf2d5074ec2b21fc7c56"
+        }
+      ]
+    },
+    {
+      "entry": {
+        "tag": "artist: ogipote",
+        "name": "おぎぽて / ogipote",
+        "previews": [
+          {
+            "asset": "10da89b57b791d66-0.jpg",
+            "sourceUrl": "https://x.com/ogipote/status/2106383399195943330"
+          },
+          {
+            "asset": "10da89b57b791d66-1.jpg",
+            "sourceUrl": "https://x.com/ogipote/status/2092923829521613009"
+          }
+        ],
+        "sourceName": "Danbooru／X 本轮画师核查",
+        "profileUrl": "https://x.com/ogipote",
+        "notes": "日系美少女插画，动漫脸型与明亮眼部。Danbooru类别1标签；X页面关注者约387.1K。近期作品帖：https://x.com/ogipote/status/2106383399195943330 。未测试NovelAI识别或混合效果。"
+      },
+      "tag_record": {
+        "id": 656206,
+        "name": "ogipote",
+        "post_count": 555,
+        "category": 1,
+        "created_at": "2013-02-28T18:37:08.080-05:00",
+        "updated_at": "2019-09-02T10:38:11.315-04:00",
+        "is_deprecated": false,
+        "words": [
+          "ogipote"
+        ]
+      },
+      "tag_evidence_url": "https://danbooru.donmai.us/tags.json?search%5Bname%5D=ogipote&limit=1",
+      "artist_evidence_url": "https://danbooru.donmai.us/artists/53958",
+      "checked_at": "2026-10-14T16:46:42.337710+00:00",
+      "x_profile_url": "https://x.com/ogipote",
+      "followers_approx": 387100,
+      "followers_display": "387.1K",
+      "latest_account_activity": {
+        "url": "https://x.com/ogipote/status/2110349385716699443",
+        "date": "2026-10-14T12:37:56.607000+00:00"
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://danbooru.donmai.us/posts/12374160",
+          "https://danbooru.donmai.us/posts/12374110",
+          "https://danbooru.donmai.us/posts/12258884"
+        ],
+        "scope": "At most three public general-rated thumbnails, sometimes multiple pages/versions; not a NovelAI output or mixing evaluation"
+      },
+      "preview_evidence": [
+        {
+          "asset": "10da89b57b791d66-0.jpg",
+          "source_url": "https://x.com/ogipote/status/2106383399195943330",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12374160",
+          "download_url": "https://cdn.donmai.us/180x180/75/be/75bec0ae7adc2a8cdf96a8a89b43eb4b.jpg",
+          "sha256": "5831f37837700098032604386a551af58aa26ab235a4dd6668f568bb228f6419"
+        },
+        {
+          "asset": "10da89b57b791d66-1.jpg",
+          "source_url": "https://x.com/ogipote/status/2092923829521613009",
+          "danbooru_post_url": "https://danbooru.donmai.us/posts/12374110",
+          "download_url": "https://cdn.donmai.us/180x180/cb/72/cb723e2c3fd98799c54cd1b1a5b4aede.jpg",
+          "sha256": "2945d5149e5612b9f74b4929110a2306c5593dffbc3561ee464afe7e35ce830c"
+        }
+      ]
+    }
+  ]
+}

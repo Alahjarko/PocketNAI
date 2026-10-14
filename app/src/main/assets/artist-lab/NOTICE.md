@@ -22,3 +22,10 @@ Rebuild: `scripts/build-artist-previews.py`.
 
 These are source tags, not a NovelAI compatibility list. Recognition and style
 strength depend on the selected NovelAI model.
+
+Later additions are recorded separately in `live-expansion.json`: live Danbooru
+artist-tag responses, public X profile/activity evidence, and visually reviewed
+180px Danbooru thumbnails. Their original artist/work links and image SHA-256
+digests are retained. This does not revise or redate the historical snapshot.
+`scripts/artist_catalog_expansion.py` reapplies these checked-in additions after
+either rebuild, verifies their inputs, and refreshes the combined asset digests.

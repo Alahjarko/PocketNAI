@@ -197,3 +197,27 @@ artist: xnnagu
 artist: yohaku
 artist: yotte
 artist: yoyopipa
+artist: shirabi
+artist: misaki kurehito
+artist: coffee-kizoku
+artist: ishikei
+artist: tomose shunsaku
+artist: tsunako
+artist: kazutake hazano
+artist: neco
+artist: miyase mahiro
+artist: tony taka
+artist: u35
+artist: baffu
+artist: blue gk
+artist: mishima kurone
+artist: sakura oriko
+artist: akakura
+artist: rity
+artist: azuuru
+artist: amashiro natsuki
+artist: sakura hiyori
+artist: pan (mimi)
+artist: noco (adamas)
+artist: nishizawa
+artist: ogipote

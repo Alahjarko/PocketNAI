@@ -81,3 +81,5 @@ source['previews_sha256']=hashlib.sha256(raw).hexdigest()
 source['preview_images']=sum(len(a['previews']) for a in ordered)
 (TARGET/'source.json').write_text(json.dumps(source,indent=2)+'\n',encoding='utf-8',newline='\n')
 print(json.dumps({'artists':len(ordered),'images':source['preview_images'],'bytes':sum(p.stat().st_size for p in (TARGET/'previews').glob('*.jpg'))}))
+from artist_catalog_expansion import apply_live_expansion
+apply_live_expansion()

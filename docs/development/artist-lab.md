@@ -26,9 +26,9 @@
 - 自定义来源导入：画师库通过 `OpenDocument` 读取 UTF-8 TXT／JSON，2 MiB 和5000位上限；兼容旧配置 schemaVersion 1，新配置 schemaVersion 2 可保存来源名称、主页和说明。纯解析／去重在 `ArtistCatalogImport`，IO与严格UTF-8读取在 `ArtistCatalogReader`；追加名单与移出状态在既有独立 catalog 首选项中原子保存，无数据库迁移。已有标签与移出状态优先；词库变化作废未确认的新实验，并更新后续批次 hash，已确认批次使用冻结快照。新增条目不自动下载代表作；ZIP仅导出。格式与供AI使用的要求见[画师来源导入](../artist-lab/画师来源导入.md)。
 
 - [用户精选名单（2026-10-08）](../artist-lab/用户精选画师名单-20261008.txt)：用户保留的160位画师，原文件与顺序完整存档，供后续调整词库参考。
-- `app/src/main/assets/artist-lab/artists.txt`：当前199位画师。2026-10-11按用户保留名单增补25位，实看33位候选及其代表作，侧重现代日系人物、柔和光色与衣饰层次；[本轮审核](../artist-expansion-2026-10-11.md)保留来源和未收录原因。可编辑审核入口见[现代画师词库审核](../现代画师词库审核.md)；`curated-artists.json` 保存身份、规范标签/别名、活动证据和实看代表作链接。
+- `app/src/main/assets/artist-lab/artists.txt`：当前223位画师。本轮新增24位（含ogipote），附48张180px预览，实时标签、X账号与活动依据保存在 `live-expansion.json`；既有199位保持不变。2026-10-11按用户保留名单增补25位，实看33位候选及其代表作，侧重现代日系人物、柔和光色与衣饰层次；[本轮审核](../artist-expansion-2026-10-11.md)保留来源和未收录原因。可编辑审核入口见[现代画师词库审核](../现代画师词库审核.md)；`curated-artists.json` 保存身份、规范标签/别名、活动证据和实看代表作链接。
 - 入池须有唯一对应的 Danbooru 类别1规范标签、快照作品数至少50、审核前一年内公开作品或作者官方更新、现代画风实看记录，拒绝AI生成样本。按用户2026-10-07本轮要求，成人向创作不作为淘汰条件；旧 `sfw_review` 保留为历史证据，不参与成人内容准入限制。新增 `work_review` 和可选 `latest_activity_date`，兼容原清单；毛玉牛乳的近期活动以同一作者ID的官方FANBOX发布日期核对。
-- `source.json` 保存 2026-10-06 固定快照、修订、数量、源文件/审核清单/词库摘要。Danbooru直连API返回403，明确使用派生统计快照，不称作实时读数。`NOTICE.md` / `LICENSE-2.0.txt` 保留来源和许可。
+- `source.json` 保存历史2026-10-06快照、当前数量与摘要，以及独立的 `live_expansion` 来源摘要。历史审核时API返回403，所以旧条目保留快照证据；本轮新增条目分别记录实时Danbooru类别1标签、X主页关注度与近两年原帖，不将新证据混作旧快照。`NOTICE.md` / `LICENSE-2.0.txt` 保留来源和许可。
 - `previews.json` 将每位画师关联到小尺寸缩略图和原作链接，摘要记录在 `source.json`。脚本 `scripts/build-artist-previews.py` 只读公开元数据，核对作者ID和AI标记后下载250px预览。作品版权属于原作者，统计数据许可不覆盖图片。界面使用懒加载网格和Coil缓存，图片无需联网加载。
 - `scripts/build-artist-pool.py` 只提取标签元数据，不下载作品。词库内置 APK、加载验证数量/去重/摘要。真实标签不代表 NovelAI 所有模型都能准确识别。
 - 数量由 `source.json` 决定。运行时最少10位以兼容最大抽样数；内置精选池的重建和资源回归检查要求至少100位，并确保 Mika Pikazo、Modare、Torino Aqua 保留。新建实验用新词库；旧批次的逐项计划、摘要与收藏保留，不重抽或改写，继续既有待执行项仍需用户确认。
