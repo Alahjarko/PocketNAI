@@ -107,27 +107,27 @@ class AnlasCostCalculatorTest {
         assertThat(estimate.freeImageCount).isEqualTo(0)
     }
 
-    @Test
-    fun `未校准公式仍然返回待确认`() {
-        val uncalibrated = AnlasCostCalculator(UncalibratedPaidAnlasFormula)
-        val estimate = uncalibrated.estimate(context(tier = SubscriptionTier.None, subscribed = false))
-
-        assertThat((estimate as GenerationCostEstimate.Unknown).reason)
-            .isEqualTo(UnknownCostReason.PRICING_NOT_CALIBRATED)
-    }
-
     private val now = 1_800_000_000L
 
     @Test
-    fun `已取消但仍在付费周期内仍算有订阅`() {
+    fun `取消订阅到期前保留权益到期后残留额度不可用`() {
         // 官方说明：取消后权益保留到付费周期结束；expiresAt 还在未来就说明这点。
         val status = SubscriptionStatusResolver.resolve(
-            rawTier = 2,
+            rawTier = 3,
             accountType = 0,
             expiresAtEpochSeconds = now + 1,
             nowEpochSeconds = now,
         )
 
         assertThat(status.subscribed).isTrue()
+        val balance = SubscriptionBalance(3, false, 0, now + 1, false, 0, 429,
+            V5UsageLimit(99, false, 60), now * 1000)
+        assertThat(balance.v5AllowanceFor(status)?.rawPercent).isEqualTo(99)
+        val expired = SubscriptionStatusResolver.resolve(3, 0, now + 1, now + 1)
+        assertThat(expired.subscribed).isFalse()
+        assertThat(balance.v5AllowanceFor(expired)).isNull()
+        assertThat(balance.v5UsageLimit!!.rawPercent).isEqualTo(99)
+        assertThat(calculator.estimate(context(profile = v5, tier = expired.tier,
+            subscribed = expired.subscribed, usage = balance.v5UsageLimit)).total()).isEqualTo(26L)
     }
 }

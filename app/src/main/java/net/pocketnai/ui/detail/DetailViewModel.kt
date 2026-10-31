@@ -168,6 +168,7 @@ class DetailViewModel(
                 params = generation.params,
                 mode = generation.mode,
                 references = generation.references,
+                openAi = generation.openAi?.params,
             ),
         )
     }

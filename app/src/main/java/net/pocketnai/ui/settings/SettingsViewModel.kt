@@ -97,13 +97,14 @@ class SettingsViewModel(
     val subscriptionStatus: StateFlow<SubscriptionStatus> = combine(
         accountBalanceRepository.state,
         settingsStore.subscriptionOverride,
-    ) { balance, override ->
+        net.pocketnai.core.minuteTicks(clock),
+    ) { balance, override, now ->
         val known = balance.knownBalance
         SubscriptionStatusResolver.resolve(
             rawTier = known?.rawTier,
             accountType = known?.accountType,
             expiresAtEpochSeconds = known?.expiresAtEpochSeconds,
-            nowEpochSeconds = clock() / 1000L,
+            nowEpochSeconds = now / 1000L,
             override = override,
         )
     }.stateIn(

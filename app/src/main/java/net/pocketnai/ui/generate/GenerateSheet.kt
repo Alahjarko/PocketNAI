@@ -67,6 +67,7 @@ import net.pocketnai.core.AppError
 import net.pocketnai.core.ErrorCode
 import net.pocketnai.data.security.CredentialType
 import net.pocketnai.domain.billing.GenerationCostEstimate
+import net.pocketnai.domain.billing.SubscriptionStatus
 import net.pocketnai.ui.billing.BalanceDetailDialog
 import net.pocketnai.ui.billing.compactLabel
 import net.pocketnai.ui.billing.detailLabel
@@ -145,6 +146,7 @@ fun GenerateSheet(
 
     // 费用预估由 ViewModel 从"参数 + 余额"派生，这里是纯展示。
     val costEstimate by viewModel.costEstimate.collectAsStateWithLifecycle()
+    val subscriptionStatus by viewModel.subscriptionStatus.collectAsStateWithLifecycle()
 
     Column(modifier = modifier.fillMaxWidth()) {
         SheetHeader(
@@ -152,6 +154,7 @@ fun GenerateSheet(
             connected = connected,
             credentialType = credentialType,
             costEstimate = costEstimate,
+            subscriptionStatus = subscriptionStatus,
             onGenerate = viewModel::generate,
             onRequestConnect = onRequestConnect,
             onOpenBalance = { balanceDialogOpen = true },
@@ -681,7 +684,7 @@ fun GenerateSheet(
     if (balanceDialogOpen) {
         BalanceDetailDialog(
             state = state.balanceState,
-            subscriptionStatus = viewModel.subscriptionStatusOf(state.balanceState),
+            subscriptionStatus = subscriptionStatus,
             onRefresh = viewModel::refreshBalance,
             onDismiss = { balanceDialogOpen = false },
         )
@@ -738,6 +741,7 @@ private fun SheetHeader(
     connected: Boolean,
     credentialType: CredentialType?,
     costEstimate: GenerationCostEstimate,
+    subscriptionStatus: SubscriptionStatus,
     onGenerate: () -> Unit,
     onRequestConnect: () -> Unit,
     onOpenBalance: () -> Unit,
@@ -805,6 +809,7 @@ private fun SheetHeader(
             }
             SheetStatusLine(
                 state = state,
+                subscriptionStatus = subscriptionStatus,
                 connected = connected,
                 credentialType = credentialType,
                 onOpenBalance = onOpenBalance,
@@ -850,6 +855,7 @@ private fun CostDetailLine(costEstimate: GenerationCostEstimate) {
 @Composable
 private fun SheetStatusLine(
     state: GenerateViewModel.UiState,
+    subscriptionStatus: SubscriptionStatus,
     connected: Boolean,
     credentialType: CredentialType?,
     onOpenBalance: () -> Unit,
@@ -883,7 +889,7 @@ private fun SheetStatusLine(
         }
 
         else -> {
-            text = state.balanceState.compactLabel()
+            text = state.balanceState.compactLabel(subscriptionStatus)
                 ?: stringResource(R.string.balance_unavailable_short)
             color = MaterialTheme.colorScheme.onSurfaceVariant
             onClick = onOpenBalance

@@ -6,6 +6,7 @@ import net.pocketnai.R
 import net.pocketnai.data.repo.BalanceState
 import net.pocketnai.domain.billing.GenerationCostEstimate
 import net.pocketnai.domain.billing.SubscriptionBalance
+import net.pocketnai.domain.billing.SubscriptionStatus
 import java.text.NumberFormat
 
 /**
@@ -63,14 +64,13 @@ fun GenerationCostEstimate.detailLabel(): String = when (this) {
  * 余额的紧凑表示：`余额 12,000 Anlas`。
  *
  * 只放余额，**不放费用**：费用已经在生成按钮上，这里再写一遍既重复又会被截断。
- * V5 额度只在真的有额度（>0）时才带上 —— 无订阅账户的 `percent = 0` 写进来是噪音，
- * 会被误读成"额度用尽了"。
+ * V5 额度只在当前有 Opus 权益且服务端确有额度时显示；过期后的残留百分比不代表可用权益。
  */
 @Composable
-fun BalanceState.compactLabel(): String? {
+fun BalanceState.compactLabel(subscriptionStatus: SubscriptionStatus): String? {
     val balance = knownBalance ?: return null
     val anlas = stringResource(R.string.balance_anlas_short, formatAnlas(balance.totalAnlas))
-    val v5 = balance.v5UsageLimit
+    val v5 = balance.v5AllowanceFor(subscriptionStatus)
     return if (v5 != null && v5.rawPercent > 0) {
         val v5Label = if (v5.isNegative) {
             stringResource(R.string.balance_v5_unavailable)

@@ -40,7 +40,10 @@ data class Generation(
     val errorCode: ErrorCode? = null,
     val errorMessage: String? = null,
     val correlationId: String? = null,
+    /** Present only for OpenAI generations; params retains the legacy storage fields. */
+    val openAi: net.pocketnai.domain.openai.OpenAiImageSnapshot? = null,
 ) {
+    val displayModel: String get() = openAi?.params?.modelLabel ?: params.model.displayName
     val isActive: Boolean get() = status == GenerationStatus.GENERATING
 
     /** 详情页与界面摘要用：本次是否挂了参考图。 */

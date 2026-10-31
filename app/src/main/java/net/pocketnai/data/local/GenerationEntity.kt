@@ -99,4 +99,6 @@ data class GenerationEntity(
     val charactersJson: String? = null,
     /** v11: null denotes the legacy mode (coordinates enabled whenever characters existed). */
     val useCharacterCoordinates: Boolean? = null,
+    /** v12: nullable provider-specific snapshot; legacy rows remain NovelAI. */
+    val openAiParamsJson: String? = null,
 )

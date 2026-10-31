@@ -145,6 +145,9 @@ fun SettingsScreen(
             style = MaterialTheme.typography.headlineSmall,
         )
 
+        net.pocketnai.ui.openai.OpenAiImageSettingsRow()
+
+        Text("NovelAI 账户", style = MaterialTheme.typography.titleSmall)
         // ---- 账号（保留卡片：这是身份区，不是普通设置项） ----
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
@@ -164,7 +167,7 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.titleSmall,
                 )
                 Text(
-                    text = "PocketNAI 只用你自己的 Persistent API Token 直连 NovelAI，" +
+                    text = "使用你自己的 Persistent API Token 连接 NovelAI，" +
                         "不经过任何第三方服务器，也不保存你的邮箱或密码。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -194,7 +197,7 @@ fun SettingsScreen(
                     subtitle = if (!connected) {
                         stringResource(R.string.balance_never_loaded)
                     } else {
-                        balanceState.compactLabel() ?: stringResource(R.string.balance_never_loaded)
+                        balanceState.compactLabel(subscriptionStatus) ?: stringResource(R.string.balance_never_loaded)
                     },
                     onClick = { balanceDialogOpen = true },
                     enabled = connected,

@@ -136,19 +136,30 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
     // 否则按钮改了参数、悬浮层却看不到。
     val generateViewModel = remember(container) { container.generateViewModel }
     val generateState by generateViewModel.state.collectAsStateWithLifecycle()
+    val openAiViewModel = remember(container) { container.openAiImageViewModel }
+    val provider by container.openAiImageSettings.provider.collectAsStateWithLifecycle()
+    val openAiMode = provider == net.pocketnai.domain.openai.ImageProvider.OPEN_AI
     val chatEnabled by container.settingsStore.chatEnabled.collectAsStateWithLifecycle()
     val chatViewModel: ChatViewModel = viewModel(factory = viewModelFactory {
         initializer {
             ChatViewModel(container.llmSettingsStore, container.chatClient, container.chatStore, container.agentFiles,
                 object : net.pocketnai.domain.chat.ChatImageGenerator {
                     override fun currentParams() = generateViewModel.state.value.params
-                    override suspend fun quote(params: net.pocketnai.domain.model.GenerationParams) = generateViewModel.quoteForChat(params)
-                    override suspend fun generate(params: net.pocketnai.domain.model.GenerationParams, onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit) =
-                        generateViewModel.generateForChat(params, onImage)
+                    override suspend fun quote(params: net.pocketnai.domain.model.GenerationParams): String {
+                        if (container.openAiImageSettings.provider.value == net.pocketnai.domain.openai.ImageProvider.OPEN_AI)
+                            throw net.pocketnai.domain.chat.ChatFailure("OpenAI 图片暂时请在画廊的专用生成面板创建")
+                        return generateViewModel.quoteForChat(params)
+                    }
+                    override suspend fun generate(params: net.pocketnai.domain.model.GenerationParams, onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit): List<net.pocketnai.domain.chat.ChatImage> {
+                        if (container.openAiImageSettings.provider.value == net.pocketnai.domain.openai.ImageProvider.OPEN_AI)
+                            throw net.pocketnai.domain.chat.ChatFailure("OpenAI 图片暂时请在画廊的专用生成面板创建")
+                        return generateViewModel.generateForChat(params, onImage)
+                    }
                 }, container.settingsStore.chatEnabled, container.chatAttachmentStore)
         }
     })
-    val artistLabEnabled by container.settingsStore.artistLabEnabled.collectAsStateWithLifecycle()
+    val artistLabConfigured by container.settingsStore.artistLabEnabled.collectAsStateWithLifecycle()
+    val artistLabEnabled = artistLabConfigured && !openAiMode
     val artistLabViewModel = remember(container) { container.artistLabViewModel }
     LaunchedEffect(sharedImageUri, generateState.referenceBusy) {
         if (sharedImageUri != null && !generateState.referenceBusy) {
@@ -156,7 +167,8 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                 popUpTo(navController.graph.findStartDestination().id)
                 launchSingleTop = true
             }
-            generateViewModel.onReferencePicked(ReferenceSource.PickedUri(sharedImageUri))
+            if (openAiMode) openAiViewModel.addReference(ReferenceSource.PickedUri(sharedImageUri))
+            else generateViewModel.onReferencePicked(ReferenceSource.PickedUri(sharedImageUri))
             onSharedImageHandled()
         }
     }
@@ -277,17 +289,19 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                             credentialType = credentialType,
                             onOpenImage = { imageId -> imageMotion.open(Routes.HOME, imageId); navController.navigate(Routes.detail(imageId)) },
                             onInpaintImage = { item ->
-                                // 画廊长按 → 直接以这张图作为重绘底图并进入编辑器。
-                                generateViewModel.onInpaintBasePicked(
-                                    ReferenceSource.LocalPath(item.relativePath),
-                                )
-                                navController.navigate(Routes.INPAINT) {
-                                    popUpTo(Routes.HOME)
-                                    launchSingleTop = true
+                                if (openAiMode) openAiViewModel.addReference(ReferenceSource.LocalPath(item.relativePath))
+                                else {
+                                    generateViewModel.onInpaintBasePicked(ReferenceSource.LocalPath(item.relativePath))
+                                    navController.navigate(Routes.INPAINT) {
+                                        popUpTo(Routes.HOME)
+                                        launchSingleTop = true
+                                    }
                                 }
                             },
                             onRequestConnect = { navController.navigate(Routes.CONNECT) },
                             onOpenInpaintEditor = { navController.navigate(Routes.INPAINT) },
+                            openAiViewModel = openAiViewModel.takeIf { openAiMode },
+                            onOpenAiSettings = { navController.navigate(Routes.SETTINGS) },
                         )
                     }
                 }

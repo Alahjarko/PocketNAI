@@ -39,6 +39,9 @@ data class SubscriptionBalance(
         } else {
             subscriptionAnlas + purchasedAnlas
         }
+
+    /** Usage can survive subscription expiry in the API response; only current Opus benefits expose it. */
+    fun v5AllowanceFor(status: SubscriptionStatus): V5UsageLimit? = v5UsageLimit.takeIf { status.isOpus }
 }
 
 /**

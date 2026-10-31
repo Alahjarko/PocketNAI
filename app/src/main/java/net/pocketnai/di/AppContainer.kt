@@ -58,6 +58,16 @@ import java.util.concurrent.TimeUnit
  * 数据库和网络客户端要到真正使用时才创建。
  */
 class AppContainer(application: Application) {
+    val openAiImageSettings by lazy { net.pocketnai.data.openai.OpenAiImageSettings(application) }
+    val openAiImageApi by lazy { net.pocketnai.data.openai.OpenAiImageApi() }
+    val openAiImageRepository by lazy {
+        net.pocketnai.data.openai.OpenAiImageRepository(openAiImageApi, database.generationDao(), fileStore,
+            openAiImageSettings::apiKey)
+    }
+    val openAiImageViewModel by lazy {
+        net.pocketnai.ui.openai.OpenAiImageViewModel(openAiImageSettings, openAiImageRepository,
+            referenceImageProcessor, generateViewModel, draftStore)
+    }
 
     val artistLabStore by lazy { net.pocketnai.data.artistlab.ArtistLabStore(application, database) }
     val artistLabBackgroundExecution by lazy { net.pocketnai.data.artistlab.AndroidArtistLabBackgroundExecution(application) }
@@ -210,7 +220,10 @@ class AppContainer(application: Application) {
             dao = database.generationDao(),
             fileStore = fileStore,
             referenceEncoder = referenceImageProcessor,
-            liveReferencePaths = DraftReferencePathsProvider(generationDraftPreferences),
+            liveReferencePaths = net.pocketnai.domain.image.LiveReferencePathsProvider {
+                DraftReferencePathsProvider(generationDraftPreferences).provide() +
+                    openAiImageSettings.loadDraft().references.map { it.relativePath }
+            },
             // 流式预览的开关与失败计数都归设置层：连续失败 3 次会自动关闭，
             // 那时这里读到的就是 false，生成回到已验证的 ZIP 链路。
             streamingEnabled = { settingsStore.streamingPreviewEnabled.value },

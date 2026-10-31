@@ -12,6 +12,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Surface
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import net.pocketnai.ui.openai.OpenAiImageSheet
+import net.pocketnai.ui.openai.OpenAiImageViewModel
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import net.pocketnai.data.security.CredentialType
@@ -47,7 +50,10 @@ fun HomeScreen(
     onOpenInpaintEditor: () -> Unit,
     onRequestConnect: () -> Unit,
     modifier: Modifier = Modifier,
+    openAiViewModel: OpenAiImageViewModel? = null,
+    onOpenAiSettings: () -> Unit = {},
 ) {
+    val openAiState = openAiViewModel?.state?.collectAsStateWithLifecycle()?.value
     BoxWithConstraints(modifier = modifier) {
         if (maxWidth >= 720.dp) {
             // ---- 平板形态：右侧面板常驻 ----
@@ -70,7 +76,8 @@ fun HomeScreen(
                         .imageMotionChrome(zIndex = 2f),
                 ) {
                     // 面板形态下始终"展开"：内部滚动一直可用，无悬浮层手势。
-                    GenerateSheet(
+                    if (openAiViewModel != null) OpenAiImageSheet(openAiViewModel, true, onOpenAiSettings)
+                    else GenerateSheet(
                         viewModel = generateViewModel,
                         state = state,
                         expanded = true,
@@ -86,9 +93,10 @@ fun HomeScreen(
 
         // ---- 手机形态：底部悬浮层 ----
         GenerationSheetScaffold(
-            inFlight = state.inFlight,
+            inFlight = state.inFlight || openAiState?.busy == true,
             sheetContent = { expanded, headerDragModifier ->
-                GenerateSheet(
+                if (openAiViewModel != null) OpenAiImageSheet(openAiViewModel, expanded, onOpenAiSettings, headerDragModifier)
+                else GenerateSheet(
                     viewModel = generateViewModel,
                     state = state,
                     expanded = expanded,

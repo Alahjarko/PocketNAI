@@ -204,6 +204,7 @@ class GenerateViewModel(
         /** 自定义尺寸算不出来时的原因（边长越界、面积超限），显示在输入框下方。 */
         val customResolutionError: ResolutionPlanner.Reason? = null,
         val artistLabActive: Boolean = false,
+        val externalGenerationActive: Boolean = false,
     ) {
         /** 自定义模式下的规划结果；预设模式或算不出来时为 null。 */
         val resolutionPlan: ResolutionPlanner.Plan?
@@ -234,7 +235,7 @@ class GenerateViewModel(
         val blockingViolations: List<ParamViolation>
             get() = profile.validate(params).filterNot { it is ParamViolation.PromptTooLong }
 
-        val canGenerate: Boolean get() = !inFlight && !artistLabActive && !referenceBusy && promptTemplate.isNotBlank()
+        val canGenerate: Boolean get() = !inFlight && !artistLabActive && !externalGenerationActive && !referenceBusy && promptTemplate.isNotBlank()
 
         /** 本次会用的全部参考图（图生图起点 + Precise Reference + Vibe + 重绘蒙版）。 */
         val allReferences: List<ReferenceImage>
@@ -349,7 +350,8 @@ class GenerateViewModel(
         _state,
         accountBalanceRepository.state,
         settingsStore.subscriptionOverride,
-    ) { state, balance, override ->
+        net.pocketnai.core.minuteTicks(clock),
+    ) { state, balance, override, _ ->
         // Vibe 是否已编码要查磁盘，挪到 IO 上做；一次最多查 4 个文件。
         withContext(Dispatchers.IO) {
             costCalculator.estimate(pricingContextOf(state, balance, override))
@@ -369,6 +371,12 @@ class GenerateViewModel(
         )
 
     /** 有效订阅状态：服务端读数 + 设置页手动指定。 */
+    val subscriptionStatus: StateFlow<SubscriptionStatus> = combine(
+        accountBalanceRepository.state, settingsStore.subscriptionOverride, net.pocketnai.core.minuteTicks(clock),
+    ) { balance, _, _ -> subscriptionStatusOf(balance) }.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(COST_SUBSCRIPTION_TIMEOUT_MS), SubscriptionStatus.Unknown,
+    )
+
     fun subscriptionStatusOf(balance: BalanceState): SubscriptionStatus {
         val known = balance.knownBalance
         return SubscriptionStatusResolver.resolve(
@@ -457,7 +465,7 @@ class GenerateViewModel(
 
         viewModelScope.launch {
             draftStore.pending.collect { pending ->
-                if (pending == null) return@collect
+                if (pending == null || pending.openAi != null) return@collect
                 val reused = draftStore.consume() ?: return@collect
                 // 复用参数只填充编辑区，绝不自动开始生成（规划书 4.3）。
                 // 参考图一并恢复：只带回 Strength 却没有图，那个参数没有任何意义。
@@ -1555,12 +1563,20 @@ class GenerateViewModel(
 
     fun reserveArtistLab(): Boolean {
         val current = _state.value
-        if (current.inFlight || current.referenceBusy || current.artistLabActive) return false
+        if (current.inFlight || current.referenceBusy || current.artistLabActive || current.externalGenerationActive) return false
         _state.update { it.copy(artistLabActive = true) }
         return true
     }
 
     fun releaseArtistLab() { _state.update { it.copy(artistLabActive = false) } }
+
+    fun reserveExternalGeneration(): Boolean {
+        val current = _state.value
+        if (current.inFlight || current.referenceBusy || current.artistLabActive || current.externalGenerationActive) return false
+        _state.update { it.copy(externalGenerationActive = true) }
+        return true
+    }
+    fun releaseExternalGeneration() { _state.update { it.copy(externalGenerationActive = false) } }
 
     fun artistLabAccount(): String? = credentialStore?.hint()?.fingerprint
 
@@ -1593,7 +1609,7 @@ class GenerateViewModel(
         expectedAccountFingerprint: String? = null,
         templatesResolved: Boolean = false,
     ): List<net.pocketnai.domain.chat.ChatImage> {
-        if (_state.value.inFlight || _state.value.referenceBusy || (_state.value.artistLabActive && !fromArtistLab))
+        if (_state.value.inFlight || _state.value.externalGenerationActive || _state.value.referenceBusy || (_state.value.artistLabActive && !fromArtistLab))
             throw net.pocketnai.domain.chat.ChatFailure("另一个图片任务正在执行，请等待完成")
         val before = accountBalanceRepository.latestOrNull()
         val billing = before?.let { BillingSession(it, clock() - it.fetchedAtMillis,

@@ -46,6 +46,7 @@ enum class GenerationMode {
 }
 
 /** 参考图在请求里的角色，决定它被放进哪个字段。 */
+@kotlinx.serialization.Serializable
 enum class ReferenceRole {
     /** 生成起点：`parameters.image`。 */
     IMG2IMG,
@@ -70,6 +71,7 @@ enum class ReferenceRole {
  * Precise Reference 的取用方式，直接对应 `director_reference_descriptions[].caption.base_caption`
  * 的三个取值（2026-10-11 核对官方前端）。
  */
+@kotlinx.serialization.Serializable
 enum class DirectorReferenceKind(val apiValue: String) {
     /** 只取角色。 */
     CHARACTER("character"),
@@ -103,6 +105,7 @@ enum class DirectorReferenceKind(val apiValue: String) {
  * - [ReferenceRole.VIBE]：[strength]、[informationExtracted]、[vibeRelativePath]；
  * - [ReferenceRole.DIRECTOR]：[strength]、[secondaryStrength]、[informationExtracted]、[directorKind]。
  */
+@kotlinx.serialization.Serializable
 data class ReferenceImage(
     /**
      * 标识符。**两种身份共用这一个字段，但语义随来源不同**：

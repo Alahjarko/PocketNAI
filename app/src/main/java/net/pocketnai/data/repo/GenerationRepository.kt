@@ -146,6 +146,7 @@ class GenerationRepository(
         beforeSend: suspend (String) -> Unit = {},
         templatesResolved: Boolean = false,
     ): Flow<GenerationEvent> = flow {
+        require(request.openAi == null) { "OpenAI requests require the OpenAI image provider" }
         val generationId = idGenerator()
         val startedAt = clock()
         val params = request.params

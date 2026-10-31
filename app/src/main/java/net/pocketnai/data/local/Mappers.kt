@@ -39,7 +39,8 @@ object Mappers {
         negativePrompt = generation.params.negativePrompt,
         charactersJson = HistoryCharacters.encode(generation.params.characters),
         useCharacterCoordinates = generation.params.useCharacterCoordinates,
-        modelApiId = generation.params.model.apiModelId,
+        modelApiId = generation.openAi?.params?.model ?: generation.params.model.apiModelId,
+        openAiParamsJson = generation.openAi?.let(net.pocketnai.domain.openai.OpenAiImageCodec::encode),
         width = generation.params.size.width,
         height = generation.params.size.height,
         outputWidth = generation.params.outputSize?.width,
@@ -65,7 +66,9 @@ object Mappers {
     )
 
     fun toDomain(entity: GenerationEntity): Generation? {
-        val model = ImageModel.fromApiModelId(entity.modelApiId) ?: return null
+        val openAi = net.pocketnai.domain.openai.OpenAiImageCodec.decode(entity.openAiParamsJson)
+        if (entity.openAiParamsJson != null && openAi == null) return null
+        val model = ImageModel.fromApiModelId(entity.modelApiId) ?: if (openAi != null) ImageModel.DEFAULT else return null
         val sampler = Sampler.fromApiValue(entity.sampler) ?: return null
         val schedule = NoiseSchedule.fromApiValue(entity.noiseSchedule) ?: return null
         val status = runCatching { GenerationStatus.valueOf(entity.status) }.getOrNull() ?: return null
@@ -109,6 +112,7 @@ object Mappers {
             errorCode = entity.errorCode?.let { runCatching { ErrorCode.valueOf(it) }.getOrNull() },
             errorMessage = entity.errorMessage,
             correlationId = entity.correlationId,
+            openAi = openAi,
         )
     }
 

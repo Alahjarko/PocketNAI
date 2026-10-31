@@ -12,6 +12,8 @@ data class GenerationRequest(
     val params: GenerationParams,
     val mode: GenerationMode = GenerationMode.TXT2IMG,
     val references: List<ReferenceImage> = emptyList(),
+    /** Reuse routing only; the NovelAI request path must reject this provider. */
+    val openAi: net.pocketnai.domain.openai.OpenAiImageParams? = null,
 ) {
 
     fun referencesOf(role: ReferenceRole): List<ReferenceImage> =

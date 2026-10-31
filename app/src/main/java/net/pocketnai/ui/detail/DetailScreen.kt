@@ -266,10 +266,22 @@ fun DetailScreen(
                     },
                     onCopyPrompt = { detail?.let { copyToClipboard(context, it.generation.params.prompt) } },
                     onReuseParams = {
+                        detail?.generation?.let { generation ->
+                            container.openAiImageSettings.setProvider(if (generation.openAi != null)
+                                net.pocketnai.domain.openai.ImageProvider.OPEN_AI else net.pocketnai.domain.openai.ImageProvider.NOVEL_AI)
+                        }
                         viewModel.reuseParams()
                         onParamsReused()
                     },
-                    onInpaint = { detail?.let { onInpaint(it.image.privateFilePath) } },
+                    onInpaint = { detail?.let { current ->
+                        val openAi = current.generation.openAi
+                        if (openAi != null) {
+                            container.openAiImageSettings.setProvider(net.pocketnai.domain.openai.ImageProvider.OPEN_AI)
+                            container.openAiImageViewModel.restore(openAi.params, emptyList())
+                            container.openAiImageViewModel.addReference(net.pocketnai.domain.image.ReferenceSource.LocalPath(current.image.privateFilePath))
+                            onParamsReused()
+                        } else onInpaint(current.image.privateFilePath)
+                    } },
                     onOpenUpscaleDialog = { showUpscaleDialog = true },
                     onDelete = viewModel::deleteGeneration,
                     onDismissError = viewModel::dismissError,
@@ -472,13 +484,13 @@ internal fun LazyListScope.detailInfoItems(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "${generation.params.model.shortDisplayName} · ${image.width} × ${image.height} · " +
+                text = "${generation.displayModel} · ${image.width} × ${image.height} · " +
                     stringResource(generation.mode.labelRes()),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             val seed = image.seed?.toString() ?: "未记录"
-            SelectionContainer {
+            if (generation.openAi == null) SelectionContainer {
                 Text("Seed  $seed", style = MaterialTheme.typography.bodySmall)
             }
 
@@ -521,7 +533,7 @@ internal fun LazyListScope.detailInfoItems(
                     Text(stringResource(R.string.action_save_to_gallery))
                 }
                 OutlinedButton(onClick = onCopyPrompt, modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.action_copy_prompt))
+                    Text(if (generation.openAi != null) "复制图片描述" else stringResource(R.string.action_copy_prompt))
                 }
             }
 
@@ -529,10 +541,10 @@ internal fun LazyListScope.detailInfoItems(
                 // 局部重绘：官方文档说可以从"任意一张已生成的图片"进入，
                 // 而"这张图某处画坏了"正是用户点进详情页的常见理由。
                 OutlinedButton(onClick = onInpaint, modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.action_inpaint))
+                    Text(if (generation.openAi != null) "继续编辑" else stringResource(R.string.action_inpaint))
                 }
 
-                OutlinedButton(onClick = onOpenUpscaleDialog, modifier = Modifier.weight(1f)) {
+                if (generation.openAi == null) OutlinedButton(onClick = onOpenUpscaleDialog, modifier = Modifier.weight(1f)) {
                     Text(stringResource(R.string.action_upscale))
                 }
             }
@@ -552,6 +564,27 @@ internal fun LazyListScope.detailInfoItems(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     val time = DateFormat.getDateTimeInstance().format(Date(generation.createdAt))
                     DetailRow(stringResource(R.string.common_time), time)
+                    val openAi = generation.openAi
+                    if (openAi != null) {
+                        DetailRow("服务", "OpenAI Platform")
+                        DetailRow("模型", openAi.params.modelLabel)
+                        DetailRow("请求尺寸", openAi.params.size)
+                        DetailRow("图片尺寸", "${image.width} × ${image.height}")
+                        DetailRow("质量", openAi.responseQuality ?: openAi.params.quality)
+                        DetailRow("背景", openAi.responseBackground ?: openAi.params.background)
+                        DetailRow("格式", openAi.params.outputFormat.uppercase())
+                        DetailRow("张数", "${openAi.params.count} 张（本张序号 ${image.ordinal}）")
+                        if (openAi.params.outputFormat != "png") DetailRow("压缩质量", openAi.params.compression.toString())
+                        DetailRow("内容审核", openAi.params.moderation)
+                        openAi.usage?.let { usage ->
+                            DetailRow("输入文本 token", usage.textInput.toString())
+                            DetailRow("输入图片 token", usage.imageInput.toString())
+                            DetailRow("输出图片 token", usage.imageOutput.toString())
+                            DetailRow("本次请求估算", String.format(java.util.Locale.US, "$%.6f USD", usage.estimatedUsd))
+                            if (openAi.params.count > 1) DetailRow("平均每张估算",
+                                String.format(java.util.Locale.US, "$%.6f USD", usage.estimatedUsd / openAi.params.count))
+                        } ?: DetailRow("费用", "接口未返回完整用量，请在 OpenAI Platform 查看账单")
+                    } else {
                     DetailRow(stringResource(R.string.common_model), generation.params.model.displayName)
                     DetailRow("生成画布", generation.params.size.label)
                     DetailRow("图片尺寸", "${image.width} × ${image.height}")
@@ -561,6 +594,7 @@ internal fun LazyListScope.detailInfoItems(
                     DetailRow(stringResource(R.string.generate_cfg_rescale), generation.params.cfgRescale.toString())
                     DetailRow(stringResource(R.string.generate_sampler), generation.params.sampler.displayName)
                     DetailRow(stringResource(R.string.generate_noise_schedule), generation.params.noiseSchedule.displayName)
+                    }
                     if (generation.errorCode != null) {
                         DetailRow("错误", generation.errorMessage ?: generation.errorCode.name)
                     }
@@ -576,7 +610,7 @@ internal fun LazyListScope.detailInfoItems(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("基础提示词", style = MaterialTheme.typography.titleSmall)
+                Text(if (generation.openAi != null) "图片描述" else "基础提示词", style = MaterialTheme.typography.titleSmall)
                 SelectionContainer {
                     Text(generation.params.prompt, style = MaterialTheme.typography.bodyMedium)
                 }

@@ -108,7 +108,7 @@ fun BalanceDetailDialog(
                     )
 
                     // 没有 usage 就不显示这一块：0% 会被读成"额度用尽了"。
-                    balance.v5UsageLimit?.let { usage ->
+                    balance.v5AllowanceFor(subscriptionStatus)?.let { usage ->
                         Text(
                             text = stringResource(R.string.balance_v5_allowance),
                             style = MaterialTheme.typography.labelMedium,

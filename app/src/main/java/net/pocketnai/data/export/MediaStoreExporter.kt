@@ -32,9 +32,9 @@ class MediaStoreExporter(private val context: Context) {
             }
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    exportViaMediaStore(source, displayName)
+                    exportViaMediaStore(source, formatName(source, displayName))
                 } else {
-                    exportViaPublicDirectory(source, displayName)
+                    exportViaPublicDirectory(source, formatName(source, displayName))
                 }
             } catch (e: IOException) {
                 Outcome.Failure(
@@ -52,7 +52,7 @@ class MediaStoreExporter(private val context: Context) {
         val resolver = context.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
-            put(MediaStore.Images.Media.MIME_TYPE, MIME_PNG)
+            put(MediaStore.Images.Media.MIME_TYPE, mimeType(source))
             put(
                 MediaStore.Images.Media.RELATIVE_PATH,
                 "${Environment.DIRECTORY_PICTURES}/$ALBUM_NAME",
@@ -108,7 +108,7 @@ class MediaStoreExporter(private val context: Context) {
         MediaScannerConnection.scanFile(
             context,
             arrayOf(target.absolutePath),
-            arrayOf(MIME_PNG),
+            arrayOf(mimeType(source)),
             null,
         )
         return Outcome.Success(Uri.fromFile(target))
@@ -127,8 +127,15 @@ class MediaStoreExporter(private val context: Context) {
         return candidate
     }
 
+    private fun formatName(source: File, requested: String): String =
+        requested.substringBeforeLast('.', requested) + "." + source.extension.ifBlank { "png" }
+    private fun mimeType(source: File): String = when (source.extension.lowercase()) {
+        "jpeg", "jpg" -> "image/jpeg"
+        "webp" -> "image/webp"
+        else -> "image/png"
+    }
+
     private companion object {
         const val ALBUM_NAME = "PocketNAI"
-        const val MIME_PNG = "image/png"
     }
 }

@@ -11,6 +11,7 @@
 | 提示词、权重、光标/选区、质量标签、独立角色 | [提示词与角色](docs/development/prompts.md) |
 | 页面布局、生成悬浮层、详情、画廊筛选、收藏、分享 | [界面与交互](docs/development/ui.md) |
 | HTTP、超时/重试、代理、凭据、登录、多账号 | [网络与认证](docs/development/network-auth.md) |
+| OpenAI 生图、模型参数、参考图编辑、用量 | [OpenAI 实验性生图](docs/development/openai-images.md)，并读图片、网络、存储与界面专题 |
 | 实验性对话、LLM 接入、思考回传、图片工具、人格 Markdown | [实验性对话](docs/development/chat.md)，并读网络、存储与界面专题 |
 | 画师词库、抽卡实验室、调度、收藏与批次清理 | [抽卡实验室](docs/development/artist-lab.md)，并读提示词、图片、计费、网络、存储与界面专题 |
 | 余额、订阅权益、费用报价、流水、高清放大 | [计费与超分](docs/development/billing.md) |

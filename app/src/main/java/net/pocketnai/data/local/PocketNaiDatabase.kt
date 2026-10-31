@@ -26,7 +26,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ArtistLabDrawEntity::class,
         ArtistMixFavoriteEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 abstract class PocketNaiDatabase : RoomDatabase() {
@@ -44,6 +44,11 @@ abstract class PocketNaiDatabase : RoomDatabase() {
     abstract fun anlasTransactionDao(): AnlasTransactionDao
 
     companion object {
+        val MIGRATION_11_12: Migration = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE generations ADD COLUMN openAiParamsJson TEXT")
+            }
+        }
         private const val DATABASE_NAME = "pocketnai.db"
 
         /** 只加可空列，保留全部历史与图片外键。旧记录在详情读取时从 PNG 恢复角色。 */
@@ -269,6 +274,7 @@ abstract class PocketNaiDatabase : RoomDatabase() {
                     MIGRATION_8_9,
                     MIGRATION_9_10,
                     MIGRATION_10_11,
+                    MIGRATION_11_12,
                 )
                 .build()
     }

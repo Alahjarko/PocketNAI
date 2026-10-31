@@ -135,13 +135,15 @@ class GenerationFileStore(context: Context) {
     fun commitImages(
         generationId: String,
         extracted: List<ZipImageExtractor.ExtractedImage>,
+        extension: String = "png",
     ): List<CommittedImage> {
+        require(extension in listOf("png", "jpeg", "webp"))
         val destination = generationDir(generationId)
         if (!destination.exists() && !destination.mkdirs()) {
             throw java.io.IOException("无法创建历史目录: $destination")
         }
         return extracted.map { image ->
-            val finalFile = File(destination, fileOrdinalName(image.ordinal))
+            val finalFile = File(destination, image.ordinal.toString().padStart(4, '0') + ".$extension")
             val staging = File(destination, "${image.ordinal}.part")
             image.file.inputStream().use { input ->
                 staging.outputStream().buffered().use { output -> input.copyTo(output) }
