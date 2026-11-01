@@ -40,4 +40,22 @@
 - APK：同时编译 Debug、Release 和设备测试 APK；Release 使用既有仓库 Secret 中的签名，并与 build-24 的证书 SHA-256 集合比对。
 - 真机上的点击、滚动吸顶、预测性返回及其取消、安装保留数据仍须在可用真机实测；本轮不将编译/渲染描述为这些项目已经通过。
 
-云端执行结果与产物链接在交付时记录。
+## 最终验证结果
+
+[GitHub Actions #41329655672](https://github.com/Alahjarko/PocketNAI/actions/runs/41329655672) 全部通过，构建提交 `0e5a00eec604ce69b3767be63c0fef0eee54168c`，开发分支为 [feat/anlas-statistics](https://github.com/Alahjarko/PocketNAI/tree/feat/anlas-statistics)。
+
+| 项目 | 结果 |
+|---|---|
+| JVM 回归 | 29 项通过，0 失败、0 跳过；注册总预算 50/50（29 JVM + 21 设备） |
+| 实际 UI 渲染 | 9 张均完成目视检查；最终云端图片与已检查图片逐字节一致 |
+| APK | Debug、Release、设备测试 APK 均编译通过 |
+| 签名 | `apksigner verify` 通过；与 build-24 的签名证书 SHA-256 集合一致 |
+| 版本 | `0.1.25-stats-review`，versionCode 25，仅上传 Actions artifact |
+| 模拟器 | 本机、云端均未使用 |
+| 真机运行 | 本机没有 Android 设备工具；21 项设备测试未执行，安装保留数据和手势仍未实测 |
+
+Release APK SHA-256：`3f35af0581ae2d3d60379e220cbac33be523f9fbdb785712618131b66866b7d9`。
+
+[本地安装包](../../artifacts/PocketNAI-statistics-review.apk) · [9 张界面预览](../../artifacts/previews/README.md)。
+
+后续真机重点检查：从设置和生成面板余额弹层进入/返回；7/30/全部范围切换；流水吸顶与单日小计；预测性返回手势提交及取消；原生成草稿和历史仍在。
