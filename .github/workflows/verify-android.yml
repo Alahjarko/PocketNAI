@@ -7,7 +7,7 @@ permissions:
   contents: read
 concurrency:
   group: verify-android-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -19,6 +19,8 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools platforms;android-35 build-tools;34.0.0
@@ -41,6 +43,11 @@ jobs:
         run: ./gradlew :app:testDebugUnitTest --stacktrace
       - name: Render production UI on host JVM
         run: ./gradlew :app:renderStatsPreview -PrenderStatsPreview=true --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pocketnai-ui-previews
+          path: app/build/reports/paparazzi/
+          retention-days: 14
       - name: Build APKs and compile device tests (no device execution)
         env:
           PNAI_KEYSTORE_PATH: ${{ runner.temp }}/pocketnai.keystore

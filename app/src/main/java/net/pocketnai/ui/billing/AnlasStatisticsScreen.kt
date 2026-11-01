@@ -1,7 +1,6 @@
 package net.pocketnai.ui.billing
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -10,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -29,8 +29,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -48,7 +48,7 @@ private val TabularNumbers = androidx.compose.ui.text.TextStyle(fontFeatureSetti
 @Composable
 fun AnlasStatisticsScreen(repository: AnlasLedgerRepository, onBack: () -> Unit) {
     val vm: AnlasStatisticsViewModel = viewModel(factory = viewModelFactory {
-        initializer { AnlasStatisticsViewModel(repository) }
+        initializer { AnlasStatisticsViewModel(repository, createSavedStateHandle()) }
     })
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -87,16 +87,16 @@ internal fun AnlasStatisticsContent(
     onBack: () -> Unit,
     onClear: () -> Unit,
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
+    listState: LazyListState = rememberLazyListState(),
 ) {
     val statistics = state.statistics
-    val scroll = rememberLazyListState()
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Anlas 统计") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回设置") } },
                 actions = {
-                    if (statistics?.recordCount != null && statistics.recordCount > 0) {
+                    if (statistics != null && statistics.storedRecordCount > 0) {
                         IconButton(onClick = onClear) { Icon(Icons.Outlined.DeleteOutline, "清空本机全部流水") }
                     }
                 },
@@ -112,7 +112,7 @@ internal fun AnlasStatisticsContent(
                 }
                 else -> LazyColumn(
                     modifier = Modifier.widthIn(max = 840.dp).fillMaxSize(),
-                    state = scroll,
+                    state = listState,
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
@@ -182,27 +182,29 @@ internal fun AnlasStatisticsContent(
 
 @Composable
 private fun StatisticsSummary(stats: AnlasStatistics) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-        Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("记录消耗", style = MaterialTheme.typography.labelLarge)
-            AnimatedContent(targetState = stats.totalSpent, label = "统计金额") { amount ->
-                Text("${formatAnlas(amount)} Anlas",
-                    style = MaterialTheme.typography.headlineLarge.merge(TabularNumbers), fontWeight = FontWeight.Bold)
+    Column {
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+            Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("记录消耗", style = MaterialTheme.typography.labelLarge)
+                AnimatedContent(targetState = stats.totalSpent, label = "统计金额") { amount ->
+                    Text("${formatAnlas(amount)} Anlas",
+                        style = MaterialTheme.typography.headlineLarge.merge(TabularNumbers), fontWeight = FontWeight.Bold)
+                }
+                Text("${stats.range.label} · ${stats.activeDays} 个活跃日", style = MaterialTheme.typography.bodySmall)
             }
-            Text("${stats.range.label} · ${stats.activeDays} 个活跃日", style = MaterialTheme.typography.bodySmall)
         }
-    }
-    Spacer(Modifier.height(12.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        MetricCard("操作次数", formatAnlas(stats.recordCount.toLong()), "含零消耗记录", Modifier.weight(1f))
-        MetricCard("平均每次", NumberFormat.getNumberInstance().apply { maximumFractionDigits = 1 }.format(stats.averageSpent),
-            "Anlas / 次", Modifier.weight(1f))
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            MetricCard("操作次数", formatAnlas(stats.recordCount.toLong()), "含零消耗记录", Modifier.weight(1f))
+            MetricCard("平均每次", NumberFormat.getNumberInstance().apply { maximumFractionDigits = 1 }.format(stats.averageSpent),
+                "Anlas / 次", Modifier.weight(1f))
+        }
     }
 }
 
 @Composable
 private fun MetricCard(title: String, value: String, subtitle: String, modifier: Modifier) {
-    Card(modifier) {
+    Card(modifier.fillMaxHeight()) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(value, style = MaterialTheme.typography.headlineSmall.merge(TabularNumbers), fontWeight = FontWeight.SemiBold)
@@ -213,6 +215,8 @@ private fun MetricCard(title: String, value: String, subtitle: String, modifier:
 
 @Composable
 private fun SpendingTrend(stats: AnlasStatistics) {
+    val chartScroll = rememberScrollState()
+    LaunchedEffect(stats.range, stats.trend.size, chartScroll.maxValue) { chartScroll.scrollTo(chartScroll.maxValue) }
     var selected by rememberSaveable(stats.range) { mutableStateOf<String?>(null) }
     val point = stats.trend.find { it.date.toString() == selected }
     val maximum = stats.trend.maxOfOrNull { it.spent }?.coerceAtLeast(1L) ?: 1L
@@ -225,8 +229,8 @@ private fun SpendingTrend(stats: AnlasStatistics) {
             Text("峰值 ${formatAnlas(stats.trend.maxOfOrNull { it.spent } ?: 0)} Anlas",
                 style = MaterialTheme.typography.labelSmall.merge(TabularNumbers), color = MaterialTheme.colorScheme.onSurfaceVariant)
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val barWidth = (maxWidth / stats.trend.size.coerceAtLeast(1)).coerceAtLeast(24.dp)
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.Bottom) {
+                val barWidth = (maxWidth / stats.trend.size.coerceAtLeast(1)).coerceAtLeast(8.dp)
+                Row(Modifier.fillMaxWidth().horizontalScroll(chartScroll), verticalAlignment = Alignment.Bottom) {
                     stats.trend.forEach { item ->
                         val fraction by animateFloatAsState(item.spent.toFloat() / maximum, tween(300), label = "趋势柱形")
                         val active = point?.date == item.date
@@ -234,7 +238,7 @@ private fun SpendingTrend(stats: AnlasStatistics) {
                             Modifier.width(barWidth).height(124.dp).clip(RoundedCornerShape(6.dp))
                                 .clickable { selected = item.date.toString() }
                                 .semantics { contentDescription = "${trendLabel(item.date, stats.range)}，消耗 ${item.spent} Anlas" }
-                                .padding(horizontal = 3.dp),
+                                .padding(horizontal = if (barWidth < 16.dp) 1.dp else 3.dp),
                             verticalArrangement = Arrangement.Bottom,
                         ) {
                             Box(Modifier.fillMaxWidth().height(if (item.spent == 0L) 2.dp else (120.dp * fraction).coerceAtLeast(3.dp))
@@ -245,7 +249,13 @@ private fun SpendingTrend(stats: AnlasStatistics) {
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            if (stats.range == AnlasStatsRange.ALL) {
+                Text("记录范围 ${stats.trend.firstOrNull()?.let { trendLabel(it.date, stats.range) }.orEmpty()} — " +
+                    stats.trend.lastOrNull()?.let { trendLabel(it.date, stats.range) }.orEmpty(),
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (chartScroll.maxValue > 0) Text("左右滑动查看更多月份", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(stats.trend.firstOrNull()?.let { trendLabel(it.date, stats.range) } ?: "", style = MaterialTheme.typography.labelSmall)
                 Text(stats.trend.lastOrNull()?.let { trendLabel(it.date, stats.range) } ?: "", style = MaterialTheme.typography.labelSmall)
             }
@@ -330,6 +340,7 @@ private fun actionLabel(type: String): String = when (type) {
     "UPSCALE" -> "超分"
     else -> "其他操作"
 }
-private fun dayLabel(date: LocalDate): String = date.format(DateTimeFormatter.ofPattern("yyyy年M月d日"))
+private fun dayLabel(date: LocalDate): String = date.format(DateTimeFormatter.ofPattern(
+    if (date.year == LocalDate.now().year) "M月d日" else "yyyy年M月d日"))
 private fun trendLabel(date: LocalDate, range: AnlasStatsRange): String =
     date.format(DateTimeFormatter.ofPattern(if (range == AnlasStatsRange.ALL) "yyyy/M" else "M/d"))

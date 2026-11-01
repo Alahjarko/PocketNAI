@@ -2,6 +2,7 @@ package net.pocketnai.preview
 
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
+import androidx.compose.foundation.lazy.rememberLazyListState
 import net.pocketnai.domain.billing.*
 import net.pocketnai.domain.model.ThemeMode
 import net.pocketnai.ui.billing.AnlasStatisticsContent
@@ -39,6 +40,12 @@ object StatisticsPreviewRenderer {
                     renderer.snapshot(name) {
                         PocketNaiTheme(themeMode = theme, dynamicColor = false) {
                             AnlasStatisticsContent(AnlasStatisticsState(stats), {}, {}, {})
+                        }
+                    }
+                    renderer.snapshot("$name-ledger") {
+                        PocketNaiTheme(themeMode = theme, dynamicColor = false) {
+                            AnlasStatisticsContent(AnlasStatisticsState(stats), {}, {}, {},
+                                listState = rememberLazyListState(initialFirstVisibleItemIndex = 6))
                         }
                     }
                     if (name == "light-phone") renderer.snapshot("empty") {

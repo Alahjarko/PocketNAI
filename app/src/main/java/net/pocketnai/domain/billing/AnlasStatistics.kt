@@ -34,6 +34,7 @@ data class AnlasStatistics(
     val actions: List<AnlasActionTotal>,
     val totalSpent: Long,
     val recordCount: Int,
+    val storedRecordCount: Int,
     val zeroSpendCount: Int,
     val activeDays: Int,
 ) {
@@ -74,6 +75,7 @@ data class AnlasStatistics(
                 }.sortedWith(compareByDescending<AnlasActionTotal> { it.spent }.thenByDescending { it.count }.thenBy { it.actionType }),
                 totalSpent = groups.sumOf { it.spent },
                 recordCount = selected.size,
+                storedRecordCount = entries.size,
                 zeroSpendCount = selected.count { it.anlasSpent <= 0 },
                 activeDays = groups.size,
             )
