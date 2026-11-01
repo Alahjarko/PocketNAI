@@ -52,6 +52,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     openAiViewModel: OpenAiImageViewModel? = null,
     onOpenAiSettings: () -> Unit = {},
+    onOpenStatistics: (() -> Unit)? = null,
 ) {
     val openAiState = openAiViewModel?.state?.collectAsStateWithLifecycle()?.value
     BoxWithConstraints(modifier = modifier) {
@@ -85,6 +86,7 @@ fun HomeScreen(
                         credentialType = credentialType,
                         onRequestConnect = onRequestConnect,
                         onOpenInpaintEditor = onOpenInpaintEditor,
+                        onOpenStatistics = onOpenStatistics,
                     )
                 }
             }
@@ -105,6 +107,7 @@ fun HomeScreen(
                     credentialType = credentialType,
                     onRequestConnect = onRequestConnect,
                     onOpenInpaintEditor = onOpenInpaintEditor,
+                    onOpenStatistics = onOpenStatistics,
                 )
             },
         ) { contentPadding ->

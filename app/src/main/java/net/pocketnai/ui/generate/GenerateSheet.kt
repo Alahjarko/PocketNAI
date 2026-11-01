@@ -112,6 +112,7 @@ fun GenerateSheet(
     onOpenInpaintEditor: () -> Unit,
     modifier: Modifier = Modifier,
     headerDragModifier: Modifier = Modifier,
+    onOpenStatistics: (() -> Unit)? = null,
 ) {
     val scrollState = rememberScrollState()
     val profile = state.profile
@@ -686,6 +687,7 @@ fun GenerateSheet(
             state = state.balanceState,
             subscriptionStatus = subscriptionStatus,
             onRefresh = viewModel::refreshBalance,
+            onViewLedger = onOpenStatistics?.let { navigate -> { balanceDialogOpen = false; navigate() } },
             onDismiss = { balanceDialogOpen = false },
         )
     }

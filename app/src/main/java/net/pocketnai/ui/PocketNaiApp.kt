@@ -313,6 +313,7 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                             onOpenInpaintEditor = { navController.navigate(Routes.INPAINT) },
                             openAiViewModel = openAiViewModel.takeIf { openAiMode },
                             onOpenAiSettings = { navController.navigate(Routes.SETTINGS) },
+                            onOpenStatistics = { navController.navigate(Routes.ANLAS_STATISTICS) { launchSingleTop = true } },
                         )
                     }
                 }

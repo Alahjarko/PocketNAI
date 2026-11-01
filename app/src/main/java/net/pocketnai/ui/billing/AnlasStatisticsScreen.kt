@@ -94,7 +94,7 @@ internal fun AnlasStatisticsContent(
         topBar = {
             TopAppBar(
                 title = { Text("Anlas 统计") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回设置") } },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
                 actions = {
                     if (statistics != null && statistics.storedRecordCount > 0) {
                         IconButton(onClick = onClear) { Icon(Icons.Outlined.DeleteOutline, "清空本机全部流水") }

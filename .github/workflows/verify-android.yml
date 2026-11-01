@@ -62,12 +62,13 @@ jobs:
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
           "$APKSIGNER" verify --print-certs "$RUNNER_TEMP/previous/PocketNAI.apk" > "$RUNNER_TEMP/previous-cert.txt"
           "$APKSIGNER" verify --print-certs app/build/outputs/apk/release/app-release.apk > "$RUNNER_TEMP/current-cert.txt"
+          cat "$RUNNER_TEMP/previous-cert.txt" "$RUNNER_TEMP/current-cert.txt"
           python3 - "$RUNNER_TEMP/previous-cert.txt" "$RUNNER_TEMP/current-cert.txt" <<'PY'
           import pathlib, re, sys
           def certs(path):
-              values = set(re.findall(r"^Signer #\d+ certificate SHA-256 digest: ([0-9a-f]{64})$", pathlib.Path(path).read_text(), re.M))
+              values = set(re.findall(r"^Signer[^\n]*certificate SHA-256 digest:\s*([0-9a-f]{64})", pathlib.Path(path).read_text(), re.M | re.I))
               assert values, 'No signing certificate'
-              return values
+              return {value.lower() for value in values}
           assert certs(sys.argv[1]) == certs(sys.argv[2]), 'Signing certificate mismatch'
           print('Signing matches build-24')
           PY
