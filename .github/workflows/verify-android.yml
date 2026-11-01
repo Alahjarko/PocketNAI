@@ -66,7 +66,7 @@ jobs:
           python3 - "$RUNNER_TEMP/previous-cert.txt" "$RUNNER_TEMP/current-cert.txt" <<'PY'
           import pathlib, re, sys
           def certs(path):
-              values = set(re.findall(r"^Signer[^\n]*certificate SHA-256 digest:\s*([0-9a-f]{64})", pathlib.Path(path).read_text(), re.M | re.I))
+              values = set(re.findall(r"^(?:V[0-9.]+\s+)?Signer[^\n]*certificate SHA-256 digest:\s*([0-9a-f]{64})", pathlib.Path(path).read_text(), re.M | re.I))
               assert values, 'No signing certificate'
               return {value.lower() for value in values}
           assert certs(sys.argv[1]) == certs(sys.argv[2]), 'Signing certificate mismatch'
