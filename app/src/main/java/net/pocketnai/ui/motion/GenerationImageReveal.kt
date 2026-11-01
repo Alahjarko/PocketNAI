@@ -97,7 +97,7 @@ internal fun GenerationImageReveal(
                     drawPath(path, ink, style = Stroke(stroke, cap = StrokeCap.Round))
                 }
             }
-            if (!ready) Text("生成中", style = MaterialTheme.typography.labelMedium,
+            if (!ready) WaitingIndicator("生成中",
                 modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp))
         }
     }

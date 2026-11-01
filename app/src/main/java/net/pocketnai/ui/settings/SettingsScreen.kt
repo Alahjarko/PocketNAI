@@ -53,7 +53,6 @@ import net.pocketnai.domain.billing.SubscriptionTier
 import net.pocketnai.domain.model.ThemeMode
 import net.pocketnai.domain.proxy.ProxyMode
 import net.pocketnai.ui.LocalAppContainer
-import net.pocketnai.ui.billing.AnlasLedgerDialog
 import net.pocketnai.ui.billing.BalanceDetailDialog
 import net.pocketnai.ui.billing.compactLabel
 import net.pocketnai.ui.billing.rememberSubscriptionExpiry
@@ -75,6 +74,7 @@ import net.pocketnai.ui.chat.ChatSettingsDialog
 @Composable
 fun SettingsScreen(
     onRequestConnect: () -> Unit,
+    onOpenStatistics: () -> Unit,
     updateViewModel: UpdateViewModel,
     chatViewModel: ChatViewModel,
 ) {
@@ -112,7 +112,6 @@ fun SettingsScreen(
 
     var accountSwitchDialogOpen by remember { mutableStateOf(false) }
     var balanceDialogOpen by remember { mutableStateOf(false) }
-    var ledgerDialogOpen by remember { mutableStateOf(false) }
     var subscriptionDialogOpen by remember { mutableStateOf(false) }
     var proxyDialogOpen by remember { mutableStateOf(false) }
     var themeDialogOpen by remember { mutableStateOf(false) }
@@ -206,7 +205,7 @@ fun SettingsScreen(
                 SettingsRow(
                     title = stringResource(R.string.settings_balance_ledger),
                     subtitle = stringResource(R.string.settings_ledger_subtitle),
-                    onClick = { ledgerDialogOpen = true },
+                    onClick = onOpenStatistics,
                 )
                 SettingsDivider()
                 SettingsRow(
@@ -319,16 +318,9 @@ fun SettingsScreen(
             onRefresh = refreshBalance,
             onViewLedger = {
                 balanceDialogOpen = false
-                ledgerDialogOpen = true
+                onOpenStatistics()
             },
             onDismiss = { balanceDialogOpen = false },
-        )
-    }
-
-    if (ledgerDialogOpen) {
-        AnlasLedgerDialog(
-            ledgerRepository = container.anlasLedgerRepository,
-            onDismiss = { ledgerDialogOpen = false },
         )
     }
 

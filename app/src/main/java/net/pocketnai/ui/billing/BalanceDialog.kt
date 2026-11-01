@@ -151,7 +151,7 @@ fun BalanceDetailDialog(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (onViewLedger != null) {
                     TextButton(onClick = onViewLedger) {
-                        Text("消耗流水")
+                        Text("消耗统计")
                     }
                 }
                 TextButton(onClick = onRefresh) {

@@ -12,6 +12,10 @@ import net.pocketnai.ui.motion.imagePageExit
 import net.pocketnai.ui.motion.imageMotionChrome
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
@@ -98,6 +102,7 @@ object Routes {
     /** 首页 = 画廊 + 生成悬浮层（两者已合并）。 */
     const val HOME = "home"
     const val SETTINGS = "settings"
+    const val ANLAS_STATISTICS = "anlas-statistics"
     const val CHAT = "chat"
     const val ARTIST_LAB = "artist-lab"
     const val DETAIL = "detail/{imageId}"
@@ -263,7 +268,13 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                 if (targetState.destination.route == Routes.DETAIL || initialState.destination.route == Routes.DETAIL)
                     imagePageExit() else fadeOut(tween(100))
             },
-            popEnterTransition = { if (initialState.destination.route == Routes.DETAIL) imagePageEnter() else fadeIn(tween(160)) },
+            popEnterTransition = {
+                when (initialState.destination.route) {
+                    Routes.DETAIL -> imagePageEnter()
+                    Routes.ANLAS_STATISTICS -> fadeIn(tween(260)) + scaleIn(tween(260), initialScale = 0.96f)
+                    else -> fadeIn(tween(160))
+                }
+            },
             popExitTransition = { if (initialState.destination.route == Routes.DETAIL) imagePageExit() else fadeOut(tween(100)) },
         ) {
             composable(Routes.CONNECT) {
@@ -311,10 +322,26 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                     PocketNaiPageFrame(navController, Routes.SETTINGS, chatEnabled, artistLabEnabled) {
                         SettingsScreen(
                             onRequestConnect = { navController.navigate(Routes.CONNECT) },
+                            onOpenStatistics = { navController.navigate(Routes.ANLAS_STATISTICS) { launchSingleTop = true } },
                             updateViewModel = updateViewModel,
                             chatViewModel = chatViewModel,
                         )
                     }
+                }
+            }
+            // Navigation Compose 2.8 drives these seekable transitions during predictive back,
+            // including gesture cancellation. Keep one back-stack owner instead of intercepting it.
+            composable(
+                Routes.ANLAS_STATISTICS,
+                enterTransition = { fadeIn(tween(260)) + slideInHorizontally(tween(260)) { it / 5 } },
+                popExitTransition = { fadeOut(tween(260)) + scaleOut(tween(260), targetScale = 0.94f) +
+                    slideOutHorizontally(tween(260)) { it / 4 } },
+            ) {
+                ImageMotionRoute(this, Routes.ANLAS_STATISTICS) {
+                    net.pocketnai.ui.billing.AnlasStatisticsScreen(
+                        repository = container.anlasLedgerRepository,
+                        onBack = { navController.popBackStack() },
+                    )
                 }
             }
             composable(Routes.CHAT) {

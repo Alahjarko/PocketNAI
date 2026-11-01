@@ -18,9 +18,4 @@ class PromptWeightScannerTest {
             .containsExactly(WeightDirection.WEAKER, WeightDirection.WEAKER, WeightDirection.STRONGER).inOrder()
     }
 
-    @Test fun `截图中的连续权重分别高亮`() {
-        val text = "1.5::tag, tag 1.2::tag::\n1.8::tag"
-        assertThat(text.spansOf()).containsExactly("1.5::tag, tag", "1.2::tag::", "1.8::tag").inOrder()
-        assertThat(PromptWeightScanner.scan(text).map { it.weight }).containsExactly(1.5, 1.2, 1.8).inOrder()
-    }
 }

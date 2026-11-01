@@ -1,6 +1,10 @@
 package net.pocketnai.data.repo
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import net.pocketnai.domain.billing.AnlasLedgerEntry
 import net.pocketnai.data.local.AnlasTransactionDao
 import net.pocketnai.data.local.AnlasTransactionEntity
 import java.util.UUID
@@ -40,8 +44,12 @@ class AnlasLedgerRepository(
         dao.insert(entity)
     }
 
-    fun observeRecent(limit: Int = 100): Flow<List<AnlasTransactionEntity>> =
-        dao.observeRecent(limit)
+    fun observeAll(): Flow<List<AnlasLedgerEntry>> = dao.observeAll().map { rows ->
+        rows.map { row ->
+            AnlasLedgerEntry(row.id, row.actionType, row.anlasSpent, row.v5AllowanceDelta,
+                row.balanceAfter, row.description, row.createdAt)
+        }
+    }.flowOn(Dispatchers.Default)
 
     suspend fun allTransactions(): List<AnlasTransactionEntity> =
         dao.allTransactions()
