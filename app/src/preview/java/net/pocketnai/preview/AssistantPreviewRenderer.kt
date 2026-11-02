@@ -49,7 +49,7 @@ object AssistantPreviewRenderer {
                                 item { ChatImageContextPanel(context) }
                                 item { TextButton(onClick = {}) { Text("仅发送图片") } }
                             }
-                        } else ChatPageLayout(header = {
+                        } else Surface(Modifier.fillMaxSize()) { ChatPageLayout(header = {
                             Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text("绘伴", style = MaterialTheme.typography.titleLarge)
                             }
@@ -69,7 +69,7 @@ object AssistantPreviewRenderer {
                         }, floating = { ChatJumpToLatest(name == "assistant-history", {}) }, composer = {
                             ChatComposer(TextFieldValue(""), {}, "绘伴", false, false, false, false, {}, {},
                                 leadingActions = { IconButton(onClick = {}) { Icon(Icons.Default.Add, "添加图片") } })
-                        })
+                        }) }
                     }
                 }
             }, Description.createTestDescription(AssistantPreviewRenderer::class.java, name)).evaluate()

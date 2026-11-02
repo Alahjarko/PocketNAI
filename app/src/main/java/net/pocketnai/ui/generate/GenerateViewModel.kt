@@ -343,8 +343,8 @@ class GenerateViewModel(
      * 由计算器算出来；放回状态里就得在每个改参数的入口都记得重算一遍。
      * 计算是纯函数，参数一变就重算，不发任何网络请求。
      *
-     * 订阅等级除余额外还要看设置页的手动指定（[SettingsStore.subscriptionOverride]），
-     * 因此这里是三路 combine —— 用户在设置里改了等级，生成按钮上的报价要立刻跟着变。
+     * 生产等级只取服务端判据；[SettingsStore.subscriptionOverride] 固定 AUTO，
+     * 仅保留给隔离回归的内存注入。分钟时钟负责订阅到期后的本地报价重算。
      */
     val costEstimate: StateFlow<GenerationCostEstimate> = combine(
         _state,
