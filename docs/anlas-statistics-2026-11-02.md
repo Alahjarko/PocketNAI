@@ -59,3 +59,12 @@ Release APK SHA-256：`3f35af0581ae2d3d60379e220cbac33be523f9fbdb785712618131b66
 [本地安装包](../../artifacts/PocketNAI-statistics-review.apk) · [9 张界面预览](../../artifacts/previews/README.md)。
 
 后续真机重点检查：从设置和生成面板余额弹层进入/返回；7/30/全部范围切换；流水吸顶与单日小计；预测性返回手势提交及取消；原生成草稿和历史仍在。
+
+
+## 正式发布 0.1.25
+
+已将统计页及发布流程修复合入 `master`，通过[正式云端发布 #41366586164](https://github.com/Alahjarko/PocketNAI/actions/runs/41366586164) 发布 [0.1.25 / build-25](https://github.com/Alahjarko/PocketNAI/releases/tag/build-25)。该 Release 包含 `PocketNAI.apk`，标签固定在构建提交 `a242b72c68241094d8aba3785ca8d85fc385c161`；版本为正式 `0.1.25` / code 25。
+
+本次重新完成 29 项 JVM 测试和优化版构建，并用 `apksigner` 校验 APK、核对上一版证书集合。公开附件 SHA-256 为 `9b09a49eaad406eab89c73a51115a4489393c1590514cf89c4f82ea5ac460917`，与云端构建产物一致。原有 Release 保留；仍未使用安卓模拟器，设备测试和真机手势的验证范围沿用上文说明。
+
+[下载正式 APK](https://github.com/Alahjarko/PocketNAI/releases/download/build-25/PocketNAI.apk)。
