@@ -62,7 +62,7 @@ class GenerationDraftCodecTest {
                 useCharacterCoordinates = true,
                 characters = listOf(net.pocketnai.domain.model.CharacterPrompt(prompt = "long tag, ".repeat(200), centerX = 0.12345, centerY = 0.98765)),
             )
-        }.copy(references = listOf(reference("retained-director", ReferenceRole.DIRECTOR, 0)))
+        }.copy(references = listOf(reference("retained-director", ReferenceRole.DIRECTOR, 0).copy(sourceImageId = "original-gallery-image")))
 
         val restored = GenerationDraftCodec.decode(GenerationDraftCodec.encode(original))
 

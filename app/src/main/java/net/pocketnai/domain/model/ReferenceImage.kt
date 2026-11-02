@@ -139,6 +139,8 @@ data class ReferenceImage(
      * 为空表示尚未编码。缓存键含模型，因此换模型后需要重新编码（见规划书 3.4 B5）。
      */
     val vibeRelativePath: String? = null,
+    /** 本机画廊原图身份；删除原图只使入口失效，不影响参考图副本。 */
+    val sourceImageId: String? = null,
 ) {
     companion object {
         /**
@@ -162,6 +164,7 @@ data class ReferenceImage(
             sha256 = prepared.sha256,
             createdAt = createdAt,
             strength = strength,
+            sourceImageId = prepared.sourceImageId,
         )
     }
 }

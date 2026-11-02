@@ -59,5 +59,6 @@ object StatisticsPreviewRenderer {
         ExperiencePreviewRenderer.render()
         AssistantPreviewRenderer.render()
         SfwPreviewRenderer.render()
+        MotionPolishPreviewRenderer.render()
     }
 }

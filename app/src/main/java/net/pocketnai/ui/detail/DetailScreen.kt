@@ -8,7 +8,6 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.compose.BackHandler
 import net.pocketnai.ui.motion.LocalImageMotion
 import net.pocketnai.ui.motion.sharedImage
 import net.pocketnai.ui.motion.sharedImageRequest
@@ -132,7 +131,7 @@ fun DetailScreen(
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
     val imageMotion = LocalImageMotion.current
-    LaunchedEffect(state.currentId) { state.currentId?.let { imageMotion?.selectImage(it) } }
+    LaunchedEffect(state.currentId) { state.currentId?.let { imageMotion?.prepareReturn(it) } }
     val context = LocalContext.current
 
     // 顺序在打开时定死：详情页里新生成/删除不应让滑动顺序"自己跳走"。
@@ -161,10 +160,9 @@ fun DetailScreen(
     val pagerState = rememberDetailPager(imageId, pagerIds, state.pagerIds, state.currentId, viewModel::selectPage)
     val returnFromCurrent = {
         revealedImageId = null
-        displayedIds.getOrNull(pagerState.currentPage)?.let { imageMotion?.selectImage(it) }
+        displayedIds.getOrNull(pagerState.currentPage)?.let { imageMotion?.prepareReturn(it) }
         onBack()
     }
-    BackHandler(onBack = returnFromCurrent)
     val routeMoving = imageRouteIsMoving()
     // Warm the adjacent records, not two complete offscreen pages during the opening frame.
     LaunchedEffect(pagerState.settledPage, routeMoving) {

@@ -10,6 +10,10 @@ import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.animation.*
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,14 +57,20 @@ private fun ModeChoice(option: ThemeMode, current: ThemeMode, onSelect: (ThemeMo
         ThemeMode.DARK -> R.string.theme_dark to Icons.Outlined.DarkMode
     }
     val selected = current == option
-    val shape = RoundedCornerShape(if (selected) 24.dp else 12.dp)
+    val corner by animateDpAsState(if (selected) 24.dp else 12.dp, tween(220), label = "mode-corner")
+    val fill by animateColorAsState(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh, tween(180), label = "mode-fill")
+    val ink by animateColorAsState(if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant, tween(180), label = "mode-ink")
+    val shape = RoundedCornerShape(corner)
     Surface(modifier.clip(shape).selectable(selected, role = Role.RadioButton, onClick = { onSelect(option) }),
-        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+        color = fill,
+        contentColor = ink,
         shape = shape) {
         Row(Modifier.heightIn(min = 48.dp).padding(horizontal = 8.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally)) {
-            if (selected) Icon(icon, null, Modifier.size(18.dp))
+            AnimatedVisibility(selected, enter = fadeIn(tween(160)) + expandHorizontally(tween(220)),
+                exit = fadeOut(tween(100)) + shrinkHorizontally(tween(220))) {
+                Icon(icon, null, Modifier.size(18.dp))
+            }
             Text(stringResource(label), style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
         }
     }

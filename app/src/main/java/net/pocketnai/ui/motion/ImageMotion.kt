@@ -52,6 +52,12 @@ class ImageMotionState {
         closing = false
     }
     fun selectImage(imageId: String) { if (!closing) currentImageId = imageId }
+    /** Prepare the actual pager image before NavHost starts a seekable back gesture. */
+    fun prepareReturn(imageId: String) {
+        selectImage(imageId)
+        val origin = source ?: return
+        if (!closing && returning?.imageId != imageId) returning = ImageReturnRequest(origin, imageId, ++sequence)
+    }
     fun returnToSource() {
         val origin = source ?: return
         val id = currentImageId ?: return

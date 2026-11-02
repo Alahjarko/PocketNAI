@@ -1,6 +1,16 @@
 package net.pocketnai.ui.home
 
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.activity.ExperimentalActivityApi
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.*
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlin.math.max
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -35,7 +45,7 @@ import net.pocketnai.ui.motion.imageMotionChrome
 import kotlinx.coroutines.launch
 
 /** 内容滚动与面板切换分开：仅把手/标题接受明确拖动，不接收内容的剩余滚动或 fling。 */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalActivityApi::class)
 @Composable
 internal fun GenerationSheetScaffold(
     inFlight: Boolean,
@@ -50,6 +60,16 @@ internal fun GenerationSheetScaffold(
     )
     val sheetState = scaffoldState.bottomSheetState
     val scope = rememberCoroutineScope()
+    val backProgress = remember { Animatable(0f) }
+    var backStartOffset by remember { mutableFloatStateOf(0f) }
+    var scaffoldHeight by remember { mutableFloatStateOf(0f) }
+    val peekPx = with(LocalDensity.current) { 112.dp.toPx() }
+    val backShift = Modifier.graphicsLayer {
+        val current = runCatching { sheetState.requireOffset() }.getOrDefault(backStartOffset)
+        val destination = max(backStartOffset, scaffoldHeight - peekPx)
+        val visual = backStartOffset + (destination - backStartOffset) * backProgress.value
+        translationY = if (backProgress.value > 0f) (visual - current).coerceAtLeast(0f) else 0f
+    }
     val expanded = sheetState.currentValue == SheetValue.Expanded
     val threshold = with(LocalDensity.current) { 48.dp.toPx() }
     val headerDrag = Modifier.pointerInput(sheetState, threshold) {
@@ -77,6 +97,7 @@ internal fun GenerationSheetScaffold(
 
     BottomSheetScaffold(
         scaffoldState = scaffoldState,
+        modifier = Modifier.onSizeChanged { scaffoldHeight = it.height.toFloat() },
         sheetPeekHeight = 112.dp,
         sheetSwipeEnabled = false,
         sheetContainerColor = Color.Transparent,
@@ -86,6 +107,7 @@ internal fun GenerationSheetScaffold(
                     .fillMaxWidth()
                     .height(48.dp)
                     .imageMotionChrome(zIndex = 2f)
+                    .then(backShift)
                     .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
                     .then(headerDrag)
                     .clickable(
@@ -111,7 +133,7 @@ internal fun GenerationSheetScaffold(
             }
         },
         sheetContent = {
-            Box(Modifier.fillMaxWidth().imageMotionChrome(zIndex = 2f).background(MaterialTheme.colorScheme.surfaceContainerLow)) {
+            Box(Modifier.fillMaxWidth().imageMotionChrome(zIndex = 2f).then(backShift).background(MaterialTheme.colorScheme.surfaceContainerLow)) {
                 sheetContent(expanded, headerDrag)
             }
         },
@@ -119,7 +141,17 @@ internal fun GenerationSheetScaffold(
     )
     // Register after the gallery's handlers: the expanded foreground panel closes first.
     // Includes an opening animation, so back cannot leave halfway through expanding.
-    BackHandler(enabled = expanded || sheetState.targetValue == SheetValue.Expanded) {
-        scope.launch { sheetState.partialExpand() }
+    PredictiveBackHandler(enabled = expanded || sheetState.targetValue == SheetValue.Expanded) { events ->
+        backStartOffset = sheetState.requireOffset()
+        try {
+            events.collect { event -> backProgress.snapTo(event.progress) }
+            backProgress.animateTo(1f, tween(120))
+            sheetState.partialExpand()
+            backProgress.snapTo(0f)
+        } catch (cancelled: CancellationException) {
+            // A cancelled gesture preserves the expanded panel and its editor/scroll state.
+            withContext(NonCancellable) { backProgress.animateTo(0f, tween(160)) }
+            throw cancelled
+        }
     }
 }

@@ -86,4 +86,5 @@ jobs:
             app/build/test-results/
             app/build/reports/paparazzi/
             app/build/reports/packaged-manifest.xml
+            app/schemas/
           retention-days: 14

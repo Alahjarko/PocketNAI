@@ -52,4 +52,5 @@ data class ReferenceImageEntity(
     /** `encode-vibe` 产物的相对路径，仅 Vibe 使用。 */
     val vibeRelativePath: String?,
     val createdAt: Long,
+    val sourceImageId: String? = null,
 )

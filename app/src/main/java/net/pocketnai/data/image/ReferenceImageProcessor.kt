@@ -55,6 +55,7 @@ import java.io.IOException
 class ReferenceImageProcessor(
     context: Context,
     private val fileStore: GenerationFileStore,
+    private val galleryOriginOf: suspend (String) -> String? = { null },
 ) : ReferenceImageEncoder, ReferenceImageImporter {
 
     private val appContext = context.applicationContext
@@ -64,7 +65,10 @@ class ReferenceImageProcessor(
         transform: ImageTransform?,
     ): Outcome<PreparedReference> = when (source) {
         is ReferenceSource.PickedUri -> importUri(Uri.parse(source.uri), transform)
-        is ReferenceSource.LocalPath -> importFile(fileStore.resolve(source.relativePath), transform)
+        is ReferenceSource.LocalPath -> when (val result = importFile(fileStore.resolve(source.relativePath), transform)) {
+            is Outcome.Success -> Outcome.Success(result.value.copy(sourceImageId = galleryOriginOf(source.relativePath)))
+            is Outcome.Failure -> result
+        }
     }
 
     private suspend fun importUri(

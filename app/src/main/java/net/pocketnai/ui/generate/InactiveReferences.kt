@@ -32,4 +32,5 @@ internal fun InactiveReferences(references: List<ReferenceImage>, onRemove: (Str
             }
         }
     }
+    references.filter { it.sourceImageId != null }.distinctBy { it.sourceImageId }.forEach { ReferenceOriginLink(it) }
 }

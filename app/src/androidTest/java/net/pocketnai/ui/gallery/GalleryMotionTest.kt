@@ -53,6 +53,16 @@ class GalleryMotionTest {
             drawText("MOTION SAMPLE", 82f, 535f, paint)
         }
         file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
+        val backTarget = ImageMotionState().apply { open("gallery", "first") }
+        backTarget.prepareReturn("second")
+        assertThat(backTarget.currentImageId).isEqualTo("second")
+        assertThat(backTarget.returning?.imageId).isEqualTo("second")
+        // Preparation does not lock selection; cancelling and then paging must still work.
+        backTarget.prepareReturn("third")
+        assertThat(backTarget.returning?.imageId).isEqualTo("third")
+        backTarget.returnToSource()
+        backTarget.selectImage("late-update")
+        assertThat(backTarget.currentImageId).isEqualTo("third")
         val now = System.currentTimeMillis()
         val params = GenerationParams.defaultsFor(ModelCatalog.defaultProfile()).copy(
             size = ImageSizePreset(832, 1216), sampleCount = 1,

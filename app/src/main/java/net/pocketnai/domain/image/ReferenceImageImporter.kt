@@ -24,6 +24,7 @@ data class PreparedReference(
     val height: Int,
     val byteSize: Long,
     val sha256: String,
+    val sourceImageId: String? = null,
 )
 
 /**

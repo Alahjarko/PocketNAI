@@ -13,6 +13,12 @@ interface GenerationDao {
         FROM generated_images i JOIN generations g ON g.id = i.generationId""")
     fun observeImageSafetyRows(): Flow<List<ImageSafetyRow>>
 
+    @Query("SELECT i.id FROM generated_images i JOIN generations g ON g.id = i.generationId WHERE i.relativePath = :path AND g.deletedAt IS NULL LIMIT 1")
+    suspend fun galleryOriginOf(path: String): String?
+
+    @Query("SELECT i.* FROM generated_images i JOIN generations g ON g.id = i.generationId WHERE i.id = :imageId AND g.deletedAt IS NULL")
+    fun observeGalleryOrigin(imageId: String): Flow<GeneratedImageEntity?>
+
     /** 未删除的生成记录，按时间倒序，带图片数量。 */
     @Query(
         """

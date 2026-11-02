@@ -51,6 +51,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -258,13 +259,21 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
 
     // Each destination owns its insets and navigation chrome, including while it leaves.
     Surface(Modifier.fillMaxSize()) {
+        CompositionLocalProvider(net.pocketnai.ui.generate.LocalReferenceOriginOpener provides { preview ->
+            imageMotion.preview = preview
+            imageMotion.open("reference-origin", preview.imageId)
+            navController.navigate(Routes.detail(preview.imageId))
+        }) {
         NavHost(
             navController = navController,
             startDestination = if (connected) Routes.HOME else Routes.CONNECT,
             modifier = Modifier.fillMaxSize(),
             enterTransition = {
-                if (targetState.destination.route == Routes.DETAIL || initialState.destination.route == Routes.DETAIL)
-                    imagePageEnter() else fadeIn(tween(160))
+                when (targetState.destination.route) {
+                    Routes.DETAIL -> imagePageEnter()
+                    Routes.INPAINT -> fadeIn(tween(260)) + slideInHorizontally(tween(260)) { it / 5 }
+                    else -> if (initialState.destination.route == Routes.DETAIL) imagePageEnter() else fadeIn(tween(160))
+                }
             },
             exitTransition = {
                 if (targetState.destination.route == Routes.DETAIL || initialState.destination.route == Routes.DETAIL)
@@ -273,11 +282,15 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
             popEnterTransition = {
                 when (initialState.destination.route) {
                     Routes.DETAIL -> imagePageEnter()
-                    Routes.ANLAS_STATISTICS -> fadeIn(tween(260)) + scaleIn(tween(260), initialScale = 0.96f)
+                    Routes.ANLAS_STATISTICS, Routes.INPAINT -> fadeIn(tween(260)) + scaleIn(tween(260), initialScale = 0.96f)
                     else -> fadeIn(tween(160))
                 }
             },
-            popExitTransition = { if (initialState.destination.route == Routes.DETAIL) imagePageExit() else fadeOut(tween(100)) },
+            popExitTransition = { when (initialState.destination.route) {
+                Routes.DETAIL -> imagePageExit()
+                Routes.INPAINT -> fadeOut(tween(260)) + scaleOut(tween(260), targetScale = 0.94f) + slideOutHorizontally(tween(260)) { it / 4 }
+                else -> fadeOut(tween(100))
+            } },
         ) {
             composable(Routes.CONNECT) {
                 ImageMotionRoute(this, Routes.CONNECT) {
@@ -417,6 +430,7 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                     }
                 }
             }
+        }
         }
     }
 

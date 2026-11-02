@@ -190,7 +190,7 @@ class AppContainer(application: Application) {
 
     /** 参考图处理管线（解码 / 变换 / 编码 / 落盘）。全部几何计算在 domain 层，见 ImageGeometry。 */
     val referenceImageProcessor: ReferenceImageProcessor by lazy {
-        ReferenceImageProcessor(application, fileStore)
+        ReferenceImageProcessor(application, fileStore, database.generationDao()::galleryOriginOf)
     }
 
     /**

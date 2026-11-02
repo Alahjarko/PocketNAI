@@ -155,6 +155,7 @@ object Mappers {
             secondaryStrength = reference.secondaryStrength,
             directorKind = reference.directorKind?.apiValue,
             vibeRelativePath = reference.vibeRelativePath,
+            sourceImageId = reference.sourceImageId,
             createdAt = reference.createdAt,
         )
 
@@ -176,6 +177,7 @@ object Mappers {
             secondaryStrength = entity.secondaryStrength,
             directorKind = entity.directorKind?.let { DirectorReferenceKind.fromApiValueOrDefault(it) },
             vibeRelativePath = entity.vibeRelativePath,
+            sourceImageId = entity.sourceImageId,
         )
     }
 

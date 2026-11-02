@@ -178,7 +178,7 @@ class GenerationSeedAndPayloadTest {
             override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
         }
         val files = GenerationFileStore(isolated)
-        val processor = net.pocketnai.data.image.ReferenceImageProcessor(isolated, files)
+        val processor = net.pocketnai.data.image.ReferenceImageProcessor(isolated, files) { path -> if (path == "inputs/0.png") "source-0" else null }
         val sizes = listOf(256 to 384, 512 to 256, 450 to 500, 400 to 400)
         val colors = listOf(Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW)
         val strengths = listOf(0.3, 0.6, 0.9, null)
@@ -199,11 +199,12 @@ class GenerationSeedAndPayloadTest {
                 val input = File(files.resolve("inputs").apply { mkdirs() }, "$index.png").apply { writeBytes(bytes) }
                 val prepared = (processor.import(net.pocketnai.domain.image.ReferenceSource.LocalPath("inputs/$index.png"),
                     net.pocketnai.domain.image.ImageTransform.DirectorCanvas) as Outcome.Success).value
+                assertThat(prepared.sourceImageId).isEqualTo(if (index == 0) "source-0" else null)
                 assertThat(input.readBytes()).isEqualTo(bytes)
                 net.pocketnai.domain.model.ReferenceImage("ref-$index", net.pocketnai.domain.model.ReferenceRole.DIRECTOR,
                     index, prepared.relativePath, prepared.width, prepared.height, prepared.byteSize, prepared.sha256, 0,
                     strength = strengths[index], secondaryStrength = fidelities[index],
-                    informationExtracted = information[index], directorKind = kinds[index])
+                    informationExtracted = information[index], directorKind = kinds[index], sourceImageId = prepared.sourceImageId)
             }
             val profile = ModelCatalog.profileOf(ImageModel.V4_5_FULL)
             val params = GenerationParams.defaultsFor(profile).copy(prompt = "sfw, a traveler",

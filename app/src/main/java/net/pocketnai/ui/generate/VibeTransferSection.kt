@@ -218,6 +218,7 @@ private fun VibeEntry(
             }
         }
 
+        ReferenceOriginLink(reference)
         LabeledSlider(
             label = stringResource(R.string.generate_reference_strength),
             value = reference.strength ?: range.start,

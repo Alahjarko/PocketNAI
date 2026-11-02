@@ -132,6 +132,7 @@ fun Img2ImgPanel(
                 targetSizeLabel = state.referenceTargetSize?.label.orEmpty(),
                 onRemove = viewModel::onRemoveReference,
             )
+            ReferenceOriginLink(source)
 
             // 局部重绘入口：底图就绪才出现。
             if (!state.supportsInpaint) {

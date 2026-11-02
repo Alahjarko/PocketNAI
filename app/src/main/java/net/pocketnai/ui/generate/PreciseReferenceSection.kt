@@ -210,6 +210,7 @@ private fun DirectorEntry(
             }
         }
 
+        ReferenceOriginLink(reference)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             // 参考类型与官网 caption 对应，单独一行避免小屏挤压。
             DirectorKind.entries.forEach { kind ->

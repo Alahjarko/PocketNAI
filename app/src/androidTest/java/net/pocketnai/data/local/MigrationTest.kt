@@ -22,19 +22,24 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class MigrationTest {
 
-    @Test fun migrate10To12KeepsHistoryAndAddsOptionalProviderSnapshot() {
+    @Test fun migrate10To13KeepsHistoryAndReferenceOrigins() {
         helper.createDatabase("prompt-migration-test", 10).use { db ->
             db.execSQL("""INSERT INTO generations (id,createdAt,updatedAt,status,title,promptTemplate,mode,prompt,negativePrompt,modelApiId,width,height,sampleCount,steps,guidance,cfgRescale,sampler,noiseSchedule,seedMode,baseSeed,qualityTags,qualityTagsEnabled,ucPresetIndex,modelConfigVersion,requestSnapshotVersion,charactersJson)
                 VALUES ('old',1,1,'SUCCEEDED','old title','sfw','TXT2IMG','sfw','','nai-diffusion-4-5-curated',832,1216,1,23,7.0,0.0,'k_euler_ancestral','karras','FIXED',42,'NONE',0,0,'v1',3,'[]')""")
             db.execSQL("""INSERT INTO generated_images (id,generationId,ordinal,seed,relativePath,width,height,byteSize,sha256,metadataJson,createdAt,exportedUri)
                 VALUES ('old-image','old',1,42,'generations/old/0001.png',832,1216,1024,'sha',NULL,1,NULL)""")
+            db.execSQL("INSERT INTO reference_images (id,generationId,role,ordinal,relativePath,width,height,byteSize,sha256,createdAt) VALUES ('ref','old','IMG2IMG',0,'references/old.png',832,1216,100,'ref-sha',1)")
         }
-        helper.runMigrationsAndValidate("prompt-migration-test", 12, true,
-            PocketNaiDatabase.MIGRATION_10_11, PocketNaiDatabase.MIGRATION_11_12).use { db ->
+        helper.runMigrationsAndValidate("prompt-migration-test", 13, true,
+            PocketNaiDatabase.MIGRATION_10_11, PocketNaiDatabase.MIGRATION_11_12, PocketNaiDatabase.MIGRATION_12_13).use { db ->
             db.query("SELECT title,charactersJson,useCharacterCoordinates,openAiParamsJson FROM generations WHERE id='old'").use {
                 assertThat(it.moveToFirst()).isTrue(); assertThat(it.getString(0)).isEqualTo("old title"); assertThat(it.getString(1)).isEqualTo("[]"); assertThat(it.isNull(2)).isTrue()
                 assertThat(it.isNull(3)).isTrue()
             }
+            db.query("SELECT sourceImageId,relativePath FROM reference_images WHERE id='ref'").use {
+                assertThat(it.moveToFirst()).isTrue(); assertThat(it.isNull(0)).isTrue(); assertThat(it.getString(1)).isEqualTo("references/old.png")
+            }
+            db.execSQL("UPDATE reference_images SET sourceImageId='old-image' WHERE id='ref'")
             db.query("SELECT COUNT(*) FROM generated_images").use { assertThat(it.moveToFirst()).isTrue(); assertThat(it.getInt(0)).isEqualTo(1) }
             db.execSQL("INSERT INTO chat_conversations VALUES ('chat','title',2,'[]')")
             db.query("SELECT entriesJson FROM chat_conversations").use { assertThat(it.moveToFirst()).isTrue(); assertThat(it.getString(0)).isEqualTo("[]") }

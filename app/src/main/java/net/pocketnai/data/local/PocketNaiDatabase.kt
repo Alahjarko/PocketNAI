@@ -26,7 +26,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ArtistLabDrawEntity::class,
         ArtistMixFavoriteEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 abstract class PocketNaiDatabase : RoomDatabase() {
@@ -44,6 +44,11 @@ abstract class PocketNaiDatabase : RoomDatabase() {
     abstract fun anlasTransactionDao(): AnlasTransactionDao
 
     companion object {
+        val MIGRATION_12_13: Migration = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE reference_images ADD COLUMN sourceImageId TEXT")
+            }
+        }
         val MIGRATION_11_12: Migration = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE generations ADD COLUMN openAiParamsJson TEXT")
@@ -275,6 +280,7 @@ abstract class PocketNaiDatabase : RoomDatabase() {
                     MIGRATION_9_10,
                     MIGRATION_10_11,
                     MIGRATION_11_12,
+                    MIGRATION_12_13,
                 )
                 .build()
     }

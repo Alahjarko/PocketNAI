@@ -127,6 +127,11 @@ fun OpenAiImageSheet(
                     }
                 }
             }
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(state.draft.references.filter { it.sourceImageId != null }.distinctBy { it.sourceImageId }, key = { it.id }) { ref ->
+                    net.pocketnai.ui.generate.ReferenceOriginLink(ref, Modifier.width(208.dp))
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                     enabled = !state.busy && !state.importing && state.draft.references.size < 16, modifier = Modifier.weight(1f)) { Text("从相册选择") }
