@@ -52,8 +52,10 @@ data class ChatImageContext(
 
     companion object {
         fun fromGeneration(generation: Generation, imageSeed: Long?, width: Int, height: Int): ChatImageContext {
-            generation.openAi?.params?.let { p ->
-                return ChatImageContext("OpenAI", p.prompt, model = p.model, width = width, height = height, quality = p.quality)
+            generation.openAi?.let { snapshot ->
+                val p = snapshot.params
+                return ChatImageContext("OpenAI", p.prompt, model = p.model, width = width, height = height,
+                    quality = snapshot.responseQuality ?: p.quality)
             }
             val p = generation.params
             return ChatImageContext("NovelAI", p.prompt, p.negativePrompt, p.model.apiModelId,

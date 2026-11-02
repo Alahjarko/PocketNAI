@@ -4,6 +4,9 @@ import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.*
 import net.pocketnai.data.chat.OpenAiCompatibleChatClient
+import net.pocketnai.domain.model.*
+import net.pocketnai.domain.openai.OpenAiImageParams
+import net.pocketnai.domain.openai.OpenAiImageSnapshot
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Test
@@ -25,6 +28,18 @@ class ChatVisionHttpTest {
             assertThat(Json.decodeFromString(ChatAttachment.serializer(), serialized).promptContext!!.seed).isEqualTo(42L)
             assertThat(Json.decodeFromString(ChatAttachment.serializer(), """{"id":"old","relativePath":"chat-attachments/old.jpg","mimeType":"image/jpeg","width":64,"height":64}""").promptContext).isNull()
             assertThat(ChatImageContext("NovelAI", "字".repeat(7000)).bounded().truncated).isTrue()
+            // OpenAI's legacy NovelAI storage fields must never masquerade as image parameters.
+            val legacy = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V4_5_CURATED)).copy(prompt = "legacy placeholder", negativePrompt = "legacy negative")
+            val generation = Generation("image", 0, 0, GenerationStatus.SUCCEEDED, "sample", "", legacy, 1,
+                openAi = OpenAiImageSnapshot(OpenAiImageParams(prompt = "a quiet lake", quality = "auto"), responseQuality = "high"))
+            val openAi = ChatImageContext.fromGeneration(generation, 99L, 1536, 1024)
+            assertThat(openAi.prompt).isEqualTo("a quiet lake")
+            assertThat(openAi.quality).isEqualTo("high")
+            assertThat(openAi.width).isEqualTo(1536)
+            assertThat(openAi.negativePrompt).isEmpty()
+            assertThat(openAi.seed).isNull()
+            assertThat(ChatProtocol.withImageContext(original, listOf(null))).isEqualTo(original)
+            assertThat(ChatProtocol.withImageContext(original, listOf(null, context)).string("content")).contains("\"image_index\":2")
             val failure = runCatching { client.complete(LlmConfig(model = "local-test"), "local-test-placeholder", listOf(image), ImageChatTools.schema) }.exceptionOrNull() as ChatFailure
             assertThat(failure.userMessage).contains("识图")
             assertThat(failure.userMessage).doesNotContain("server error content")
