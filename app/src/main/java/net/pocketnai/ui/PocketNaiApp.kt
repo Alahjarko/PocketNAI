@@ -274,11 +274,12 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                 when (targetState.destination.route) {
                     Routes.DETAIL, Routes.REFERENCE_DETAIL -> imagePageEnter()
                     Routes.INPAINT -> fadeIn(tween(260)) + slideInHorizontally(tween(260)) { it / 5 }
-                    else -> if (initialState.destination.route == Routes.DETAIL) imagePageEnter() else fadeIn(tween(160))
+                    else -> if (initialState.destination.route in listOf(Routes.DETAIL, Routes.REFERENCE_DETAIL)) imagePageEnter() else fadeIn(tween(160))
                 }
             },
             exitTransition = {
-                if (targetState.destination.route == Routes.DETAIL || initialState.destination.route == Routes.DETAIL)
+                if (targetState.destination.route in listOf(Routes.DETAIL, Routes.REFERENCE_DETAIL) ||
+                    initialState.destination.route in listOf(Routes.DETAIL, Routes.REFERENCE_DETAIL))
                     imagePageExit() else fadeOut(tween(100))
             },
             popEnterTransition = {

@@ -8,6 +8,9 @@ import androidx.compose.material3.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import kotlin.math.max
+import kotlin.math.min
 import androidx.compose.ui.unit.dp
 import net.pocketnai.domain.model.ThemeMode
 import net.pocketnai.ui.generate.ReferenceOriginContent
@@ -21,6 +24,15 @@ import org.junit.runners.model.Statement
 /** Production color interpolation and source-link layout, using a neutral geometry thumbnail. */
 object MotionPolishPreviewRenderer {
     fun render() {
+        // Verify legibility throughout the same production transition, beyond its two endpoints.
+        repeat(61) { frame ->
+            val colors = blendColorScheme(PocketNaiLightColors, PocketNaiDarkColors, frame / 60f)
+            listOf(colors.onSurface to colors.surface, colors.onBackground to colors.background,
+                colors.onPrimary to colors.primary).forEach { (ink, paper) ->
+                val a = ink.luminance(); val b = paper.luminance()
+                check((max(a, b) + 0.05f) / (min(a, b) + 0.05f) >= 4.49f)
+            }
+        }
         listOf(false, true).forEach { large ->
             val renderer = Paparazzi(deviceConfig = DeviceConfig.PIXEL_5.copy(softButtons = false,
                 fontScale = if (large) 1.5f else 1f))
