@@ -97,8 +97,8 @@ jobs:
 
       - name: Inspect packaged share task configuration
         run: |
-          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest print app/build/outputs/apk/release/app-release.apk > "$RUNNER_TEMP/packaged-manifest.xml"
-          python3 scripts/verify-share-manifest.py "$RUNNER_TEMP/packaged-manifest.xml"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest print app/build/outputs/apk/release/app-release.apk > app/build/reports/packaged-manifest.xml
+          python3 scripts/verify-share-manifest.py app/build/reports/packaged-manifest.xml "${{ steps.build_number.outputs.number }}"
 
       - name: Verify signing compatibility with latest release
         env:
@@ -133,6 +133,7 @@ jobs:
             app/build/outputs/apk/release/app-release.apk
             app/build/reports/tests/
             app/build/test-results/
+            app/build/reports/packaged-manifest.xml
           retention-days: 14
 
       - name: Publish release

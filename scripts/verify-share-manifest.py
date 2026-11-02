@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
-def verify(path):
+def verify(path, expected_code=None):
     root = ET.parse(path).getroot()
     ns = "{http://schemas.android.com/apk/res/android}"
     package = root.get("package", "net.pocketnai")
@@ -21,7 +21,9 @@ def verify(path):
     for key in ("noHistory", "excludeFromRecents"):
         assert main.get(ns + key, "false") == "false", f"Main must not inherit {key}"
         assert share.get(ns + key) == "true", f"Share relay must set {key}"
-    assert share.get(ns + "taskAffinity") == "", "Share relay must not claim the main task affinity"
+    # AAPT encodes an explicitly empty affinity as a null reference; apkanalyzer renders @null.
+    affinity = share.get(ns + "taskAffinity")
+    assert affinity in ("", "@null"), f"Share relay must not claim the main task affinity: {affinity!r}"
     assert share.get(ns + "exported") == "true", "System shares must be able to reach the relay"
     send_targets = []
     for activity_name, activity in activities.items():
@@ -31,8 +33,12 @@ def verify(path):
                 send_targets.append(activity_name)
                 assert any(d.get(ns + "mimeType") == "image/*" for d in intent.findall("data"))
     assert send_targets == ["net.pocketnai.ui.ShareImageActivity"], "Only the relay may receive image shares"
-    print(f"Share task contract verified: {Path(path).name}")
+    if expected_code is not None:
+        assert root.get(ns + "versionCode") == expected_code, "APK versionCode differs from release tag"
+        assert root.get(ns + "versionName") == f"0.1.{expected_code}", "Release must not use a dev versionName"
+    print(f"Share task contract verified: {Path(path).name}; affinity={affinity!r}; "
+          f"versionCode={root.get(ns + 'versionCode')}; versionName={root.get(ns + 'versionName')}")
 
 
 if __name__ == "__main__":
-    verify(sys.argv[1])
+    verify(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)
