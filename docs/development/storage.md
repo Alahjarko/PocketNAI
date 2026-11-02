@@ -6,7 +6,7 @@
 
 ## 数据库
 
-- 当前 schema 版本 **12**。新增表（如 `prompt_favorites`、`reference_images`、`favorite_images`）用独立 `CREATE TABLE`，
+- 当前 schema 版本 **13**。新增表（如 `prompt_favorites`、`reference_images`、`favorite_images`）用独立 `CREATE TABLE`，
   不要触碰既有表。v3 → v4 新增了 `reference_images` 表与 `generations.mode` 列（可空，见下）；
   v4 → v5 给 `generations` 加 `outputWidth/outputHeight`；v5 → v6 新增 `favorite_images` 表；
   v6 → v7 新增 `anlas_transactions` 表（Anlas 消耗流水，2026-09-18）。
@@ -54,3 +54,5 @@
 - 恢复路径必须能逐字段降级：不认识的枚举用默认值、越界数值交给
   `ModelProfile.normalize` 修正，**只有整串 JSON 无法解析时才整体回退**。
   `GenerationDraftCodecTest` 覆盖了这些降级行为，改动时别删。
+
+- v12 → v13 仅给 `reference_images` 加可空 `sourceImageId`，用于画廊来源导航。旧值为null，不从归一化后的hash猜测来源，不增加到原图的级联删除。草稿、历史映射同步保留；来源原图删除不影响参考副本。

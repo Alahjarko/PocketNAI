@@ -16,6 +16,7 @@ internal fun animatedColorScheme(target: ColorScheme): ColorScheme {
     var displayed by remember { mutableStateOf(target) }
     LaunchedEffect(target) {
         val start = displayed
+        if (start === target) return@LaunchedEffect
         animate(0f, 1f, animationSpec = tween(280)) { fraction, _ ->
             displayed = blendColorScheme(start, target, fraction)
         }
