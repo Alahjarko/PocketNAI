@@ -107,11 +107,13 @@ object Routes {
     const val CHAT = "chat"
     const val ARTIST_LAB = "artist-lab"
     const val DETAIL = "detail/{imageId}"
+    const val REFERENCE_DETAIL = "reference-detail/{imageId}"
 
     /** 局部重绘的蒙版编辑器（全屏）。 */
     const val INPAINT = "inpaint"
 
     fun detail(imageId: String): String = "detail/$imageId"
+    fun referenceDetail(imageId: String): String = "reference-detail/$imageId"
 
     /** 底部导航展示的 Tab。 */
     val tabs = listOf(HOME, CHAT, ARTIST_LAB, SETTINGS)
@@ -257,12 +259,12 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
         if (!artistLabEnabled && currentRoute == Routes.ARTIST_LAB) navController.navigateToTab(Routes.HOME)
     }
 
+    val referencePreviews = remember { mutableMapOf<String, net.pocketnai.ui.motion.ImageOriginPreview>() }
     // Each destination owns its insets and navigation chrome, including while it leaves.
     Surface(Modifier.fillMaxSize()) {
         CompositionLocalProvider(net.pocketnai.ui.generate.LocalReferenceOriginOpener provides { preview ->
-            imageMotion.preview = preview
-            imageMotion.open("reference-origin", preview.imageId)
-            navController.navigate(Routes.detail(preview.imageId))
+            navController.navigate(Routes.referenceDetail(preview.imageId))
+            navController.currentBackStackEntry?.id?.let { referencePreviews[it] = preview }
         }) {
         NavHost(
             navController = navController,
@@ -270,7 +272,7 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
             modifier = Modifier.fillMaxSize(),
             enterTransition = {
                 when (targetState.destination.route) {
-                    Routes.DETAIL -> imagePageEnter()
+                    Routes.DETAIL, Routes.REFERENCE_DETAIL -> imagePageEnter()
                     Routes.INPAINT -> fadeIn(tween(260)) + slideInHorizontally(tween(260)) { it / 5 }
                     else -> if (initialState.destination.route == Routes.DETAIL) imagePageEnter() else fadeIn(tween(160))
                 }
@@ -281,13 +283,13 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
             },
             popEnterTransition = {
                 when (initialState.destination.route) {
-                    Routes.DETAIL -> imagePageEnter()
+                    Routes.DETAIL, Routes.REFERENCE_DETAIL -> imagePageEnter()
                     Routes.ANLAS_STATISTICS, Routes.INPAINT -> fadeIn(tween(260)) + scaleIn(tween(260), initialScale = 0.96f)
                     else -> fadeIn(tween(160))
                 }
             },
             popExitTransition = { when (initialState.destination.route) {
-                Routes.DETAIL -> imagePageExit()
+                Routes.DETAIL, Routes.REFERENCE_DETAIL -> imagePageExit()
                 Routes.INPAINT -> fadeOut(tween(260)) + scaleOut(tween(260), targetScale = 0.94f) + slideOutHorizontally(tween(260)) { it / 4 }
                 else -> fadeOut(tween(100))
             } },
@@ -377,12 +379,21 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                     }
                 }
             }
-            composable(Routes.DETAIL) { entry ->
-                ImageMotionRoute(this, imageMotion.source ?: Routes.DETAIL) {
+            listOf(Routes.DETAIL, Routes.REFERENCE_DETAIL).forEach { detailRoute ->
+            composable(detailRoute) { entry ->
+                val detailMotion = if (detailRoute == Routes.REFERENCE_DETAIL) remember(entry) {
+                    net.pocketnai.ui.motion.ImageMotionState().apply {
+                        val id = entry.arguments?.getString("imageId").orEmpty()
+                        preview = referencePreviews.remove(entry.id)
+                        open("reference-origin", id)
+                    }
+                } else imageMotion
+                CompositionLocalProvider(LocalImageMotion provides detailMotion) {
+                ImageMotionRoute(this, detailMotion.source ?: detailRoute) {
                     PocketNaiPageFrame(navController, Routes.DETAIL, chatEnabled, artistLabEnabled) {
                         DetailScreen(
                             imageId = entry.arguments?.getString("imageId").orEmpty(),
-                            onBack = { imageMotion.returnToSource(); navController.popBackStack() },
+                            onBack = { detailMotion.returnToSource(); navController.popBackStack() },
                             onParamsReused = {
                                 navController.navigate(Routes.HOME) {
                                     popUpTo(Routes.HOME)
@@ -400,6 +411,8 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                         )
                     }
                 }
+            }
+            }
             }
             composable(Routes.INPAINT) {
                 ImageMotionRoute(this, Routes.INPAINT) {

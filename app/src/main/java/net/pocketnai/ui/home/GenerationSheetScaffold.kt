@@ -1,7 +1,6 @@
 package net.pocketnai.ui.home
 
 import androidx.activity.compose.PredictiveBackHandler
-import androidx.activity.ExperimentalActivityApi
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.*
@@ -45,7 +44,7 @@ import net.pocketnai.ui.motion.imageMotionChrome
 import kotlinx.coroutines.launch
 
 /** 内容滚动与面板切换分开：仅把手/标题接受明确拖动，不接收内容的剩余滚动或 fling。 */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalActivityApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun GenerationSheetScaffold(
     inFlight: Boolean,

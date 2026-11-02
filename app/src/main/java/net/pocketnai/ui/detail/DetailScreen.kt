@@ -623,6 +623,13 @@ internal fun LazyListScope.detailInfoItems(
 
         }
     }
+    val galleryReferences = generation.references.filter { it.sourceImageId != null }.distinctBy { it.sourceImageId }
+    if (galleryReferences.isNotEmpty()) item(key = "reference-origins") {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("来源参考图", style = MaterialTheme.typography.titleSmall)
+            galleryReferences.forEach { net.pocketnai.ui.generate.ReferenceOriginLink(it) }
+        }
+    }
     item(key = "prompt") {
         Card(
             colors = detailPromptCardColors(),

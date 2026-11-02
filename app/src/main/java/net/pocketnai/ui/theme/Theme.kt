@@ -85,7 +85,7 @@ fun PocketNaiTheme(
     val view = LocalView.current
     val activity = remember(context) { context.themeActivity() }
     if (!view.isInEditMode && activity != null) SideEffect {
-        val lightBackground = displayedColors.background.luminance() > 0.5f
+        val lightBackground = displayedColors.background.luminance() > 0.18f
         WindowCompat.getInsetsController(activity.window, view).apply {
             isAppearanceLightStatusBars = lightBackground
             isAppearanceLightNavigationBars = lightBackground

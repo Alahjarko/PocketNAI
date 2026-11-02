@@ -63,7 +63,7 @@ private fun ModeChoice(option: ThemeMode, current: ThemeMode, onSelect: (ThemeMo
     val shape = RoundedCornerShape(corner)
     Surface(modifier.clip(shape).selectable(selected, role = Role.RadioButton, onClick = { onSelect(option) }),
         color = fill,
-        contentColor = ink,
+        contentColor = net.pocketnai.ui.theme.readableThemeColor(ink, MaterialTheme.colorScheme.onPrimary, MaterialTheme.colorScheme.onSurfaceVariant, fill),
         shape = shape) {
         Row(Modifier.heightIn(min = 48.dp).padding(horizontal = 8.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally)) {
