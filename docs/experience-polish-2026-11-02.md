@@ -44,3 +44,4 @@ RikkaHub 只读参考固定在 `5ad19405c1a14899c69bb92e249a3adb3f65fbbd`。参�
 - `dac7991` 将相册分享交给无界面的独立接收器，再转交主任务；主入口复用而不继承外部临时任务标记，保留单张 content URI 的读权限。
 - 打包检查直接读取 APK 的类型化 manifest 属性；原工具把实际空字符串格式化成资源编号，不能据此判断任务 affinity。正式构建同时核对包内版本号与发布标签。
 - 发布准备源码 `d55d177` 的[云端验证](https://github.com/Alahjarko/PocketNAI/actions/runs/41387775346)全部成功：29项JVM、三个APK编译、分享配置与签名校验。用户已授权合入 master 并正式发布；最终版本、附件与发布构建以正式 Release 记录为准。
+- 已正式发布 [0.1.26 / build-26](https://github.com/Alahjarko/PocketNAI/releases/tag/build-26)，附件已上传并设为最新版本。源码、签名、版本号与构建结果见[发布记录](release-0.1.26.md)。
