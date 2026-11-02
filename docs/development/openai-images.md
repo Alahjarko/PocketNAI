@@ -23,7 +23,7 @@
 ## 存储与并发
 
 - `OpenAiImageSettings` 使用 `pocketnai_openai_images`；密钥用既有 `SecretBox` 和独立Keystore alias加密，不预填或复制，云备份与设备迁移均排除。
-- `OpenAiImageViewModel` 由 `AppContainer` 持有，与NAI/抽卡共用生成锁；导航和Activity重建不重发POST。
+- `OpenAiImageViewModel`由`AppContainer`持有，同一服务的手动提交允许并行，仓库最多三项同时处理；每项先写独立生成占位，再等待并发位，生成键和下一份草稿保持可编辑。共享服务占用标记直到最后一项结束才释放，期间仍禁止切换服务/密钥，与NAI和抽卡保持互斥。导航和Activity重建不重发POST；启动恢复每进程一次，新任务等待首次恢复结束。详见[调度记录](../generation-queue-2026-11-02.md)。
 - 数据库v12只给 `generations` 添加可空 `openAiParamsJson`，保留既有表和外键。历史存实际OpenAI模型ID与独立快照；兼容旧画廊的旧列不能据此构造NAI请求。
 - 图片原字节保存到现有历史目录，按实际PNG/JPEG/WebP格式存储与导出。详情显示OpenAI参数，不显示无意义的Seed或NAI超分按钮。
 - 启动孤儿清理同时保护两种服务的草稿参考图。密钥不得进入数据库、图片、日志、测试夹具或源码。

@@ -68,6 +68,7 @@ internal fun GalleryMotionCard(
                 ready = decoded, failed = failed, animate = slot.reveal,
                 startedAt = slot.generation?.createdAt ?: slot.createdAt,
                 onRevealed = onRevealed, modifier = Modifier.fillMaxSize(),
+                queued = slot.generation?.status == net.pocketnai.domain.model.GenerationStatus.QUEUED,
             ) { revealAlpha ->
                 if (preview != null && item == null && !failed) SfwAsyncImage(
                     file = File(preview.path), contentDescription = null, contentScale = ContentScale.Crop, sensitive = sensitive,

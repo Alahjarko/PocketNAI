@@ -46,21 +46,17 @@ fun OpenAiImageSheet(
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f)) {
                 Text("OpenAI 生图", style = MaterialTheme.typography.titleMedium)
-                Text(if (state.busy) "生成中 · 已保存 ${state.completed}/${params.count} 张"
+                Text(if (state.busy) "生成中 · ${state.activeTasks} 项任务"
                     else (if (params.model == OpenAiImageParams.FLARE) "Flare" else "Sunburst") + " · ${params.size} · ${params.quality}",
                     style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Button(onClick = {
                 if (!hasKey) onSettings()
                 else { keyboard?.hide(); confirm = true }
-            }, enabled = !state.busy && !state.importing && (!hasKey ||
+            }, enabled = !state.importing && (!hasKey ||
                 (params.prompt.isNotBlank() && OpenAiImageParams.sizeError(params.size) == null)),
                 modifier = Modifier.height(56.dp)) {
-                if (state.busy) {
-                    net.pocketnai.ui.motion.GenerationOrb(Modifier.size(20.dp), color = LocalContentColor.current, description = null)
-                    Spacer(Modifier.width(6.dp))
-                }
-                Text(if (!hasKey) "配置密钥" else if (state.busy) "生成中" else "生成")
+                Text(if (!hasKey) "配置密钥" else "生成")
             }
         }
         HorizontalDivider()
@@ -69,53 +65,53 @@ fun OpenAiImageSheet(
             state.message?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
             OutlinedTextField(value = params.prompt, onValueChange = { viewModel.update(params.copy(prompt = it)) },
                 label = { Text("描述你想要的图片") }, placeholder = { Text("可以用中文描述主体、构图、文字、光线和风格") },
-                minLines = 4, maxLines = 10, enabled = !state.busy, modifier = Modifier.fillMaxWidth())
+                minLines = 4, maxLines = 10, enabled = true, modifier = Modifier.fillMaxWidth())
             OpenAiOption("模型", params.model, OpenAiImageParams.MODELS,
                 { if (it == OpenAiImageParams.FLARE) "GPT Image 2.5 Flare" else "GPT Image 2.5 Sunburst" },
-                !state.busy) { viewModel.update(params.copy(model = it)) }
+                true) { viewModel.update(params.copy(model = it)) }
             Text(if (params.model == OpenAiImageParams.FLARE) "适合快速、日常的高质量生成" else "适合注重精确度的参考图编辑",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             var customSize by rememberSaveable(state.revision) { mutableStateOf(params.size !in OpenAiImageParams.SIZE_PRESETS) }
-            OpenAiResolutionSelector(params.size, customSize, !state.busy, { customSize = it }) {
+            OpenAiResolutionSelector(params.size, customSize, true, { customSize = it }) {
                 viewModel.update(params.copy(size = it))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.weight(1f)) { OpenAiOption("质量", params.quality, OpenAiImageParams.QUALITIES, {
                     when (it) { "low" -> "低"; "medium" -> "中"; "high" -> "高"; "xhigh" -> "极高"; "max" -> "最高"; else -> "自动" }
-                }, !state.busy) { viewModel.update(params.copy(quality = it)) } }
-                Box(Modifier.weight(1f)) { OpenAiOption("张数", params.count.toString(), (1..10).map(Int::toString), { "$it 张" }, !state.busy) {
+                }, true) { viewModel.update(params.copy(quality = it)) } }
+                Box(Modifier.weight(1f)) { OpenAiOption("张数", params.count.toString(), (1..10).map(Int::toString), { "$it 张" }, true) {
                     viewModel.update(params.copy(count = it.toInt()))
                 } }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.weight(1f)) { OpenAiOption("格式", params.outputFormat, OpenAiImageParams.FORMATS, String::uppercase, !state.busy) {
+                Box(Modifier.weight(1f)) { OpenAiOption("格式", params.outputFormat, OpenAiImageParams.FORMATS, String::uppercase, true) {
                     viewModel.update(params.copy(outputFormat = it))
                 } }
                 Box(Modifier.weight(1f)) { OpenAiOption("背景", params.background, OpenAiImageParams.BACKGROUNDS, {
                     when (it) { "transparent" -> "透明"; "opaque" -> "不透明"; else -> "自动" }
-                }, !state.busy) { viewModel.update(params.copy(background = it)) } }
+                }, true) { viewModel.update(params.copy(background = it)) } }
             }
             if (params.outputFormat != "png") {
                 Text("压缩质量 ${params.compression}", style = MaterialTheme.typography.labelLarge)
                 Slider(params.compression.toFloat(), { viewModel.update(params.copy(compression = it.toInt())) },
-                    valueRange = 0f..100f, enabled = !state.busy)
+                    valueRange = 0f..100f, enabled = true)
             }
             OpenAiOption("内容审核", params.moderation, listOf("auto", "low"),
-                { if (it == "auto") "自动" else "较低过滤" }, !state.busy) { viewModel.update(params.copy(moderation = it)) }
+                { if (it == "auto") "自动" else "较低过滤" }, true) { viewModel.update(params.copy(moderation = it)) }
             Text("参考图（${state.draft.references.size}/16）", style = MaterialTheme.typography.titleSmall)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(state.draft.references, key = { it.id }) { ref ->
                     Column(Modifier.width(96.dp)) {
                         AsyncImage(model = container.fileStore.resolve(ref.relativePath), contentDescription = "参考图",
                             modifier = Modifier.size(96.dp))
-                        TextButton(onClick = { viewModel.removeReference(ref.id) }, enabled = !state.busy) { Text("移除") }
+                        TextButton(onClick = { viewModel.removeReference(ref.id) }, enabled = true) { Text("移除") }
                     }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                    enabled = !state.busy && !state.importing && state.draft.references.size < 16, modifier = Modifier.weight(1f)) { Text("从相册选择") }
-                OutlinedButton(onClick = { history = true }, enabled = !state.busy && !state.importing && state.draft.references.size < 16,
+                    enabled = !state.importing && state.draft.references.size < 16, modifier = Modifier.weight(1f)) { Text("从相册选择") }
+                OutlinedButton(onClick = { history = true }, enabled = !state.importing && state.draft.references.size < 16,
                     modifier = Modifier.weight(1f)) { Text("从历史选择") }
             }
             if (state.importing) LinearProgressIndicator(Modifier.fillMaxWidth())

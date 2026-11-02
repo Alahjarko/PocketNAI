@@ -44,6 +44,12 @@ class OpenAiImageApiTest {
         val jobs = models.map { model -> Generation(model, 1L, 1L, GenerationStatus.GENERATING, "sample", "", legacy, 1,
             mode = GenerationMode.IMG2IMG, openAi = net.pocketnai.domain.openai.OpenAiImageSnapshot(OpenAiImageParams(model = model, prompt = legacy.prompt, count = 2))) }
         val slots = net.pocketnai.ui.gallery.GalleryMotionSlots()
+        val queueSlots = slots.sections(emptyList(), listOf(GenerationSummary(
+            jobs.first().copy(id = "queued", status = GenerationStatus.QUEUED), 0)), true).flatMap { it.slots }
+        val activeSlots = slots.sections(emptyList(), listOf(GenerationSummary(
+            jobs.first().copy(id = "queued", status = GenerationStatus.GENERATING), 0)), true).flatMap { it.slots }
+        assertThat(queueSlots.map { it.key }).isEqualTo(activeSlots.map { it.key })
+        assertThat(queueSlots).hasSize(2)
         fun pending(filter: GalleryFilter) = slots.sections(emptyList(), jobs.map { GenerationSummary(it, 0) }, true,
             filter = filter).flatMap { it.slots }
         assertThat(pending(selected)).hasSize(4)

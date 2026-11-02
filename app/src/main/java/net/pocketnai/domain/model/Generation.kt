@@ -4,6 +4,7 @@ import net.pocketnai.core.ErrorCode
 
 /** 生成记录状态（规划书 7.1）。 */
 enum class GenerationStatus {
+    QUEUED,
     GENERATING,
     SUCCEEDED,
 
@@ -44,7 +45,7 @@ data class Generation(
     val openAi: net.pocketnai.domain.openai.OpenAiImageSnapshot? = null,
 ) {
     val displayModel: String get() = openAi?.params?.modelLabel ?: params.model.displayName
-    val isActive: Boolean get() = status == GenerationStatus.GENERATING
+    val isActive: Boolean get() = status == GenerationStatus.GENERATING || status == GenerationStatus.QUEUED
 
     /** 详情页与界面摘要用：本次是否挂了参考图。 */
     val hasReferences: Boolean get() = references.isNotEmpty()

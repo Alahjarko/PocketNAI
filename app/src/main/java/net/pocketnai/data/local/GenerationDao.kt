@@ -68,6 +68,9 @@ interface GenerationDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertReferences(entities: List<ReferenceImageEntity>)
 
+    @androidx.room.Update
+    suspend fun updateReferences(entities: List<ReferenceImageEntity>)
+
     @Query("SELECT * FROM reference_images WHERE generationId = :generationId ORDER BY ordinal ASC")
     suspend fun findReferences(generationId: String): List<ReferenceImageEntity>
 

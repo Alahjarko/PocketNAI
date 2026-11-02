@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
         // 启动时恢复：清理孤立临时文件，并把上次被系统回收时卡住的任务标记为失败。
         // 放在与界面渲染并行的位置，不阻塞首帧。
         lifecycleScope.launch {
-            runCatching { container.generationRepository.cleanupOnStartup() }
+            runCatching { container.awaitStartup() }
         }
 
         setContent {

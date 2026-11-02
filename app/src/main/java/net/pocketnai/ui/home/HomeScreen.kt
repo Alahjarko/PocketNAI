@@ -96,6 +96,7 @@ fun HomeScreen(
         // ---- 手机形态：底部悬浮层 ----
         GenerationSheetScaffold(
             inFlight = state.inFlight || openAiState?.busy == true,
+            submissionRevision = openAiState?.submissionRevision ?: state.submissionRevision,
             sheetContent = { expanded, headerDragModifier ->
                 if (openAiViewModel != null) OpenAiImageSheet(openAiViewModel, expanded, onOpenAiSettings, headerDragModifier)
                 else GenerateSheet(

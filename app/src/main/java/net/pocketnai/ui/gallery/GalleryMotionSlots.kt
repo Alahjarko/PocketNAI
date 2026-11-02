@@ -50,7 +50,10 @@ internal class GalleryMotionSlots {
         if (loaded) watched.keys.retainAll(generations.keys)
         generations.values.filter { it.isActive && it.id !in dismissed }.forEach { watched[it.id] = it }
         watched.keys.toList().forEach { id -> generations[id]?.let { watched[id] = it } }
-        while (watched.size > 128) watched.remove(watched.keys.first())
+        while (watched.size > 128) {
+            val completed = watched.entries.firstOrNull { !it.value.isActive } ?: break
+            watched.remove(completed.key)
+        }
         delivered.keys.retainAll(watched.keys)
         val imagesByGeneration = images.groupBy { it.generationId }
         imagesByGeneration.forEach { (id, images) ->

@@ -27,6 +27,7 @@ internal fun GenerationImageReveal(
     startedAt: Long,
     onRevealed: () -> Unit,
     modifier: Modifier = Modifier,
+    queued: Boolean = false,
     content: @Composable BoxScope.(State<Float>) -> Unit,
 ) {
     val onFinished by rememberUpdatedState(onRevealed)
@@ -51,8 +52,11 @@ internal fun GenerationImageReveal(
         if (animate && !failed && indicatorAlpha.value > 0f) {
             Box(Modifier.size(64.dp).align(Alignment.Center)
                 .graphicsLayer { alpha = indicatorAlpha.value }
-                .semantics { contentDescription = if (ready) "图片已就绪" else "生成中" }) {
-                if (completion.value < 1f) GenerationOrb(Modifier.fillMaxSize().graphicsLayer { alpha = 1f - completion.value }, description = null)
+                .semantics { contentDescription = if (ready) "图片已就绪" else if (queued) "排队中" else "生成中" }) {
+                if (completion.value < 1f) {
+                    val indicator = Modifier.fillMaxSize().graphicsLayer { alpha = 1f - completion.value }
+                    if (queued) QueuedGenerationIndicator(indicator) else GenerationOrb(indicator, description = null)
+                }
                 if (completion.value > 0f) {
                     val ink = MaterialTheme.colorScheme.primary
                     Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = completion.value }) {
@@ -67,7 +71,7 @@ internal fun GenerationImageReveal(
                     }
                 }
             }
-            if (!ready) Text("生成中", style = MaterialTheme.typography.labelMedium,
+            if (!ready) Text(if (queued) "排队中" else "生成中", style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp))
         }
     }

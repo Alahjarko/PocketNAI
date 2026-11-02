@@ -60,5 +60,6 @@ object StatisticsPreviewRenderer {
         AssistantPreviewRenderer.render()
         SfwPreviewRenderer.render()
         ResolutionPreviewRenderer.render()
+        QueuePreviewRenderer.render()
     }
 }

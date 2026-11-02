@@ -1,6 +1,10 @@
 package net.pocketnai.di
 
 import android.app.Application
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.serialization.json.Json
 import net.pocketnai.BuildConfig
 import net.pocketnai.data.account.AccountAdder
@@ -58,6 +62,11 @@ import java.util.concurrent.TimeUnit
  * 数据库和网络客户端要到真正使用时才创建。
  */
 class AppContainer(application: Application) {
+    private val processScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val startupPreparation by lazy {
+        processScope.async { generationRepository.cleanupOnStartup() }
+    }
+    suspend fun awaitStartup() { startupPreparation.await() }
     val openAiImageSettings by lazy { net.pocketnai.data.openai.OpenAiImageSettings(application) }
     val openAiImageApi by lazy { net.pocketnai.data.openai.OpenAiImageApi() }
     val openAiImageRepository by lazy {
@@ -66,7 +75,7 @@ class AppContainer(application: Application) {
     }
     val openAiImageViewModel by lazy {
         net.pocketnai.ui.openai.OpenAiImageViewModel(openAiImageSettings, openAiImageRepository,
-            referenceImageProcessor, generateViewModel, draftStore)
+            referenceImageProcessor, generateViewModel, draftStore, awaitStartup = ::awaitStartup)
     }
 
     val artistLabStore by lazy { net.pocketnai.data.artistlab.ArtistLabStore(application, database) }
@@ -79,6 +88,7 @@ class AppContainer(application: Application) {
             tagSuggestionSource, referenceImageProcessor, imageMetadataInspector, accountBalanceRepository,
             settingsStore, anlasCostCalculator, anlasLedgerRepository = anlasLedgerRepository,
             credentialStore = credentialStore,
+            awaitStartup = ::awaitStartup,
         )
     }
     val artistLabViewModel by lazy {
