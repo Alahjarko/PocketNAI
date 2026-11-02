@@ -311,7 +311,12 @@ class GenerationSeedAndPayloadTest {
         }
         val preferences = net.pocketnai.data.settings.GenerationDraftPreferences(testContext)
         preferences.save(net.pocketnai.domain.model.GenerationDraft(params, params.prompt, "", emptyList()))
+        testContext.getSharedPreferences("pocketnai_settings", android.content.Context.MODE_PRIVATE)
+            .edit().putString("subscription_override", "OPUS").apply()
         val settings = net.pocketnai.data.settings.SettingsStore(testContext)
+        assertThat(settings.subscriptionOverride.value).isEqualTo(net.pocketnai.domain.billing.SubscriptionOverride.AUTO)
+        assertThat(testContext.getSharedPreferences("pocketnai_settings", android.content.Context.MODE_PRIVATE)
+            .contains("subscription_override")).isFalse()
         settings.setSubscriptionOverride(net.pocketnai.domain.billing.SubscriptionOverride.OPUS)
         val credentials = object : CredentialStore {
             override fun hasCredential() = false

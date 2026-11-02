@@ -10,7 +10,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -91,10 +90,10 @@ fun GenerateButton(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 if (inFlight) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
-                        color = ButtonDefaults.buttonColors().disabledContentColor,
+                    net.pocketnai.ui.motion.GenerationOrb(
+                        modifier = Modifier.size(20.dp),
+                        color = LocalContentColor.current,
+                        description = null,
                     )
                 } else {
                     Icon(

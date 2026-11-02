@@ -19,7 +19,6 @@ import net.pocketnai.data.security.SessionState
 import net.pocketnai.data.security.CredentialStore
 import net.pocketnai.data.settings.SettingsStore
 import net.pocketnai.domain.account.SavedAccount
-import net.pocketnai.domain.billing.SubscriptionOverride
 import net.pocketnai.domain.billing.SubscriptionStatus
 import net.pocketnai.domain.billing.SubscriptionStatusResolver
 import net.pocketnai.domain.model.ThemeMode
@@ -86,36 +85,27 @@ class SettingsViewModel(
 
     val themeMode: StateFlow<ThemeMode> = settingsStore.themeMode
 
-    /** 订阅等级的手动指定（默认"自动读取"）。 */
-    val subscriptionOverride: StateFlow<SubscriptionOverride> = settingsStore.subscriptionOverride
-
     /**
-     * 有效订阅状态：服务端读数 + 手动指定。
+     * 有效订阅状态：只读取服务器权益。
      *
      * 余额仓库是账户级共享实例，这里只读不建第二份缓存（与 [SettingsScreen] 里余额的做法一致）。
      */
     val subscriptionStatus: StateFlow<SubscriptionStatus> = combine(
         accountBalanceRepository.state,
-        settingsStore.subscriptionOverride,
         net.pocketnai.core.minuteTicks(clock),
-    ) { balance, override, now ->
+    ) { balance, now ->
         val known = balance.knownBalance
         SubscriptionStatusResolver.resolve(
             rawTier = known?.rawTier,
             accountType = known?.accountType,
             expiresAtEpochSeconds = known?.expiresAtEpochSeconds,
             nowEpochSeconds = now / 1000L,
-            override = override,
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(SUBSCRIPTION_SUBSCRIPTION_TIMEOUT_MS),
         initialValue = SubscriptionStatus.Unknown,
     )
-
-    fun setSubscriptionOverride(override: SubscriptionOverride) {
-        settingsStore.setSubscriptionOverride(override)
-    }
 
     fun setThemeMode(mode: ThemeMode) {
         settingsStore.setThemeMode(mode)

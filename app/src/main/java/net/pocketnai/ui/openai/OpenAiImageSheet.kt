@@ -54,6 +54,10 @@ fun OpenAiImageSheet(
                 else { keyboard?.hide(); confirm = true }
             }, enabled = !state.busy && !state.importing && (params.prompt.isNotBlank() || !hasKey),
                 modifier = Modifier.height(56.dp)) {
+                if (state.busy) {
+                    net.pocketnai.ui.motion.GenerationOrb(Modifier.size(20.dp), color = LocalContentColor.current, description = null)
+                    Spacer(Modifier.width(6.dp))
+                }
                 Text(if (!hasKey) "配置密钥" else if (state.busy) "生成中" else "生成")
             }
         }

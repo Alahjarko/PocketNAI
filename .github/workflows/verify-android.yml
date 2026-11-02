@@ -1,7 +1,7 @@
 name: Verify Android (no emulator)
 on:
   push:
-    branches: [feat/anlas-statistics]
+    branches: ["feat/**", "fix/**"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -38,7 +38,7 @@ jobs:
         run: |
           LATEST=$(gh release list --limit 100 --json tagName --jq '.[].tagName' | sed -n 's/^build-\([0-9]\+\)$/\1/p' | sort -n | tail -1)
           echo "PNAI_VERSION_CODE=$(( ${LATEST:-0} + 1 ))" >> "$GITHUB_ENV"
-          echo "PNAI_VERSION_NAME=0.1.$(( ${LATEST:-0} + 1 ))-stats-review" >> "$GITHUB_ENV"
+          echo "PNAI_VERSION_NAME=0.1.$(( ${LATEST:-0} + 1 ))-dev" >> "$GITHUB_ENV"
       - name: JVM regression tests
         run: ./gradlew :app:testDebugUnitTest --stacktrace
       - name: Render production UI on host JVM
@@ -76,7 +76,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: pocketnai-statistics-review
+          name: pocketnai-development-check
           path: |
             app/build/outputs/apk/
             app/build/reports/tests/

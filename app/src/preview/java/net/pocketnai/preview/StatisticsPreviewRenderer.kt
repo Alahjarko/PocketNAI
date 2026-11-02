@@ -56,5 +56,6 @@ object StatisticsPreviewRenderer {
                 }
             }, Description.createTestDescription(StatisticsPreviewRenderer::class.java, name)).evaluate()
         }
+        ExperiencePreviewRenderer.render()
     }
 }

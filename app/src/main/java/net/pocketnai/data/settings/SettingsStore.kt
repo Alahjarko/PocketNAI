@@ -54,20 +54,14 @@ class SettingsStore(context: Context) {
         _themeMode.value = mode
     }
 
-    private val _subscriptionOverride = MutableStateFlow(
-        SubscriptionOverride.fromNameOrDefault(prefs.getString(KEY_SUBSCRIPTION_OVERRIDE, null)),
-    )
-
-    /**
-     * 订阅等级的手动指定（默认"自动读取"）。
-     *
-     * 这是计费的一部分，因此**必须持久化**：用户设成 Opus 之后重启应用，
-     * 生成按钮上的报价不能又变回"无订阅"的算法。
-     */
+    // 2026-11-02：会员等级统一读取服务器，旧的手动等级不能继续影响报价。
+    init { prefs.edit().remove(KEY_SUBSCRIPTION_OVERRIDE).apply() }
+    private val _subscriptionOverride = MutableStateFlow(SubscriptionOverride.AUTO)
     val subscriptionOverride: StateFlow<SubscriptionOverride> = _subscriptionOverride.asStateFlow()
 
-    fun setSubscriptionOverride(override: SubscriptionOverride) {
-        prefs.edit().putString(KEY_SUBSCRIPTION_OVERRIDE, override.name).apply()
+    /** 只供隔离的历史计费回归夹具注入，不读取或保存手动等级，也没有产品入口。 */
+    @androidx.annotation.VisibleForTesting(otherwise = androidx.annotation.VisibleForTesting.NONE)
+    internal fun setSubscriptionOverride(override: SubscriptionOverride) {
         _subscriptionOverride.value = override
     }
 
