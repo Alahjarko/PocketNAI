@@ -88,5 +88,8 @@ internal fun readableThemeColor(candidate: Color, start: Color, end: Color, back
         val a = ink.luminance(); val b = background.luminance()
         return (max(a, b) + 0.05f) / (min(a, b) + 0.05f)
     }
-    return if (contrast(candidate) >= 4.5f) candidate else if (contrast(start) > contrast(end)) start else end
+    if (contrast(candidate) >= 4.5f) return candidate
+    val endpoint = if (contrast(start) > contrast(end)) start else end
+    if (contrast(endpoint) >= 4.5f) return endpoint
+    return if (background.luminance() > 0.179f) Color.Black else Color.White
 }

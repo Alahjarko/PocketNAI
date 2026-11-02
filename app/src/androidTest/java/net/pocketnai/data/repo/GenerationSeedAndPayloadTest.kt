@@ -256,6 +256,7 @@ class GenerationSeedAndPayloadTest {
                 }
                 decoded.recycle()
             }
+            assertThat(repo.loadDetail(image.id)!!.generation.references.map { it.sourceImageId }).containsExactly("source-0", null, null, null).inOrder()
             assertThat(repo.loadDetail(image.id)!!.generation.references.map { it.secondaryStrength }).isEqualTo(fidelities)
             // 保留先前的模型切换防线：素材留在草稿，V5 不提交 Precise Ref。
             val v5 = ModelCatalog.profileOf(ImageModel.V5_FULL)
