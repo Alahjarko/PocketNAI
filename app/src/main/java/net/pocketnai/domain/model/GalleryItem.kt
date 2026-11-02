@@ -22,7 +22,8 @@ data class GalleryItem(
     /** 生成模式。它决定"这张图的尺寸/Strength 为什么长这样"，也是画廊的一维筛选条件。 */
     val mode: GenerationMode,
     val title: String,
-    val model: ImageModel?,
+    /** 保留原始身份，不把 OpenAI 或未知历史模型降为 null。 */
+    val modelApiId: String,
     val prompt: String,
     val negativePrompt: String,
     val sampleCount: Int,

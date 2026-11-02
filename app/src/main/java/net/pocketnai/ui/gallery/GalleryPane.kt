@@ -85,8 +85,7 @@ import net.pocketnai.data.repo.GenerationRepository
 import net.pocketnai.domain.model.GalleryFilter
 import net.pocketnai.domain.model.GalleryItem
 import net.pocketnai.domain.model.GenerationMode
-import net.pocketnai.domain.model.ImageModel
-import net.pocketnai.domain.model.ModelCatalog
+import net.pocketnai.domain.model.GalleryModels
 import net.pocketnai.domain.prompt.PromptTitle
 import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.motion.imageMotionChrome
@@ -474,7 +473,7 @@ fun GalleryPane(
 private fun GalleryFilterBar(
     filter: GalleryFilter,
     onQueryChange: (String) -> Unit,
-    onModelChange: (ImageModel?) -> Unit,
+    onModelChange: (String?) -> Unit,
     onModeChange: (GenerationMode?) -> Unit,
     onFavoritesOnlyChange: (Boolean) -> Unit,
     onClearAll: () -> Unit,
@@ -489,7 +488,7 @@ private fun GalleryFilterBar(
     var filterDialogOpen by remember { mutableStateOf(false) }
 
     // 角标只数"藏起来"的条件：关键词就写在搜索框里，不必再数一遍。
-    val hiddenActiveCount = (if (filter.model != null) 1 else 0) +
+    val hiddenActiveCount = (if (filter.modelApiId != null) 1 else 0) +
         (if (filter.mode != null) 1 else 0) +
         (if (filter.favoritesOnly) 1 else 0)
 
@@ -571,13 +570,7 @@ private fun GalleryFilterBar(
                                 null
                             },
                         )
-                        FilterMenuChip(
-                            allLabel = stringResource(R.string.gallery_filter_all_models),
-                            selectedLabel = filter.model?.let { ModelCatalog.profileOf(it).displayName },
-                            options = ModelCatalog.models,
-                            optionLabel = { ModelCatalog.profileOf(it).displayName },
-                            onSelect = onModelChange,
-                        )
+                        GalleryModelFilterChip(filter.modelApiId, onModelChange)
                         FilterMenuChip(
                             allLabel = stringResource(R.string.gallery_filter_all_modes),
                             selectedLabel = filter.mode?.let { modeLabels[it] },
@@ -621,6 +614,17 @@ private fun GalleryFilterBar(
             },
         )
     }
+}
+
+@Composable
+internal fun GalleryModelFilterChip(modelApiId: String?, onSelect: (String?) -> Unit) {
+    FilterMenuChip(
+        allLabel = stringResource(R.string.gallery_filter_all_models),
+        selectedLabel = modelApiId?.let(GalleryModels::labelOf),
+        options = GalleryModels.apiIds,
+        optionLabel = GalleryModels::labelOf,
+        onSelect = onSelect,
+    )
 }
 
 /**

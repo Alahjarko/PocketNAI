@@ -33,6 +33,7 @@
   纯函数能在 JVM 单测里断言，而 SQL 只能靠跑起来才知道对不对。
 - 关键词规则：大小写不敏感、`_` 与空格互相等同、多个词是**全部命中**。
   修改筛选时核对这三条既有行为。
+- 2026-11-02：模型筛选按数据库已有的原始 `modelApiId` 匹配，不能先转成 NovelAI 的 `ImageModel` 再筛选，否则 OpenAI 会丢为 null。候选项复用两种服务的模型定义，包含 Flare/Sunburst；与关键词、模式和收藏继续按 AND 组合，“全部模型”清除模型条件。不改历史数据或数据库 schema。
 - 收藏单独一张 `favorite_images` 表（主键是**图片 id**），靠外键 `ON DELETE CASCADE`
   跟着图片消失；**不要**给 `generated_images` 加收藏列。
 - **"从历史选图"对话框必须用自己的 ViewModel 实例**（`viewModel(key = "history-image-picker")`）：

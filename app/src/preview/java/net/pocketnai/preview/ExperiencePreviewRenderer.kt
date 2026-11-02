@@ -16,6 +16,8 @@ import net.pocketnai.domain.billing.*
 import net.pocketnai.domain.model.ThemeMode
 import net.pocketnai.ui.motion.GenerationOrb
 import net.pocketnai.ui.motion.WavyQuotaBar
+import net.pocketnai.ui.gallery.GalleryModelFilterChip
+import net.pocketnai.domain.openai.OpenAiImageParams
 import net.pocketnai.ui.settings.ColorModeCard
 import net.pocketnai.ui.settings.NovelAiAccountCard
 import net.pocketnai.ui.theme.PocketNaiTheme
@@ -54,6 +56,20 @@ object ExperiencePreviewRenderer {
                                     SubscriptionStatusResolver.resolve(shown.rawTier, shown.accountType, shown.expiresAtEpochSeconds, now), {}, {}, {}, {})
                                 ColorModeCard(if (name == "account-large-text") ThemeMode.SYSTEM else theme) {}
                             }
+                        }
+                    }
+                }
+            }
+        }
+        withRenderer("gallery-openai-filters", DeviceConfig.PIXEL_5.copy(fontScale = 1.5f)) { renderer ->
+            renderer.snapshot("gallery-openai-filters") {
+                PocketNaiTheme(ThemeMode.LIGHT, dynamicColor = false) {
+                    Surface(Modifier.fillMaxSize()) {
+                        Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Text("画廊模型筛选", style = MaterialTheme.typography.titleLarge)
+                            GalleryModelFilterChip(null) {}
+                            GalleryModelFilterChip(OpenAiImageParams.FLARE) {}
+                            GalleryModelFilterChip(OpenAiImageParams.SUNBURST) {}
                         }
                     }
                 }

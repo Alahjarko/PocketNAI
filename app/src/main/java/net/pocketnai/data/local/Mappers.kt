@@ -193,7 +193,7 @@ object Mappers {
         status = runCatching { GenerationStatus.valueOf(row.status) }.getOrDefault(GenerationStatus.SUCCEEDED),
         mode = GenerationMode.fromNameOrDefault(row.mode),
         title = row.title,
-        model = ImageModel.fromApiModelId(row.modelApiId),
+        modelApiId = row.modelApiId,
         prompt = row.prompt,
         negativePrompt = row.negativePrompt,
         sampleCount = row.sampleCount,

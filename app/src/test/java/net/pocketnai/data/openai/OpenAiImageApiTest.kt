@@ -4,6 +4,9 @@ import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.*
 import net.pocketnai.domain.openai.OpenAiImageParams
+import net.pocketnai.data.local.GalleryImageRow
+import net.pocketnai.data.local.Mappers
+import net.pocketnai.domain.model.*
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -11,6 +14,29 @@ import org.junit.Test
 
 class OpenAiImageApiTest {
     @Test fun `编辑请求保留原文且拒绝参数及服务错误均不重发或回显秘密`() = runBlocking {
+        // Cover the read-model handoff too: dropping an unrecognised NAI enum used to erase OpenAI identity.
+        val items = (GalleryModels.apiIds + "future-image-model").map { apiId ->
+            Mappers.toDomain(GalleryImageRow(apiId, apiId, 1, "generations/sample.png", 832, 1216, 1L, null, null,
+                1L, "SUCCEEDED", "IMG2IMG", "sample", apiId, "Silver_hair, blue eyes", "", 1)).copy(favorite = true)
+        }
+        assertThat(GalleryModels.apiIds).containsAtLeast(OpenAiImageParams.FLARE, OpenAiImageParams.SUNBURST)
+        assertThat(GalleryModels.labelOf(OpenAiImageParams.FLARE)).contains("Flare")
+        assertThat(GalleryModels.labelOf(OpenAiImageParams.SUNBURST)).contains("Sunburst")
+        items.forEach { item ->
+            val filter = GalleryFilter(modelApiId = item.modelApiId)
+            assertThat(items.filter { GallerySearch.matches(it, filter) }.map { it.modelApiId }).containsExactly(item.modelApiId)
+            assertThat(filter.isActive).isTrue()
+        }
+        val combined = GalleryFilter(query = "SILVER blue", modelApiId = OpenAiImageParams.FLARE,
+            mode = GenerationMode.IMG2IMG, favoritesOnly = true)
+        val flare = items.single { it.modelApiId == OpenAiImageParams.FLARE }
+        assertThat(GallerySearch.matches(flare, combined)).isTrue()
+        assertThat(GallerySearch.matches(flare.copy(favorite = false), combined)).isFalse()
+        assertThat(GallerySearch.matches(flare.copy(mode = GenerationMode.TXT2IMG), combined)).isFalse()
+        assertThat(GallerySearch.matches(flare, combined.copy(query = "red hair"))).isFalse()
+        assertThat(items.filter { GallerySearch.matches(it, combined.copy(modelApiId = null)) }).hasSize(items.size)
+        assertThat(GalleryFilter.None.isActive).isFalse()
+        assertThat(items.filter { GallerySearch.matches(it, GalleryFilter.None) }).hasSize(items.size)
         MockWebServer().use { server ->
             server.start()
             val api = OpenAiImageApi(OkHttpClient(), server.url("/v1").toString())

@@ -9,6 +9,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import net.pocketnai.core.Hashing
 import net.pocketnai.data.files.GenerationFileStore
@@ -74,6 +75,10 @@ class OpenAiImageRepositoryTest {
             assertThat(row.modelApiId).isEqualTo(OpenAiImageParams.SUNBURST)
             assertThat(row.toString()).doesNotContain(secret)
             assertThat(Mappers.toDomain(row)!!.openAi!!.params).isEqualTo(params)
+            val gallery = db.generationDao().observeGalleryImages().first().map(Mappers::toDomain).single()
+            assertThat(gallery.modelApiId).isEqualTo(params.model)
+            assertThat(GallerySearch.matches(gallery, GalleryFilter(modelApiId = params.model))).isTrue()
+            assertThat(GallerySearch.matches(gallery, GalleryFilter(modelApiId = OpenAiImageParams.FLARE))).isFalse()
             assertThat(db.generationDao().findReferences(image.generationId)).hasSize(1)
             assertThat(events.filterIsInstance<GenerationEvent.ItemError>()).hasSize(1)
         } finally {

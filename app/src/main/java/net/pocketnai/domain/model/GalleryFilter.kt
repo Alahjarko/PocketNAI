@@ -8,8 +8,8 @@ package net.pocketnai.domain.model
 data class GalleryFilter(
     /** 提示词关键词。见 [GallerySearch] 的匹配规则。 */
     val query: String = "",
-    /** 只看某个模型。 */
-    val model: ImageModel? = null,
+    /** 按原始模型 API ID 筛选，同时支持 NovelAI 和 OpenAI。 */
+    val modelApiId: String? = null,
     /** 只看某种生成模式（文生图 / 图生图 / Precise Reference / 局部重绘）。 */
     val mode: GenerationMode? = null,
     /** 只看收藏。 */
@@ -17,11 +17,21 @@ data class GalleryFilter(
 ) {
     /** 是否加了任何条件。界面用它决定"没有结果"该怎么措辞。 */
     val isActive: Boolean
-        get() = query.isNotBlank() || model != null || mode != null || favoritesOnly
+        get() = query.isNotBlank() || modelApiId != null || mode != null || favoritesOnly
 
     companion object {
         val None = GalleryFilter()
     }
+}
+
+/** 使用两种服务已有的模型定义，避免把 OpenAI 塞进 NovelAI 的参数枚举。 */
+object GalleryModels {
+    val apiIds: List<String> = ModelCatalog.models.map { it.apiModelId } +
+        net.pocketnai.domain.openai.OpenAiImageParams.MODELS
+
+    fun labelOf(apiId: String): String = ImageModel.fromApiModelId(apiId)?.displayName
+        ?: if (apiId in net.pocketnai.domain.openai.OpenAiImageParams.MODELS)
+            net.pocketnai.domain.openai.OpenAiImageParams(model = apiId).modelLabel else apiId
 }
 
 /**
@@ -47,7 +57,7 @@ object GallerySearch {
 
     fun matches(item: GalleryItem, filter: GalleryFilter): Boolean {
         if (filter.favoritesOnly && !item.favorite) return false
-        if (filter.model != null && item.model != filter.model) return false
+        if (filter.modelApiId != null && item.modelApiId != filter.modelApiId) return false
         if (filter.mode != null && item.mode != filter.mode) return false
         if (filter.query.isNotBlank() && !matchesQuery(item, filter.query)) return false
         return true

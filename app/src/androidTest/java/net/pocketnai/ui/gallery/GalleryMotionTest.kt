@@ -60,7 +60,7 @@ class GalleryMotionTest {
         val job = Generation("new", now, now, GenerationStatus.GENERATING, "new", "sfw", params, 1)
         fun image(id: String, time: Long, ratio: Boolean = false) = GalleryItem(id, id, 1, file.path,
             if (ratio) 1216 else 832, if (ratio) 832 else 1216, file.length(), 1, false, time,
-            GenerationStatus.SUCCEEDED, GenerationMode.TXT2IMG, id, params.model, "sfw", "", 1)
+            GenerationStatus.SUCCEEDED, GenerationMode.TXT2IMG, id, params.model.apiModelId, "sfw", "", 1)
         val registry = GalleryMotionSlots()
         var images by mutableStateOf(listOf(image("old-a", now - 3 * 86400000L), image("old-b", now - 3 * 86400000L - 1000, true), image("old-c", now - 3 * 86400000L - 2000, true)) +
             (0..11).map { image("deep-$it", now - 4 * 86400000L - it * 1000, it % 3 != 0) })

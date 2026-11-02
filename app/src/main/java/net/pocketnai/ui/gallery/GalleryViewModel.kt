@@ -23,7 +23,6 @@ import net.pocketnai.domain.model.GallerySearch
 import net.pocketnai.domain.model.GenerationMode
 import net.pocketnai.domain.model.GenerationStatus
 import net.pocketnai.domain.model.GenerationSummary
-import net.pocketnai.domain.model.ImageModel
 
 /**
  * 瀑布流画廊状态。
@@ -150,8 +149,8 @@ class GalleryViewModel(
 
     fun onQueryChange(query: String) = _filter.update { it.copy(query = query) }
 
-    /** [model] 为 null 表示"全部模型"。 */
-    fun onModelChange(model: ImageModel?) = _filter.update { it.copy(model = model) }
+    /** [modelApiId] 为 null 表示"全部模型"。 */
+    fun onModelChange(modelApiId: String?) = _filter.update { it.copy(modelApiId = modelApiId) }
 
     /** [mode] 为 null 表示"全部模式"。 */
     fun onModeChange(mode: GenerationMode?) = _filter.update { it.copy(mode = mode) }
