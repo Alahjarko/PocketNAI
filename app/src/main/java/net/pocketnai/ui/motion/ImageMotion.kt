@@ -1,5 +1,6 @@
 package net.pocketnai.ui.motion
 
+import android.content.Context
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
@@ -27,6 +28,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import coil.request.ImageRequest
+import coil.size.Precision
+import coil.size.Scale
+import net.pocketnai.ui.safety.StrongSfwBlur
 import java.io.File
 
 data class ImageReturnRequest(val source: String, val imageId: String, val sequence: Int)
@@ -157,13 +161,28 @@ fun sharedImageRequest(file: File, sensitive: Boolean? = null, revealed: Boolean
     val context = LocalContext.current
     val masked = net.pocketnai.ui.safety.LocalSfwDisplay.current.masks(file, sensitive, revealed)
     return remember(context, file, masked) {
-        val key = file.absolutePath + if (masked) "|sfw-gaussian-v1" else ""
-        ImageRequest.Builder(context).data(file)
-            .memoryCacheKey(key)
-            .placeholderMemoryCacheKey(key)
-            .apply { if (masked) { allowHardware(false); transformations(net.pocketnai.ui.safety.StrongSfwBlur()) } }
-            .build()
+        buildSharedImageRequest(context, file, masked)
     }
+}
+
+internal fun buildSharedImageRequest(context: Context, file: File, masked: Boolean): ImageRequest {
+    val key = file.absolutePath + if (masked) "|${StrongSfwBlur.CACHE_KEY}" else ""
+    return ImageRequest.Builder(context).data(file)
+        .memoryCacheKey(key)
+        .placeholderMemoryCacheKey(key)
+        .apply {
+            if (masked) {
+                // All masked surfaces share a tiny decoded/cached bitmap. FIT preserves the
+                // full image's aspect ratio; INEXACT lets Coil reuse that non-square result
+                // for the square decode bound instead of decoding it on each list re-entry.
+                size(StrongSfwBlur.WORK_SIZE)
+                scale(Scale.FIT)
+                precision(Precision.INEXACT)
+                allowHardware(false)
+                transformations(StrongSfwBlur())
+            }
+        }
+        .build()
 }
 
 /** 共享的是图片身份；当前位置和边界由布局实时测量，不持久化屏幕坐标。 */
