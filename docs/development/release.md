@@ -4,6 +4,8 @@
 
 ## 检查更新与发布（GitHub Release）
 
+- 本地云机没有原签名密钥时，不能使用自动创建的debug keystore。可本地注入目标版本构建优化Release无签名包，再通过`sign-local-release.yml`仅签名，不重新编译或导出密钥。输入存于临时草稿Release，并核对本地SHA-256；签名后先与目标旧版证书比较，结果仍存草稿，下载核对包内版本和所有编译内容一致后才发布。覆盖既有版本/附件/标签须有用户明确授权；完成后清理自己创建的临时草稿。不要调用默认加号发布脚本来执行同版本覆盖。
+
 - 2026-11-02：正式发布 workflow 显式安装 `platforms;android-35` 与 `build-tools;34.0.0`，不依赖 runner 的预装版本，不安装/启动模拟器。签名解析兼容 `Signer #1`、SDK 范围与 `V2 Signer` 等输出，仍需实际校验 APK 并比较证书集合。保留已验证 APK 和测试报告为 Actions artifact，再创建正式 Release；标签通过 `--target` 固定到本次构建 SHA，附件仍命名 `PocketNAI.apk`。多行发布说明原样写入文件传给 `--notes-file`。
 
 - 云端 workflow 在发布前下载上一版 `PocketNAI.apk`，用 `apksigner verify --print-certs` 校验两包并比较签名证书SHA-256集合；不一致或无法核验时停止发布，不能以另一把可用密钥替代。用于比较的旧包只读，不覆盖或删除既有Release。
