@@ -2,6 +2,8 @@ package net.pocketnai.ui.common
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -30,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -55,6 +58,7 @@ import net.pocketnai.domain.model.SizeConstraints
  * 自定义是**第四个入口**而不是第三个档位：档位是"固定组合 × 三个方向"，
  * 自定义是任意宽高，两者的状态结构不同，硬塞进枚举只会制造一个假的档位。
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ResolutionSelector(
     tier: ResolutionTier,
@@ -96,10 +100,10 @@ fun ResolutionSelector(
             )
         }
 
-        Row(
+        FlowRow(
             modifier = Modifier.padding(top = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             // `Custom` 是**下拉里的一项**，不是旁边的独立按钮 —— 官方网页版就是这么放的
             // （尺寸列表里最后一项就是 `{name:"Custom", category:"Custom"}`）。
@@ -120,24 +124,26 @@ fun ResolutionSelector(
                         ResolutionSizeOption.Custom -> onCustomEnabled()
                     }
                 },
-                modifier = Modifier.width(140.dp),
+                modifier = Modifier.width(if (LocalDensity.current.fontScale > 1.2f) 184.dp else 140.dp),
             )
 
             // 选了 Custom 就退出预设档位：横竖方这几颗按钮整体变灰（禁用态自带灰化），
             // 因为方向由自定义的宽高决定，再让它们可点会让人以为能一起用。
             // 顺序固定为官方网页版的 横 / 竖 / 方，不受枚举声明顺序影响。
-            ORIENTATION_DISPLAY_ORDER.forEach { orientation ->
-                val enabled = custom == null && orientation in availableOrientations
-                FilledIconToggleButton(
-                    checked = custom == null && orientation == size.orientation,
-                    onCheckedChange = { if (enabled) onOrientationChange(orientation) },
-                    enabled = enabled,
-                    colors = IconButtonDefaults.filledIconToggleButtonColors(),
-                ) {
-                    Icon(
-                        imageVector = orientation.icon,
-                        contentDescription = orientation.label(),
-                    )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                ORIENTATION_DISPLAY_ORDER.forEach { orientation ->
+                    val enabled = custom == null && orientation in availableOrientations
+                    FilledIconToggleButton(
+                        checked = custom == null && orientation == size.orientation,
+                        onCheckedChange = { if (enabled) onOrientationChange(orientation) },
+                        enabled = enabled,
+                        colors = IconButtonDefaults.filledIconToggleButtonColors(),
+                    ) {
+                        Icon(
+                            imageVector = orientation.icon,
+                            contentDescription = orientation.label(),
+                        )
+                    }
                 }
             }
         }

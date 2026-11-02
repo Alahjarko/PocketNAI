@@ -669,7 +669,21 @@ class GenerationSeedAndPayloadTest {
             repo.generate(GenerationRequest(marked), marked.prompt).toList()
             assertThat(payloads).hasSize(1)
             assertThat(payloads.single()["input"]!!.jsonPrimitive.content).contains("nsfw")
-        } finally { listOf(prefix, "$prefix-blocked", "$prefix-late", "$prefix-allowed").forEach(files::deleteGeneration) }
+            key = "$prefix-queued"
+            val queued = repo.enqueue(GenerationRequest(params.copy(seedMode = SeedMode.RANDOM)), params.prompt, 123L)
+            val frozenSeed = queued.request.params.baseSeed
+            assertThat(database.generationDao().findGeneration(queued.id)!!.status).isEqualTo("QUEUED")
+            assertThat(payloads).hasSize(1) // Persisting an occupied slot never sends a request.
+            val queuedEvents = repo.generate(queued.request, queued.promptTemplate, queued = queued).toList()
+            assertThat(queuedEvents.filterIsInstance<GenerationEvent.Started>().single().generationId).isEqualTo(queued.id)
+            assertThat(database.generationDao().findGeneration(queued.id)!!.status).isEqualTo("SUCCEEDED")
+            assertThat(payloads.last()["parameters"]!!.jsonObject["seed"]!!.jsonPrimitive.longOrNull).isEqualTo(frozenSeed)
+            key = "$prefix-unsent"
+            val interrupted = repo.enqueue(GenerationRequest(params), params.prompt, 124L)
+            repo.failQueued(interrupted.id, net.pocketnai.core.AppError.of(net.pocketnai.core.ErrorCode.INVALID_PARAMS))
+            assertThat(database.generationDao().findGeneration(interrupted.id)!!.status).isEqualTo("FAILED")
+            assertThat(payloads).hasSize(2)
+        } finally { listOf(prefix, "$prefix-blocked", "$prefix-late", "$prefix-allowed", "$prefix-queued", "$prefix-unsent").forEach(files::deleteGeneration) }
     }
 
     @After

@@ -36,6 +36,10 @@ object SfwPreviewRenderer {
                         else if (x < 160) 0xff9bd6df.toInt() else 0xffe8b8a5.toInt()
                     }, 320, 240, Bitmap.Config.ARGB_8888) else null
                     val blurred = source?.let { runBlocking { StrongSfwBlur().transform(it, Size.ORIGINAL) } }
+                    if (source != null && blurred != null) {
+                        check(maxOf(blurred.width, blurred.height) == StrongSfwBlur.WORK_SIZE)
+                        check(blurred.allocationByteCount <= 48 * 48 * 4)
+                    }
                     renderer.snapshot(name) {
                         PocketNaiTheme(ThemeMode.LIGHT, dynamicColor = false) {
                             Surface(Modifier.fillMaxSize()) {

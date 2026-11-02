@@ -11,6 +11,7 @@ import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
 import net.pocketnai.core.Hashing
 import net.pocketnai.data.files.GenerationFileStore
 import net.pocketnai.data.local.Mappers
@@ -81,6 +82,11 @@ class OpenAiImageRepositoryTest {
             assertThat(row.modelApiId).isEqualTo(OpenAiImageParams.SUNBURST)
             assertThat(row.toString()).doesNotContain(secret)
             assertThat(Mappers.toDomain(row)!!.openAi!!.params).isEqualTo(params)
+            val storedSnapshot = Mappers.toDomain(row)!!.openAi!!
+            assertThat(storedSnapshot.usage).isEqualTo(OpenAiImageUsage(10, 20, 30))
+            assertThat(storedSnapshot.returnedImageCount).isEqualTo(2)
+            assertThat(storedSnapshot.estimate).isEqualTo(OpenAiImagePricing.estimate(params, 1))
+            assertThat(storedSnapshot.estimatedUsd!!).isWithin(0.0000001).of(0.00111)
             val gallery = db.generationDao().observeGalleryImages().first().map(Mappers::toDomain).single()
             assertThat(gallery.modelApiId).isEqualTo(params.model)
             assertThat(gallery.sensitivePrompt).isTrue()
@@ -88,6 +94,39 @@ class OpenAiImageRepositoryTest {
             assertThat(GallerySearch.matches(gallery, GalleryFilter(modelApiIds = setOf(OpenAiImageParams.FLARE)))).isFalse()
             assertThat(db.generationDao().findReferences(image.generationId)).hasSize(1)
             assertThat(events.filterIsInstance<GenerationEvent.ItemError>()).hasSize(1)
+            // Updating usage after an image exists must preserve its image and reference child rows.
+            val revised = storedSnapshot.copy(usage = OpenAiImageUsage(100, 200, 300))
+            db.generationDao().updateOpenAiSnapshot(image.generationId, OpenAiImageCodec.encode(revised), 1234L)
+            assertThat(db.generationDao().allImages().map { it.id }).containsExactly(image.id)
+            assertThat(db.generationDao().findReferences(image.generationId)).hasSize(1)
+            assertThat(Mappers.toDomain(db.generationDao().findGeneration(image.generationId)!!)!!.openAi).isEqualTo(revised)
+            kotlinx.coroutines.withTimeout(5_000) {
+                kotlinx.coroutines.coroutineScope {
+                    val entered = java.util.concurrent.atomic.AtomicInteger()
+                    val both = kotlinx.coroutines.CompletableDeferred<Unit>()
+                    val concurrent = OpenAiImageRepository(OpenAiImagesTransport { _, p, _ ->
+                        if (entered.incrementAndGet() == 2) both.complete(Unit)
+                        both.await()
+                        if (p.prompt == "failure") throw OpenAiImageFailure(false, "fake rejection")
+                        OpenAiImageResponse(listOf(Base64.encodeToString(bytes, Base64.NO_WRAP)),
+                            OpenAiImageSnapshot(p, OpenAiImageUsage(3, 0, 100)))
+                    }, db.generationDao(), files, { secret })
+                    val requests = listOf("failure", "success").map { prompt -> async {
+                        concurrent.generate(OpenAiImageDraft(params.copy(prompt = prompt, count = 1))).toList()
+                    } }
+                    val failed = requests[0].await()
+                    val succeeded = requests[1].await()
+                    assertThat(entered.get()).isEqualTo(2)
+                    assertThat(failed.filterIsInstance<GenerationEvent.FatalError>()).hasSize(1)
+                    assertThat(succeeded.filterIsInstance<GenerationEvent.Final>()).hasSize(1)
+                    assertThat(failed.first().generationId).isNotEqualTo(succeeded.first().generationId)
+                    assertThat(db.generationDao().findGeneration(succeeded.first().generationId)!!.status).isEqualTo("SUCCEEDED")
+                    val successful = Mappers.toDomain(db.generationDao().findGeneration(succeeded.first().generationId)!!)!!.openAi!!
+                    val rejected = Mappers.toDomain(db.generationDao().findGeneration(failed.first().generationId)!!)!!.openAi!!
+                    assertThat(successful.estimatedUsd!!).isWithin(0.0000001).of(0.003015)
+                    assertThat(rejected.estimatedUsd).isNull()
+                }
+            }
         } finally {
             db.close()
             context.getSharedPreferences("pocketnai_openai_images", 0).edit().clear().commit()

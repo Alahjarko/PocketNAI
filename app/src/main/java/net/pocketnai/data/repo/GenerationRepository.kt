@@ -132,6 +132,42 @@ class GenerationRepository(
                 })
         } }.flowOn(Dispatchers.Default)
 
+    data class QueuedGeneration(val id: String, val submittedAt: Long, val request: GenerationRequest,
+        val promptTemplate: String, val accountFingerprint: String,
+        val prompts: net.pocketnai.domain.prompt.PromptTemplates.Frozen)
+
+    class QueuePreparationFailure(val error: AppError) : IllegalStateException()
+
+    /** Persist the frozen request before waiting; no reference encoding or API call happens here. */
+    suspend fun enqueue(request: GenerationRequest, promptTemplate: String, submittedAt: Long,
+        expectedAccount: String? = null): QueuedGeneration = withContext(Dispatchers.IO) {
+        val token = credentialStore.load()?.token?.takeIf { it.isNotEmpty() }
+            ?: throw QueuePreparationFailure(AppError.of(ErrorCode.TOKEN_INVALID))
+        val profile = ModelCatalog.profileOf(request.params.model)
+        val account = Hashing.sha256(token.toByteArray(Charsets.UTF_8)).take(8)
+        if (expectedAccount != null && expectedAccount != account)
+            throw QueuePreparationFailure(AppError.of(ErrorCode.TOKEN_INVALID))
+        val prompts = try {
+            net.pocketnai.domain.prompt.PromptTemplates.prepare(profile.normalize(request.params), promptMacros(), random)
+        } catch (_: IllegalArgumentException) {
+            throw QueuePreparationFailure(AppError.of(ErrorCode.INVALID_PARAMS, detail = "提示词宏无法展开，请检查收藏片段"))
+        }
+        val params = profile.normalize(prompts.params).withResolvedSeed(random)
+        if (net.pocketnai.domain.safety.SfwPolicy.blocks(sfwEnabled(), params))
+            throw QueuePreparationFailure(AppError.of(ErrorCode.INVALID_PARAMS, detail = net.pocketnai.domain.safety.SfwPolicy.BLOCK_MESSAGE))
+        val frozen = request.copy(params = params, references = request.references.toList())
+        if (frozen.validate(profile) { fileStore.exists(it.relativePath) }.isNotEmpty())
+            throw QueuePreparationFailure(AppError.of(ErrorCode.REFERENCE_MISSING))
+        val id = idGenerator()
+        dao.upsertGeneration(Mappers.toEntity(Generation(id, submittedAt, submittedAt, GenerationStatus.QUEUED,
+            PromptTitle.buildTitle(params.prompt, submittedAt), promptTemplate, params, profile.paramsVersion, mode = request.mode)))
+        dao.insertReferences(frozen.references.map { Mappers.toEntity(it, id) })
+        QueuedGeneration(id, submittedAt, frozen, promptTemplate, account,
+            prompts.copy(params = params))
+    }
+
+    suspend fun failQueued(id: String, error: AppError) = withContext(Dispatchers.IO) { failGeneration(id, error) }
+
     /**
      * 执行一次生成（纯文生图）。
      *
@@ -154,10 +190,11 @@ class GenerationRepository(
         expectedAccountFingerprint: String? = null,
         beforeSend: suspend (String) -> Unit = {},
         templatesResolved: Boolean = false,
+        queued: QueuedGeneration? = null,
     ): Flow<GenerationEvent> = flow {
         require(request.openAi == null) { "OpenAI requests require the OpenAI image provider" }
-        val generationId = idGenerator()
-        val startedAt = clock()
+        val generationId = queued?.id ?: idGenerator()
+        val startedAt = queued?.submittedAt ?: clock()
         val params = request.params
         val profile = ModelCatalog.profileOf(params.model)
 
@@ -169,13 +206,14 @@ class GenerationRepository(
         }
 
         // 队列的授权属于确认时的账号，用实际加载的不可变 token 核对，避免切号竞态。
-        if (expectedAccountFingerprint != null && Hashing.sha256(token.toByteArray(Charsets.UTF_8)).take(8) != expectedAccountFingerprint) {
+        val expectedFingerprint = queued?.accountFingerprint ?: expectedAccountFingerprint
+        if (expectedFingerprint != null && Hashing.sha256(token.toByteArray(Charsets.UTF_8)).take(8) != expectedFingerprint) {
             emit(GenerationEvent.FatalError(generationId, AppError.of(ErrorCode.TOKEN_INVALID)))
             return@flow
         }
 
         val frozenPrompts = try {
-            if (templatesResolved) null else net.pocketnai.domain.prompt.PromptTemplates.prepare(profile.normalize(params), promptMacros(), random)
+            queued?.prompts ?: if (templatesResolved) null else net.pocketnai.domain.prompt.PromptTemplates.prepare(profile.normalize(params), promptMacros(), random)
         } catch (e: IllegalArgumentException) {
             emit(GenerationEvent.FatalError(generationId, AppError.of(ErrorCode.INVALID_PARAMS,
                 detail = "提示词宏不存在、重名、循环引用或展开后过长，请检查收藏片段。")))
@@ -259,7 +297,7 @@ class GenerationRepository(
         // 曾经踩过的坑：seed 只算进了落库的那一份，而请求体发的是原始 request.params，
         // 于是 RANDOM 模式下每次都把默认值 0 发出去 —— 同一提示词反复生成同一张图，
         // 而历史里却显示着一个"看起来随机"的 seed（那个值根本没被用过）。
-        val effectiveParams = normalized.withResolvedSeed(random)
+        val effectiveParams = if (queued != null) normalized else normalized.withResolvedSeed(random)
         val title = PromptTitle.buildTitle(effectiveParams.prompt, startedAt)
 
         dao.upsertGeneration(
@@ -280,7 +318,9 @@ class GenerationRepository(
         // 参考图一条一行。写在生成记录之后：外键要求父行先存在。
         if (referencesWithVibe.isNotEmpty()) {
             dao.insertReferences(referencesWithVibe.map { Mappers.toEntity(it, generationId) })
+            if (queued != null) dao.updateReferences(referencesWithVibe.map { Mappers.toEntity(it, generationId) })
         }
+        if (queued != null) dao.updateStatus(generationId, GenerationStatus.GENERATING.name, clock(), null, null, null)
         emit(GenerationEvent.Started(generationId))
 
         // 两条链路（流式 SSE / 普通 ZIP）在这里分叉，产物统一成
@@ -809,6 +849,11 @@ class GenerationRepository(
             dao.purgeGeneration(generationId)
         }
 
+        val pending = dao.findGenerationsByStatus(GenerationStatus.QUEUED.name)
+        pending.forEach { entity ->
+            dao.updateStatus(entity.id, GenerationStatus.FAILED.name, clock(), ErrorCode.INVALID_PARAMS.name,
+                "排队任务尚未发送，进程已结束；请手动重新提交", null)
+        }
         val stuck = dao.findGenerationsByStatus(GenerationStatus.GENERATING.name)
         stuck.forEach { entity ->
             dao.updateStatus(
@@ -828,7 +873,7 @@ class GenerationRepository(
             removedGenerationDirs = cleanup.removedGenerationDirs,
             removedIncomingDirs = cleanup.removedIncomingDirs,
             removedReferenceFiles = cleanup.removedReferenceFiles,
-            recoveredStuckGenerations = stuck.size,
+            recoveredStuckGenerations = stuck.size + pending.size,
             missingImageFiles = missingFiles,
         )
     }

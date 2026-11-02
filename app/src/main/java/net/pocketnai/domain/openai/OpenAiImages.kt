@@ -35,8 +35,7 @@ data class OpenAiImageParams(
         compression !in 0..100 -> "压缩质量应为 0～100"
         moderation !in listOf("auto", "low") -> "不支持的内容审核设置"
         count !in 1..10 -> "一次可生成 1～10 张"
-        size != "auto" && !validSize(size) -> "自定义尺寸须为16的倍数，宽高比在1:3～3:1，每边不超过3840，总像素655360～8294400"
-        else -> null
+        else -> sizeError(size)
     }
 
     companion object {
@@ -46,11 +45,29 @@ data class OpenAiImageParams(
         val QUALITIES = listOf("low", "medium", "high", "xhigh", "max", "auto")
         val FORMATS = listOf("png", "jpeg", "webp")
         val BACKGROUNDS = listOf("auto", "opaque", "transparent")
-        fun validSize(size: String): Boolean {
-            if (!Regex("[1-9][0-9]{1,3}x[1-9][0-9]{1,3}").matches(size)) return false
+        const val DIMENSION_STEP = 16
+        // Below 480 no aligned companion edge can satisfy both area and aspect ratio.
+        const val MIN_SLIDER_DIMENSION = 480
+        const val MAX_DIMENSION = 3840
+        const val MIN_PIXELS = 655_360L
+        const val MAX_PIXELS = 8_294_400L
+        val SIZE_PRESETS = listOf("1024x1024", "1536x1024", "1024x1536", "1536x864", "864x1536",
+            "3840x2160", "2160x3840", "auto")
+
+        fun validSize(size: String): Boolean = size != "auto" && sizeError(size) == null
+
+        fun sizeError(size: String): String? {
+            if (size == "auto") return null
+            if (!Regex("[1-9][0-9]{1,3}x[1-9][0-9]{1,3}").matches(size)) return "请输入完整的宽度和高度"
             val (w, h) = size.split('x').map(String::toInt)
-            return w % 16 == 0 && h % 16 == 0 && w <= 3840 && h <= 3840 &&
-                w.toLong() * h in 655_360L..8_294_400L && w <= 3 * h && h <= 3 * w
+            return when {
+                w > MAX_DIMENSION || h > MAX_DIMENSION -> "每边最多 $MAX_DIMENSION 像素"
+                w % DIMENSION_STEP != 0 || h % DIMENSION_STEP != 0 -> "宽和高都须为 $DIMENSION_STEP 的倍数"
+                w > 3 * h || h > 3 * w -> "宽高比须在 1:3～3:1 之间"
+                w.toLong() * h < MIN_PIXELS -> "总像素至少 655360，请增大宽度或高度"
+                w.toLong() * h > MAX_PIXELS -> "总像素最多 8294400（3840 × 2160），请减小宽度或高度"
+                else -> null
+            }
         }
     }
 }
@@ -62,10 +79,7 @@ data class OpenAiImageDraft(
 )
 
 @Serializable
-data class OpenAiImageUsage(val textInput: Long, val imageInput: Long, val imageOutput: Long) {
-    /** Images API has no cached-input discount. This is a local token estimate, not an invoice. */
-    val estimatedUsd: Double get() = (textInput * 5.0 + imageInput * 8.0 + imageOutput * 30.0) / 1_000_000
-}
+data class OpenAiImageUsage(val textInput: Long, val imageInput: Long, val imageOutput: Long)
 
 @Serializable
 data class OpenAiImageSnapshot(
@@ -74,7 +88,13 @@ data class OpenAiImageSnapshot(
     val responseSize: String? = null,
     val responseQuality: String? = null,
     val responseBackground: String? = null,
-)
+    val pricing: OpenAiImageRates? = null,
+    val estimate: OpenAiImageEstimate? = null,
+    val returnedImageCount: Int? = null,
+) {
+    // Null pricing belongs to legacy snapshots; these fixed constructor defaults preserve their rates.
+    val estimatedUsd: Double? get() = usage?.let { (pricing ?: OpenAiImageRates()).cost(it) }
+}
 
 object OpenAiImageCodec {
     val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }

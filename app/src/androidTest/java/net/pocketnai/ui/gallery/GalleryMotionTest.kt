@@ -41,6 +41,37 @@ import java.util.UUID
 class GalleryMotionTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
+    /** Decode/cache checks need Android's running main looper, not Layoutlib. */
+    private fun checkSfwImageCache(file: File) = kotlinx.coroutines.runBlocking {
+        val loader = coil.ImageLoader.Builder(compose.activity).eventListener(object : coil.EventListener {
+            override fun transformStart(request: coil.request.ImageRequest, input: Bitmap) {
+                check(maxOf(input.width, input.height) <= 96)
+            }
+        }).build()
+        val original = file.readBytes()
+        try {
+            kotlinx.coroutines.withTimeout(10_000) {
+                val masked = buildSharedImageRequest(compose.activity, file, true)
+                val clear = buildSharedImageRequest(compose.activity, file, false)
+                assertThat(masked.memoryCacheKey).isNotEqualTo(clear.memoryCacheKey)
+                assertThat(masked.placeholderMemoryCacheKey).isEqualTo(masked.memoryCacheKey)
+                val first = loader.execute(masked) as coil.request.SuccessResult
+                val small = (first.drawable as android.graphics.drawable.BitmapDrawable).bitmap
+                assertThat(maxOf(small.width, small.height)).isEqualTo(48)
+                assertThat(small.allocationByteCount).isAtMost(48 * 48 * 4)
+                assertThat((loader.execute(masked) as coil.request.SuccessResult).dataSource).isEqualTo(coil.decode.DataSource.MEMORY_CACHE)
+                val revealed = loader.execute(clear.newBuilder().size(coil.size.Size.ORIGINAL).allowHardware(false).build()) as coil.request.SuccessResult
+                val full = (revealed.drawable as android.graphics.drawable.BitmapDrawable).bitmap
+                assertThat(full.width).isEqualTo(400)
+                assertThat(full.height).isEqualTo(600)
+                assertThat((loader.execute(masked) as coil.request.SuccessResult).dataSource).isEqualTo(coil.decode.DataSource.MEMORY_CACHE)
+            }
+            assertThat(file.readBytes().toList()).isEqualTo(original.toList())
+        } finally {
+            loader.shutdown()
+        }
+    }
+
     @Test fun 任务原位成图及详情往返不会误报成功() {
         val dir = File(compose.activity.cacheDir, "motion-${UUID.randomUUID()}").also { it.mkdirs() }
         val file = File(dir, "sample.png")
@@ -63,6 +94,7 @@ class GalleryMotionTest {
         backTarget.returnToSource()
         backTarget.selectImage("late-update")
         assertThat(backTarget.currentImageId).isEqualTo("third")
+        checkSfwImageCache(file)
         val now = System.currentTimeMillis()
         val params = GenerationParams.defaultsFor(ModelCatalog.defaultProfile()).copy(
             size = ImageSizePreset(832, 1216), sampleCount = 1,

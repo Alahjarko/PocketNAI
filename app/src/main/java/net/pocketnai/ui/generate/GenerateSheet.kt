@@ -819,7 +819,7 @@ private fun SheetHeader(
         }
 
         GenerateButton(
-            inFlight = state.inFlight,
+            inFlight = state.inFlight && state.homeOutstanding == 0,
             enabled = connected && state.canGenerate,
             costLabel = costEstimate.shortLabel(),
             costDetail = costEstimate.detailLabel(),
@@ -869,6 +869,11 @@ private fun SheetStatusLine(
         !connected -> {
             text = stringResource(R.string.generate_no_token)
             color = MaterialTheme.colorScheme.error
+        }
+
+        state.homeOutstanding > 0 -> {
+            text = "生成任务 ${state.homeOutstanding} 项 · 按顺序执行"
+            color = MaterialTheme.colorScheme.primary
         }
 
         state.inFlight -> {

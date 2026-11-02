@@ -49,6 +49,7 @@ import kotlinx.coroutines.launch
 internal fun GenerationSheetScaffold(
     inFlight: Boolean,
     sheetContent: @Composable (expanded: Boolean, headerDragModifier: Modifier) -> Unit,
+    submissionRevision: Int = 0,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val scaffoldState = rememberBottomSheetScaffoldState(
@@ -90,7 +91,7 @@ internal fun GenerationSheetScaffold(
         )
     }
 
-    LaunchedEffect(inFlight) {
+    LaunchedEffect(inFlight, submissionRevision) {
         if (inFlight) sheetState.partialExpand()
     }
 

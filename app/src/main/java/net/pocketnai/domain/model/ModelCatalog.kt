@@ -26,7 +26,7 @@ package net.pocketnai.domain.model
 object ModelCatalog {
 
     /** 待与官方网页版继续核对的配置版本号。 */
-    const val CONFIG_VERSION: String = "2026-10-09-web-prompts"
+    const val CONFIG_VERSION: String = "2026-11-02-wallpaper"
 
     /** NovelAI 生成接口的 `params_version`，当前网页前端使用 4。 */
     private const val PARAMS_VERSION_V4_V5 = 4
@@ -149,6 +149,9 @@ object ModelCatalog {
         ImageSizeOption(ResolutionTier.LARGE, ImageSizePreset(width = 1024, height = 1536)),
         ImageSizeOption(ResolutionTier.LARGE, ImageSizePreset(width = 1536, height = 1024)),
         ImageSizeOption(ResolutionTier.LARGE, ImageSizePreset(width = 1536, height = 1536)),
+        // Official public frontend, checked 2026-11-02: Wallpaper has no square preset.
+        ImageSizeOption(ResolutionTier.WALLPAPER, ImageSizePreset(width = 1088, height = 1920)),
+        ImageSizeOption(ResolutionTier.WALLPAPER, ImageSizePreset(width = 1920, height = 1088)),
     )
 
     private val NORMAL_PORTRAIT = ImageSizePreset(width = 832, height = 1216)

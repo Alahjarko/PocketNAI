@@ -4,6 +4,8 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import net.pocketnai.core.AppError
@@ -27,6 +29,9 @@ class OpenAiImageRepository(
     private val key: () -> String?,
     private val sfwEnabled: () -> Boolean = { false },
 ) {
+    // Bound simultaneous large responses; every submission still gets its own occupied slot first.
+    private val concurrentRequests = Semaphore(3)
+
     fun generate(draft: OpenAiImageDraft) = flow<GenerationEvent> {
         val id = UUID.randomUUID().toString()
         val params = draft.params
@@ -53,13 +58,9 @@ class OpenAiImageRepository(
                 detail = "参考图总大小需小于24 MiB，请减少张数或降低分辨率")))
             return@flow
         }
-        val inputs = draft.references.map { ref ->
-            val file = files.resolve(ref.relativePath)
-            if (file.length() > 14L * 1024 * 1024) {
-                emit(GenerationEvent.FatalError(id, AppError.of(ErrorCode.REFERENCE_TOO_LARGE, detail = "单张参考图需小于14 MiB")))
-                return@flow
-            }
-            "data:image/png;base64," + Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+        if (draft.references.any { files.resolve(it.relativePath).length() > 14L * 1024 * 1024 }) {
+            emit(GenerationEvent.FatalError(id, AppError.of(ErrorCode.REFERENCE_TOO_LARGE, detail = "单张参考图需小于14 MiB")))
+            return@flow
         }
         if (!files.hasSpaceFor(32L * 1024 * 1024 * params.count)) {
             emit(GenerationEvent.FatalError(id, AppError.of(ErrorCode.STORAGE_FULL)))
@@ -73,75 +74,85 @@ class OpenAiImageRepository(
             size = ImageSizePreset(width, height), sampleCount = params.count,
             qualityTags = QualityTagsOption.NONE,
         )
-        var generation = Generation(id, now, now, GenerationStatus.GENERATING,
+        val generation = Generation(id, now, now, GenerationStatus.GENERATING,
             params.prompt.trim().take(60), params.prompt, legacy, 1,
-            mode = if (inputs.isEmpty()) GenerationMode.TXT2IMG else GenerationMode.IMG2IMG,
-            openAi = OpenAiImageSnapshot(params))
+            mode = if (draft.references.isEmpty()) GenerationMode.TXT2IMG else GenerationMode.IMG2IMG,
+            openAi = OpenAiImageSnapshot(params, pricing = OpenAiImagePricing.officialRates,
+                estimate = OpenAiImagePricing.estimate(params, draft.references.size)))
         dao.upsertGeneration(Mappers.toEntity(generation))
         dao.insertReferences(draft.references.mapIndexed { index, ref ->
             Mappers.toEntity(ref.copy(role = ReferenceRole.IMG2IMG, ordinal = index), id)
         })
         emit(GenerationEvent.Started(id))
-        val saved = mutableListOf<GeneratedImage>()
-        try {
-            if (net.pocketnai.domain.safety.SfwPolicy.blocks(sfwEnabled(), params.prompt)) {
-                val error = AppError.of(ErrorCode.INVALID_PARAMS, detail = net.pocketnai.domain.safety.SfwPolicy.BLOCK_MESSAGE)
-                dao.updateStatus(id, GenerationStatus.FAILED.name, System.currentTimeMillis(), error.code.name, error.detail, null)
-                emit(GenerationEvent.FatalError(id, error))
-                return@flow
-            }
-            val response = api.generate(secret, params, inputs)
-            generation = generation.copy(openAi = response.snapshot)
-            dao.upsertGeneration(Mappers.toEntity(generation))
-            response.data.forEachIndexed { index, raw ->
-                val image = runCatching {
-                    require(raw.length <= 48 * 1024 * 1024)
-                    val bytes = Base64.decode(raw, Base64.DEFAULT)
-                    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-                    require(options.outWidth > 0 && options.outHeight > 0 &&
-                        options.outWidth <= 3840 && options.outHeight <= 3840 &&
-                        options.outWidth.toLong() * options.outHeight <= 8_294_400)
-                    val extension = when (options.outMimeType) {
-                        "image/png" -> "png"; "image/jpeg" -> "jpeg"; "image/webp" -> "webp"
-                        else -> error("Unsupported image format")
-                    }
-                    val temp = File(files.newIncomingDir(id), "${index + 1}.$extension")
-                    temp.writeBytes(bytes)
-                    val extracted = ZipImageExtractor.ExtractedImage(index + 1, temp, bytes.size.toLong(),
-                        Hashing.sha256(bytes), options.outWidth, options.outHeight)
-                    val committed = files.commitImages(id, listOf(extracted), extension).single()
-                    GeneratedImage(UUID.randomUUID().toString(), id, index + 1, null,
-                        "generations/$id/${(index + 1).toString().padStart(4, '0')}.$extension",
-                        committed.width, committed.height, committed.byteSize, committed.sha256,
-                        createdAt = System.currentTimeMillis())
-                }.getOrNull()
-                if (image != null) {
-                    dao.upsertImages(listOf(Mappers.toImageEntity(image)))
-                    saved += image
+        concurrentRequests.withPermit {
+            val saved = mutableListOf<GeneratedImage>()
+            var sent = false
+            try {
+                val inputs = draft.references.map { ref ->
+                    "data:image/png;base64," + Base64.encodeToString(files.resolve(ref.relativePath).readBytes(), Base64.NO_WRAP)
                 }
+                if (net.pocketnai.domain.safety.SfwPolicy.blocks(sfwEnabled(), params.prompt)) {
+                    val error = AppError.of(ErrorCode.INVALID_PARAMS, detail = net.pocketnai.domain.safety.SfwPolicy.BLOCK_MESSAGE)
+                    dao.updateStatus(id, GenerationStatus.FAILED.name, System.currentTimeMillis(), error.code.name, error.detail, null)
+                    emit(GenerationEvent.FatalError(id, error))
+                    return@flow
+                }
+                sent = true
+                val response = api.generate(secret, params, inputs)
+                val snapshot = response.snapshot.copy(params = params, pricing = generation.openAi!!.pricing,
+                    estimate = generation.openAi.estimate, returnedImageCount = response.data.size)
+                dao.updateOpenAiSnapshot(id, OpenAiImageCodec.encode(snapshot), System.currentTimeMillis())
+                response.data.forEachIndexed { index, raw ->
+                    val image = runCatching {
+                        require(raw.length <= 48 * 1024 * 1024)
+                        val bytes = Base64.decode(raw, Base64.DEFAULT)
+                        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                        require(options.outWidth > 0 && options.outHeight > 0 &&
+                            options.outWidth <= 3840 && options.outHeight <= 3840 &&
+                            options.outWidth.toLong() * options.outHeight <= 8_294_400)
+                        val extension = when (options.outMimeType) {
+                            "image/png" -> "png"; "image/jpeg" -> "jpeg"; "image/webp" -> "webp"
+                            else -> error("Unsupported image format")
+                        }
+                        val temp = File(files.newIncomingDir(id), "${index + 1}.$extension")
+                        temp.writeBytes(bytes)
+                        val extracted = ZipImageExtractor.ExtractedImage(index + 1, temp, bytes.size.toLong(),
+                            Hashing.sha256(bytes), options.outWidth, options.outHeight)
+                        val committed = files.commitImages(id, listOf(extracted), extension).single()
+                        GeneratedImage(UUID.randomUUID().toString(), id, index + 1, null,
+                            "generations/$id/${(index + 1).toString().padStart(4, '0')}.$extension",
+                            committed.width, committed.height, committed.byteSize, committed.sha256,
+                            createdAt = System.currentTimeMillis())
+                    }.getOrNull()
+                    if (image != null) {
+                        dao.upsertImages(listOf(Mappers.toImageEntity(image)))
+                        saved += image
+                    }
+                }
+                if (saved.isEmpty()) throw OpenAiImageFailure(true, "OpenAI 已返回结果，但图片无法保存或解码，可能已计费，未重试")
+                val status = if (saved.size == params.count) GenerationStatus.SUCCEEDED else GenerationStatus.PARTIAL
+                dao.updateStatus(id, status.name, System.currentTimeMillis(), null, null, null)
+                saved.forEach { emit(GenerationEvent.Final(id, it)) }
+                if (saved.size < params.count) emit(GenerationEvent.ItemError(id, null,
+                    AppError.of(ErrorCode.TIMEOUT_UNCERTAIN, detail = "仅保存了 ${saved.size}/${params.count} 张，已保留可用图片，缺失图片不会补发")))
+                emit(GenerationEvent.Completed(id, status))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: OpenAiImageFailure) {
+                val error = AppError.of(if (e.uncertain) ErrorCode.TIMEOUT_UNCERTAIN else ErrorCode.INVALID_PARAMS, detail = e.message)
+                dao.updateStatus(id, if (saved.isEmpty()) GenerationStatus.FAILED.name else GenerationStatus.PARTIAL.name,
+                    System.currentTimeMillis(), error.code.name, error.detail, null)
+                emit(GenerationEvent.FatalError(id, error))
+            } catch (_: Exception) {
+                val error = if (sent) AppError.of(ErrorCode.TIMEOUT_UNCERTAIN, detail = "图片处理未完成，请先核对画廊；本次请求不会重试")
+                    else AppError.of(ErrorCode.REFERENCE_MISSING, detail = "参考图无法读取，图片请求未发送")
+                dao.updateStatus(id, if (saved.isEmpty()) GenerationStatus.FAILED.name else GenerationStatus.PARTIAL.name,
+                    System.currentTimeMillis(), error.code.name, error.detail, null)
+                emit(GenerationEvent.FatalError(id, error))
+            } finally {
+                files.clearIncoming(id)
             }
-            if (saved.isEmpty()) throw OpenAiImageFailure(true, "OpenAI 已返回结果，但图片无法保存或解码，可能已计费，未重试")
-            val status = if (saved.size == params.count) GenerationStatus.SUCCEEDED else GenerationStatus.PARTIAL
-            dao.updateStatus(id, status.name, System.currentTimeMillis(), null, null, null)
-            saved.forEach { emit(GenerationEvent.Final(id, it)) }
-            if (saved.size < params.count) emit(GenerationEvent.ItemError(id, null,
-                AppError.of(ErrorCode.TIMEOUT_UNCERTAIN, detail = "仅保存了 ${saved.size}/${params.count} 张，已保留可用图片，缺失图片不会补发")))
-            emit(GenerationEvent.Completed(id, status))
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: OpenAiImageFailure) {
-            val error = AppError.of(if (e.uncertain) ErrorCode.TIMEOUT_UNCERTAIN else ErrorCode.INVALID_PARAMS, detail = e.message)
-            dao.updateStatus(id, if (saved.isEmpty()) GenerationStatus.FAILED.name else GenerationStatus.PARTIAL.name,
-                System.currentTimeMillis(), error.code.name, error.detail, null)
-            emit(GenerationEvent.FatalError(id, error))
-        } catch (_: Exception) {
-            val error = AppError.of(ErrorCode.TIMEOUT_UNCERTAIN, detail = "图片处理未完成，请先核对画廊；本次请求不会重试")
-            dao.updateStatus(id, if (saved.isEmpty()) GenerationStatus.FAILED.name else GenerationStatus.PARTIAL.name,
-                System.currentTimeMillis(), error.code.name, error.detail, null)
-            emit(GenerationEvent.FatalError(id, error))
-        } finally {
-            files.clearIncoming(id)
         }
     }.flowOn(Dispatchers.IO)
 }

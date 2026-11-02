@@ -74,6 +74,9 @@ interface GenerationDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertReferences(entities: List<ReferenceImageEntity>)
 
+    @androidx.room.Update
+    suspend fun updateReferences(entities: List<ReferenceImageEntity>)
+
     @Query("SELECT * FROM reference_images WHERE generationId = :generationId ORDER BY ordinal ASC")
     suspend fun findReferences(generationId: String): List<ReferenceImageEntity>
 
@@ -114,6 +117,10 @@ interface GenerationDao {
      */
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun upsertGeneration(entity: GenerationEntity)
+
+    /** Update response metadata without replacing the parent or touching its image/reference children. */
+    @Query("UPDATE generations SET openAiParamsJson = :snapshot, updatedAt = :updatedAt WHERE id = :generationId")
+    suspend fun updateOpenAiSnapshot(generationId: String, snapshot: String, updatedAt: Long)
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun upsertImages(entities: List<GeneratedImageEntity>)

@@ -599,10 +599,19 @@ internal fun LazyListScope.detailInfoItems(
                             DetailRow("输入文本 token", usage.textInput.toString())
                             DetailRow("输入图片 token", usage.imageInput.toString())
                             DetailRow("输出图片 token", usage.imageOutput.toString())
-                            DetailRow("本次请求估算", String.format(java.util.Locale.US, "$%.6f USD", usage.estimatedUsd))
-                            if (openAi.params.count > 1) DetailRow("平均每张估算",
-                                String.format(java.util.Locale.US, "$%.6f USD", usage.estimatedUsd / openAi.params.count))
-                        } ?: DetailRow("费用", "接口未返回完整用量，请在 OpenAI Platform 查看账单")
+                        }
+                        openAi.estimatedUsd?.let { total ->
+                            DetailRow("整次请求用量折算", String.format(java.util.Locale.US, "$%.6f USD", total))
+                            openAi.returnedImageCount?.takeIf { it > 1 }?.let { returned ->
+                                DetailRow("每张返回图平均", String.format(java.util.Locale.US, "$%.6f USD", total / returned))
+                            }
+                            DetailRow("费率依据", openAi.pricing?.source ?: "OpenAI · 2026-10-31")
+                            DetailRow("费用说明", "按用量折算，实际扣费以账单为准")
+                        } ?: DetailRow("费用", "接口未返回完整有效用量，请查看服务商账单")
+                        openAi.estimate?.let { estimate ->
+                            DetailRow("提交前粗估", net.pocketnai.ui.openai.OpenAiCostLabels.summary(estimate))
+                            if (estimate.referenceCount > 0) DetailRow("粗估说明", "含参考图预算，非官方按张定价")
+                        }
                     } else {
                     DetailRow(stringResource(R.string.common_model), generation.params.model.displayName)
                     DetailRow("生成画布", generation.params.size.label)

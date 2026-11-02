@@ -47,21 +47,24 @@ internal fun SfwDisplayProvider(content: @Composable () -> Unit) {
     CompositionLocalProvider(LocalSfwDisplay provides state, content = content)
 }
 
-/** Android 8+ 都使用同一软件高斯卷积，不依赖 API31 的渲染效果或写回文件。 */
+/** 保留低分辨率遮罩，由绘制端缩放；不能再放大成随卡片/屏幕尺寸增长的纹理。 */
 class StrongSfwBlur : Transformation {
-    override val cacheKey = "pocketnai-sfw-gaussian-48-8-v1"
+    override val cacheKey = CACHE_KEY
     override suspend fun transform(input: Bitmap, size: Size): Bitmap {
-        val ratio = minOf(1f, 48f / maxOf(input.width, input.height))
+        val ratio = minOf(1f, WORK_SIZE.toFloat() / maxOf(input.width, input.height))
         val width = (input.width * ratio).roundToInt().coerceAtLeast(1)
         val height = (input.height * ratio).roundToInt().coerceAtLeast(1)
         val scaled = Bitmap.createScaledBitmap(input, width, height, true)
         val pixels = IntArray(width * height)
         scaled.getPixels(pixels, 0, width, 0, 0, width, height)
         val small = Bitmap.createBitmap(GaussianBlur.apply(pixels, width, height), width, height, Bitmap.Config.ARGB_8888)
-        val output = Bitmap.createScaledBitmap(small, input.width, input.height, true)
         if (scaled !== input) scaled.recycle()
-        if (small !== output) small.recycle()
-        return output
+        return small
+    }
+
+    companion object {
+        const val WORK_SIZE = 48
+        const val CACHE_KEY = "pocketnai-sfw-gaussian-48-8-small-v2"
     }
 }
 

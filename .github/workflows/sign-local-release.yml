@@ -1,0 +1,165 @@
+name: Sign locally built release
+run-name: Sign local APK ${{ inputs.staging_tag }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      staging_tag:
+        description: Temporary branch containing PocketNAI-unsigned.apk and matching draft release
+        required: true
+        type: string
+      unsigned_sha256:
+        description: SHA-256 of the locally compiled unsigned APK
+        required: true
+        type: string
+      source_sha:
+        description: Exact source commit used for local compilation
+        required: true
+        type: string
+      version_code:
+        description: Existing build number to preserve
+        required: true
+        type: string
+      previous_sha256:
+        description: SHA-256 of the existing public APK that may be replaced
+        required: true
+        type: string
+      publish_sha256:
+        description: Publish the already verified signed draft APK with this SHA-256 (empty signs only)
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-release
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      STAGING_TAG: ${{ inputs.staging_tag }}
+      UNSIGNED_SHA256: ${{ inputs.unsigned_sha256 }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      VERSION_CODE: ${{ inputs.version_code }}
+      PREVIOUS_SHA256: ${{ inputs.previous_sha256 }}
+      PUBLISH_SHA256: ${{ inputs.publish_sha256 }}
+    steps:
+      - name: Validate inputs and staging draft
+        run: |
+          set -euo pipefail
+          [[ "$STAGING_TAG" =~ ^local-sign-[0-9]+-[0-9a-f]{12}$ ]]
+          [[ "$UNSIGNED_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]]
+          [[ "$PREVIOUS_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ -z "$PUBLISH_SHA256" || "$PUBLISH_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test "$(gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.staging_tag }}
+          path: local-input
+          persist-credentials: false
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: build-tools;34.0.0
+          log-accepted-android-sdk-licenses: false
+
+      # Compile/R8 must run locally; this workflow never invokes Gradle or exports the key.
+      - name: Download and verify locally compiled APK
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/local-apk" "$RUNNER_TEMP/previous-apk" "$RUNNER_TEMP/signed-apk"
+          cp local-input/PocketNAI-unsigned.apk "$RUNNER_TEMP/local-apk/"
+          printf '%s  %s\n' "$UNSIGNED_SHA256" "$RUNNER_TEMP/local-apk/PocketNAI-unsigned.apk" | sha256sum -c -
+          python3 scripts/verify-share-manifest.py "$RUNNER_TEMP/local-apk/PocketNAI-unsigned.apk" --version-code "$VERSION_CODE"
+          gh release download "build-$VERSION_CODE" --repo "$GITHUB_REPOSITORY" \
+            --pattern PocketNAI.apk --dir "$RUNNER_TEMP/previous-apk"
+          printf '%s  %s\n' "$PREVIOUS_SHA256" "$RUNNER_TEMP/previous-apk/PocketNAI.apk" | sha256sum -c -
+
+      - name: Sign with existing project key
+        if: inputs.publish_sha256 == ''
+        env:
+          KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_BASE64"
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/project.keystore"
+          trap 'rm -f "$RUNNER_TEMP/project.keystore"' EXIT
+          TOOLS="$ANDROID_HOME/build-tools/34.0.0"
+          "$TOOLS/zipalign" -c 4 "$RUNNER_TEMP/local-apk/PocketNAI-unsigned.apk"
+          "$TOOLS/apksigner" sign --ks "$RUNNER_TEMP/project.keystore" \
+            --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android \
+            --v4-signing-enabled false --out "$RUNNER_TEMP/signed-apk/PocketNAI.apk" \
+            "$RUNNER_TEMP/local-apk/PocketNAI-unsigned.apk"
+
+      - name: Download the signed APK verified by the caller
+        if: inputs.publish_sha256 != ''
+        run: |
+          set -euo pipefail
+          gh release download "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern PocketNAI.apk --dir "$RUNNER_TEMP/signed-apk"
+          printf '%s  %s\n' "$PUBLISH_SHA256" "$RUNNER_TEMP/signed-apk/PocketNAI.apk" | sha256sum -c -
+
+      - name: Verify signature, version and locally compiled payload
+        run: |
+          set -euo pipefail
+          TOOLS="$ANDROID_HOME/build-tools/34.0.0"
+          "$TOOLS/apksigner" verify --print-certs "$RUNNER_TEMP/previous-apk/PocketNAI.apk" > "$RUNNER_TEMP/previous-cert.txt"
+          "$TOOLS/apksigner" verify --print-certs "$RUNNER_TEMP/signed-apk/PocketNAI.apk" > "$RUNNER_TEMP/current-cert.txt"
+          python3 - <<'PY'
+          import os, pathlib, re, zipfile
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          def certificates(name):
+              values = re.findall(r'^(?:V[0-9.]+\s+)?Signer[^\n]*certificate SHA-256 digest:\s*([0-9a-f]{64})',
+                  (root / name).read_text(), re.M | re.I)
+              assert values, 'No verified signing certificate'
+              return {value.lower() for value in values}
+          assert certificates('previous-cert.txt') == certificates('current-cert.txt'), 'Signing certificate mismatch'
+          with zipfile.ZipFile(root / 'local-apk/PocketNAI-unsigned.apk') as unsigned, zipfile.ZipFile(root / 'signed-apk/PocketNAI.apk') as signed:
+              payload = lambda z: {name: z.read(name) for name in z.namelist() if not name.startswith('META-INF/')}
+              assert payload(unsigned) == payload(signed), 'Signed APK differs from local compiled payload'
+          print('Signing certificate matches previous release')
+          PY
+          python3 scripts/verify-share-manifest.py "$RUNNER_TEMP/signed-apk/PocketNAI.apk" --version-code "$VERSION_CODE"
+          sha256sum "$RUNNER_TEMP/signed-apk/PocketNAI.apk"
+
+      # Remain private until the caller verifies the downloaded signed package and publishes it.
+      - name: Return signed APK to staging draft
+        if: inputs.publish_sha256 == ''
+        run: |
+          set -euo pipefail
+          test "$(gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          gh release upload "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" "$RUNNER_TEMP/signed-apk/PocketNAI.apk" --clobber
+
+      - name: Replace only the explicitly selected existing public APK
+        if: inputs.publish_sha256 != ''
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/build-$VERSION_CODE" > "$RUNNER_TEMP/public-release.json"
+          python3 - <<'PY'
+          import json, os, pathlib
+          release = json.loads((pathlib.Path(os.environ['RUNNER_TEMP']) / 'public-release.json').read_text())
+          assert not release['draft'] and not release['prerelease']
+          asset = next(a for a in release['assets'] if a['name'] == 'PocketNAI.apk')
+          assert asset['digest'] == 'sha256:' + os.environ['PREVIOUS_SHA256'], 'Public APK changed; refusing to overwrite'
+          PY
+          gh release upload "build-$VERSION_CODE" --repo "$GITHUB_REPOSITORY" "$RUNNER_TEMP/signed-apk/PocketNAI.apk" --clobber

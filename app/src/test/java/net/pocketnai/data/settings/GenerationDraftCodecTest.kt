@@ -48,7 +48,7 @@ class GenerationDraftCodecTest {
         val original = draftWith { params ->
             params.copy(
                 model = ImageModel.V5_CURATED,
-                size = profile.sizeFor(ResolutionTier.LARGE, ImageOrientation.LANDSCAPE)!!,
+                size = profile.sizeFor(ResolutionTier.WALLPAPER, ImageOrientation.LANDSCAPE)!!,
                 sampleCount = 3,
                 steps = 31,
                 guidance = 6.5,
@@ -70,6 +70,14 @@ class GenerationDraftCodecTest {
         val params = restored!!.params
         assertThat(params.model).isEqualTo(ImageModel.V5_CURATED)
         assertThat(params.size).isEqualTo(original.params.size)
+        assertThat(params.size).isEqualTo(net.pocketnai.domain.model.ImageSizePreset(1920, 1088))
+        val restoredProfile = ModelCatalog.profileOf(params.model)
+        assertThat(restoredProfile.tierOf(params.size)).isEqualTo(ResolutionTier.WALLPAPER)
+        assertThat(restoredProfile.normalize(params).size).isEqualTo(params.size)
+        assertThat(restoredProfile.availableOrientations(ResolutionTier.WALLPAPER))
+            .containsExactly(ImageOrientation.PORTRAIT, ImageOrientation.LANDSCAPE)
+        assertThat(restoredProfile.sizeInTier(ResolutionTier.WALLPAPER, restoredProfile.defaultSize)?.orientation)
+            .isEqualTo(restoredProfile.defaultSize.orientation.takeUnless { it == ImageOrientation.SQUARE } ?: ImageOrientation.PORTRAIT)
         assertThat(params.sampleCount).isEqualTo(3)
         assertThat(params.steps).isEqualTo(31)
         assertThat(params.guidance).isWithin(1e-9).of(6.5)

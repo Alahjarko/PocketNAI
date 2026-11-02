@@ -2,6 +2,11 @@ package net.pocketnai.domain.artistlab
 
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import net.pocketnai.domain.model.SerialGenerationGate
 import org.junit.Test
 import kotlin.random.Random
 
@@ -29,5 +34,34 @@ class ArtistLabTest {
         assertThat(waits).hasSize(100)
         assertThat(waits.all { it in 1000..2000 }).isTrue()
         assertThat(maxActive).isEqualTo(1)
+
+        // Home submissions arrive concurrently but must retain FIFO and a post-completion gap.
+        val gate = SerialGenerationGate(clockMillis = { testScheduler.currentTime })
+        val starts = mutableListOf<Long>()
+        val order = mutableListOf<Int>()
+        coroutineScope {
+            (1..3).map { ordinal -> async {
+                gate.run {
+                    active++; maxActive = maxOf(maxActive, active)
+                    starts += testScheduler.currentTime; order += ordinal
+                    delay(125)
+                    active--
+                }
+            } }.awaitAll()
+        }
+        assertThat(order).containsExactly(1, 2, 3).inOrder()
+        assertThat(starts.zipWithNext { a, b -> b - a }).containsExactly(1125L, 1125L)
+        assertThat(maxActive).isEqualTo(1)
+        val approval = gate.epoch
+        var unsent = 0
+        coroutineScope {
+            val failing = async { runCatching { gate.run(approval) { gate.stopPending(); error("fake failure") } } }
+            val pending = async { runCatching { gate.run(approval) { unsent++ } } }
+            assertThat(failing.await().isFailure).isTrue()
+            assertThat(pending.await().exceptionOrNull()).isInstanceOf(SerialGenerationGate.Stopped::class.java)
+        }
+        assertThat(unsent).isEqualTo(0)
+        gate.run { unsent++ } // A new explicit submission, not a retry of the interrupted one.
+        assertThat(unsent).isEqualTo(1)
     }
 }

@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.pocketnai.core.AppError
@@ -104,6 +105,7 @@ class GenerateViewModel(
     private val credentialStore: CredentialStore? = null,
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
     private val clock: () -> Long = System::currentTimeMillis,
+    private val awaitStartup: suspend () -> Unit = {},
 ) : ViewModel() {
 
     data class UiState(
@@ -125,6 +127,8 @@ class GenerateViewModel(
          */
         val textRevision: Int = 0,
         val inFlight: Boolean = false,
+        val homeOutstanding: Int = 0,
+        val submissionRevision: Int = 0,
         val completedImages: Int = 0,
         /**
          * 保留完整的 [AppError]，界面才能把服务端返回的具体说明显示出来。
@@ -235,7 +239,7 @@ class GenerateViewModel(
         val blockingViolations: List<ParamViolation>
             get() = profile.validate(params).filterNot { it is ParamViolation.PromptTooLong }
 
-        val canGenerate: Boolean get() = !inFlight && !artistLabActive && !externalGenerationActive && !referenceBusy && promptTemplate.isNotBlank()
+        val canGenerate: Boolean get() = (!inFlight || homeOutstanding > 0) && !artistLabActive && !externalGenerationActive && !referenceBusy && promptTemplate.isNotBlank()
 
         /** 本次会用的全部参考图（图生图起点 + Precise Reference + Vibe + 重绘蒙版）。 */
         val allReferences: List<ReferenceImage>
@@ -301,6 +305,7 @@ class GenerateViewModel(
      * 读取是同步的：草稿是一个很小的首选项文件，与 [net.pocketnai.data.security.CredentialStore]
      * 的做法一致；异步读会让表单先闪一下出厂默认值，反而更糟。
      */
+    private val naiGenerationGate = net.pocketnai.domain.model.SerialGenerationGate()
     private val _state = MutableStateFlow(restoreDraft())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
@@ -610,7 +615,7 @@ class GenerateViewModel(
         }
     }
 
-    /** 切换 Resolution 档位（Normal / Large），保持当前横竖方向不变。 */
+    /** 切换 Resolution 档位；优先保持方向，无该方向时使用档位首项。 */
     fun onResolutionTierChange(tier: ResolutionTier) {
         _state.update { current ->
             val next = current.profile.sizeInTier(tier, current.params.size)
@@ -1469,84 +1474,70 @@ class GenerateViewModel(
             references = snapshot.activeReferences,
         )
 
-        // 生成前快照：**不等待余额请求**，只取内存里已有的值（规划 §8.1）。
-        val beforeBalance = accountBalanceRepository.latestOrNull()
-        val billingSession = beforeBalance?.let {
-            ObservedBalanceChange.DEFAULT_MAX_PRE_SNAPSHOT_AGE_MS.let { maxAge ->
-                BillingSession(
-                    before = it,
-                    beforeAgeMillis = clock() - it.fetchedAtMillis,
-                    maxPreSnapshotAgeMillis = maxAge,
-                    expectedImageCount = frozen.sampleCount,
-                )
-            }
-        }
-
-        _state.update {
-            it.copy(
-                inFlight = true,
-                completedImages = 0,
-                error = null,
-                modelSwitchNotice = null,
-            )
-        }
-
+        val submittedAt = clock()
+        val epoch = naiGenerationGate.epoch
+        // Preparation runs immediately even while another request owns the serial gate.
+        val account = artistLabAccount()
+        val prepared = viewModelScope.async { awaitStartup(); repository.enqueue(request, snapshot.promptTemplate, submittedAt, account) }
+        _state.update { it.copy(inFlight = true, homeOutstanding = it.homeOutstanding + 1,
+            submissionRevision = it.submissionRevision + 1, error = null, modelSwitchNotice = null) }
         viewModelScope.launch {
-            repository.generate(request, promptTemplate = snapshot.promptTemplate)
-                .collect { event ->
-                    when (event) {
-                        is GenerationEvent.Started -> Unit
-
-                        is GenerationEvent.Final -> _state.update {
-                            it.copy(completedImages = it.completedImages + 1)
-                        }
-
-                        is GenerationEvent.ItemError -> _state.update {
-                            it.copy(error = event.error)
-                        }
-
-                        is GenerationEvent.FatalError -> {
-                            // 失败时预览文件已被仓库清掉，界面状态同步清，避免显示空白卡片。
-                            previewStore.clear(event.generationId)
-                            _state.update { it.copy(inFlight = false, error = event.error) }
-                            when (event.error.code) {
-                                // 402 之后刷新余额：那是"余额不足"最权威的信号。
-                                ErrorCode.INSUFFICIENT_ANLAS -> refreshBalanceAfterGeneration(
-                                    session = billingSession,
-                                    completionConfirmed = false,
-                                )
-                                // 超时/断流时服务端可能已经计费，但这里不做断言，
-                                // 只把结果标成"待确认"。
-                                ErrorCode.TIMEOUT_UNCERTAIN -> refreshBalanceAfterGeneration(
-                                    session = billingSession,
-                                    completionConfirmed = false,
-                                )
-
-                                else -> Unit
+            var queued: GenerationRepository.QueuedGeneration? = null
+            try {
+                withContext(kotlinx.coroutines.NonCancellable) {
+                    naiGenerationGate.run(epoch) {
+                        val task = prepared.await().also { queued = it }
+                        val before = accountBalanceRepository.latestOrNull()
+                        val billing = before?.let { BillingSession(it, clock() - it.fetchedAtMillis,
+                            ObservedBalanceChange.DEFAULT_MAX_PRE_SNAPSHOT_AGE_MS, task.request.params.sampleCount) }
+                        _state.update { it.copy(completedImages = 0) }
+                        repository.generate(task.request, task.promptTemplate, queued = task).collect { event ->
+                            when (event) {
+                                is GenerationEvent.Started -> Unit
+                                is GenerationEvent.Final -> _state.update { it.copy(completedImages = it.completedImages + 1) }
+                                is GenerationEvent.ItemError -> _state.update { it.copy(error = event.error) }
+                                is GenerationEvent.FatalError -> {
+                                    naiGenerationGate.stopPending()
+                                    repository.failQueued(task.id, event.error)
+                                    previewStore.clear(event.generationId)
+                                    _state.update { it.copy(error = event.error) }
+                                    if (event.error.code in setOf(ErrorCode.INSUFFICIENT_ANLAS, ErrorCode.TIMEOUT_UNCERTAIN))
+                                        runCatching { refreshBalanceAfterGeneration(billing, false) }
+                                }
+                                is GenerationEvent.Completed -> {
+                                    previewStore.clear(event.generationId)
+                                    if (artistLabAccount() == task.accountFingerprint) runCatching {
+                                        refreshBalanceAfterGeneration(billing, event.status != GenerationStatus.FAILED,
+                                            event.generationId, formatGenerationDescription(snapshot))
+                                    }
+                                }
+                                is GenerationEvent.Intermediate -> previewStore.update(GenerationPreviewStore.Preview(
+                                    event.generationId, event.previewPath, event.progress))
                             }
                         }
-
-                        is GenerationEvent.Completed -> {
-                            previewStore.clear(event.generationId)
-                            _state.update { it.copy(inFlight = false) }
-                            refreshBalanceAfterGeneration(
-                                session = billingSession,
-                                completionConfirmed = event.status != GenerationStatus.FAILED,
-                                generationId = event.generationId,
-                                description = formatGenerationDescription(_state.value),
-                            )
-                        }
-
-                        // 流式中间预览：只更新预览落点，不碰生成状态本身。
-                        is GenerationEvent.Intermediate -> previewStore.update(
-                            GenerationPreviewStore.Preview(
-                                generationId = event.generationId,
-                                path = event.previewPath,
-                                progress = event.progress,
-                            ),
-                        )
                     }
                 }
+            } catch (failure: Exception) {
+                // A stopped queue is known unsent; never label it as a billable timeout or replay it.
+                val error = when (failure) {
+                    is GenerationRepository.QueuePreparationFailure -> failure.error
+                    is net.pocketnai.domain.model.SerialGenerationGate.Stopped -> AppError.of(ErrorCode.INVALID_PARAMS,
+                        detail = "前一任务未完成，此排队任务未发送；请核对后手动提交")
+                    else -> if (queued != null) AppError.of(ErrorCode.TIMEOUT_UNCERTAIN,
+                        detail = "任务异常结束，结果及计费待确认；请核对画廊，未自动重试")
+                        else AppError.of(ErrorCode.INVALID_PARAMS, detail = "任务准备未完成，图片请求未发送")
+                }
+                if (failure !is net.pocketnai.domain.model.SerialGenerationGate.Stopped) naiGenerationGate.stopPending()
+                withContext(kotlinx.coroutines.NonCancellable) {
+                    val task = queued ?: runCatching { prepared.await() }.getOrNull()
+                    task?.let { repository.failQueued(it.id, error) }
+                }
+                _state.update { if (failure is net.pocketnai.domain.model.SerialGenerationGate.Stopped && it.error != null) it
+                    else it.copy(error = error) }
+            } finally {
+                _state.update { val remaining = (it.homeOutstanding - 1).coerceAtLeast(0)
+                    it.copy(homeOutstanding = remaining, inFlight = remaining > 0) }
+            }
         }
     }
 
@@ -1620,38 +1611,41 @@ class GenerateViewModel(
         _state.update { it.copy(inFlight = true, completedImages = 0, error = null) }
         try {
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                repository.generate(GenerationRequest(params = params), params.prompt, expectedAccountFingerprint,
-                    beforeSend = { if (fromArtistLab) onStarted(it) }, templatesResolved = templatesResolved).collect { event ->
-                    when (event) {
-                        is GenerationEvent.Final -> {
-                            val image = event.image
-                            val chatImage = net.pocketnai.domain.chat.ChatImage(image.id, image.privateFilePath, image.width, image.height)
-                            images += chatImage; onImage(chatImage)
-                            _state.update { it.copy(completedImages = images.size) }
-                        }
-                        is GenerationEvent.FatalError -> {
-                            _state.update { it.copy(error = event.error) }
-                            if (fromArtistLab) {
-                                val uncertain = event.error.code == ErrorCode.TIMEOUT_UNCERTAIN
-                                if (uncertain || event.error.code == ErrorCode.INSUFFICIENT_ANLAS) refreshBalanceAfterGeneration(billing, false)
-                                throw net.pocketnai.domain.artistlab.ArtistLabRequestFailure(uncertain,
-                                    if (uncertain) "请求超时或断流，可能已计费；核对图库与余额，本张不会重试"
-                                    else "本张失败（${event.error.code.name}），本张不会重试")
+                awaitStartup()
+                naiGenerationGate.run {
+                    repository.generate(GenerationRequest(params = params), params.prompt, expectedAccountFingerprint,
+                        beforeSend = { if (fromArtistLab) onStarted(it) }, templatesResolved = templatesResolved).collect { event ->
+                        when (event) {
+                            is GenerationEvent.Final -> {
+                                val image = event.image
+                                val chatImage = net.pocketnai.domain.chat.ChatImage(image.id, image.privateFilePath, image.width, image.height)
+                                images += chatImage; onImage(chatImage)
+                                _state.update { it.copy(completedImages = images.size) }
                             }
-                            if (event.error.code == ErrorCode.TIMEOUT_UNCERTAIN) {
-                                refreshBalanceAfterGeneration(billing, false)
-                                throw net.pocketnai.domain.chat.ChatFailure("图片请求超时，可能已计费；请先核对图库和余额，未自动重试")
+                            is GenerationEvent.FatalError -> {
+                                _state.update { it.copy(error = event.error) }
+                                if (fromArtistLab) {
+                                    val uncertain = event.error.code == ErrorCode.TIMEOUT_UNCERTAIN
+                                    if (uncertain || event.error.code == ErrorCode.INSUFFICIENT_ANLAS) refreshBalanceAfterGeneration(billing, false)
+                                    throw net.pocketnai.domain.artistlab.ArtistLabRequestFailure(uncertain,
+                                        if (uncertain) "请求超时或断流，可能已计费；核对图库与余额，本张不会重试"
+                                        else "本张失败（${event.error.code.name}），本张不会重试")
+                                }
+                                if (event.error.code == ErrorCode.TIMEOUT_UNCERTAIN) {
+                                    refreshBalanceAfterGeneration(billing, false)
+                                    throw net.pocketnai.domain.chat.ChatFailure("图片请求超时，可能已计费；请先核对图库和余额，未自动重试")
+                                }
+                                throw net.pocketnai.domain.chat.ChatFailure("图片生成失败（${event.error.code.name}），未自动重试")
                             }
-                            throw net.pocketnai.domain.chat.ChatFailure("图片生成失败（${event.error.code.name}），未自动重试")
+                            is GenerationEvent.Completed -> {
+                                previewStore.clear(event.generationId)
+                                runCatching { refreshBalanceAfterGeneration(billing, event.status != GenerationStatus.FAILED,
+                                    event.generationId, "$description ${params.model.displayName} ${params.size.label}") }
+                            }
+                            is GenerationEvent.Intermediate -> Unit
+                            is GenerationEvent.ItemError -> _state.update { it.copy(error = event.error) }
+                            is GenerationEvent.Started -> Unit
                         }
-                        is GenerationEvent.Completed -> {
-                            previewStore.clear(event.generationId)
-                            runCatching { refreshBalanceAfterGeneration(billing, event.status != GenerationStatus.FAILED,
-                                event.generationId, "$description ${params.model.displayName} ${params.size.label}") }
-                        }
-                        is GenerationEvent.Intermediate -> Unit
-                        is GenerationEvent.ItemError -> _state.update { it.copy(error = event.error) }
-                        is GenerationEvent.Started -> Unit
                     }
                 }
             }
