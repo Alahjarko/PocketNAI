@@ -60,6 +60,7 @@ object StatisticsPreviewRenderer {
         AssistantPreviewRenderer.render()
         SfwPreviewRenderer.render()
         MotionPolishPreviewRenderer.render()
+        ThemeResponsePreviewRenderer.render()
         ResolutionPreviewRenderer.render()
         QueuePreviewRenderer.render()
         OpenAiPricingPreviewRenderer.render()

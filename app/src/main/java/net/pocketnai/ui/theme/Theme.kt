@@ -4,7 +4,8 @@ import android.os.Build
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.graphics.luminance
 import androidx.core.view.WindowCompat
@@ -16,10 +17,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import net.pocketnai.domain.model.ThemeMode
@@ -38,7 +35,7 @@ data class WeightHighlightColors(
     val stronger: Color,
 )
 
-val LocalWeightHighlightColors = staticCompositionLocalOf {
+val LocalWeightHighlightColors = compositionLocalOf {
     WeightHighlightColors(
         weaker = WeightWeakerHighlightLight,
         stronger = WeightStrongerHighlightLight,
@@ -73,29 +70,31 @@ fun PocketNaiTheme(
         else -> PocketNaiLightColors
     } }
 
-    val weightHighlights = if (darkTheme) {
+    val weightHighlights = remember(darkTheme) { if (darkTheme) {
         WeightHighlightColors(WeightWeakerHighlightDark, WeightStrongerHighlightDark)
     } else {
         WeightHighlightColors(WeightWeakerHighlightLight, WeightStrongerHighlightLight)
-    }
+    } }
 
-    val weaker by animateColorAsState(weightHighlights.weaker, tween(280), label = "weight-weaker")
-    val stronger by animateColorAsState(weightHighlights.stronger, tween(280), label = "weight-stronger")
-    val displayedColors = animatedColorScheme(colorScheme)
     val view = LocalView.current
     val activity = remember(context) { context.themeActivity() }
-    if (!view.isInEditMode && activity != null) SideEffect {
-        val lightBackground = displayedColors.background.luminance() > 0.18f
-        WindowCompat.getInsetsController(activity.window, view).apply {
-            isAppearanceLightStatusBars = lightBackground
-            isAppearanceLightNavigationBars = lightBackground
+    val lightBackground = colorScheme.background.luminance() > 0.18f
+    if (!view.isInEditMode && activity != null) DisposableEffect(view, activity, lightBackground) {
+        val controller = WindowCompat.getInsetsController(activity.window, view)
+        val oldStatus = controller.isAppearanceLightStatusBars
+        val oldNavigation = controller.isAppearanceLightNavigationBars
+        controller.isAppearanceLightStatusBars = lightBackground
+        controller.isAppearanceLightNavigationBars = lightBackground
+        onDispose {
+            controller.isAppearanceLightStatusBars = oldStatus
+            controller.isAppearanceLightNavigationBars = oldNavigation
         }
     }
     MaterialTheme(
-        colorScheme = displayedColors,
+        colorScheme = colorScheme,
     ) {
         CompositionLocalProvider(
-            LocalWeightHighlightColors provides WeightHighlightColors(weaker, stronger),
+            LocalWeightHighlightColors provides weightHighlights,
             content = content,
         )
     }

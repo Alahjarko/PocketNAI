@@ -17,31 +17,21 @@ import net.pocketnai.ui.generate.ReferenceOriginContent
 import net.pocketnai.ui.settings.ColorModeCard
 import net.pocketnai.ui.theme.PocketNaiDarkColors
 import net.pocketnai.ui.theme.PocketNaiLightColors
-import net.pocketnai.ui.theme.blendColorScheme
 import org.junit.runner.Description
 import org.junit.runners.model.Statement
 
 /** Production color interpolation and source-link layout, using a neutral geometry thumbnail. */
 object MotionPolishPreviewRenderer {
     fun render() {
-        // Verify legibility throughout the same production transition, beyond its two endpoints.
-        repeat(61) { frame ->
-            val colors = blendColorScheme(PocketNaiLightColors, PocketNaiDarkColors, frame / 60f)
-            listOf(colors.onSurface to colors.surface, colors.onBackground to colors.background,
-                colors.onPrimary to colors.primary).forEach { (ink, paper) ->
-                val a = ink.luminance(); val b = paper.luminance()
-                check((max(a, b) + 0.05f) / (min(a, b) + 0.05f) >= 4.49f)
-            }
-        }
         listOf(false, true).forEach { large ->
             val renderer = Paparazzi(deviceConfig = DeviceConfig.PIXEL_5.copy(softButtons = false,
                 fontScale = if (large) 1.5f else 1f))
             renderer.apply(object : Statement() {
                 override fun evaluate() {
-                    val frames = if (large) listOf(0, 6) else (0..6).toList()
+                    val frames = listOf(0, 6)
                     frames.forEach { frame ->
                         renderer.snapshot("theme-${if (large) "large" else "normal"}-$frame") {
-                            MaterialTheme(colorScheme = blendColorScheme(PocketNaiLightColors, PocketNaiDarkColors, frame / 6f)) {
+                            MaterialTheme(colorScheme = if (frame == 0) PocketNaiLightColors else PocketNaiDarkColors) {
                                 Surface(Modifier.fillMaxSize()) {
                                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                                         ColorModeCard(if (frame < 3) ThemeMode.LIGHT else ThemeMode.DARK) {}
