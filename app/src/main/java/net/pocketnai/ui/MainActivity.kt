@@ -42,7 +42,8 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        sharedImage = sharedImageUri(intent)?.toString()
+        // 桌面图标/通知的普通重入不能丢掉尚在等待参考图处理的分享。
+        sharedImageUri(intent)?.let { sharedImage = it.toString() }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

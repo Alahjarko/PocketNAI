@@ -95,6 +95,11 @@ jobs:
           PNAI_VERSION_NAME: 0.1.${{ steps.build_number.outputs.number }}
         run: ./gradlew :app:assembleRelease
 
+      - name: Inspect packaged share task configuration
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest print app/build/outputs/apk/release/app-release.apk > "$RUNNER_TEMP/packaged-manifest.xml"
+          python3 scripts/verify-share-manifest.py "$RUNNER_TEMP/packaged-manifest.xml"
+
       - name: Verify signing compatibility with latest release
         env:
           GH_TOKEN: ${{ github.token }}

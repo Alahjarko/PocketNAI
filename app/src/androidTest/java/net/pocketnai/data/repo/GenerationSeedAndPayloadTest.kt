@@ -9,6 +9,11 @@ import kotlinx.coroutines.delay
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.content.ClipData
+import android.content.ComponentName
+import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.net.Uri
 import android.util.Base64
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -298,6 +303,7 @@ class GenerationSeedAndPayloadTest {
         repo: GenerationRepository,
         params: GenerationParams,
     ) {
+        checkSharedImageTaskContract()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val prefix = "reference-combo-" + java.util.UUID.randomUUID()
         val preferenceNames = mutableSetOf<String>()
@@ -385,6 +391,42 @@ class GenerationSeedAndPayloadTest {
             main { store.clear() }
             preferenceNames.forEach { context.deleteSharedPreferences(it) }
         }
+    }
+
+    /** 不启动真实主界面或读取账号；覆盖相册分享交接与打包后的组件配置。 */
+    private fun checkSharedImageTaskContract() {
+        val target = InstrumentationRegistry.getInstrumentation().targetContext
+        val uri = Uri.parse("content://test.gallery/images/one")
+        val incoming = Intent(Intent.ACTION_SEND).apply {
+            type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra("unrelated", "must not forward")
+            flags = Intent.FLAG_ACTIVITY_NEW_DOCUMENT or Intent.FLAG_ACTIVITY_MULTIPLE_TASK or
+                Intent.FLAG_ACTIVITY_NO_HISTORY or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        }
+        val forwarded = net.pocketnai.ui.sharedImageMainIntent(target, incoming)!!
+        assertThat(forwarded.component).isEqualTo(ComponentName(target, net.pocketnai.ui.MainActivity::class.java))
+        assertThat(net.pocketnai.ui.sharedImageUri(forwarded)).isEqualTo(uri)
+        assertThat(forwarded.clipData!!.itemCount).isEqualTo(1)
+        assertThat(forwarded.clipData!!.getItemAt(0).uri).isEqualTo(uri)
+        assertThat(forwarded.extras!!.keySet()).containsExactly(Intent.EXTRA_STREAM)
+        assertThat(forwarded.flags).isEqualTo(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
+            Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        assertThat(incoming.flags and Intent.FLAG_ACTIVITY_NO_HISTORY).isNotEqualTo(0)
+        val clipped = Intent(Intent.ACTION_SEND).apply { type = "image/jpeg"; clipData = ClipData.newRawUri("sample", uri) }
+        assertThat(net.pocketnai.ui.sharedImageUri(net.pocketnai.ui.sharedImageMainIntent(target, clipped)!!)).isEqualTo(uri)
+        assertThat(net.pocketnai.ui.sharedImageMainIntent(target, Intent(incoming).setType("text/plain"))).isNull()
+        assertThat(net.pocketnai.ui.sharedImageMainIntent(target, Intent(incoming)
+            .putExtra(Intent.EXTRA_STREAM, Uri.parse("file:///private/forbidden.png")))).isNull()
+        val main = target.packageManager.getActivityInfo(ComponentName(target, net.pocketnai.ui.MainActivity::class.java), 0)
+        assertThat(main.launchMode).isEqualTo(ActivityInfo.LAUNCH_SINGLE_TASK)
+        assertThat(main.documentLaunchMode).isEqualTo(ActivityInfo.DOCUMENT_LAUNCH_NEVER)
+        assertThat(main.flags and (ActivityInfo.FLAG_NO_HISTORY or ActivityInfo.FLAG_EXCLUDE_FROM_RECENTS)).isEqualTo(0)
+        val share = target.packageManager.getActivityInfo(ComponentName(target, net.pocketnai.ui.ShareImageActivity::class.java), 0)
+        assertThat(share.flags and ActivityInfo.FLAG_NO_HISTORY).isNotEqualTo(0)
+        assertThat(share.flags and ActivityInfo.FLAG_EXCLUDE_FROM_RECENTS).isNotEqualTo(0)
+        assertThat(share.taskAffinity.orEmpty()).isEmpty()
     }
 
     /** 原请求载荷测试改成设备端完整链路，覆盖回图融合、裁切和历史一致性。 */

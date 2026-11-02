@@ -42,9 +42,10 @@
 
 ## 分享、批量操作与图片清理（2026-09-18）
 
-- 接收相册分享（2026-10-01）：`MainActivity` 接收单张 `ACTION_SEND` + `image/*` 的 content URI，
-  冷启动和 `onNewIntent` 共用参数探查流程；返回首页后让用户选择读参数或仅作参考。
+- 接收相册分享（2026-11-02 修正任务归属）：单张 `ACTION_SEND` + `image/*` 先由无界面的 `ShareImageActivity` 接收，只向 `MainActivity` 转交校验过的 content URI、同一 URI 的 ClipData 和临时读权限，不复制外部任务标记或其它 extras。接收器不进最近任务并立即结束；主入口用 `singleTask` + `documentLaunchMode=never` 复用应用主任务，不继承相册的 NEW_DOCUMENT/MULTIPLE_TASK/NO_HISTORY/EXCLUDE_FROM_RECENTS 等行为。
+  冷启动和 `onNewIntent` 共用原有参数探查流程；返回应用首页后让用户选择读参数或仅作参考。普通桌面/通知重入不清除尚在等待处理的分享。
   不要求扩大相册权限，不接受外部任意文件路径，也不自动生成。接收 URI 不新增 FileProvider 暴露路径。
+  Android依据：[任务启动规则](https://developer.android.com/guide/topics/manifest/activity-element#lmode)、[文件读取授权](https://developer.android.com/training/secure-file-sharing/share-file)。云端必须检查打包后的 manifest；真实最近任务卡片的 Home/后台/恢复行为仍需物理设备验收，不能用 Layoutlib 预览冒充系统任务验证。
 
 - 分享走系统 `ACTION_SEND`（多张时 `ACTION_SEND_MULTIPLE`），文件经 FileProvider 的
   `files/generations/` 路径授权。`res/xml/file_paths.xml` **只允许两条路径**：

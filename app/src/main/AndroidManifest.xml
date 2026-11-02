@@ -36,7 +36,8 @@
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
+            android:documentLaunchMode="never"
             android:label="@string/app_name"
             android:theme="@style/Theme.PocketNAI"
             android:windowSoftInputMode="adjustResize">
@@ -44,6 +45,17 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
+
+        <!-- 分享只转交给主任务，不把主界面留在相册创建的临时任务中。 -->
+        <activity
+            android:name=".ui.ShareImageActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:documentLaunchMode="never"
+            android:theme="@android:style/Theme.NoDisplay">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
