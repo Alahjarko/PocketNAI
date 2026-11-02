@@ -28,3 +28,5 @@ sourceImageId只用于本机导航，不进入生成请求、PNG或共享文件�
 本机SQLite按Room12导出结构执行原样迁移SQL，旧历史/图片/收藏/对话保留，旧来源为null，删除原图后参考副本记录仍在；这不替代Android端Room迁移执行。全程不用安卓模拟器，不发真实AI请求。最终云端运行与APK摘要记入发布文档；真机触控、缓存切换和手势仍待验收。
 
 合并远端 `4f123bc` 后，源码 `3ff1862` 的[完整云端检查](https://github.com/Alahjarko/PocketNAI/actions/runs/41469048757)全部通过：29项JVM零失败/跳过、126张原生渲染、Debug/Release/AndroidTest编译、打包配置与原签名。新增9张界面已审阅，合并前后逐字节一致。Room13导出与实际迁移结构已核对。
+
+已作为[0.1.28正式发布](https://github.com/Alahjarko/PocketNAI/releases/tag/build-28)，附带APK。[发布记录](release-0.1.28.md)保留源码、云端流程、包内版本和摘要。
