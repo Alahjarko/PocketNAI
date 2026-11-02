@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -52,7 +53,8 @@ fun OpenAiImageSheet(
             Button(onClick = {
                 if (!hasKey) onSettings()
                 else { keyboard?.hide(); confirm = true }
-            }, enabled = !state.busy && !state.importing && (params.prompt.isNotBlank() || !hasKey),
+            }, enabled = !state.busy && !state.importing && (!hasKey ||
+                (params.prompt.isNotBlank() && OpenAiImageParams.sizeError(params.size) == null)),
                 modifier = Modifier.height(56.dp)) {
                 if (state.busy) {
                     net.pocketnai.ui.motion.GenerationOrb(Modifier.size(20.dp), color = LocalContentColor.current, description = null)
@@ -73,26 +75,9 @@ fun OpenAiImageSheet(
                 !state.busy) { viewModel.update(params.copy(model = it)) }
             Text(if (params.model == OpenAiImageParams.FLARE) "适合快速、日常的高质量生成" else "适合注重精确度的参考图编辑",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            val presets = listOf("1024x1024", "1536x1024", "1024x1536", "1536x864", "864x1536", "auto")
-            var custom by remember(state.revision) { mutableStateOf(params.size !in presets) }
-            OpenAiOption("尺寸", if (custom) "custom" else params.size, presets + "custom", {
-                when (it) { "auto" -> "自动"; "custom" -> "自定义"; else -> it.replace("x", " × ") }
-            }, !state.busy) {
-                custom = it == "custom"
-                if (!custom) viewModel.update(params.copy(size = it))
-                else if (params.size == "auto") viewModel.update(params.copy(size = "1024x1024"))
-            }
-            if (custom) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    val parts = params.size.split('x')
-                    OutlinedTextField(parts.getOrElse(0) { "" }, { value ->
-                        viewModel.update(params.copy(size = value.filter(Char::isDigit).take(4) + "x" + parts.getOrElse(1) { "1024" }))
-                    }, label = { Text("宽度") }, singleLine = true, enabled = !state.busy, modifier = Modifier.weight(1f))
-                    OutlinedTextField(parts.getOrElse(1) { "" }, { value ->
-                        viewModel.update(params.copy(size = parts.getOrElse(0) { "1024" } + "x" + value.filter(Char::isDigit).take(4)))
-                    }, label = { Text("高度") }, singleLine = true, enabled = !state.busy, modifier = Modifier.weight(1f))
-                }
-                Text("宽高须为16的倍数；超过2560×1440的像素量属于实验性分辨率。", style = MaterialTheme.typography.bodySmall)
+            var customSize by rememberSaveable(state.revision) { mutableStateOf(params.size !in OpenAiImageParams.SIZE_PRESETS) }
+            OpenAiResolutionSelector(params.size, customSize, !state.busy, { customSize = it }) {
+                viewModel.update(params.copy(size = it))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.weight(1f)) { OpenAiOption("质量", params.quality, OpenAiImageParams.QUALITIES, {
@@ -153,7 +138,7 @@ fun OpenAiImageSheet(
 }
 
 @Composable
-private fun OpenAiOption(label: String, value: String, options: List<String>, display: (String) -> String,
+internal fun OpenAiOption(label: String, value: String, options: List<String>, display: (String) -> String,
     enabled: Boolean, onSelect: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Column {

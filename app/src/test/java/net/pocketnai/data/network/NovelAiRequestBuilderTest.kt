@@ -12,6 +12,8 @@ import net.pocketnai.domain.model.GenerationParams
 import net.pocketnai.domain.model.ImageModel
 import net.pocketnai.domain.model.ModelCatalog
 import net.pocketnai.domain.model.QualityTagsOption
+import net.pocketnai.domain.model.ImageOrientation
+import net.pocketnai.domain.model.ResolutionTier
 import org.junit.Test
 
 /**
@@ -44,10 +46,13 @@ class NovelAiRequestBuilderTest {
             characters = listOf(char2, char1),
             qualityTags = QualityTagsOption.STANDARD,
             useCharacterCoordinates = true,
+            size = v5.sizeFor(ResolutionTier.WALLPAPER, ImageOrientation.PORTRAIT)!!,
         )
 
         val payload = NovelAiRequestBuilder.build(v5, params)
         val parameters = payload["parameters"]!!.jsonObject
+        assertThat(parameters["width"]!!.jsonPrimitive.content).isEqualTo("1088")
+        assertThat(parameters["height"]!!.jsonPrimitive.content).isEqualTo("1920")
         val v4Prompt = parameters["v4_prompt"]!!.jsonObject
         val v4Negative = parameters["v4_negative_prompt"]!!.jsonObject
         val expected = original + ", very aesthetic, masterpiece, no text, teXt: 这是一个对话框\n\n这是一段测试文本\n\n左边\n\n右边"

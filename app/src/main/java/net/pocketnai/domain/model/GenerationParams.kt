@@ -29,6 +29,7 @@ data class ImageSizePreset(val width: Int, val height: Int) {
 enum class ResolutionTier(val displayName: String) {
     NORMAL("Normal"),
     LARGE("Large"),
+    WALLPAPER("Wallpaper"),
 }
 
 /** 档位 × 方向的组合，等价于官方 Resolution 里的一个可选状态。 */

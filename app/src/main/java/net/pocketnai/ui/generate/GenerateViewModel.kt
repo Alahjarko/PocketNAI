@@ -610,7 +610,7 @@ class GenerateViewModel(
         }
     }
 
-    /** 切换 Resolution 档位（Normal / Large），保持当前横竖方向不变。 */
+    /** 切换 Resolution 档位；优先保持方向，无该方向时使用档位首项。 */
     fun onResolutionTierChange(tier: ResolutionTier) {
         _state.update { current ->
             val next = current.profile.sizeInTier(tier, current.params.size)
