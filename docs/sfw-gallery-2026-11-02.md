@@ -25,3 +25,7 @@
 源码 `d6c4fbf7ddc8753062f658569b502823c6e8d987` 的[开发验证](https://github.com/Alahjarko/PocketNAI/actions/runs/41393276386)全部通过：29项JVM、原生组件渲染、Debug/Release/AndroidTest编译、包内配置与原签名检查。新增原生预览已检查多模型勾选、大字体与生产高斯变换后的几何样本。
 
 扩展既有回归，覆盖多模型与占位条件、正向/负向/角色和宏识别、SFW关闭不拦截、灰度细节衰减且输入不变、未完成索引的遮罩逻辑、开关持久化，以及假API场景下发送前改开关仍然零生成POST。后者的设备项目仅编译，不冒充当前环境已执行。
+
+## 正式发布
+
+已作为 [0.1.27 / build-27](https://github.com/Alahjarko/PocketNAI/releases/tag/build-27)发布，附带 `PocketNAI.apk`。[正式发布记录](release-0.1.27.md)保留源码、云端运行、原签名和 APK 摘要。
