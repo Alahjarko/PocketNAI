@@ -4,6 +4,8 @@
 
 ## 检查更新与发布（GitHub Release）
 
+- 2026-11-02：正式发布 workflow 显式安装 `platforms;android-35` 与 `build-tools;34.0.0`，不依赖 runner 的预装版本，不安装/启动模拟器。签名解析兼容 `Signer #1`、SDK 范围与 `V2 Signer` 等输出，仍需实际校验 APK 并比较证书集合。保留已验证 APK 和测试报告为 Actions artifact，再创建正式 Release；标签通过 `--target` 固定到本次构建 SHA，附件仍命名 `PocketNAI.apk`。多行发布说明原样写入文件传给 `--notes-file`。
+
 - 云端 workflow 在发布前下载上一版 `PocketNAI.apk`，用 `apksigner verify --print-certs` 校验两包并比较签名证书SHA-256集合；不一致或无法核验时停止发布，不能以另一把可用密钥替代。用于比较的旧包只读，不覆盖或删除既有Release。
 
 - 从2026-10-09起，两条发布路径均使用 `:app:assembleRelease`，产物为 `app/build/outputs/apk/release/app-release.apk`。启用R8与资源优化，关闭调试开销；`release`继续使用既有debug keystore或CI显式指定的同一密钥，不能另建签名。调试包仍用于日常设备测试，冷启动性能需用同签名优化包另行实测。[Compose官方性能说明](https://developer.android.com/develop/ui/compose/performance)
