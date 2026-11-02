@@ -89,7 +89,13 @@ class AppContainer(application: Application) {
     val llmSettingsStore by lazy { net.pocketnai.data.chat.LlmSettingsStore(application) }
     val chatClient by lazy { net.pocketnai.data.chat.OpenAiCompatibleChatClient() }
     val chatStore by lazy { net.pocketnai.data.chat.ChatStore(database.chatConversationDao()) }
-    val chatAttachmentStore by lazy { net.pocketnai.data.chat.ChatAttachmentStore(application) }
+    val chatAttachmentStore by lazy {
+        net.pocketnai.data.chat.ChatAttachmentStore(application, imageMetadataInspector) { imageId, path ->
+            generationRepository.loadDetail(imageId)?.takeIf { it.image.privateFilePath == path }?.let {
+                net.pocketnai.domain.chat.ChatImageContext.fromGeneration(it.generation, it.image.seed, it.image.width, it.image.height)
+            }
+        }
+    }
     val agentFiles by lazy { net.pocketnai.data.chat.AgentFiles(application) }
 
     private val json: Json = Json {

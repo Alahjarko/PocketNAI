@@ -285,6 +285,7 @@ private fun ReferenceSummary(
 internal fun HistoryImagePickerDialog(
     onPick: (String) -> Unit,
     onDismiss: () -> Unit,
+    onPickItem: ((net.pocketnai.domain.model.GalleryItem) -> Unit)? = null,
 ) {
     val container = LocalAppContainer.current
     // 显式给一个 key，让它与画廊那份 GalleryViewModel **不是同一个实例**：
@@ -324,7 +325,7 @@ internal fun HistoryImagePickerDialog(
                                 .aspectRatio(item.width.toFloat() / item.height)
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .clickable { onPick(item.relativePath) },
+                                .clickable { onPickItem?.invoke(item) ?: onPick(item.relativePath) },
                         ) {
                             AsyncImage(
                                 model = container.fileStore.resolve(item.relativePath),

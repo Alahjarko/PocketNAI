@@ -1,10 +1,14 @@
 package net.pocketnai.ui.chat
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.DragInteraction
-import androidx.compose.foundation.gestures.animateScrollBy
-import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -48,6 +52,7 @@ import net.pocketnai.ui.motion.imageMotionChrome
 import net.pocketnai.domain.chat.*
 import java.io.File
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -91,28 +96,33 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
     var menuOpen by remember { mutableStateOf(false) }
     var deleteId by remember { mutableStateOf<String?>(null) }
     var reading by remember { mutableStateOf<Pair<String, String>?>(null) }
-    var following by rememberSaveable { mutableStateOf(true) }
-    var shownId by rememberSaveable { mutableStateOf<String?>(null) }
-    val list = rememberLazyListState()
+    val scrollSession = rememberChatScrollSession(state.current?.id)
+    var following by scrollSession.following
+    val list = scrollSession.list
+    var dragging by remember(list) { mutableStateOf(false) }
+    val userScroll = remember(list) { object : NestedScrollConnection {
+        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+            if (source == NestedScrollSource.UserInput && available.y > 0f) following = false
+            return Offset.Zero
+        }
+    } }
     val entries = state.current?.entries.orEmpty()
-    val busy by rememberUpdatedState(state.busy)
     LaunchedEffect(state.current?.id) {
-        if (shownId != state.current?.id) { following = true; shownId = state.current?.id }
+        launch { entries.takeLast(4).forEach { warmChatMarkdown(it.content) } }
         withFrameNanos { }
         if (following && list.layoutInfo.totalItemsCount > 0) list.scrollToItem(list.layoutInfo.totalItemsCount - 1)
     }
     LaunchedEffect(list) {
         list.interactionSource.interactions.collect { interaction ->
             when (interaction) {
-                is DragInteraction.Start -> following = false
-                is DragInteraction.Stop, is DragInteraction.Cancel -> {
-                    val info = list.layoutInfo
-                    val last = info.visibleItemsInfo.lastOrNull()
-                    following = last != null && last.index == info.totalItemsCount - 1 &&
-                        last.offset + last.size <= info.viewportEndOffset + 48
-                }
+                is DragInteraction.Start -> { dragging = true; following = false }
+                is DragInteraction.Stop, is DragInteraction.Cancel -> dragging = false
             }
         }
+    }
+    LaunchedEffect(list) {
+        snapshotFlow { !dragging && !list.isScrollInProgress && !list.canScrollForward && list.layoutInfo.totalItemsCount > 0 }
+            .collect { settledAtBottom -> if (settledAtBottom) following = true }
     }
     // Follow actual layout changes, without a 160ms polling jump or token-triggered resets.
     LaunchedEffect(list) {
@@ -120,13 +130,13 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
             val info = list.layoutInfo
             val last = info.visibleItemsInfo.lastOrNull()
             Triple(following && reading == null, info.totalItemsCount,
-                if (last == null) 0 else if (last.index < info.totalItemsCount - 1) Int.MAX_VALUE
-                else (last.offset + last.size - info.viewportEndOffset).coerceAtLeast(0))
+                if (last == null || !list.canScrollForward) 0 else if (last.index < info.totalItemsCount - 1) Int.MAX_VALUE
+                else (last.offset + last.size + info.afterContentPadding - info.viewportEndOffset).coerceAtLeast(0))
         }.collect { (follow, count, distance) ->
             if (follow && count > 0 && distance > 0) {
                 try {
                     if (distance == Int.MAX_VALUE) list.scrollToItem(count - 1)
-                    else list.animateScrollBy(distance.toFloat(), tween(if (busy) 96 else 160))
+                    else list.scrollBy(distance.toFloat())
                 } catch (_: CancellationException) {
                     // User dragging wins the scroll mutex; the follow observer stays alive.
                     currentCoroutineContext().ensureActive()
@@ -167,7 +177,7 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
     }, messages = {
-        LazyColumn(state = list, modifier = Modifier.fillMaxSize().testTag("chat-messages"),
+        LazyColumn(state = list, modifier = Modifier.fillMaxSize().nestedScroll(userScroll).testTag("chat-messages"),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (entries.isEmpty()) item {
                 Column(Modifier.fillMaxWidth().padding(vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally,
@@ -179,11 +189,13 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                 }
             }
             items(entries, key = { it.id }, contentType = { it.role }) { entry ->
-                ChatMessageBubble(entry, resolveImage, onOpenImage, onRead = { title, text -> reading = title to text }, onOpenAttachment = { viewingAttachment = it })
+                ChatTimelineEntry(entry, viewModel, resolveImage, onOpenImage,
+                    { title, text -> reading = title to text }, { viewingAttachment = it })
             }
-            if (state.busy) item(key = "partial", contentType = "streaming") {
-                StreamingChatMessage(viewModel, resolveImage, onOpenImage) { title, text -> reading = title to text }
-            }
+            state.streamId?.let { responseId -> item(key = responseId, contentType = "assistant") {
+                ChatTimelineEntry(null, viewModel, resolveImage, onOpenImage,
+                    { title, text -> reading = title to text }, { viewingAttachment = it })
+            } }
             state.pending?.let { pending -> item {
                 Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -216,8 +228,14 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                 contentPadding = PaddingValues(start = 14.dp, top = 12.dp, end = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(state.draftAttachments, key = { it.id }) { attachment ->
                     Box(Modifier.size(80.dp)) {
-                        AsyncImage(resolveImage(attachment.relativePath), "待发送图片", contentScale = ContentScale.Crop,
+                        AsyncImage(resolveImage(attachment.relativePath), if (attachment.promptContext != null) "待发送图片，已附生成参数" else "待发送图片", contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).clickable { viewingAttachment = attachment })
+                        if (attachment.promptContext != null) Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            shape = RoundedCornerShape(6.dp), modifier = Modifier.align(Alignment.BottomCenter).padding(3.dp)
+                                .clickable { viewingAttachment = attachment }) {
+                            Text("含提示词", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                        }
                         IconButton(onClick = { viewModel.removeAttachment(attachment.id) }, enabled = !state.busy && !state.importingAttachment,
                             modifier = Modifier.align(Alignment.TopEnd).size(32.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape).testTag("chat-remove-attachment")) {
                             Icon(Icons.Default.Close, "移除图片", modifier = Modifier.size(18.dp))
@@ -279,12 +297,29 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
         confirmButton = { TextButton(onClick = { viewModel.deleteConversation(id); deleteId = null }) { Text("删除") } },
         dismissButton = { TextButton(onClick = { deleteId = null }) { Text("取消") } }) }
     reading?.let { (title, text) -> ChatTextReader(title, text) { reading = null } }
-    if (galleryPicker) HistoryImagePickerDialog(onPick = { path -> viewModel.addGalleryImage(path); galleryPicker = false }, onDismiss = { galleryPicker = false })
+    if (galleryPicker) HistoryImagePickerDialog(
+        onPick = { path -> viewModel.addGalleryImage(path); galleryPicker = false },
+        onDismiss = { galleryPicker = false },
+        onPickItem = { item -> viewModel.addGalleryImage(item.relativePath, item.imageId); galleryPicker = false },
+    )
     viewingAttachment?.let { attachment -> Dialog(onDismissRequest = { viewingAttachment = null }) {
         Surface(shape = RoundedCornerShape(20.dp)) {
-            Column(Modifier.fillMaxWidth()) {
-                AsyncImage(resolveImage(attachment.relativePath), "图片附件", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp))
-                TextButton(onClick = { viewingAttachment = null }, modifier = Modifier.align(Alignment.End)) { Text("关闭图片") }
+            Column(Modifier.fillMaxWidth().heightIn(max = 720.dp).padding(12.dp)) {
+                Column(Modifier.weight(1f, fill = false).verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    AsyncImage(resolveImage(attachment.relativePath), "图片附件", contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 340.dp))
+                    attachment.promptContext?.let { ChatImageContextPanel(it) }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    if (attachment.promptContext != null && state.draftAttachments.any { it.id == attachment.id }) {
+                        TextButton(enabled = !state.busy && !state.importingAttachment, onClick = {
+                            viewModel.removeAttachmentContext(attachment.id)
+                            viewingAttachment = attachment.copy(promptContext = null)
+                        }) { Text("仅发送图片") }
+                    }
+                    TextButton(onClick = { viewingAttachment = null }) { Text("关闭图片") }
+                }
             }
         }
     } }
@@ -313,11 +348,19 @@ internal fun ChatPageLayout(
 }
 
 @Composable
-private fun StreamingChatMessage(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenImage: (String) -> Unit,
-    onRead: (String, String) -> Unit) {
-    val partialFlow = remember(viewModel) { viewModel.state.map { it.partial }.distinctUntilChanged() }
-    val partial by partialFlow.collectAsStateWithLifecycle(initialValue = viewModel.state.value.partial)
-    partial?.let { ChatMessageBubble(ChatEntry("partial", it), resolveImage, onOpenImage, streaming = true, onRead = onRead) }
+private fun ChatTimelineEntry(entry: ChatEntry?, viewModel: ChatViewModel, resolveImage: (String) -> File,
+    onOpenImage: (String) -> Unit, onRead: (String, String) -> Unit, onOpenAttachment: (ChatAttachment) -> Unit) {
+    val shown = if (entry != null) entry else {
+        val partialFlow = remember(viewModel) { viewModel.state.map { state ->
+            state.partial?.let { ChatEntry(state.streamId ?: "partial", it) }
+        }.distinctUntilChanged() }
+        val partial by partialFlow.collectAsStateWithLifecycle(initialValue = viewModel.state.value.partial?.let {
+            ChatEntry(viewModel.state.value.streamId ?: "partial", it)
+        })
+        partial
+    }
+    if (shown != null) ChatMessageBubble(shown, resolveImage, onOpenImage, streaming = entry == null,
+        onRead = onRead, onOpenAttachment = onOpenAttachment)
 }
 
 @Composable
@@ -341,6 +384,9 @@ fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenIm
                 modifier = Modifier.fillMaxWidth(0.78f).aspectRatio(image.width.toFloat() / image.height.coerceAtLeast(1))
                     .sharedImage(image.imageId).clip(RoundedCornerShape(22.dp)).clickable { imageMotion?.preview = ImageOriginPreview(image.imageId, file, image.width.toFloat() / image.height.coerceAtLeast(1), "对话生成的图片"); onOpenImage(image.imageId) })
             else Text("图片已从图库移除", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        entry.attachments.filter { it.promptContext != null }.forEach { attachment ->
+            AssistChip(onClick = { onOpenAttachment(attachment) }, label = { Text("图片生成参数") })
         }
         if (entry.role == "tool") {
             entry.notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }

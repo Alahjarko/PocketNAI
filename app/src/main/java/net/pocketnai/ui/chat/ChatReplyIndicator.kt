@@ -18,7 +18,8 @@ internal fun ChatReplyIndicator(label: String) {
     val phase by transition.animateFloat(0f, 3f, infiniteRepeatable(tween(1200, easing = LinearEasing)), label = "activity-dots")
     val color = MaterialTheme.colorScheme.onSurfaceVariant
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Canvas(Modifier.size(28.dp, 18.dp)) {
+        if (label.startsWith("正在生成图片")) net.pocketnai.ui.motion.GenerationOrb(Modifier.size(28.dp), description = null)
+        else Canvas(Modifier.size(28.dp, 18.dp)) {
             repeat(3) { index ->
                 val distance = ((phase - index + 3f) % 3f)
                 val alpha = (1f - distance / 3f).coerceIn(0.25f, 1f)

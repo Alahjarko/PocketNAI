@@ -15,6 +15,10 @@ import com.mikepenz.markdown.m3.markdownTypography
 import com.mikepenz.markdown.model.*
 import com.mikepenz.markdown.model.State as MarkdownRenderState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.collect
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import org.intellij.markdown.parser.MarkdownParser
 import net.pocketnai.domain.chat.ChatTextLayout
@@ -44,8 +48,23 @@ private object ParsedChatMarkdown {
     private val values = object : LinkedHashMap<String, MarkdownRenderState.Success>(32, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MarkdownRenderState.Success>) = size > 24
     }
-    @Synchronized fun get(text: String) = values[text]
-    @Synchronized fun put(text: String, state: MarkdownRenderState.Success) { values[text] = state }
+    private var tail: Pair<String, MarkdownRenderState.Success>? = null
+    @Synchronized fun get(text: String) = values[text] ?: tail?.takeIf { it.first == text }?.second
+    @Synchronized fun put(text: String, state: MarkdownRenderState.Success, committed: Boolean) {
+        if (committed) values[text] = state else tail = text to state
+    }
+}
+
+/** 小范围后台预热；不测量不可见消息，也不解析整份历史。 */
+internal suspend fun warmChatMarkdown(text: String) = withContext(Dispatchers.Default) {
+    markdownSections(ChatTextLayout.preview(text)).forEach { section ->
+        if (ParsedChatMarkdown.get(section) == null &&
+            (section.any { it in "*`_#[]>|~" } || listPattern.containsMatchIn(section))) {
+            val flavour = GFMFlavourDescriptor()
+            val parsed = MarkdownState(Input(section, true, flavour, MarkdownParser(flavour), ReferenceLinkHandlerImpl())).parse()
+            if (parsed is MarkdownRenderState.Success) ParsedChatMarkdown.put(section, parsed, true)
+        }
+    }
 }
 
 /** Stable completed paragraphs keep their parser state; only the changing tail is reparsed. */
@@ -95,17 +114,16 @@ private fun revealStreamingText(text: String, streaming: Boolean): String {
     val latest by rememberUpdatedState(text)
     LaunchedEffect(streaming) {
         if (!streaming) { shown = latest; return@LaunchedEffect }
+        var previousFrame = 0L
         while (true) {
+            val frame = withFrameNanos { it }
+            val elapsed = if (previousFrame == 0L) 16L else (frame - previousFrame) / 1_000_000L
+            previousFrame = frame
             val target = latest
-            if (!target.startsWith(shown)) shown = target
-            else if (shown.length < target.length) {
-                val step = ((target.length - shown.length + 3) / 4).coerceIn(1, 64)
-                var end = (shown.length + step).coerceAtMost(target.length)
-                if (end < target.length && target[end].isLowSurrogate() && target[end - 1].isHighSurrogate()) end++
-                shown = target.substring(0, end)
+            if (!target.startsWith(shown)) shown = ""
+            if (shown.length < target.length) {
+                shown = target.substring(0, ChatTextLayout.nextVisibleEnd(target, shown.length, elapsed))
             }
-            delay(24)
-            withFrameNanos { } // The reveal ticker also sleeps when this UI stops producing frames.
         }
     }
     return if (streaming) shown else text
@@ -120,23 +138,30 @@ internal fun ChatMarkdownText(text: String, streaming: Boolean = false, small: B
         sections.forEachIndexed { index, section ->
             key(index) {
                 val projected = remember(section, streaming) { if (streaming) pendingMarkdown(section) else section }
-                MarkdownSection(projected, style, Modifier.testTag("chat-markdown-block:$index"))
+                MarkdownSection(projected, style, Modifier.testTag("chat-markdown-block:$index"), committed = !streaming || index < sections.lastIndex)
             }
         }
     }
 }
 
 @Composable
-private fun MarkdownSection(text: String, style: TextStyle, modifier: Modifier) {
+private fun MarkdownSection(text: String, style: TextStyle, modifier: Modifier, committed: Boolean) {
     // Plain prose does not need to construct an AST at all.
     val formatted = remember(text) { text.any { it in "*`_#[]>|~" } || listPattern.containsMatchIn(text) }
     if (!formatted) { SelectionContainer { Text(text, modifier, style = style) }; return }
-    val parsed by produceState<MarkdownRenderState?>(ParsedChatMarkdown.get(text), text) {
-        // A cancelled parse may still be finishing on Default: never share its mutable parser.
-        val flavour = GFMFlavourDescriptor()
-        val ready = ParsedChatMarkdown.get(text) ?: MarkdownState(Input(text, true, flavour, MarkdownParser(flavour), ReferenceLinkHandlerImpl())).parse()
-        if (ready is MarkdownRenderState.Success) ParsedChatMarkdown.put(text, ready)
-        value = ready
+    val latestText by rememberUpdatedState(text)
+    val latestCommitted by rememberUpdatedState(committed)
+    val parsed by produceState<MarkdownRenderState?>(ParsedChatMarkdown.get(text)) {
+        // Sequential conflation keeps a useful parse instead of repeatedly cancelling the tail.
+        snapshotFlow { latestText to latestCommitted }.conflate().collect { (next, cache) ->
+            val ready = ParsedChatMarkdown.get(next) ?: withContext(Dispatchers.Default) {
+                val flavour = GFMFlavourDescriptor()
+                MarkdownState(Input(next, true, flavour, MarkdownParser(flavour), ReferenceLinkHandlerImpl())).parse()
+            }
+            if (ready is MarkdownRenderState.Success) ParsedChatMarkdown.put(next, ready, cache)
+            value = ready
+            if (!cache) delay(32)
+        }
     }
     val uriHandler = LocalUriHandler.current
     val safeLinks = remember(uriHandler) { object : androidx.compose.ui.platform.UriHandler {

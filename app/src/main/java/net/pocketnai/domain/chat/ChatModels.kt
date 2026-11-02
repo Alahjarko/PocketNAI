@@ -22,7 +22,9 @@ data class LlmConfig(
 data class ChatImage(val imageId: String, val relativePath: String, val width: Int, val height: Int)
 
 @Serializable
-data class ChatAttachment(val id: String, val relativePath: String, val mimeType: String, val width: Int, val height: Int) {
+data class ChatAttachment(val id: String, val relativePath: String, val mimeType: String, val width: Int, val height: Int,
+    val promptContext: ChatImageContext? = null,
+) {
     companion object { const val MAX_COUNT = 4 }
 }
 

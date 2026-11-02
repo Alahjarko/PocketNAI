@@ -28,6 +28,7 @@ class ChatViewModel(
         val generating: Boolean = false,
         val phase: String = "",
         val partial: JsonObject? = null,
+        val streamId: String? = null,
         val pending: PendingImage? = null,
         val models: List<String> = emptyList(),
         val loadingModels: Boolean = false,
@@ -59,7 +60,7 @@ class ChatViewModel(
         }
     }
     private fun fresh() = ChatConversation(UUID.randomUUID().toString(), updatedAt = System.currentTimeMillis())
-    fun newConversation() { if (!_state.value.busy && !_state.value.importingAttachment) { clearDraftAttachments(); _state.update { it.copy(current = fresh(), partial = null, error = null) } } }
+    fun newConversation() { if (!_state.value.busy && !_state.value.importingAttachment) { clearDraftAttachments(); _state.update { it.copy(current = fresh(), partial = null, streamId = null, error = null) } } }
     fun selectConversation(id: String) {
         if (_state.value.busy || _state.value.importingAttachment) return
         viewModelScope.launch {
@@ -115,14 +116,21 @@ class ChatViewModel(
     fun stop() { if (!_state.value.generating) job?.cancel() }
 
     fun addPhoto(uri: String) = importAttachment { attachments.importUri(uri) }
-    fun addGalleryImage(path: String) = importAttachment { attachments.importGallery(path) }
+    fun addGalleryImage(path: String, imageId: String? = null) = importAttachment { attachments.importGallery(path, imageId) }
+    fun removeAttachmentContext(id: String) {
+        if (_state.value.busy || _state.value.importingAttachment) return
+        _state.update { it.copy(draftAttachments = it.draftAttachments.map { attachment ->
+            if (attachment.id == id) attachment.copy(promptContext = null) else attachment
+        }) }
+    }
     private fun importAttachment(import: suspend () -> ChatAttachment) {
         if (_state.value.busy || _state.value.importingAttachment) return
         if (_state.value.draftAttachments.size >= ChatAttachment.MAX_COUNT) { _state.update { it.copy(error = "每条消息最多添加 4 张图片") }; return }
         _state.update { it.copy(importingAttachment = true, error = null) }
         viewModelScope.launch {
             try {
-                val attachment = import()
+                val imported = import()
+                val attachment = imported.copy(promptContext = imported.promptContext?.redacted(settings.apiKey())?.bounded())
                 _state.update { it.copy(draftAttachments = it.draftAttachments + attachment) }
             } catch (failure: ChatFailure) { _state.update { it.copy(error = failure.userMessage) } }
             catch (_: Exception) { _state.update { it.copy(error = "无法添加图片，请重新选择") } }
@@ -154,9 +162,9 @@ class ChatViewModel(
                 _state.update { it.copy(current = chat) }
             }
             suspend fun preserveInterruptedReply(notice: String) {
-                interruptedChatEntry(UUID.randomUUID().toString(), _state.value.partial, notice)?.let { entry ->
+                interruptedChatEntry(_state.value.streamId ?: UUID.randomUUID().toString(), _state.value.partial, notice)?.let { entry ->
                     chat = chat.copy(entries = chat.entries + entry)
-                    _state.update { it.copy(current = chat, partial = null) }
+                    _state.update { it.copy(current = chat, partial = null, streamId = null) }
                 }
             }
             try {
@@ -169,10 +177,13 @@ class ChatViewModel(
                 suspend fun withinContext(messages: List<JsonObject>) = withContext(Dispatchers.Default) {
                     messages.sumOf { it.toString().toByteArray(Charsets.UTF_8).size } <= 512 * 1024
                 }
-                if (!withinContext(listOf(wireMessage("system", systemPrompt)) + chat.entries.map { it.wire } + wireMessage("user", userText)))
+                val safeAttached = attached.map { it.copy(promptContext = it.promptContext?.redacted(token)?.bounded()) }
+                fun contextWire(entry: ChatEntry) = ChatProtocol.withImageContext(entry.wire, entry.attachments.map { it.promptContext }, token)
+                if (!withinContext(listOf(wireMessage("system", systemPrompt)) + chat.entries.map(::contextWire) +
+                        ChatProtocol.withImageContext(wireMessage("user", userText), safeAttached.map { it.promptContext }, token)))
                     throw ChatFailure("对话上下文过长，请新建对话；历史消息仍可完整阅读")
                 chat = chat.copy(title = if (chat.entries.isEmpty()) userText.take(28) else chat.title,
-                    entries = chat.entries + ChatEntry(UUID.randomUUID().toString(), wireMessage("user", userText), attachments = attached))
+                    entries = chat.entries + ChatEntry(UUID.randomUUID().toString(), wireMessage("user", userText), attachments = safeAttached))
                 persist()
                 _state.update { it.copy(draftAttachments = emptyList()) }
                 val imageCache = mutableMapOf<String, String>()
@@ -181,17 +192,19 @@ class ChatViewModel(
                 for (round in 0 until 6) {
                     if (!enabled.value) throw ChatFailure("实验性对话已关闭")
                     if (settings.apiKey() != token) throw ChatFailure("API Key 已变更，本条消息已停止")
-                    if (!withinContext(listOf(wireMessage("system", systemPrompt)) + chat.entries.map { it.wire })) throw ChatFailure("对话上下文过长，请新建对话；历史消息仍可完整阅读")
-                    val messages = listOf(wireMessage("system", systemPrompt)) + attachments.messages(chat.entries, imageCache)
+                    if (!withinContext(listOf(wireMessage("system", systemPrompt)) + chat.entries.map(::contextWire))) throw ChatFailure("对话上下文过长，请新建对话；历史消息仍可完整阅读")
+                    val messages = listOf(wireMessage("system", systemPrompt)) + attachments.messages(chat.entries, imageCache, token)
+                    val responseId = UUID.randomUUID().toString()
+                    _state.update { it.copy(streamId = responseId, partial = null) }
                     val reply = api.complete(cfg, token, messages, ImageChatTools.schema) { partial ->
                         val cleaned = partial.withoutSecret(token)
                         _state.update { it.copy(partial = cleaned,
                             phase = if (cleaned.string("content").isNullOrBlank()) "正在思考" else "正在回复") }
                     }
-                    val assistant = ChatEntry(UUID.randomUUID().toString(), ChatProtocol.assistant(reply).withoutSecret(token))
+                    val assistant = ChatEntry(responseId, ChatProtocol.assistant(reply).withoutSecret(token))
                     chat = chat.copy(entries = chat.entries + assistant)
                     // Replace the stream and publish its final entry in one frame, before disk IO.
-                    _state.update { it.copy(current = chat, partial = null) }; persist()
+                    _state.update { it.copy(current = chat, partial = null, streamId = null) }; persist()
                     if (assistant.calls.isEmpty()) {
                         if (assistant.content.isBlank()) throw ChatFailure("模型只返回了思考内容，没有最终回复；请检查输出 Tokens")
                         break
@@ -268,7 +281,7 @@ class ChatViewModel(
             }
             finally {
                 confirmation = null
-                _state.update { it.copy(busy = false, generating = false, pending = null, partial = null, phase = "") }
+                _state.update { it.copy(busy = false, generating = false, pending = null, partial = null, streamId = null, phase = "") }
             }
         }
     }

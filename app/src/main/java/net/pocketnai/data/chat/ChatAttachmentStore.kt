@@ -21,7 +21,11 @@ import java.io.InputStream
 import java.util.UUID
 
 /** 图片独立存于私有目录，不占 Room 的 CursorWindow，也不暴露 FileProvider。 */
-class ChatAttachmentStore(context: Context) {
+class ChatAttachmentStore(
+    context: Context,
+    private val metadataInspector: net.pocketnai.domain.metadata.ImageMetadataInspector? = null,
+    private val galleryContext: suspend (String, String) -> ChatImageContext? = { _, _ -> null },
+) {
     private val context = context.applicationContext
     private val root = File(context.filesDir, "chat-attachments")
     private val ownedPath = Regex("chat-attachments/[0-9a-f-]{36}\\.jpg")
@@ -32,11 +36,18 @@ class ChatAttachmentStore(context: Context) {
             ?: throw ChatFailure("无法读取所选图片")
     }
 
-    suspend fun importGallery(relativePath: String): ChatAttachment = withContext(Dispatchers.IO) {
+    suspend fun importGallery(relativePath: String, imageId: String? = null): ChatAttachment = withContext(Dispatchers.IO) {
         val gallery = File(context.filesDir, "generations").canonicalFile
         val file = File(context.filesDir, relativePath).canonicalFile
         if (!file.path.startsWith(gallery.path + File.separator) || !file.isFile) throw ChatFailure("这张图库图片已不存在")
-        file.inputStream().use { normalize(it) }
+        if (file.length() > 20L * 1024 * 1024) throw ChatFailure("原图超过 20 MiB，请选择较小的图片")
+        val metadata = try {
+            imageId?.let { galleryContext(it, relativePath) }
+                ?: (metadataInspector?.inspect(net.pocketnai.domain.image.ReferenceSource.LocalPath(relativePath))
+                    as? net.pocketnai.domain.metadata.MetadataProbeResult.Found)?.metadata?.let(ChatImageContext::fromPng)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) { null } // 元数据不可读也不能阻止正常附图。
+        file.inputStream().use { normalize(it) }.copy(promptContext = metadata)
     }
 
     private fun normalize(input: InputStream): ChatAttachment {
@@ -94,7 +105,7 @@ class ChatAttachmentStore(context: Context) {
     }
 
     /** 只在发送后读取/编码附件。缓存仅属于本次对话任务，进程历史里没有 data URL。 */
-    suspend fun messages(entries: List<ChatEntry>, cache: MutableMap<String, String>): List<JsonObject> = withContext(Dispatchers.IO) {
+    suspend fun messages(entries: List<ChatEntry>, cache: MutableMap<String, String>, secret: String = ""): List<JsonObject> = withContext(Dispatchers.IO) {
         var totalBytes = 0L
         entries.map { entry ->
             val urls = entry.attachments.map { attachment ->
@@ -104,7 +115,7 @@ class ChatAttachmentStore(context: Context) {
                 if (file.length() > MAX_IMAGE_BYTES || totalBytes > 8L * 1024 * 1024) throw ChatFailure("对话图片上下文过大，请新建对话")
                 cache.getOrPut(attachment.id) { "data:image/jpeg;base64," + Base64.encodeToString(file.readBytes(), Base64.NO_WRAP) }
             }
-            ChatProtocol.withImages(entry.wire, urls)
+            ChatProtocol.withImages(ChatProtocol.withImageContext(entry.wire, entry.attachments.map { it.promptContext }, secret), urls)
         }
     }
 

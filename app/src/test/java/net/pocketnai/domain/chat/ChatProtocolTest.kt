@@ -47,6 +47,17 @@ class ChatProtocolTest {
         assertThat(wire.containsKey("extra")).isFalse()
     }
     @Test fun `未结束与截断流不会被当成可执行工具`() {
+        val display = "柔和光线 e\u0301 👩‍🎨 和完整画面"
+        var shown = 0
+        while (shown < display.length) {
+            val end = ChatTextLayout.nextVisibleEnd(display, shown)
+            assertThat(end).isGreaterThan(shown)
+            assertThat(display[end - 1].isHighSurrogate()).isFalse()
+            assertThat(display.substring(0, end).endsWith("‍")).isFalse()
+            shown = end
+        }
+        assertThat(display.substring(0, shown)).isEqualTo(display)
+        assertThat(ChatTextLayout.nextVisibleEnd("a\uD83D", 1)).isEqualTo(1)
         val stream = ChatStreamAccumulator()
         assertThat(runCatching { stream.complete() }.isFailure).isTrue()
         stream.append(Json.parseToJsonElement("""{"choices":[{"delta":{},"finish_reason":"length"}]}""") as JsonObject)

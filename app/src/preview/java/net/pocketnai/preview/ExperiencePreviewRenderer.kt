@@ -48,7 +48,7 @@ object ExperiencePreviewRenderer {
                                 Text("NovelAI 账户", style = MaterialTheme.typography.titleSmall)
                                 NovelAiAccountCard(!disconnected, "我的 NovelAI", "a1b2…c3d4", state,
                                     if (expired) SubscriptionStatusResolver.resolve(3, 0, now - 1, now) else status, {}, {}, {}, {})
-                                ColorModeCard(theme) {}
+                                ColorModeCard(if (name == "account-large-text") ThemeMode.SYSTEM else theme) {}
                             }
                         }
                     }

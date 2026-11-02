@@ -36,6 +36,27 @@ object ChatTextLayout {
         }
     }
 
+    /** 按帧追上已收到的正文，不拆开代理对、组合符和常见 ZWJ emoji。 */
+    fun nextVisibleEnd(text: String, shown: Int, elapsedMillis: Long = 16): Int {
+        if (shown >= text.length) return text.length
+        val backlog = text.length - shown
+        val step = kotlin.math.ceil(backlog * elapsedMillis.coerceIn(1, 48) / 100.0).toInt().coerceIn(1, 128)
+        var end = (shown + step).coerceAtMost(text.length)
+        if (end < text.length && text[end].isLowSurrogate() && text[end - 1].isHighSurrogate()) end++
+        while (end < text.length) {
+            val next = text.codePointAt(end)
+            val previous = text.codePointBefore(end)
+            val kind = Character.getType(next)
+            val continuation = next == 0x200D || previous == 0x200D || next in 0xFE00..0xFE0F ||
+                next in 0x1F3FB..0x1F3FF || kind == Character.NON_SPACING_MARK.toInt() ||
+                kind == Character.COMBINING_SPACING_MARK.toInt() || kind == Character.ENCLOSING_MARK.toInt()
+            if (!continuation) break
+            end += Character.charCount(next)
+        }
+        if (end > shown && end == text.length && (text[end - 1].isHighSurrogate() || text[end - 1] == '\u200D')) end--
+        return end
+    }
+
     private fun safeEnd(text: String, end: Int): Int =
         if (end > 0 && end < text.length && text[end - 1].isHighSurrogate() && text[end].isLowSurrogate()) end - 1 else end
 }
