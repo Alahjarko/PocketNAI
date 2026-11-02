@@ -74,10 +74,11 @@ class OpenAiImageRepository(
             size = ImageSizePreset(width, height), sampleCount = params.count,
             qualityTags = QualityTagsOption.NONE,
         )
-        var generation = Generation(id, now, now, GenerationStatus.GENERATING,
+        val generation = Generation(id, now, now, GenerationStatus.GENERATING,
             params.prompt.trim().take(60), params.prompt, legacy, 1,
             mode = if (draft.references.isEmpty()) GenerationMode.TXT2IMG else GenerationMode.IMG2IMG,
-            openAi = OpenAiImageSnapshot(params))
+            openAi = OpenAiImageSnapshot(params, pricing = OpenAiImagePricing.officialRates,
+                estimate = OpenAiImagePricing.estimate(params, draft.references.size)))
         dao.upsertGeneration(Mappers.toEntity(generation))
         dao.insertReferences(draft.references.mapIndexed { index, ref ->
             Mappers.toEntity(ref.copy(role = ReferenceRole.IMG2IMG, ordinal = index), id)
@@ -98,8 +99,9 @@ class OpenAiImageRepository(
                 }
                 sent = true
                 val response = api.generate(secret, params, inputs)
-                generation = generation.copy(openAi = response.snapshot)
-                dao.upsertGeneration(Mappers.toEntity(generation))
+                val snapshot = response.snapshot.copy(params = params, pricing = generation.openAi!!.pricing,
+                    estimate = generation.openAi.estimate, returnedImageCount = response.data.size)
+                dao.updateOpenAiSnapshot(id, OpenAiImageCodec.encode(snapshot), System.currentTimeMillis())
                 response.data.forEachIndexed { index, raw ->
                     val image = runCatching {
                         require(raw.length <= 48 * 1024 * 1024)

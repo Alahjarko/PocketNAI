@@ -79,10 +79,7 @@ data class OpenAiImageDraft(
 )
 
 @Serializable
-data class OpenAiImageUsage(val textInput: Long, val imageInput: Long, val imageOutput: Long) {
-    /** Images API has no cached-input discount. This is a local token estimate, not an invoice. */
-    val estimatedUsd: Double get() = (textInput * 5.0 + imageInput * 8.0 + imageOutput * 30.0) / 1_000_000
-}
+data class OpenAiImageUsage(val textInput: Long, val imageInput: Long, val imageOutput: Long)
 
 @Serializable
 data class OpenAiImageSnapshot(
@@ -91,7 +88,13 @@ data class OpenAiImageSnapshot(
     val responseSize: String? = null,
     val responseQuality: String? = null,
     val responseBackground: String? = null,
-)
+    val pricing: OpenAiImageRates? = null,
+    val estimate: OpenAiImageEstimate? = null,
+    val returnedImageCount: Int? = null,
+) {
+    // Null pricing belongs to legacy snapshots; these fixed constructor defaults preserve their rates.
+    val estimatedUsd: Double? get() = usage?.let { (pricing ?: OpenAiImageRates()).cost(it) }
+}
 
 object OpenAiImageCodec {
     val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }

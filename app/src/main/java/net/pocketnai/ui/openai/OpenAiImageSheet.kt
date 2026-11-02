@@ -20,6 +20,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import net.pocketnai.domain.image.ReferenceSource
 import net.pocketnai.domain.openai.OpenAiImageParams
+import net.pocketnai.domain.openai.OpenAiImagePricing
 import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.generate.HistoryImagePickerDialog
 
@@ -33,6 +34,9 @@ fun OpenAiImageSheet(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val hasKey by LocalAppContainer.current.openAiImageSettings.hasKey.collectAsStateWithLifecycle()
     val params = state.draft.params
+    val estimate = remember(params, state.draft.references.size) {
+        OpenAiImagePricing.estimate(params, state.draft.references.size)
+    }
     val scroll = rememberScrollState()
     val keyboard = LocalSoftwareKeyboardController.current
     var history by remember { mutableStateOf(false) }
@@ -83,6 +87,7 @@ fun OpenAiImageSheet(
                     viewModel.update(params.copy(count = it.toInt()))
                 } }
             }
+            OpenAiCostEstimate(estimate)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.weight(1f)) { OpenAiOption("格式", params.outputFormat, OpenAiImageParams.FORMATS, String::uppercase, true) {
                     viewModel.update(params.copy(outputFormat = it))
@@ -125,7 +130,9 @@ fun OpenAiImageSheet(
     if (confirm) AlertDialog(onDismissRequest = { confirm = false }, title = { Text("确认使用 OpenAI 额度") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("${params.modelLabel}\n${params.size} · ${params.quality} · ${params.count} 张")
-            Text("费用取决于实际 token 用量，生成前无法保证固定金额。完成后会在详情中记录可取得的用量估算。")
+            OpenAiCostEstimate(estimate)
+            Text("这是本次请求的粗估，实际扣费以账单为准。完成后可在详情查看用量折算金额。",
+                style = MaterialTheme.typography.bodySmall)
             params.validate()?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }, confirmButton = { TextButton(enabled = params.validate() == null, onClick = {

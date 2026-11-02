@@ -112,6 +112,10 @@ interface GenerationDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun upsertGeneration(entity: GenerationEntity)
 
+    /** Update response metadata without replacing the parent or touching its image/reference children. */
+    @Query("UPDATE generations SET openAiParamsJson = :snapshot, updatedAt = :updatedAt WHERE id = :generationId")
+    suspend fun updateOpenAiSnapshot(generationId: String, snapshot: String, updatedAt: Long)
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun upsertImages(entities: List<GeneratedImageEntity>)
 

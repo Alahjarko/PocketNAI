@@ -61,5 +61,6 @@ object StatisticsPreviewRenderer {
         SfwPreviewRenderer.render()
         ResolutionPreviewRenderer.render()
         QueuePreviewRenderer.render()
+        OpenAiPricingPreviewRenderer.render()
     }
 }

@@ -25,7 +25,7 @@ fun interface OpenAiImagesTransport {
 @Serializable
 private data class ImageWireResult(
     val data: List<ImageWireData> = emptyList(),
-    val usage: JsonObject? = null,
+    val usage: JsonElement? = null,
     val size: String? = null,
     val quality: String? = null,
     val background: String? = null,
@@ -84,17 +84,7 @@ class OpenAiImageApi(
                 val obj = OpenAiImageCodec.json.decodeFromStream<ImageWireResult>(bounded)
                 val data = obj.data.mapNotNull { it.b64_json }
                 if (data.isEmpty() || data.size > params.count) throw OpenAiImageFailure(true, "OpenAI 返回的图片数量异常，可能已计费")
-                val usage = runCatching { obj.usage?.let { u ->
-                    val details = u["input_tokens_details"] as? JsonObject
-                    val text = details?.get("text_tokens")?.jsonPrimitive?.longOrNull
-                        ?: if (images.isEmpty()) u["input_tokens"]?.jsonPrimitive?.longOrNull else null
-                    val image = details?.get("image_tokens")?.jsonPrimitive?.longOrNull
-                        ?: if (images.isEmpty()) 0L else null
-                    val output = u["output_tokens_details"]?.jsonObject?.get("image_tokens")?.jsonPrimitive?.longOrNull
-                        ?: u["output_tokens"]?.jsonPrimitive?.longOrNull
-                    if (text != null && image != null && output != null && minOf(text, image, output) >= 0)
-                        OpenAiImageUsage(text, image, output) else null
-                } }.getOrNull()
+                val usage = parseUsage(obj.usage, hasImages = images.isNotEmpty())
                 OpenAiImageResponse(data, OpenAiImageSnapshot(params, usage, obj.size, obj.quality, obj.background))
             }
         } catch (e: CancellationException) { throw e }
@@ -104,6 +94,23 @@ class OpenAiImageApi(
     }
 
     companion object {
+        /** Bad or incomplete billing metadata must not discard otherwise valid generated images. */
+        internal fun parseUsage(raw: JsonElement?, hasImages: Boolean): OpenAiImageUsage? = runCatching {
+            val u = raw as? JsonObject ?: return null
+            fun JsonObject.tokens(key: String): Long? = this[key]?.jsonPrimitive?.longOrNull
+            val details = u["input_tokens_details"] as? JsonObject
+            val text = details?.tokens("text_tokens") ?: if (!hasImages) u.tokens("input_tokens") else null
+            val image = details?.tokens("image_tokens") ?: if (!hasImages) 0L else null
+            val outputDetails = u["output_tokens_details"] as? JsonObject
+            // These models only bill image output. Never silently price non-image output at the image rate.
+            if (outputDetails?.tokens("text_tokens")?.let { it != 0L } == true) return null
+            val output = outputDetails?.tokens("image_tokens") ?: u.tokens("output_tokens")
+            if (text == null || image == null || output == null || minOf(text, image, output) < 0) return null
+            u.tokens("input_tokens")?.let { if (it < text || it - text != image) return null }
+            u.tokens("output_tokens")?.let { if (it != output) return null }
+            OpenAiImageUsage(text, image, output)
+        }.getOrNull()
+
         fun payload(params: OpenAiImageParams, images: List<String> = emptyList()): JsonObject = buildJsonObject {
             put("model", params.model); put("prompt", params.prompt); put("n", params.count)
             put("size", params.size); put("quality", params.quality); put("output_format", params.outputFormat)
