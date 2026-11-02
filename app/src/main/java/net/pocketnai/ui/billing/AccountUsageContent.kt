@@ -34,6 +34,7 @@ internal fun AccountUsageContent(
                 Text(when {
                     !connected -> "未连接"
                     balance == null -> "未读取"
+                    status.tier is SubscriptionTier.Unknown && !status.subscribed -> "等级未知"
                     !status.subscribed -> "无有效订阅"
                     status.tier == SubscriptionTier.Opus -> "Opus"
                     status.tier == SubscriptionTier.Scroll -> "Scroll"

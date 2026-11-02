@@ -27,17 +27,21 @@ object ExperiencePreviewRenderer {
         val now = 1_793_577_600L
         val balance = SubscriptionBalance(3, true, 0, now + 7200, false, 12000, 345,
             V5UsageLimit(37, false, 60), now * 1000)
-        val status = SubscriptionStatusResolver.resolve(3, 0, now + 7200, now)
         val presets = listOf("account-light" to ThemeMode.LIGHT, "account-dark" to ThemeMode.DARK,
             "account-large-text" to ThemeMode.LIGHT, "account-expired" to ThemeMode.LIGHT,
-            "account-disconnected" to ThemeMode.LIGHT, "account-stale" to ThemeMode.LIGHT)
+            "account-disconnected" to ThemeMode.LIGHT, "account-stale" to ThemeMode.LIGHT,
+            "account-unknown" to ThemeMode.LIGHT)
         presets.forEach { (name, theme) ->
             val device = if (name == "account-large-text") DeviceConfig.PIXEL_5.copy(fontScale = 1.5f) else DeviceConfig.PIXEL_5
             withRenderer(name, device) { renderer ->
                 renderer.snapshot(name) {
                     val disconnected = name == "account-disconnected"
                     val expired = name == "account-expired"
-                    val shown = if (expired) balance.copy(expiresAtEpochSeconds = now - 1, v5UsageLimit = V5UsageLimit(99, false, 60)) else balance
+                    val shown = when {
+                        expired -> balance.copy(expiresAtEpochSeconds = now - 1, v5UsageLimit = V5UsageLimit(99, false, 60))
+                        name == "account-unknown" -> balance.copy(rawTier = null, accountType = null, expiresAtEpochSeconds = null)
+                        else -> balance
+                    }
                     val state: BalanceState = if (disconnected) BalanceState.Unavailable
                         else if (name == "account-stale") BalanceState.RefreshFailed(shown, AppError.of(ErrorCode.UNKNOWN), now * 1000)
                         else BalanceState.Available(shown, false)
@@ -47,7 +51,7 @@ object ExperiencePreviewRenderer {
                                 Text("设置", style = MaterialTheme.typography.headlineSmall)
                                 Text("NovelAI 账户", style = MaterialTheme.typography.titleSmall)
                                 NovelAiAccountCard(!disconnected, "我的 NovelAI", "a1b2…c3d4", state,
-                                    if (expired) SubscriptionStatusResolver.resolve(3, 0, now - 1, now) else status, {}, {}, {}, {})
+                                    SubscriptionStatusResolver.resolve(shown.rawTier, shown.accountType, shown.expiresAtEpochSeconds, now), {}, {}, {}, {})
                                 ColorModeCard(if (name == "account-large-text") ThemeMode.SYSTEM else theme) {}
                             }
                         }

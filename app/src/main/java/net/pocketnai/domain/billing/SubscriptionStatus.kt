@@ -27,12 +27,8 @@ enum class AccountType(val rawValue: Int) {
 }
 
 /**
- * 用户在本机手动指定的订阅等级（设置页）。
- *
- * 存在的理由很实际：服务端字段并不总是与用户实际买到的权益一致
- * （本机账号实测 `tier 0 / active false / accountType RETAIL`，但账号所有者
- * 在官网上确实能免费生成 V4.5）。**自动读取永远是默认**，手动值是兜底 ——
- * 猜错的后果是报价偏差，而报价偏差会直接改变用户点不点生成按钮。
+ * 历史订阅覆盖模型，保留供隔离计费回归注入。
+ * 2026-11-02 已移除设置页入口和持久化，生产始终使用 AUTO，等级与报价取服务端判据。
  */
 enum class SubscriptionOverride(val displayName: String) {
     /** 以服务端读数为准（默认）。 */
@@ -55,7 +51,7 @@ enum class SubscriptionSource {
     /** 服务端 `/user/subscription`。 */
     REMOTE,
 
-    /** 设置页里用户自己选的。 */
+    /** 历史覆盖来源；目前仅供隔离回归使用。 */
     MANUAL,
 }
 
@@ -95,10 +91,8 @@ data class SubscriptionStatus(
  * 注意它**不看 `active`**，也**不看 `usage`**。这与早期版本"用 V5 使用额度当订阅旁证"
  * 的做法不同：额度只是 V5 Opus 的功能，用它反推订阅在"额度用尽/字段缺失"时会失真。
  *
- * ## 手动覆盖的优先级
- * 手动值直接取代服务端读数（包括 `subscribed`），因为用户是唯一能核对
- * "我到底有没有买"的人。覆盖为 [SubscriptionOverride.NONE] 也表达一个明确意图：
- * "别猜我有订阅，按量给我算"。**AUTO 才是默认**，手动是兜底。
+ * 非 AUTO 值保留历史替换语义（包括 `subscribed`），只供隔离回归。
+ * 生产入口不再提供手动等级，统一传 AUTO。
  */
 object SubscriptionStatusResolver {
 
