@@ -24,3 +24,5 @@
 计数边界不包括每个文字节点的内部测量，也不测GPU、系统触控延迟或物理手机帧率。两段原生动画均有73个实际输出帧；还检查浅色/深色与大字体端点。此结果证明该回放中去除了全局逐帧重组，不能据此宣称达到RikkaHub的真机流畅度。
 
 [源码014260b的云端验证](https://github.com/Alahjarko/PocketNAI/actions/runs/41476443897)全部通过：29项JVM单测、静态与动画回放、Debug/Release/AndroidTest构建、打包配置和原签名检查。21项设备测试仅编译，未执行；没有新增@Test方法，没有安卓模拟器或真实AI请求。历史版本副本只编入preview测试源集，不进入安装包。
+
+已作为[0.1.29正式发布](https://github.com/Alahjarko/PocketNAI/releases/tag/build-29)，完整版本、原签名和文件摘要见[发布记录](release-0.1.29.md)。
