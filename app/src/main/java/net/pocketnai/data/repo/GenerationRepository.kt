@@ -111,6 +111,7 @@ class GenerationRepository(
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
     private val random: Random = Random.Default,
     private val promptMacros: suspend () -> List<net.pocketnai.domain.model.PromptFavorite> = { emptyList() },
+    private val sfwEnabled: () -> Boolean = { false },
 ) {
 
     fun observeGenerations(): Flow<List<GenerationSummary>> =
@@ -122,6 +123,14 @@ class GenerationRepository(
 
     fun observeGallery(): Flow<List<GalleryItem>> =
         dao.observeGalleryImages().map { rows -> rows.map(Mappers::toDomain) }.flowOn(Dispatchers.Default)
+
+    fun observeImageSafety(): Flow<List<Pair<net.pocketnai.data.local.ImageSafetyRow, Boolean>>> =
+        dao.observeImageSafetyRows().map { rows -> rows.map { row ->
+            row to (net.pocketnai.domain.safety.SfwPolicy.containsSensitivePrompt(row.prompt) ||
+                net.pocketnai.domain.metadata.HistoryCharacters.decode(row.charactersJson).any {
+                    net.pocketnai.domain.safety.SfwPolicy.containsSensitivePrompt(it.prompt)
+                })
+        } }.flowOn(Dispatchers.Default)
 
     /**
      * 执行一次生成（纯文生图）。
@@ -173,6 +182,11 @@ class GenerationRepository(
             return@flow
         }
         val normalized = profile.normalize(frozenPrompts?.params ?: params)
+        if (net.pocketnai.domain.safety.SfwPolicy.blocks(sfwEnabled(), normalized)) {
+            emit(GenerationEvent.FatalError(generationId, AppError.of(ErrorCode.INVALID_PARAMS,
+                detail = net.pocketnai.domain.safety.SfwPolicy.BLOCK_MESSAGE)))
+            return@flow
+        }
         val blockingViolations = profile.validate(normalized)
             .filterNot { it is ParamViolation.PromptTooLong }
         if (blockingViolations.isNotEmpty()) {
@@ -286,6 +300,13 @@ class GenerationRepository(
             dao.updateStatus(generationId, GenerationStatus.FAILED.name, clock(), ErrorCode.INVALID_PARAMS.name,
                 "发送前检查未通过，未发送图片请求", null)
             throw e
+        }
+
+        if (net.pocketnai.domain.safety.SfwPolicy.blocks(sfwEnabled(), effectiveParams)) {
+            val error = AppError.of(ErrorCode.INVALID_PARAMS, detail = net.pocketnai.domain.safety.SfwPolicy.BLOCK_MESSAGE)
+            dao.updateStatus(generationId, GenerationStatus.FAILED.name, clock(), error.code.name, error.detail, null)
+            emit(GenerationEvent.FatalError(generationId, error))
+            return@flow
         }
 
         var archiveToDelete: File? = null
@@ -523,6 +544,10 @@ class GenerationRepository(
             ?: return@withContext Outcome.Failure(
                 AppError.of(ErrorCode.UNKNOWN, detail = "图片记录不存在"),
             )
+        if (sfwEnabled() && net.pocketnai.domain.safety.SfwPolicy.isSensitive(detail.generation)) {
+            return@withContext Outcome.Failure(AppError.of(ErrorCode.INVALID_PARAMS,
+                detail = net.pocketnai.domain.safety.SfwPolicy.BLOCK_MESSAGE))
+        }
         val token = credentialStore.load()?.token
             ?: return@withContext Outcome.Failure(AppError.of(ErrorCode.TOKEN_INVALID))
 
@@ -546,6 +571,10 @@ class GenerationRepository(
         val incomingDir = fileStore.newIncomingDir(generationId)
         val archiveFile = fileStore.newArchiveFile(generationId)
 
+        if (sfwEnabled() && net.pocketnai.domain.safety.SfwPolicy.isSensitive(detail.generation)) {
+            return@withContext Outcome.Failure(AppError.of(ErrorCode.INVALID_PARAMS,
+                detail = net.pocketnai.domain.safety.SfwPolicy.BLOCK_MESSAGE))
+        }
         val callOutcome = api.upscaleImage(
             token = token,
             imageBase64 = imageBase64,

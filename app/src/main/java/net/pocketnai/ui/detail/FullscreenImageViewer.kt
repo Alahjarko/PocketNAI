@@ -43,6 +43,7 @@ fun FullscreenImageViewer(
     imageWidth: Int,
     imageHeight: Int,
     onDismiss: () -> Unit,
+    revealed: Boolean = false,
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -111,8 +112,8 @@ fun FullscreenImageViewer(
                     )
                 },
         ) {
-            AsyncImage(
-                model = imageFile,
+            net.pocketnai.ui.safety.SfwAsyncImage(
+                file = imageFile, revealed = revealed,
                 contentDescription = contentDescription,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier

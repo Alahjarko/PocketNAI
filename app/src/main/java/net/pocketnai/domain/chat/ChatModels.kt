@@ -24,7 +24,9 @@ data class ChatImage(val imageId: String, val relativePath: String, val width: I
 @Serializable
 data class ChatAttachment(val id: String, val relativePath: String, val mimeType: String, val width: Int, val height: Int,
     val promptContext: ChatImageContext? = null,
+    val sensitivePrompt: Boolean = false,
 ) {
+    val hasSensitivePrompt: Boolean get() = sensitivePrompt || promptContext?.let(net.pocketnai.domain.safety.SfwPolicy::isSensitive) == true
     companion object { const val MAX_COUNT = 4 }
 }
 

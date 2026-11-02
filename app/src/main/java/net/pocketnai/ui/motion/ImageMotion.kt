@@ -30,7 +30,8 @@ import coil.request.ImageRequest
 import java.io.File
 
 data class ImageReturnRequest(val source: String, val imageId: String, val sequence: Int)
-data class ImageOriginPreview(val imageId: String, val file: File, val aspectRatio: Float, val title: String)
+data class ImageOriginPreview(val imageId: String, val file: File, val aspectRatio: Float, val title: String,
+    val sensitivePrompt: Boolean? = null)
 
 @Stable
 class ImageMotionState {
@@ -152,12 +153,15 @@ fun Modifier.imageMotionChrome(zIndex: Float = 1f): Modifier {
 
 /** Keep the visible thumbnail while the destination decodes its larger image. */
 @Composable
-fun sharedImageRequest(file: File): ImageRequest {
+fun sharedImageRequest(file: File, sensitive: Boolean? = null, revealed: Boolean = false): ImageRequest {
     val context = LocalContext.current
-    return remember(context, file) {
+    val masked = net.pocketnai.ui.safety.LocalSfwDisplay.current.masks(file, sensitive, revealed)
+    return remember(context, file, masked) {
+        val key = file.absolutePath + if (masked) "|sfw-gaussian-v1" else ""
         ImageRequest.Builder(context).data(file)
-            .memoryCacheKey(file.absolutePath)
-            .placeholderMemoryCacheKey(file.absolutePath)
+            .memoryCacheKey(key)
+            .placeholderMemoryCacheKey(key)
+            .apply { if (masked) { allowHardware(false); transformations(net.pocketnai.ui.safety.StrongSfwBlur()) } }
             .build()
     }
 }
@@ -165,7 +169,10 @@ fun sharedImageRequest(file: File): ImageRequest {
 /** 共享的是图片身份；当前位置和边界由布局实时测量，不持久化屏幕坐标。 */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun Modifier.sharedImage(imageId: String): Modifier {
+fun Modifier.sharedImage(imageId: String, sensitive: Boolean? = null): Modifier {
+    val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
+    if (sfw.enabled && (sensitive == true || !sfw.ready || imageId in sfw.imageIds ||
+            LocalImageMotion.current?.preview?.takeIf { it.imageId == imageId }?.sensitivePrompt == true)) return this
     // Pager neighbours must never match their thumbnails and fly alongside the selected image.
     if (LocalImageMotion.current?.currentImageId != imageId) return this
     val shared = LocalSharedImages.current ?: return this

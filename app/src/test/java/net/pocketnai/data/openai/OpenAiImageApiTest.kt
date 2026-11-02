@@ -23,20 +23,34 @@ class OpenAiImageApiTest {
         assertThat(GalleryModels.labelOf(OpenAiImageParams.FLARE)).contains("Flare")
         assertThat(GalleryModels.labelOf(OpenAiImageParams.SUNBURST)).contains("Sunburst")
         items.forEach { item ->
-            val filter = GalleryFilter(modelApiId = item.modelApiId)
+            val filter = GalleryFilter(modelApiIds = setOf(item.modelApiId))
             assertThat(items.filter { GallerySearch.matches(it, filter) }.map { it.modelApiId }).containsExactly(item.modelApiId)
             assertThat(filter.isActive).isTrue()
         }
-        val combined = GalleryFilter(query = "SILVER blue", modelApiId = OpenAiImageParams.FLARE,
+        val combined = GalleryFilter(query = "SILVER blue", modelApiIds = setOf(OpenAiImageParams.FLARE),
             mode = GenerationMode.IMG2IMG, favoritesOnly = true)
         val flare = items.single { it.modelApiId == OpenAiImageParams.FLARE }
         assertThat(GallerySearch.matches(flare, combined)).isTrue()
         assertThat(GallerySearch.matches(flare.copy(favorite = false), combined)).isFalse()
         assertThat(GallerySearch.matches(flare.copy(mode = GenerationMode.TXT2IMG), combined)).isFalse()
         assertThat(GallerySearch.matches(flare, combined.copy(query = "red hair"))).isFalse()
-        assertThat(items.filter { GallerySearch.matches(it, combined.copy(modelApiId = null)) }).hasSize(items.size)
+        assertThat(items.filter { GallerySearch.matches(it, combined.copy(modelApiIds = emptySet())) }).hasSize(items.size)
         assertThat(GalleryFilter.None.isActive).isFalse()
         assertThat(items.filter { GallerySearch.matches(it, GalleryFilter.None) }).hasSize(items.size)
+        val models = setOf(OpenAiImageParams.FLARE, OpenAiImageParams.SUNBURST)
+        val selected = combined.copy(modelApiIds = models, favoritesOnly = false)
+        assertThat(items.filter { GallerySearch.matches(it, selected) }.map { it.modelApiId }).containsExactlyElementsIn(models)
+        val legacy = GenerationParams.defaultsFor(ModelCatalog.defaultProfile()).copy(prompt = "Silver hair, blue eyes", sampleCount = 2)
+        val jobs = models.map { model -> Generation(model, 1L, 1L, GenerationStatus.GENERATING, "sample", "", legacy, 1,
+            mode = GenerationMode.IMG2IMG, openAi = net.pocketnai.domain.openai.OpenAiImageSnapshot(OpenAiImageParams(model = model, prompt = legacy.prompt, count = 2))) }
+        val slots = net.pocketnai.ui.gallery.GalleryMotionSlots()
+        fun pending(filter: GalleryFilter) = slots.sections(emptyList(), jobs.map { GenerationSummary(it, 0) }, true,
+            filter = filter).flatMap { it.slots }
+        assertThat(pending(selected)).hasSize(4)
+        assertThat(pending(selected.copy(modelApiIds = setOf(OpenAiImageParams.SUNBURST)))).hasSize(2)
+        assertThat(pending(selected.copy(query = "not present"))).isEmpty()
+        assertThat(pending(selected.copy(favoritesOnly = true))).isEmpty()
+        assertThat(pending(GalleryFilter.None)).hasSize(4)
         MockWebServer().use { server ->
             server.start()
             val api = OpenAiImageApi(OkHttpClient(), server.url("/v1").toString())

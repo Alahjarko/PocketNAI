@@ -28,6 +28,8 @@ import net.pocketnai.ui.motion.LocalImageMotion
 import net.pocketnai.ui.motion.ImageOriginPreview
 import net.pocketnai.ui.state.GenerationPreviewStore
 import java.io.File
+import net.pocketnai.ui.safety.SfwAsyncImage
+import net.pocketnai.domain.safety.SfwPolicy
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -45,6 +47,7 @@ internal fun GalleryMotionCard(
     dateLabel: String? = null,
 ) {
     val item = slot.image
+    val sensitive = item?.sensitivePrompt ?: slot.generation?.let(SfwPolicy::isSensitive) ?: false
     val imageMotion = LocalImageMotion.current
     // The keyed outer card survives the transition from a task to its decoded image.
     var decoded by remember(imageFile) { mutableStateOf(false) }
@@ -55,7 +58,7 @@ internal fun GalleryMotionCard(
         modifier = modifier.fillMaxWidth().aspectRatio(slot.aspectRatio)
             .then(if (item != null) Modifier.combinedClickable(onClick = {
                 if (!isSelectionMode && imageFile != null) {
-                    imageMotion?.preview = ImageOriginPreview(item.imageId, imageFile, item.aspectRatio, item.title)
+                    imageMotion?.preview = ImageOriginPreview(item.imageId, imageFile, item.aspectRatio, item.title, sensitive)
                 }
                 onClick()
             }, onLongClick = onLongClick) else Modifier),
@@ -66,14 +69,14 @@ internal fun GalleryMotionCard(
                 startedAt = slot.generation?.createdAt ?: slot.createdAt,
                 onRevealed = onRevealed, modifier = Modifier.fillMaxSize(),
             ) { revealAlpha ->
-                if (preview != null && item == null && !failed) AsyncImage(
-                    model = File(preview.path), contentDescription = null, contentScale = ContentScale.Crop,
+                if (preview != null && item == null && !failed) SfwAsyncImage(
+                    file = File(preview.path), contentDescription = null, contentScale = ContentScale.Crop, sensitive = sensitive,
                     modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 0.25f },
                 )
-                if (item != null) AsyncImage(
-                    model = imageFile?.let { sharedImageRequest(it) }, contentDescription = item.title, contentScale = ContentScale.Crop,
+                if (item != null) SfwAsyncImage(
+                    file = imageFile, contentDescription = item.title, contentScale = ContentScale.Crop, sensitive = sensitive,
                     onSuccess = { decoded = true }, onError = { decodeFailed = true },
-                    modifier = Modifier.fillMaxSize().sharedImage(item.imageId).graphicsLayer { alpha = revealAlpha.value },
+                    modifier = Modifier.fillMaxSize().sharedImage(item.imageId, sensitive).graphicsLayer { alpha = revealAlpha.value },
                 )
             }
             if (failed) Column(Modifier.align(Alignment.Center).padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {

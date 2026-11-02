@@ -146,6 +146,8 @@ fun DetailScreen(
     var pendingSave by remember { mutableStateOf(false) }
     var showUpscaleDialog by remember { mutableStateOf(false) }
     var fullscreen by remember { mutableStateOf(false) }
+    val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
+    var revealedImageId by remember(state.currentId, sfw.enabled) { mutableStateOf<String?>(null) }
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -156,6 +158,7 @@ fun DetailScreen(
     val displayedIds = state.pagerIds.ifEmpty { pagerIds }
     val pagerState = rememberDetailPager(imageId, pagerIds, state.pagerIds, state.currentId, viewModel::selectPage)
     val returnFromCurrent = {
+        revealedImageId = null
         displayedIds.getOrNull(pagerState.currentPage)?.let { imageMotion?.selectImage(it) }
         onBack()
     }
@@ -250,7 +253,13 @@ fun DetailScreen(
                     errorCode = state.errorCode,
                     savedToGallery = state.savedToGallery,
                     savedMessage = savedMessage,
-                    onOpenFullscreen = { fullscreen = true },
+                    revealed = revealedImageId == pageId,
+                    onOpenFullscreen = {
+                        val file = detail?.image?.let { container.fileStore.resolve(it.privateFilePath) }
+                        val sensitive = detail?.generation?.let(net.pocketnai.domain.safety.SfwPolicy::isSensitive)
+                        if (sfw.masks(file, sensitive, revealedImageId == pageId)) revealedImageId = pageId
+                        else fullscreen = true
+                    },
                     onSaveClick = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
                             ContextCompat.checkSelfPermission(
@@ -321,6 +330,7 @@ fun DetailScreen(
                 imageWidth = image.width,
                 imageHeight = image.height,
                 onDismiss = { fullscreen = false },
+                revealed = revealedImageId == image.id,
             )
         }
     }
@@ -353,6 +363,7 @@ private fun DetailPageContent(
     onOpenUpscaleDialog: () -> Unit,
     onDelete: () -> Unit,
     onDismissError: () -> Unit,
+    revealed: Boolean = false,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         if (maxWidth >= DETAIL_TWO_PANE_MIN_WIDTH) {
@@ -362,6 +373,7 @@ private fun DetailPageContent(
                     generation = generation,
                     preview = preview,
                     onOpenFullscreen = onOpenFullscreen,
+                    revealed = revealed,
                     // 宽屏交给 ContentScale.Fit 适配整块左栏，不再按宽高比撑高。
                     modifier = Modifier
                         .weight(1f)
@@ -405,6 +417,7 @@ private fun DetailPageContent(
                         generation = generation,
                         preview = preview,
                         onOpenFullscreen = onOpenFullscreen,
+                        revealed = revealed,
                         modifier = Modifier
                             .fillMaxWidth()
                             .aspectRatio(
@@ -441,17 +454,23 @@ private fun DetailImagePane(
     preview: ImageOriginPreview?,
     onOpenFullscreen: () -> Unit,
     modifier: Modifier,
+    revealed: Boolean = false,
 ) {
     val container = LocalAppContainer.current
     val file = image?.let { container.generationRepository.fileOfRelativePath(it.privateFilePath) }
         ?: preview?.file ?: return
     val imageId = image?.id ?: preview?.imageId ?: return
-    AsyncImage(
-        model = sharedImageRequest(file),
-        contentDescription = generation?.title ?: preview?.title,
-        contentScale = ContentScale.Fit,
-        modifier = modifier.sharedImage(imageId).clip(RoundedCornerShape(12.dp)).clickable(enabled = image != null, onClick = onOpenFullscreen),
-    )
+    val sensitive = generation?.let(net.pocketnai.domain.safety.SfwPolicy::isSensitive) ?: preview?.sensitivePrompt
+    val masked = net.pocketnai.ui.safety.LocalSfwDisplay.current.masks(file, sensitive, revealed)
+    Box(modifier.clip(RoundedCornerShape(12.dp)).clickable(enabled = image != null, onClick = onOpenFullscreen)) {
+        net.pocketnai.ui.safety.SfwAsyncImage(file = file, sensitive = sensitive, revealed = revealed,
+            contentDescription = generation?.title ?: preview?.title, contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize().sharedImage(imageId, sensitive))
+        if (masked) Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.align(Alignment.Center)) {
+            Text("SFW · 点击图片查看", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(12.dp))
+        }
+    }
 }
 
 /**

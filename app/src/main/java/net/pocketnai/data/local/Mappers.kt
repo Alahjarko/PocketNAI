@@ -197,6 +197,8 @@ object Mappers {
         prompt = row.prompt,
         negativePrompt = row.negativePrompt,
         sampleCount = row.sampleCount,
+        sensitivePrompt = net.pocketnai.domain.safety.SfwPolicy.containsSensitivePrompt(row.prompt) ||
+            HistoryCharacters.decode(row.charactersJson).any { net.pocketnai.domain.safety.SfwPolicy.containsSensitivePrompt(it.prompt) },
     )
 
     fun toImageEntity(image: GeneratedImage): GeneratedImageEntity = GeneratedImageEntity(

@@ -327,8 +327,8 @@ internal fun HistoryImagePickerDialog(
                                 .background(MaterialTheme.colorScheme.surfaceVariant)
                                 .clickable { onPickItem?.invoke(item) ?: onPick(item.relativePath) },
                         ) {
-                            AsyncImage(
-                                model = container.fileStore.resolve(item.relativePath),
+                            net.pocketnai.ui.safety.SfwAsyncImage(
+                                file = container.fileStore.resolve(item.relativePath), sensitive = item.sensitivePrompt,
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize(),

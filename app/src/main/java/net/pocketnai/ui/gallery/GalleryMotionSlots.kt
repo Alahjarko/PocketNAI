@@ -5,6 +5,8 @@ import net.pocketnai.domain.model.GalleryTimeline
 import net.pocketnai.domain.model.Generation
 import net.pocketnai.domain.model.GenerationStatus
 import net.pocketnai.domain.model.GenerationSummary
+import net.pocketnai.domain.model.GalleryFilter
+import net.pocketnai.domain.model.GallerySearch
 import java.time.Instant
 import java.time.ZoneId
 
@@ -41,6 +43,7 @@ internal class GalleryMotionSlots {
         showPending: Boolean,
         now: Long = System.currentTimeMillis(),
         zone: ZoneId = ZoneId.systemDefault(),
+        filter: GalleryFilter = GalleryFilter.None,
     ): List<GalleryMotionSection> {
         val generations = summaries.associate { it.generation.id to it.generation }
         if (summaries.isNotEmpty()) loaded = true
@@ -60,6 +63,7 @@ internal class GalleryMotionSlots {
                 image.generationId in watched && key !in revealed)
         }.toMutableList()
         if (showPending) watched.values.forEach { generation ->
+            if (!GallerySearch.matches(generation, filter)) return@forEach
             // A completed request survives lab cleanup for auditing. Its deleted images are
             // not pending requests. Still bridge status-first / image-later Flow delivery.
             if (generation.status == GenerationStatus.SUCCEEDED && imageCounts[generation.id] == 0) return@forEach

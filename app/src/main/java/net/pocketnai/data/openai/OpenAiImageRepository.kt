@@ -25,10 +25,16 @@ class OpenAiImageRepository(
     private val dao: GenerationDao,
     private val files: GenerationFileStore,
     private val key: () -> String?,
+    private val sfwEnabled: () -> Boolean = { false },
 ) {
     fun generate(draft: OpenAiImageDraft) = flow<GenerationEvent> {
         val id = UUID.randomUUID().toString()
         val params = draft.params
+        if (net.pocketnai.domain.safety.SfwPolicy.blocks(sfwEnabled(), params.prompt)) {
+            emit(GenerationEvent.FatalError(id, AppError.of(ErrorCode.INVALID_PARAMS,
+                detail = net.pocketnai.domain.safety.SfwPolicy.BLOCK_MESSAGE)))
+            return@flow
+        }
         params.validate()?.let {
             emit(GenerationEvent.FatalError(id, AppError.of(ErrorCode.INVALID_PARAMS, detail = it)))
             return@flow
@@ -78,6 +84,12 @@ class OpenAiImageRepository(
         emit(GenerationEvent.Started(id))
         val saved = mutableListOf<GeneratedImage>()
         try {
+            if (net.pocketnai.domain.safety.SfwPolicy.blocks(sfwEnabled(), params.prompt)) {
+                val error = AppError.of(ErrorCode.INVALID_PARAMS, detail = net.pocketnai.domain.safety.SfwPolicy.BLOCK_MESSAGE)
+                dao.updateStatus(id, GenerationStatus.FAILED.name, System.currentTimeMillis(), error.code.name, error.detail, null)
+                emit(GenerationEvent.FatalError(id, error))
+                return@flow
+            }
             val response = api.generate(secret, params, inputs)
             generation = generation.copy(openAi = response.snapshot)
             dao.upsertGeneration(Mappers.toEntity(generation))

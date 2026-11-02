@@ -228,7 +228,7 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                 contentPadding = PaddingValues(start = 14.dp, top = 12.dp, end = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(state.draftAttachments, key = { it.id }) { attachment ->
                     Box(Modifier.size(80.dp)) {
-                        AsyncImage(resolveImage(attachment.relativePath), if (attachment.promptContext != null) "待发送图片，已附生成参数" else "待发送图片", contentScale = ContentScale.Crop,
+                        net.pocketnai.ui.safety.SfwAsyncImage(resolveImage(attachment.relativePath), if (attachment.promptContext != null) "待发送图片，已附生成参数" else "待发送图片", sensitive = attachment.hasSensitivePrompt, contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).clickable { viewingAttachment = attachment })
                         if (attachment.promptContext != null) Surface(
                             color = MaterialTheme.colorScheme.primaryContainer,
@@ -286,7 +286,7 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
         LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
             contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(images, key = { it.imageId }) { image ->
-                AsyncImage(resolveImage(image.relativePath), "聊天生成的图片", contentScale = ContentScale.Crop,
+                net.pocketnai.ui.safety.SfwAsyncImage(resolveImage(image.relativePath), "聊天生成的图片", contentScale = ContentScale.Crop,
                     modifier = Modifier.aspectRatio(0.85f).clip(RoundedCornerShape(18.dp)).clickable { imagesOpen = false; onOpenImage(image.imageId) })
             }
         }
@@ -307,7 +307,7 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
             Column(Modifier.fillMaxWidth().heightIn(max = 720.dp).padding(12.dp)) {
                 Column(Modifier.weight(1f, fill = false).verticalScroll(androidx.compose.foundation.rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    AsyncImage(resolveImage(attachment.relativePath), "图片附件", contentScale = ContentScale.Fit,
+                    net.pocketnai.ui.safety.SfwAsyncImage(resolveImage(attachment.relativePath), "图片附件", sensitive = attachment.hasSensitivePrompt, contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxWidth().heightIn(max = 340.dp))
                     attachment.promptContext?.let { ChatImageContextPanel(it) }
                 }
@@ -373,14 +373,14 @@ fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenIm
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         entry.attachments.forEach { attachment ->
             val file = resolveImage(attachment.relativePath)
-            if (file.isFile) AsyncImage(file, "发送的图片附件", contentScale = ContentScale.Fit,
+            if (file.isFile) net.pocketnai.ui.safety.SfwAsyncImage(file, "发送的图片附件", sensitive = attachment.hasSensitivePrompt, contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxWidth(0.72f).aspectRatio(attachment.width.toFloat() / attachment.height.coerceAtLeast(1))
                     .clip(RoundedCornerShape(22.dp)).clickable { onOpenAttachment(attachment) })
             else Text("图片附件已丢失", style = MaterialTheme.typography.bodySmall)
         }
         entry.images.forEach { image ->
             val file = resolveImage(image.relativePath)
-            if (file.isFile) AsyncImage(sharedImageRequest(file), "对话生成的图片", contentScale = ContentScale.Fit,
+            if (file.isFile) net.pocketnai.ui.safety.SfwAsyncImage(file, "对话生成的图片", contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxWidth(0.78f).aspectRatio(image.width.toFloat() / image.height.coerceAtLeast(1))
                     .sharedImage(image.imageId).clip(RoundedCornerShape(22.dp)).clickable { imageMotion?.preview = ImageOriginPreview(image.imageId, file, image.width.toFloat() / image.height.coerceAtLeast(1), "对话生成的图片"); onOpenImage(image.imageId) })
             else Text("图片已从图库移除", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

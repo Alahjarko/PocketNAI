@@ -24,6 +24,10 @@ class PromptTemplatesTest {
         assertThat(resolved.characters.single().prompt).startsWith("soft lighting, ")
         assertThat(resolved.characters.single().negativePrompt).isEqualTo("soft lighting")
         assertThat(original.prompt).isEqualTo("!macro:风格!, ||red hair|blue hair||")
+        val sensitive = PromptTemplates.resolve(original.copy(prompt = "!macro:敏感!"),
+            favorites + saved("sensitive", "敏感", "nsfw"), Random(2))
+        assertThat(net.pocketnai.domain.safety.SfwPolicy.blocks(true, sensitive)).isTrue()
+        assertThat(net.pocketnai.domain.safety.SfwPolicy.blocks(false, sensitive)).isFalse()
         // A cycle must fail before a billable request, rather than repeatedly expand or truncate it.
         val cycle = listOf(saved("cycle", "循环", "!macro:循环!"))
         assertThat(runCatching { PromptTemplates.resolve(original.copy(prompt = "!macro:循环!"), cycle, Random(1)) }.isFailure).isTrue()

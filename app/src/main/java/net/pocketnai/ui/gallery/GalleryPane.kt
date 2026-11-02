@@ -201,8 +201,8 @@ fun GalleryPane(
     }
 
     var motionRevision by remember { mutableStateOf(0) }
-    val sections = remember(items, generations, filter.isActive, isSelectionMode, motionRevision) {
-        viewModel.motionSlots.sections(items, generations, !filter.isActive && !isSelectionMode)
+    val sections = remember(items, generations, filter, isSelectionMode, motionRevision) {
+        viewModel.motionSlots.sections(items, generations, !isSelectionMode, filter = filter)
     }
     Column(modifier = modifier.fillMaxSize()) {
         if (isSelectionMode) {
@@ -222,7 +222,7 @@ fun GalleryPane(
             GalleryFilterBar(
                 filter = filter,
                 onQueryChange = viewModel::onQueryChange,
-                onModelChange = viewModel::onModelChange,
+                onModelsChange = viewModel::onModelsChange,
                 onModeChange = viewModel::onModeChange,
                 onFavoritesOnlyChange = viewModel::onFavoritesOnlyChange,
                 onClearAll = viewModel::clearFilter,
@@ -473,7 +473,7 @@ fun GalleryPane(
 private fun GalleryFilterBar(
     filter: GalleryFilter,
     onQueryChange: (String) -> Unit,
-    onModelChange: (String?) -> Unit,
+    onModelsChange: (Set<String>) -> Unit,
     onModeChange: (GenerationMode?) -> Unit,
     onFavoritesOnlyChange: (Boolean) -> Unit,
     onClearAll: () -> Unit,
@@ -488,7 +488,7 @@ private fun GalleryFilterBar(
     var filterDialogOpen by remember { mutableStateOf(false) }
 
     // 角标只数"藏起来"的条件：关键词就写在搜索框里，不必再数一遍。
-    val hiddenActiveCount = (if (filter.modelApiId != null) 1 else 0) +
+    val hiddenActiveCount = (if (filter.modelApiIds.isNotEmpty()) 1 else 0) +
         (if (filter.mode != null) 1 else 0) +
         (if (filter.favoritesOnly) 1 else 0)
 
@@ -570,7 +570,7 @@ private fun GalleryFilterBar(
                                 null
                             },
                         )
-                        GalleryModelFilterChip(filter.modelApiId, onModelChange)
+                        GalleryModelFilterChip(filter.modelApiIds, onModelsChange)
                         FilterMenuChip(
                             allLabel = stringResource(R.string.gallery_filter_all_modes),
                             selectedLabel = filter.mode?.let { modeLabels[it] },
@@ -617,14 +617,28 @@ private fun GalleryFilterBar(
 }
 
 @Composable
-internal fun GalleryModelFilterChip(modelApiId: String?, onSelect: (String?) -> Unit) {
-    FilterMenuChip(
-        allLabel = stringResource(R.string.gallery_filter_all_models),
-        selectedLabel = modelApiId?.let(GalleryModels::labelOf),
-        options = GalleryModels.apiIds,
-        optionLabel = GalleryModels::labelOf,
-        onSelect = onSelect,
-    )
+internal fun GalleryModelFilterChip(modelApiIds: Set<String>, onSelect: (Set<String>) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val all = stringResource(R.string.gallery_filter_all_models)
+    Box {
+        FilterChip(selected = modelApiIds.isNotEmpty(), onClick = { expanded = true },
+            label = { Text(when (modelApiIds.size) { 0 -> all; 1 -> GalleryModels.labelOf(modelApiIds.single()); else -> "${modelApiIds.size} 个模型" }) },
+            trailingIcon = { Icon(Icons.Default.ArrowDropDown, null, Modifier.size(FilterChipDefaults.IconSize)) })
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            GalleryModelOptions(modelApiIds, onSelect, onDone = { expanded = false })
+        }
+    }
+}
+
+@Composable
+internal fun GalleryModelOptions(modelApiIds: Set<String>, onSelect: (Set<String>) -> Unit, onDone: () -> Unit) {
+    DropdownMenuItem(text = { Text(stringResource(R.string.gallery_filter_all_models)) }, onClick = { onSelect(emptySet()); onDone() })
+    GalleryModels.apiIds.forEach { id ->
+        DropdownMenuItem(text = { Text(GalleryModels.labelOf(id)) },
+            leadingIcon = { Checkbox(checked = id in modelApiIds, onCheckedChange = null) },
+            onClick = { onSelect(if (id in modelApiIds) modelApiIds - id else modelApiIds + id) })
+    }
+    DropdownMenuItem(text = { Text("完成") }, onClick = onDone)
 }
 
 /**

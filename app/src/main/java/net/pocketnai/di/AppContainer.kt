@@ -62,7 +62,7 @@ class AppContainer(application: Application) {
     val openAiImageApi by lazy { net.pocketnai.data.openai.OpenAiImageApi() }
     val openAiImageRepository by lazy {
         net.pocketnai.data.openai.OpenAiImageRepository(openAiImageApi, database.generationDao(), fileStore,
-            openAiImageSettings::apiKey)
+            openAiImageSettings::apiKey, sfwEnabled = { settingsStore.sfwMode.value })
     }
     val openAiImageViewModel by lazy {
         net.pocketnai.ui.openai.OpenAiImageViewModel(openAiImageSettings, openAiImageRepository,
@@ -235,6 +235,7 @@ class AppContainer(application: Application) {
             streamingEnabled = { settingsStore.streamingPreviewEnabled.value },
             onStreamingFailure = { settingsStore.recordStreamingFailure() },
             promptMacros = { promptFavoriteRepository.snapshot() },
+            sfwEnabled = { settingsStore.sfwMode.value },
         )
     }
 

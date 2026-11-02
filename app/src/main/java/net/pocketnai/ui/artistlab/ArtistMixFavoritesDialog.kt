@@ -98,7 +98,7 @@ private fun FavoriteMixCard(mix: FavoriteArtistMix, resolve: (String) -> File,
     Card {
         Box(Modifier.fillMaxWidth().aspectRatio(0.8f).clickable(onClick = onFocus), contentAlignment = Alignment.Center) {
             val cover = mix.images.firstOrNull()
-            if (cover != null) AsyncImage(resolve(cover.relativePath), "画师串生成图",
+            if (cover != null) net.pocketnai.ui.safety.SfwAsyncImage(resolve(cover.relativePath), "画师串生成图",
                 Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
             else Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(Icons.Default.ImageNotSupported, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -145,7 +145,7 @@ private fun FavoriteMixDetail(mix: FavoriteArtistMix, resolve: (String) -> File,
                     IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "关闭图片与画师串") }
                 }
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    if (image != null) AsyncImage(resolve(image.relativePath), "画师串生成图预览",
+                    if (image != null) net.pocketnai.ui.safety.SfwAsyncImage(resolve(image.relativePath), "画师串生成图预览",
                         Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                     else Text("暂无关联图片")
                 }
@@ -153,7 +153,7 @@ private fun FavoriteMixDetail(mix: FavoriteArtistMix, resolve: (String) -> File,
                     itemsIndexed(mix.images, key = { _, image -> image.imageId }, contentType = { _, _ -> "mix-image" }) { index, candidate ->
                         Surface(onClick = { selectedId = candidate.imageId }, shape = MaterialTheme.shapes.small,
                             border = if (candidate.imageId == image?.imageId) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null) {
-                            AsyncImage(resolve(candidate.relativePath), "切换第 ${index + 1} 张",
+                            net.pocketnai.ui.safety.SfwAsyncImage(resolve(candidate.relativePath), "切换第 ${index + 1} 张",
                                 Modifier.size(64.dp, 80.dp), contentScale = ContentScale.Fit)
                         }
                     }

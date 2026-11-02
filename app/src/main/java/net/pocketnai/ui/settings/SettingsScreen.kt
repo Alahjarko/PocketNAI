@@ -144,6 +144,8 @@ fun SettingsScreen(
             onRefresh = refreshBalance,
         )
         ColorModeCard(themeMode, viewModel::setThemeMode)
+        val sfwMode by container.settingsStore.sfwMode.collectAsStateWithLifecycle()
+        SfwModeCard(sfwMode, container.settingsStore::setSfwMode)
 
         // ---- 设置项分组列表 ----
         Card(modifier = Modifier.fillMaxWidth()) {

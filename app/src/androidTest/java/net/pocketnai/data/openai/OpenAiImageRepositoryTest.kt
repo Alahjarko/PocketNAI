@@ -51,7 +51,7 @@ class OpenAiImageRepositoryTest {
             val sha = Hashing.sha256(source)
             files.writeReference(sha, source)
             val ref = ReferenceImage("reference", ReferenceRole.IMG2IMG, 0, files.referenceRelativePath(sha), 64, 64, source.size.toLong(), sha, 1)
-            val params = OpenAiImageParams(prompt = "保持角色衣服，海报写\"测试\"", model = OpenAiImageParams.SUNBURST, count = 2, outputFormat = "jpeg")
+            val params = OpenAiImageParams(prompt = "nsfw, 保持角色衣服，海报写\"测试\"", model = OpenAiImageParams.SUNBURST, count = 2, outputFormat = "jpeg")
             val draft = OpenAiImageDraft(params, listOf(ref))
             settings.saveDraft(draft)
             assertThat(OpenAiImageSettings(context).loadDraft()).isEqualTo(draft)
@@ -65,7 +65,13 @@ class OpenAiImageRepositoryTest {
                 OpenAiImageResponse(listOf(Base64.encodeToString(bytes, Base64.NO_WRAP), "invalid"),
                     OpenAiImageSnapshot(p, OpenAiImageUsage(10, 20, 30)))
             }
-            val events = OpenAiImageRepository(api, db.generationDao(), files, settings::apiKey).generate(draft).toList()
+            var sfw = true
+            val repository = OpenAiImageRepository(api, db.generationDao(), files, settings::apiKey, sfwEnabled = { sfw })
+            assertThat(repository.generate(draft).toList().filterIsInstance<GenerationEvent.FatalError>().single().error.detail).contains("SFW")
+            assertThat(calls).isEqualTo(0)
+            assertThat(db.generationDao().countGenerations()).isEqualTo(0)
+            sfw = false
+            val events = repository.generate(draft).toList()
             val image = events.filterIsInstance<GenerationEvent.Final>().single().image
             assertThat(calls).isEqualTo(1)
             assertThat(events.filterIsInstance<GenerationEvent.Completed>().single().status).isEqualTo(GenerationStatus.PARTIAL)
@@ -77,8 +83,9 @@ class OpenAiImageRepositoryTest {
             assertThat(Mappers.toDomain(row)!!.openAi!!.params).isEqualTo(params)
             val gallery = db.generationDao().observeGalleryImages().first().map(Mappers::toDomain).single()
             assertThat(gallery.modelApiId).isEqualTo(params.model)
-            assertThat(GallerySearch.matches(gallery, GalleryFilter(modelApiId = params.model))).isTrue()
-            assertThat(GallerySearch.matches(gallery, GalleryFilter(modelApiId = OpenAiImageParams.FLARE))).isFalse()
+            assertThat(gallery.sensitivePrompt).isTrue()
+            assertThat(GallerySearch.matches(gallery, GalleryFilter(modelApiIds = setOf(params.model)))).isTrue()
+            assertThat(GallerySearch.matches(gallery, GalleryFilter(modelApiIds = setOf(OpenAiImageParams.FLARE)))).isFalse()
             assertThat(db.generationDao().findReferences(image.generationId)).hasSize(1)
             assertThat(events.filterIsInstance<GenerationEvent.ItemError>()).hasSize(1)
         } finally {

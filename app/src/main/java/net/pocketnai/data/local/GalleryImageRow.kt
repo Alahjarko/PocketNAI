@@ -32,4 +32,5 @@ data class GalleryImageRow(
     val prompt: String,
     val negativePrompt: String,
     @ColumnInfo(name = "sample_count") val sampleCount: Int,
+    val charactersJson: String? = null,
 )

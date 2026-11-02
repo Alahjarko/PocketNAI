@@ -42,14 +42,14 @@ internal fun ArtistLabResultImage(
         startedAt = startedAt, onRevealed = { revealed = true },
         modifier = modifier.fillMaxWidth().aspectRatio((image?.aspectRatio ?: plannedAspectRatio).coerceIn(0.65f, 1.5f)),
     ) { alpha ->
-        if (image != null) AsyncImage(
-            model = file?.let { sharedImageRequest(it) }, contentDescription = "第 ${ordinal + 1} 张",
+        if (image != null) net.pocketnai.ui.safety.SfwAsyncImage(
+            file = file, sensitive = image.sensitivePrompt, contentDescription = "第 ${ordinal + 1} 张",
             contentScale = ContentScale.Crop,
             onSuccess = { decoded = true }, onError = { decodeFailed = true },
-            modifier = Modifier.fillMaxSize().sharedImage(image.imageId)
+            modifier = Modifier.fillMaxSize().sharedImage(image.imageId, image.sensitivePrompt)
                 .graphicsLayer { this.alpha = alpha.value }
                 .clickable(enabled = decoded && (!watched || revealed)) {
-                    motion?.preview = ImageOriginPreview(image.imageId, file!!, image.aspectRatio, "抽卡结果")
+                    motion?.preview = ImageOriginPreview(image.imageId, file!!, image.aspectRatio, "抽卡结果", image.sensitivePrompt)
                     onOpen(image.imageId)
                 },
         )

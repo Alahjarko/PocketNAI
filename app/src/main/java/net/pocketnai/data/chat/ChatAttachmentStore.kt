@@ -47,7 +47,8 @@ class ChatAttachmentStore(
                     as? net.pocketnai.domain.metadata.MetadataProbeResult.Found)?.metadata?.let(ChatImageContext::fromPng)
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
         catch (_: Exception) { null } // 元数据不可读也不能阻止正常附图。
-        file.inputStream().use { normalize(it) }.copy(promptContext = metadata)
+        file.inputStream().use { normalize(it) }.copy(promptContext = metadata,
+            sensitivePrompt = metadata?.let(net.pocketnai.domain.safety.SfwPolicy::isSensitive) == true)
     }
 
     private fun normalize(input: InputStream): ChatAttachment {

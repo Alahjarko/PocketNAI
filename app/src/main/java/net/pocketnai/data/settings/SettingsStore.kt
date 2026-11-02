@@ -18,6 +18,13 @@ class SettingsStore(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    private val _sfwMode = MutableStateFlow(prefs.getBoolean("sfw_mode", false))
+    val sfwMode: StateFlow<Boolean> = _sfwMode.asStateFlow()
+    fun setSfwMode(enabled: Boolean) {
+        prefs.edit().putBoolean("sfw_mode", enabled).apply()
+        _sfwMode.value = enabled
+    }
+
     private val _artistLabEnabled = MutableStateFlow(prefs.getBoolean("experimental_artist_lab_enabled", false))
     val artistLabEnabled: StateFlow<Boolean> = _artistLabEnabled.asStateFlow()
     fun setArtistLabEnabled(enabled: Boolean) {

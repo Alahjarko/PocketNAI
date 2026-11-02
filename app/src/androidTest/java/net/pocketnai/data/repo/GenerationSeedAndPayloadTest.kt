@@ -142,6 +142,7 @@ class GenerationSeedAndPayloadTest {
         random: Random,
         fileStore: GenerationFileStore,
         macros: List<net.pocketnai.domain.model.PromptFavorite> = emptyList(),
+        sfwEnabled: () -> Boolean = { false },
         idGenerator: () -> String = { "gen-test" },
     ) = GenerationRepository(
         api = FakeApi(payloads),
@@ -163,6 +164,7 @@ class GenerationSeedAndPayloadTest {
         clock = { 1_000L },
         idGenerator = idGenerator,
         promptMacros = { macros },
+        sfwEnabled = sfwEnabled,
         referenceEncoder = net.pocketnai.data.image.ReferenceImageProcessor(context, fileStore),
     )
 
@@ -320,6 +322,10 @@ class GenerationSeedAndPayloadTest {
         testContext.getSharedPreferences("pocketnai_settings", android.content.Context.MODE_PRIVATE)
             .edit().putString("subscription_override", "OPUS").apply()
         val settings = net.pocketnai.data.settings.SettingsStore(testContext)
+        assertThat(settings.sfwMode.value).isFalse()
+        settings.setSfwMode(true)
+        assertThat(net.pocketnai.data.settings.SettingsStore(testContext).sfwMode.value).isTrue()
+        settings.setSfwMode(false)
         assertThat(settings.subscriptionOverride.value).isEqualTo(net.pocketnai.domain.billing.SubscriptionOverride.AUTO)
         assertThat(testContext.getSharedPreferences("pocketnai_settings", android.content.Context.MODE_PRIVATE)
             .contains("subscription_override")).isFalse()
@@ -630,7 +636,9 @@ class GenerationSeedAndPayloadTest {
         val payloads = mutableListOf<JsonObject>()
         val files = GenerationFileStore(context)
         val prefix = "artist-lab-preflight-test-" + java.util.UUID.randomUUID()
-        val repo = repository(payloads, Random(1), files) { prefix }
+        var sfw = false
+        var key = prefix
+        val repo = repository(payloads, Random(1), files, sfwEnabled = { sfw }) { key }
         val params = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V4_5_CURATED)).copy(prompt = "sfw, blue sky")
         try {
             val denied = repo.generate(GenerationRequest(params), params.prompt, expectedAccountFingerprint = "wrong-account").toList()
@@ -646,7 +654,20 @@ class GenerationSeedAndPayloadTest {
             assertThat(hookCalled).isTrue()
             assertThat(payloads).isEmpty()
             assertThat(database.generationDao().findGeneration(prefix)!!.status).isEqualTo("FAILED")
-        } finally { files.deleteGeneration(prefix) }
+            val marked = params.copy(prompt = "nsfw, geometry fixture")
+            sfw = true; key = "$prefix-blocked"
+            assertThat(repo.generate(GenerationRequest(marked), marked.prompt).toList()
+                .filterIsInstance<GenerationEvent.FatalError>().single().error.detail).contains("SFW")
+            assertThat(payloads).isEmpty()
+            sfw = false; key = "$prefix-late"
+            assertThat(repo.generate(GenerationRequest(marked), marked.prompt, beforeSend = { sfw = true }).toList()
+                .filterIsInstance<GenerationEvent.FatalError>().single().error.detail).contains("SFW")
+            assertThat(payloads).isEmpty()
+            sfw = false; key = "$prefix-allowed"
+            repo.generate(GenerationRequest(marked), marked.prompt).toList()
+            assertThat(payloads).hasSize(1)
+            assertThat(payloads.single()["input"]!!.jsonPrimitive.content).contains("nsfw")
+        } finally { listOf(prefix, "$prefix-blocked", "$prefix-late", "$prefix-allowed").forEach(files::deleteGeneration) }
     }
 
     @After

@@ -67,9 +67,10 @@ object ExperiencePreviewRenderer {
                     Surface(Modifier.fillMaxSize()) {
                         Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                             Text("画廊模型筛选", style = MaterialTheme.typography.titleLarge)
-                            GalleryModelFilterChip(null) {}
-                            GalleryModelFilterChip(OpenAiImageParams.FLARE) {}
-                            GalleryModelFilterChip(OpenAiImageParams.SUNBURST) {}
+                            GalleryModelFilterChip(emptySet()) {}
+                            GalleryModelFilterChip(setOf(OpenAiImageParams.FLARE)) {}
+                            GalleryModelFilterChip(setOf(OpenAiImageParams.SUNBURST)) {}
+                            GalleryModelFilterChip(setOf(OpenAiImageParams.FLARE, OpenAiImageParams.SUNBURST)) {}
                         }
                     }
                 }

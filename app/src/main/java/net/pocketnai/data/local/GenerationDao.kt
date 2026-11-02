@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface GenerationDao {
+    @Query("""SELECT i.relativePath, i.id AS imageId, g.prompt, g.charactersJson
+        FROM generated_images i JOIN generations g ON g.id = i.generationId""")
+    fun observeImageSafetyRows(): Flow<List<ImageSafetyRow>>
 
     /** 未删除的生成记录，按时间倒序，带图片数量。 */
     @Query(
@@ -43,7 +46,8 @@ interface GenerationDao {
             g.modelApiId AS model_api_id,
             g.prompt AS prompt,
             g.negativePrompt AS negativePrompt,
-            g.sampleCount AS sample_count
+            g.sampleCount AS sample_count,
+            g.charactersJson AS charactersJson
         FROM generated_images i
         JOIN generations g ON g.id = i.generationId
         WHERE g.deletedAt IS NULL

@@ -125,7 +125,9 @@ private data class TabSpec(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Unit = {}) {
-    ImageMotionRoot { PocketNaiAppContent(sharedImageUri, onSharedImageHandled) }
+    net.pocketnai.ui.safety.SfwDisplayProvider {
+        ImageMotionRoot { PocketNaiAppContent(sharedImageUri, onSharedImageHandled) }
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)

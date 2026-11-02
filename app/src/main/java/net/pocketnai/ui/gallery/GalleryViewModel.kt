@@ -149,8 +149,8 @@ class GalleryViewModel(
 
     fun onQueryChange(query: String) = _filter.update { it.copy(query = query) }
 
-    /** [modelApiId] 为 null 表示"全部模型"。 */
-    fun onModelChange(modelApiId: String?) = _filter.update { it.copy(modelApiId = modelApiId) }
+    /** 空集合表示全部模型，集合内按 OR 匹配。 */
+    fun onModelsChange(modelApiIds: Set<String>) = _filter.update { it.copy(modelApiIds = modelApiIds) }
 
     /** [mode] 为 null 表示"全部模式"。 */
     fun onModeChange(mode: GenerationMode?) = _filter.update { it.copy(mode = mode) }

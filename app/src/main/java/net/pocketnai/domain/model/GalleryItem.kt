@@ -35,6 +35,7 @@ data class GalleryItem(
      * 所以默认 false，只有收藏表里出现过才会被置为 true。
      */
     val favorite: Boolean = false,
+    val sensitivePrompt: Boolean = false,
 ) {
     /** 卡片占位用的宽高比，用于瀑布流在图片解码前就能排版，避免滚动抖动。 */
     val aspectRatio: Float get() = if (height > 0) width.toFloat() / height.toFloat() else 1f

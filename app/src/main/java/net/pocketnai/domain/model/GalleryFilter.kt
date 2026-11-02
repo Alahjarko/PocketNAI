@@ -9,7 +9,7 @@ data class GalleryFilter(
     /** 提示词关键词。见 [GallerySearch] 的匹配规则。 */
     val query: String = "",
     /** 按原始模型 API ID 筛选，同时支持 NovelAI 和 OpenAI。 */
-    val modelApiId: String? = null,
+    val modelApiIds: Set<String> = emptySet(),
     /** 只看某种生成模式（文生图 / 图生图 / Precise Reference / 局部重绘）。 */
     val mode: GenerationMode? = null,
     /** 只看收藏。 */
@@ -17,7 +17,7 @@ data class GalleryFilter(
 ) {
     /** 是否加了任何条件。界面用它决定"没有结果"该怎么措辞。 */
     val isActive: Boolean
-        get() = query.isNotBlank() || modelApiId != null || mode != null || favoritesOnly
+        get() = query.isNotBlank() || modelApiIds.isNotEmpty() || mode != null || favoritesOnly
 
     companion object {
         val None = GalleryFilter()
@@ -57,10 +57,20 @@ object GallerySearch {
 
     fun matches(item: GalleryItem, filter: GalleryFilter): Boolean {
         if (filter.favoritesOnly && !item.favorite) return false
-        if (filter.modelApiId != null && item.modelApiId != filter.modelApiId) return false
+        if (filter.modelApiIds.isNotEmpty() && item.modelApiId !in filter.modelApiIds) return false
         if (filter.mode != null && item.mode != filter.mode) return false
         if (filter.query.isNotBlank() && !matchesQuery(item, filter.query)) return false
         return true
+    }
+
+    /** 尚无图片的任务也使用相同条件；未生成的图片不属于收藏。 */
+    fun matches(generation: Generation, filter: GalleryFilter): Boolean {
+        if (filter.favoritesOnly) return false
+        val model = generation.openAi?.params?.model ?: generation.params.model.apiModelId
+        if (filter.modelApiIds.isNotEmpty() && model !in filter.modelApiIds) return false
+        if (filter.mode != null && generation.mode != filter.mode) return false
+        val prompt = generation.openAi?.params?.prompt ?: generation.params.prompt
+        return filter.query.isBlank() || terms(filter.query).all { normalize(prompt).contains(it) }
     }
 
     private fun matchesQuery(item: GalleryItem, query: String): Boolean {
