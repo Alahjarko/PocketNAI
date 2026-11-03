@@ -72,6 +72,7 @@ object ThemeRevealPreviewRenderer {
         val cases = listOf(
             Replay("reveal-light-dark", ThemeMode.LIGHT, listOf(160L to ThemeMode.DARK)),
             Replay("reveal-dark-light", ThemeMode.DARK, listOf(160L to ThemeMode.LIGHT)),
+            Replay("reveal-dark-system-light", ThemeMode.DARK, listOf(160L to ThemeMode.SYSTEM)),
             Replay("reveal-same-system", ThemeMode.LIGHT, listOf(160L to ThemeMode.SYSTEM)),
             Replay("reveal-rapid", ThemeMode.LIGHT, listOf(160L to ThemeMode.DARK, 256L to ThemeMode.LIGHT, 352L to ThemeMode.DARK)),
             Replay("reveal-cancel", ThemeMode.LIGHT, listOf(160L to ThemeMode.DARK), cancelAt = 320L),

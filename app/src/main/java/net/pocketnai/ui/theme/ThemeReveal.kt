@@ -40,7 +40,7 @@ internal val LocalThemeSnapshotter = staticCompositionLocalOf<suspend (GraphicsL
 /** Only draw/layer code observes the animation. The real palette is committed once. */
 @Stable
 internal class ThemeRevealState(private val scope: CoroutineScope) {
-    private class Capture(val origin: Offset, val commit: () -> Unit) {
+    private class Capture(val commit: () -> Unit) {
         val recorded = CompletableDeferred<Unit>()
         var committed = false
         var failed = false
@@ -110,7 +110,7 @@ internal class ThemeRevealState(private val scope: CoroutineScope) {
         }
         val token = ++generation
         job?.cancel()
-        val request = Capture(center, commit)
+        val request = Capture(commit)
         capture = request
         job = scope.launch {
             try {
@@ -159,6 +159,7 @@ internal class ThemeRevealState(private val scope: CoroutineScope) {
     }
 
     private fun clear() {
+        job = null
         capture = null
         overlay = null
         targetDark = null
