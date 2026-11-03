@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntSize
@@ -238,6 +239,9 @@ internal fun ThemeRevealHost(state: ThemeRevealState, content: @Composable () ->
     CompositionLocalProvider(LocalThemeReveal provides state) {
         Box(Modifier.fillMaxSize().onGloballyPositioned {
             state.viewport(it.size, it.boundsInRoot().topLeft)
-        }.drawWithContent { state.draw(this, layer) }) { content() }
+        }.drawWithContent { state.draw(this, layer) }) {
+            // Retain the new page's display list while only the parent circle changes.
+            Box(Modifier.fillMaxSize().graphicsLayer()) { content() }
+        }
     }
 }
