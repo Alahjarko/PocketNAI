@@ -28,7 +28,7 @@ import org.junit.runners.model.Statement
  */
 object ThemeRevealPreviewRenderer {
     private class Replay(val name: String, val initial: ThemeMode, val events: List<Pair<Long, ThemeMode>>,
-        val cancelAt: Long? = null) : SnapshotHandler {
+        val cancelAt: Long? = null, val failCapture: Boolean = false) : SnapshotHandler {
         val writer = HtmlReportWriter()
         var last: BufferedImage? = null
         var captures = 0
@@ -69,6 +69,8 @@ object ThemeRevealPreviewRenderer {
             Replay("reveal-same-system", ThemeMode.LIGHT, listOf(160L to ThemeMode.SYSTEM)),
             Replay("reveal-rapid", ThemeMode.LIGHT, listOf(160L to ThemeMode.DARK, 256L to ThemeMode.LIGHT, 352L to ThemeMode.DARK)),
             Replay("reveal-cancel", ThemeMode.LIGHT, listOf(160L to ThemeMode.DARK), cancelAt = 320L),
+            Replay("reveal-pending-reversal", ThemeMode.LIGHT, listOf(160L to ThemeMode.DARK, 160L to ThemeMode.LIGHT)),
+            Replay("reveal-capture-failure", ThemeMode.LIGHT, listOf(160L to ThemeMode.DARK), failCapture = true),
         )
         cases.forEach { replay ->
             val renderer = Paparazzi(deviceConfig = DeviceConfig.PIXEL_5.copy(
@@ -84,6 +86,7 @@ object ThemeRevealPreviewRenderer {
                                 val frame = checkNotNull(replay.last) { "No real rendered frame to capture" }
                                 replay.captures++
                                 if (replay.firstCaptureFrame < 0) replay.firstCaptureFrame = replay.frames
+                                check(!replay.failCapture) { "Injected unsupported snapshot backend" }
                                 Bitmap.createBitmap(frame.getRGB(0, 0, frame.width, frame.height, null, 0, frame.width),
                                     frame.width, frame.height, Bitmap.Config.ARGB_8888).asImageBitmap()
                             }) {
@@ -97,8 +100,9 @@ object ThemeRevealPreviewRenderer {
                                     }
                                     LaunchedEffect(Unit) {
                                         val start = withFrameNanos { it }
+                                        var elapsed = 0L
                                         replay.events.forEach { (millis, next) ->
-                                            while (withFrameNanos { it - start } < millis * 1_000_000) { }
+                                            while (elapsed < millis * 1_000_000) elapsed = withFrameNanos { it - start }
                                             replay.origin = checkNotNull(reveal.center(next)) { "Missing actual button origin" }
                                             reveal.select(next) { mode = next }
                                         }
@@ -121,6 +125,8 @@ object ThemeRevealPreviewRenderer {
                     check(replay.far.last() == finalColor) { "Stale overlay: ${replay.name}" }
                     when (replay.name) {
                         "reveal-same-system" -> check(replay.captures == 0) { "Same-color mode captured a frame" }
+                        "reveal-pending-reversal" -> check(replay.captures == 0) { "Superseded pending capture was not cancelled" }
+                        "reveal-capture-failure" -> check(replay.captures == 1) { "Fallback did not reach snapshot backend" }
                         "reveal-rapid" -> check(replay.captures == 3) { "Quick reversals were not captured" }
                         "reveal-cancel" -> check(replay.far[24] == finalColor) { "Cancel retained the old page" }
                         else -> {
