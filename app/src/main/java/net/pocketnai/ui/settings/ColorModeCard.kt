@@ -29,9 +29,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
 import net.pocketnai.R
 import net.pocketnai.domain.model.ThemeMode
 import net.pocketnai.ui.theme.readableThemeColor
+import net.pocketnai.ui.theme.LocalThemeReveal
 
 @Composable
 internal fun ColorModeCard(mode: ThemeMode, onSelect: (ThemeMode) -> Unit) {
@@ -67,6 +70,7 @@ private fun ModeChoice(option: ThemeMode, current: ThemeMode, onSelect: (ThemeMo
         ThemeMode.DARK -> R.string.theme_dark to Icons.Outlined.DarkMode
     }
     val selected = current == option
+    val reveal = LocalThemeReveal.current
     val progress = remember { Animatable(if (selected) 1f else 0f) }
     LaunchedEffect(selected) {
         val target = if (selected) 1f else 0f
@@ -85,6 +89,7 @@ private fun ModeChoice(option: ThemeMode, current: ThemeMode, onSelect: (ThemeMo
     fun ink() = readableThemeColor(lerp(restInk, activeInk, progress.value), restInk, activeInk, fill())
     val painter = rememberVectorPainter(icon)
     Row(modifier
+        .onGloballyPositioned { reveal?.register(option, it.boundsInRoot().center) }
         .graphicsLayer {
             scaleX = pressScale.value; scaleY = pressScale.value
             shape = RoundedCornerShape(12.dp + 12.dp * progress.value)
@@ -92,7 +97,12 @@ private fun ModeChoice(option: ThemeMode, current: ThemeMode, onSelect: (ThemeMo
         }
         .drawBehind { drawRect(fill()) }
         .selectable(selected = selected, role = Role.RadioButton, interactionSource = interactions,
-            indication = ripple(), onClick = { if (!selected) onSelect(option) })
+            indication = ripple(), onClick = {
+                if (!selected || reveal?.hasPendingChange() == true) {
+                    if (reveal == null) onSelect(option)
+                    else reveal.select(option) { onSelect(option) }
+                }
+            })
         .heightIn(min = 48.dp).padding(horizontal = 8.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally)) {

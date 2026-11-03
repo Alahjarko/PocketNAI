@@ -250,6 +250,8 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
     }
 
     val backStackEntry by navController.currentBackStackEntryAsState()
+    val themeReveal = net.pocketnai.ui.theme.LocalThemeReveal.current
+    LaunchedEffect(backStackEntry?.id) { themeReveal?.cancelVisual() }
     val currentRoute = backStackEntry?.destination?.route
     LaunchedEffect(chatEnabled, currentRoute) {
         if (!chatEnabled && currentRoute == Routes.CHAT) navController.navigateToTab(Routes.HOME)

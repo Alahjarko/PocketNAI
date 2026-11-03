@@ -61,6 +61,7 @@ object StatisticsPreviewRenderer {
         SfwPreviewRenderer.render()
         MotionPolishPreviewRenderer.render()
         ThemeResponsePreviewRenderer.render()
+        ThemeRevealPreviewRenderer.render()
         ResolutionPreviewRenderer.render()
         QueuePreviewRenderer.render()
         OpenAiPricingPreviewRenderer.render()

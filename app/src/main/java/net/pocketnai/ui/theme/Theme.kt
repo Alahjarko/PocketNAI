@@ -17,6 +17,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.SideEffect
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import net.pocketnai.domain.model.ThemeMode
@@ -54,8 +60,9 @@ fun PocketNaiTheme(
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit,
 ) {
+    val systemDark = isSystemInDarkTheme()
     val darkTheme = when (themeMode) {
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.SYSTEM -> systemDark
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
@@ -79,13 +86,30 @@ fun PocketNaiTheme(
     val view = LocalView.current
     val activity = remember(context) { context.themeActivity() }
     val lightBackground = colorScheme.background.luminance() > 0.18f
-    if (!view.isInEditMode && activity != null) DisposableEffect(view, activity, lightBackground) {
+    val scope = rememberCoroutineScope()
+    val reveal = remember(scope) { ThemeRevealState(scope) }
+    val density = LocalDensity.current
+    val bars = WindowInsets.systemBars
+    // These are physical root coordinates, the same space as the button centers and snapshot.
+    val statusInset = bars.getTop(density)
+    val navigationInset = bars.getBottom(density)
+    SideEffect {
+        reveal.statusProbe = Offset(view.width / 2f, statusInset / 2f)
+        reveal.navigationProbe = Offset(view.width / 2f, view.height - navigationInset / 2f)
+        reveal.palette(darkTheme, systemDark, lightBackground)
+    }
+    if (!view.isInEditMode && activity != null) DisposableEffect(view, activity, reveal) {
         val controller = WindowCompat.getInsetsController(activity.window, view)
         val oldStatus = controller.isAppearanceLightStatusBars
         val oldNavigation = controller.isAppearanceLightNavigationBars
         controller.isAppearanceLightStatusBars = lightBackground
         controller.isAppearanceLightNavigationBars = lightBackground
+        reveal.applyBars = { status, navigation ->
+            controller.isAppearanceLightStatusBars = status
+            controller.isAppearanceLightNavigationBars = navigation
+        }
         onDispose {
+            reveal.applyBars = null
             controller.isAppearanceLightStatusBars = oldStatus
             controller.isAppearanceLightNavigationBars = oldNavigation
         }
@@ -95,8 +119,7 @@ fun PocketNaiTheme(
     ) {
         CompositionLocalProvider(
             LocalWeightHighlightColors provides weightHighlights,
-            content = content,
-        )
+        ) { ThemeRevealHost(reveal, content) }
     }
 }
 
