@@ -59,7 +59,9 @@ object ThemeRevealPreviewRenderer {
                     val x = origin.x.toInt().coerceIn(0, width - 1)
                     val y = (origin.y.toInt() + 140).coerceIn(0, height - 1)
                     near += frame[y * width + x]
-                    far += frame[(height - 3) * width + 2]
+                    val farX = if (origin.x > width / 2f) 2 else width - 3
+                    val farY = if (origin.y > height / 2f) 2 else height - 3
+                    far += frame[farY * width + farX]
                     frames++
                 }
                 method.invoke(delegate, *(args ?: emptyArray()))
@@ -143,7 +145,7 @@ object ThemeRevealPreviewRenderer {
                                 "No outward reveal: near=$nearChanged far=$farChanged"
                             }
                             check(farChanged - replay.firstCaptureFrame in 21..28) {
-                                "Reveal is not approximately 400ms: capture=${replay.firstCaptureFrame} far=$farChanged"
+                                "${replay.name}: farthest corner timing differs from 400ms: capture=${replay.firstCaptureFrame} far=$farChanged"
                             }
                         }
                     }
