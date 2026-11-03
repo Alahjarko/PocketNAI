@@ -43,6 +43,7 @@ internal class ThemeRevealState(private val scope: CoroutineScope) {
     private class Capture(val origin: Offset, val commit: () -> Unit) {
         val recorded = CompletableDeferred<Unit>()
         var committed = false
+        var failed = false
         fun commitOnce() { if (!committed) { committed = true; commit() } }
     }
     private class Overlay(val image: ImageBitmap, val origin: Offset, val size: IntSize,
@@ -178,10 +179,18 @@ internal class ThemeRevealState(private val scope: CoroutineScope) {
         val request = capture
         if (request != null) {
             if (!request.recorded.isCompleted) {
-                layer.record { this@with.drawComposite() }
-                request.recorded.complete(Unit)
+                try {
+                    layer.record { this@with.drawComposite() }
+                    request.recorded.complete(Unit)
+                } catch (failure: Exception) {
+                    request.failed = true
+                    request.recorded.completeExceptionally(failure)
+                } catch (failure: OutOfMemoryError) {
+                    request.failed = true
+                    request.recorded.completeExceptionally(failure)
+                }
             }
-            drawLayer(layer)
+            if (request.failed) drawComposite() else drawLayer(layer)
         } else {
             if (clearLayer) {
                 layer.record { } // Release references to the captured page's child layers.
