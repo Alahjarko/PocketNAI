@@ -14,8 +14,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import com.android.resources.Density
-import java.awt.image.BufferedImage
 import java.io.File
+import java.lang.reflect.Proxy
 import kotlinx.serialization.json.*
 import net.pocketnai.domain.model.ThemeMode
 import net.pocketnai.ui.settings.ColorModeCard
@@ -30,7 +30,9 @@ object ThemeRevealPreviewRenderer {
     private class Replay(val name: String, val initial: ThemeMode, val events: List<Pair<Long, ThemeMode>>,
         val cancelAt: Long? = null, val failCapture: Boolean = false) : SnapshotHandler {
         val writer = HtmlReportWriter()
-        var last: BufferedImage? = null
+        var pixels: IntArray? = null
+        var width = 0
+        var height = 0
         var captures = 0
         var firstCaptureFrame = -1
         var compositions = 0
@@ -42,22 +44,26 @@ object ThemeRevealPreviewRenderer {
         val colors = mutableMapOf<ThemeMode, Int>()
         override fun newFrameHandler(snapshot: Snapshot, frameCount: Int, fps: Int): SnapshotHandler.FrameHandler {
             val delegate = writer.newFrameHandler(snapshot, frameCount, fps)
-            return object : SnapshotHandler.FrameHandler {
-                override fun handle(image: BufferedImage) {
-                    last = BufferedImage(image.width, image.height, BufferedImage.TYPE_INT_ARGB).also {
-                        val graphics = it.createGraphics()
-                        graphics.drawImage(image, 0, 0, null)
-                        graphics.dispose()
-                    }
-                    val x = origin.x.toInt().coerceIn(0, image.width - 1)
-                    val y = (origin.y.toInt() + 140).coerceIn(0, image.height - 1)
-                    near += image.getRGB(x, y)
-                    far += image.getRGB(2, image.height - 3)
+            // Android's compile bootclasspath excludes java.desktop. Keep this host-only bridge
+            // reflective rather than adding AWT stubs/dependencies to Android compilation.
+            return Proxy.newProxyInstance(SnapshotHandler.FrameHandler::class.java.classLoader,
+                arrayOf(SnapshotHandler.FrameHandler::class.java)) { _, method, args ->
+                if (method.name == "handle") {
+                    val image = args!![0]
+                    width = image.javaClass.getMethod("getWidth").invoke(image) as Int
+                    height = image.javaClass.getMethod("getHeight").invoke(image) as Int
+                    val ints = Int::class.javaPrimitiveType!!
+                    val frame = image.javaClass.getMethod("getRGB", ints, ints, ints, ints,
+                        IntArray::class.java, ints, ints).invoke(image, 0, 0, width, height, null, 0, width) as IntArray
+                    pixels = frame
+                    val x = origin.x.toInt().coerceIn(0, width - 1)
+                    val y = (origin.y.toInt() + 140).coerceIn(0, height - 1)
+                    near += frame[y * width + x]
+                    far += frame[(height - 3) * width + 2]
                     frames++
-                    delegate.handle(image)
                 }
-                override fun close() = delegate.close()
-            }
+                method.invoke(delegate, *(args ?: emptyArray()))
+            } as SnapshotHandler.FrameHandler
         }
         override fun close() = writer.close()
     }
@@ -83,12 +89,11 @@ object ThemeRevealPreviewRenderer {
                         setContent {
                             var mode by remember { mutableStateOf(replay.initial) }
                             CompositionLocalProvider(LocalThemeSnapshotter provides {
-                                val frame = checkNotNull(replay.last) { "No real rendered frame to capture" }
+                                val frame = checkNotNull(replay.pixels) { "No real rendered frame to capture" }
                                 replay.captures++
                                 if (replay.firstCaptureFrame < 0) replay.firstCaptureFrame = replay.frames
                                 check(!replay.failCapture) { "Injected unsupported snapshot backend" }
-                                Bitmap.createBitmap(frame.getRGB(0, 0, frame.width, frame.height, null, 0, frame.width),
-                                    frame.width, frame.height, Bitmap.Config.ARGB_8888).asImageBitmap()
+                                Bitmap.createBitmap(frame, replay.width, replay.height, Bitmap.Config.ARGB_8888).asImageBitmap()
                             }) {
                                 PocketNaiTheme(mode, dynamicColor = false) {
                                     val reveal = checkNotNull(LocalThemeReveal.current)
