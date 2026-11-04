@@ -106,6 +106,13 @@ android {
     }
 }
 
+// Opt-in, isolated device profiling fixture. Never included in normal/debug/release delivery.
+if (providers.gradleProperty("galleryBenchmark").orNull == "true") {
+    android.defaultConfig.applicationId = "net.pocketnai.gallerybench"
+    android.sourceSets.getByName("main").java.srcDir("src/benchmark/java")
+    android.sourceSets.getByName("release").manifest.srcFile("src/benchmark/AndroidManifest.xml")
+}
+
 kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)

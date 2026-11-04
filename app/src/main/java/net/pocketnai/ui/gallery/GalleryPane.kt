@@ -139,6 +139,7 @@ fun GalleryPane(
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val gridState = androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState()
     val snackbarHostState = remember { SnackbarHostState() }
     var actionTarget by remember { mutableStateOf<GalleryItem?>(null) }
     var pendingSave by remember { mutableStateOf<GalleryItem?>(null) }
@@ -242,6 +243,7 @@ fun GalleryPane(
                 )
             } else {
                 GalleryMotionGrid(
+                    state = gridState,
                     sections = sections,
                     fileOf = container.generationRepository::fileOf,
                     previews = previews,
@@ -260,6 +262,10 @@ fun GalleryPane(
                     onRevealed = { viewModel.motionSlots.finish(it); motionRevision++ },
                     onDismissFailure = { viewModel.motionSlots.dismiss(it); motionRevision++ },
                 )
+            }
+
+            if (!isSelectionMode && sections.isNotEmpty()) {
+                GalleryScrollToTop(gridState, Modifier.align(Alignment.BottomEnd).padding(16.dp))
             }
 
             if (isSelectionMode) {

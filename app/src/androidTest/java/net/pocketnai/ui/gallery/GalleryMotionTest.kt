@@ -43,7 +43,8 @@ class GalleryMotionTest {
 
     /** Decode/cache checks need Android's running main looper, not Layoutlib. */
     private fun checkSfwImageCache(file: File) = kotlinx.coroutines.runBlocking {
-        val loader = coil.ImageLoader.Builder(compose.activity).eventListener(object : coil.EventListener {
+        val cache = net.pocketnai.ui.safety.SfwImageMemoryCache(compose.activity, 4 * 1024 * 1024)
+        val loader = coil.ImageLoader.Builder(compose.activity).memoryCache(cache).eventListener(object : coil.EventListener {
             override fun transformStart(request: coil.request.ImageRequest, input: Bitmap) {
                 check(maxOf(input.width, input.height) <= 96)
             }
@@ -60,11 +61,22 @@ class GalleryMotionTest {
                 assertThat(maxOf(small.width, small.height)).isEqualTo(48)
                 assertThat(small.allocationByteCount).isAtMost(48 * 48 * 4)
                 assertThat((loader.execute(masked) as coil.request.SuccessResult).dataSource).isEqualTo(coil.decode.DataSource.MEMORY_CACHE)
+                // Large normal thumbnails must not displace a tiny protected SFW display copy.
+                repeat(6) { index ->
+                    cache[coil.memory.MemoryCache.Key("normal-$index")] = coil.memory.MemoryCache.Value(
+                        Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888))
+                }
+                assertThat(cache.size).isAtMost(cache.maxSize)
+                assertThat((loader.execute(masked) as coil.request.SuccessResult).dataSource).isEqualTo(coil.decode.DataSource.MEMORY_CACHE)
                 val revealed = loader.execute(clear.newBuilder().size(coil.size.Size.ORIGINAL).allowHardware(false).build()) as coil.request.SuccessResult
                 val full = (revealed.drawable as android.graphics.drawable.BitmapDrawable).bitmap
                 assertThat(full.width).isEqualTo(400)
                 assertThat(full.height).isEqualTo(600)
                 assertThat((loader.execute(masked) as coil.request.SuccessResult).dataSource).isEqualTo(coil.decode.DataSource.MEMORY_CACHE)
+                cache.trimMemory(android.content.ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
+                assertThat(cache.size).isEqualTo(0)
+                cache.clear() // Explicit clear also removes still-live weak references.
+                assertThat(cache[masked.memoryCacheKey!!]).isNull()
             }
             assertThat(file.readBytes().toList()).isEqualTo(original.toList())
         } finally {
@@ -105,7 +117,7 @@ class GalleryMotionTest {
             GenerationStatus.SUCCEEDED, GenerationMode.TXT2IMG, id, params.model.apiModelId, "sfw", "", 1)
         val registry = GalleryMotionSlots()
         var images by mutableStateOf(listOf(image("old-a", now - 3 * 86400000L), image("old-b", now - 3 * 86400000L - 1000, true), image("old-c", now - 3 * 86400000L - 2000, true)) +
-            (0..11).map { image("deep-$it", now - 4 * 86400000L - it * 1000, it % 3 != 0) })
+            (0..41).map { image("deep-$it", now - 4 * 86400000L - it * 1000, it % 3 != 0) })
         var jobs by mutableStateOf(emptyList<GenerationSummary>())
         var showLab by mutableStateOf(false)
         var labStatus by mutableStateOf("RUNNING")
@@ -138,10 +150,14 @@ class GalleryMotionTest {
                                             }
                                         }) { padding ->
                                             val sections = registry.sections(images, jobs, true)
+                                            val grid = rememberLazyStaggeredGridState()
+                                            Box(Modifier.fillMaxSize().padding(padding)) {
                                             GalleryMotionGrid(sections, { file }, emptyMap(), false, emptySet(),
                                                 onClick = { motion.open("home", it.imageId); nav.navigate("detail") },
                                                 onLongClick = {}, onRevealed = { registry.finish(it); if (it == "slot-new-1") finished = true },
-                                                onDismissFailure = {}, modifier = Modifier.testTag("gallery-grid").padding(padding))
+                                                onDismissFailure = {}, modifier = Modifier.testTag("gallery-grid"), state = grid)
+                                            GalleryScrollToTop(grid, Modifier.align(androidx.compose.ui.Alignment.BottomEnd).padding(16.dp))
+                                            }
                                         }
                                     }
                                 }
@@ -247,8 +263,12 @@ class GalleryMotionTest {
             compose.mainClock.advanceTimeBy(500)
             assertThat(motion.currentImageId).isEqualTo("deep-3")
             compose.onNodeWithTag("slot-deep-3-1").assertIsDisplayed()
-            compose.onNodeWithTag("gallery-grid").performScrollToIndex(0)
+            compose.onNodeWithTag("gallery-grid").performScrollToIndex(35)
             compose.mainClock.advanceTimeBy(400)
+            compose.onNodeWithContentDescription("返回顶部").assertIsDisplayed().performClick()
+            compose.mainClock.advanceTimeBy(2000)
+            compose.onNodeWithTag("slot-new-1").assertIsDisplayed()
+            compose.onNodeWithContentDescription("返回顶部").assertDoesNotExist()
             // Lab cleanup removes an image but intentionally retains its successful request.
             // The gallery Flow can arrive before the updated image count.
             compose.runOnUiThread { images = images.filterNot { it.imageId == "new" } }

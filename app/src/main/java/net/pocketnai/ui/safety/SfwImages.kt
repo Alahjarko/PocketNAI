@@ -24,7 +24,7 @@ data class SfwDisplayState(val enabled: Boolean = false, val ready: Boolean = fa
         if (!enabled || revealed || file == null) return false
         if (knownSensitive == true || file.absolutePath in paths) return true
         if (knownSensitive == false) return false
-        return file.absolutePath.contains("/generations/") && (!ready || file.absolutePath !in knownPaths)
+        return file.invariantSeparatorsPath.contains("/generations/") && (!ready || file.absolutePath !in knownPaths)
     }
 }
 

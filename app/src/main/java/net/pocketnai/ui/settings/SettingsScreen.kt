@@ -82,7 +82,6 @@ fun SettingsScreen(
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
     val addAccountUi by viewModel.addAccountUi.collectAsStateWithLifecycle()
-    val streamingEnabled by viewModel.streamingPreviewEnabled.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val connected by viewModel.connected.collectAsStateWithLifecycle()
     val subscriptionStatus by viewModel.subscriptionStatus.collectAsStateWithLifecycle()
@@ -177,18 +176,6 @@ fun SettingsScreen(
                 )
                 SettingsDivider()
                 SettingsRow(
-                    title = stringResource(R.string.settings_streaming_preview),
-                    subtitle = stringResource(R.string.settings_streaming_preview_desc),
-                    onClick = { viewModel.setStreamingPreviewEnabled(!streamingEnabled) },
-                    trailing = {
-                        Switch(
-                            checked = streamingEnabled,
-                            onCheckedChange = viewModel::setStreamingPreviewEnabled,
-                        )
-                    },
-                )
-                SettingsDivider()
-                SettingsRow(
                     title = "实验性对话",
                     subtitle = if (chatEnabled) "已开启 · 点击配置 LLM 与人格" else "开启后在导航栏显示对话",
                     onClick = { chatSettingsOpen = true },
@@ -276,8 +263,6 @@ fun SettingsScreen(
                     if (proxySettings.enabled) {
                         ProxyConfigContent(
                             settings = proxySettings,
-                            usedBytesToday = proxyUsedBytes,
-                            nodeCount = container.publicProxyNodes.all().size,
                             onSettingsChange = container.proxyStore::update,
                         )
                     }

@@ -242,7 +242,8 @@ class AppContainer(application: Application) {
             },
             // 流式预览的开关与失败计数都归设置层：连续失败 3 次会自动关闭，
             // 那时这里读到的就是 false，生成回到已验证的 ZIP 链路。
-            streamingEnabled = { settingsStore.streamingPreviewEnabled.value },
+            // 2026-11-04: retired by user request, including previously enabled installs.
+            streamingEnabled = { false },
             onStreamingFailure = { settingsStore.recordStreamingFailure() },
             promptMacros = { promptFavoriteRepository.snapshot() },
             sfwEnabled = { settingsStore.sfwMode.value },

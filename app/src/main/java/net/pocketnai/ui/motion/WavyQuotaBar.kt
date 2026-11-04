@@ -7,6 +7,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -21,11 +23,20 @@ import kotlin.math.*
 internal fun WavyQuotaBar(progress: Float?, modifier: Modifier = Modifier, animate: Boolean = true, phaseOverride: Float? = null) {
     val target = progress?.coerceIn(0f, 1f) ?: 0f
     val fraction by animateFloatAsState(target, tween(300), label = "真实额度比例")
-    val transition = rememberInfiniteTransition(label = "额度波形")
-    val phase by transition.animateFloat(0f, 1f, infiniteRepeatable(tween(2100, easing = LinearEasing)), label = "波形相位")
+    var visible by remember { mutableStateOf(false) }
+    val phase = if (animate && visible && target > 0f && phaseOverride == null) {
+        rememberInfiniteTransition(label = "额度波形").animateFloat(
+            0f, 1f, infiniteRepeatable(tween(2100, easing = LinearEasing)), label = "波形相位")
+    } else rememberUpdatedState(phaseOverride ?: 0f)
+    val path = remember { Path() }
     val active = MaterialTheme.colorScheme.primary
     val track = MaterialTheme.colorScheme.outlineVariant
-    Canvas(modifier.height(20.dp).semantics {
+    Canvas(modifier.height(20.dp).onGloballyPositioned { coordinates ->
+        // A verticalScroll keeps offscreen children composed. Stop its frame clock once
+        // clipping removes the wave from the window, rather than redrawing an unseen page.
+        val bounds = coordinates.boundsInWindow()
+        visible = bounds.width > 0f && bounds.height > 0f
+    }.semantics {
         if (progress != null) progressBarRangeInfo = ProgressBarRangeInfo(target, 0f..1f)
     }) {
         val stroke = 3.dp.toPx()
@@ -37,13 +48,13 @@ internal fun WavyQuotaBar(progress: Float?, modifier: Modifier = Modifier, anima
         if (fraction < 1f) drawLine(track, Offset(if (fraction > 0) (fill + 6.dp.toPx()).coerceAtMost(end) else start, y),
             Offset(end, y), stroke, StrokeCap.Round)
         if (fraction > 0f) {
-            val path = Path()
+            path.reset()
             val length = fill - start
             val segments = (length / 2.dp.toPx()).roundToInt().coerceAtLeast(2)
             for (index in 0..segments) {
                 val x = length * index / segments
                 val taper = min(x / 7.dp.toPx(), (length - x) / 7.dp.toPx()).coerceIn(0f, 1f)
-                val wave = sin(x / 26.dp.toPx() * 2 * PI - (phaseOverride ?: if (animate) phase else 0f) * 2 * PI).toFloat()
+                val wave = sin(x / 26.dp.toPx() * 2 * PI - phase.value * 2 * PI).toFloat()
                 val point = Offset(start + x, y + wave * 2.6.dp.toPx() * taper)
                 if (index == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
             }

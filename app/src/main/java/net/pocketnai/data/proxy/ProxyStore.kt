@@ -65,12 +65,13 @@ class ProxyStore(context: Context) {
 
     private fun readSettings(): ProxySettings {
         val mode = runCatching { ProxyMode.valueOf(prefs.getString(KEY_MODE, null).orEmpty()) }
-            .getOrDefault(ProxyMode.PUBLIC)
+            .getOrDefault(ProxyMode.CUSTOM)
         val type = runCatching { ProxyType.valueOf(prefs.getString(KEY_TYPE, null).orEmpty()) }
             .getOrDefault(ProxyType.SOCKS5)
         return ProxySettings(
-            enabled = prefs.getBoolean(KEY_ENABLED, false),
-            mode = mode,
+            // Retire the public route without deleting saved custom endpoints or credentials.
+            enabled = prefs.getBoolean(KEY_ENABLED, false) && mode == ProxyMode.CUSTOM,
+            mode = ProxyMode.CUSTOM,
             type = type,
             host = prefs.getString(KEY_HOST, "").orEmpty(),
             port = prefs.getInt(KEY_PORT, 0),

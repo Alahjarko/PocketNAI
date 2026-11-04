@@ -18,6 +18,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
+private class ImageRevealAnimation {
+    val completion = Animatable(0f)
+    val imageAlpha = Animatable(0f)
+    val indicatorAlpha = Animatable(1f)
+}
+
 /** NAI、OpenAI 与抽卡共用的无限等待；仅图片解码成功后显示对勾并原位揭图。 */
 @Composable
 internal fun GenerationImageReveal(
@@ -31,48 +37,55 @@ internal fun GenerationImageReveal(
     content: @Composable BoxScope.(State<Float>) -> Unit,
 ) {
     val onFinished by rememberUpdatedState(onRevealed)
-    val completion = remember { Animatable(0f) }
-    val imageAlpha = remember { Animatable(if (animate) 0f else 1f) }
-    val indicatorAlpha = remember { Animatable(if (animate) 1f else 0f) }
-    LaunchedEffect(ready, failed, animate) {
+    // Most cards are already finished: do not start effects or allocate three animations
+    // for every historical thumbnail entering the viewport. Keep content at one call site.
+    val animation = if (animate) remember { ImageRevealAnimation() } else null
+    val opaque = rememberUpdatedState(1f)
+    if (animation != null) LaunchedEffect(ready, failed, animation) {
         when {
-            !animate -> { imageAlpha.snapTo(1f); indicatorAlpha.snapTo(0f) }
-            failed -> indicatorAlpha.snapTo(0f)
+            failed -> animation.indicatorAlpha.snapTo(0f)
             ready -> {
-                completion.animateTo(1f, tween(180, easing = FastOutSlowInEasing))
+                animation.completion.animateTo(1f, tween(180, easing = FastOutSlowInEasing))
                 delay(50)
-                imageAlpha.animateTo(1f, tween(220, easing = FastOutSlowInEasing))
-                indicatorAlpha.animateTo(0f, tween(100))
+                animation.imageAlpha.animateTo(1f, tween(220, easing = FastOutSlowInEasing))
+                animation.indicatorAlpha.animateTo(0f, tween(100))
                 onFinished()
             }
         }
     }
     Box(modifier) {
-        content(imageAlpha.asState())
-        if (animate && !failed && indicatorAlpha.value > 0f) {
-            Box(Modifier.size(64.dp).align(Alignment.Center)
-                .graphicsLayer { alpha = indicatorAlpha.value }
-                .semantics { contentDescription = if (ready) "图片已就绪" else if (queued) "排队中" else "生成中" }) {
-                if (completion.value < 1f) {
-                    val indicator = Modifier.fillMaxSize().graphicsLayer { alpha = 1f - completion.value }
-                    if (queued) QueuedGenerationIndicator(indicator) else GenerationOrb(indicator, description = null)
-                }
-                if (completion.value > 0f) {
-                    val ink = MaterialTheme.colorScheme.primary
-                    Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = completion.value }) {
-                        val center = Offset(size.width / 2, size.height / 2)
-                        val radius = size.minDimension * 0.31f
-                        val path = Path().apply {
-                            moveTo(center.x - radius * 0.56f, center.y)
-                            lineTo(center.x - radius * 0.12f, center.y + radius * 0.43f)
-                            lineTo(center.x + radius * 0.64f, center.y - radius * 0.45f)
+        content(animation?.imageAlpha?.asState() ?: opaque)
+        if (animation != null) {
+            val completion = animation.completion
+            val indicatorAlpha = animation.indicatorAlpha
+            val indicatorVisible by remember { derivedStateOf { indicatorAlpha.value > 0f } }
+            val showOrb by remember { derivedStateOf { completion.value < 1f } }
+            val showCheck by remember { derivedStateOf { completion.value > 0f } }
+            if (!failed && indicatorVisible) {
+                Box(Modifier.size(64.dp).align(Alignment.Center)
+                    .graphicsLayer { alpha = indicatorAlpha.value }
+                    .semantics { contentDescription = if (ready) "图片已就绪" else if (queued) "排队中" else "生成中" }) {
+                    if (showOrb) {
+                        val indicator = Modifier.fillMaxSize().graphicsLayer { alpha = 1f - completion.value }
+                        if (queued) QueuedGenerationIndicator(indicator) else GenerationOrb(indicator, description = null)
+                    }
+                    if (showCheck) {
+                        val ink = MaterialTheme.colorScheme.primary
+                        Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = completion.value }) {
+                            val center = Offset(size.width / 2, size.height / 2)
+                            val radius = size.minDimension * 0.31f
+                            val path = Path().apply {
+                                moveTo(center.x - radius * 0.56f, center.y)
+                                lineTo(center.x - radius * 0.12f, center.y + radius * 0.43f)
+                                lineTo(center.x + radius * 0.64f, center.y - radius * 0.45f)
+                            }
+                            drawPath(path, ink, style = Stroke(4.dp.toPx(), cap = StrokeCap.Round))
                         }
-                        drawPath(path, ink, style = Stroke(4.dp.toPx(), cap = StrokeCap.Round))
                     }
                 }
+                if (!ready) Text(if (queued) "排队中" else "生成中", style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp))
             }
-            if (!ready) Text(if (queued) "排队中" else "生成中", style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp))
         }
     }
 }

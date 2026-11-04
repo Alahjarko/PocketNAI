@@ -1,0 +1,14 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <application android:name="android.app.Application" android:label="PocketNAI Gallery Bench" tools:replace="android:name,android:label">
+        <activity android:name="net.pocketnai.ui.MainActivity" tools:node="remove" />
+        <activity android:name="net.pocketnai.ui.ShareImageActivity" tools:node="remove" />
+        <activity android:name="net.pocketnai.benchmark.GalleryBenchmarkActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <profileable android:shell="true" />
+    </application>
+</manifest>

@@ -437,7 +437,7 @@
 
     <!-- 网络代理（内置公益节点 + 自定义） -->
     <string name="proxy_section_title">网络代理</string>
-    <string name="proxy_section_desc">NovelAI 在部分网络下无法直连。可开启内置公益节点（社区提供、每日限额），或填写自己的代理；检查更新与下载不走代理。</string>
+    <string name="proxy_section_desc">NovelAI 在部分网络下无法直连，可填写自己的 HTTP 或 SOCKS5 代理；检查更新与下载不走代理。</string>
     <string name="proxy_enable">使用代理</string>
     <string name="proxy_mode_public">公益节点</string>
     <string name="proxy_mode_custom">自定义</string>

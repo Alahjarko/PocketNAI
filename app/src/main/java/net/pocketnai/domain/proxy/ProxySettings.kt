@@ -25,7 +25,7 @@ data class ProxyEndpoint(
  */
 data class ProxySettings(
     val enabled: Boolean = false,
-    val mode: ProxyMode = ProxyMode.PUBLIC,
+    val mode: ProxyMode = ProxyMode.CUSTOM,
     val type: ProxyType = ProxyType.SOCKS5,
     val host: String = "",
     val port: Int = 0,
@@ -35,10 +35,10 @@ data class ProxySettings(
     /** 自定义模式是否填全了必填项。 */
     val customReady: Boolean get() = host.isNotBlank() && port in 1..65535
 
-    /** 实际会不会走代理：开关打开、且所选模式可用（公益恒可用；自定义要填完整）。 */
+    /** 公共节点已停用；只有配置完整并启用的自定义代理可进入请求链路。 */
     val active: Boolean
         get() = enabled && when (mode) {
-            ProxyMode.PUBLIC -> true
+            ProxyMode.PUBLIC -> false
             ProxyMode.CUSTOM -> customReady
         }
 

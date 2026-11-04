@@ -76,7 +76,9 @@ internal fun GalleryMotionCard(
                 )
                 if (item != null) SfwAsyncImage(
                     file = imageFile, contentDescription = item.title, contentScale = ContentScale.Crop, sensitive = sensitive,
-                    onSuccess = { decoded = true }, onError = { decodeFailed = true },
+                    // Historical thumbnails are already opaque; a cache hit must not trigger
+                    // a second composition of the entire card just to set an unused flag.
+                    onSuccess = { if (slot.reveal) decoded = true }, onError = { decodeFailed = true },
                     modifier = Modifier.fillMaxSize().sharedImage(item.imageId, sensitive).graphicsLayer { alpha = revealAlpha.value },
                 )
             }
