@@ -32,7 +32,7 @@ data class ChatImagePlan(val items: List<ChatPlannedImage>, val completed: Int =
 
 data class ChatBatchResult(val images: List<ChatImage>, val status: String, val message: String, val requested: Int)
 
-/** One instance per user message. Permission is attached to frozen parameters, never to model prose. */
+/** One instance per user message. Permission comes from the user's selected mode, never model prose. */
 class ChatImageBatch(private val images: ChatImageGenerator, private val pause: suspend () -> Unit = { delay(1000) }) {
     var attempted = 0
         private set
@@ -40,7 +40,7 @@ class ChatImageBatch(private val images: ChatImageGenerator, private val pause: 
     val remaining get() = if (blocked) 0 else ImageChatTools.MAX_IMAGES - attempted
 
     suspend fun execute(
-        params: List<GenerationParams>, autoSingle: Boolean,
+        params: List<GenerationParams>, permission: ChatToolPermission,
         confirm: suspend (ChatImagePlan) -> Boolean,
         active: () -> Boolean,
         onProgress: (Int, Int, ChatImageQuote) -> Unit,
@@ -55,7 +55,9 @@ class ChatImageBatch(private val images: ChatImageGenerator, private val pause: 
             if (status != "succeeded") blocked = true
             return ChatBatchResult(output.toList(), status, message, params.size)
         }
-        if (!(autoSingle && params.size == 1 && attempted == 0) && !confirm(ChatImagePlan(plan)))
+        val full = permission == ChatToolPermission.FULL
+        val autoSingle = permission == ChatToolPermission.SINGLE_IMAGE && params.size == 1 && attempted == 0
+        if (!full && !autoSingle && !confirm(ChatImagePlan(plan)))
             return finish("cancelled", "用户取消计划，未发送图片请求")
         for (index in params.indices) {
             if (index > 0 || attempted > 0) pause()
@@ -65,13 +67,13 @@ class ChatImageBatch(private val images: ChatImageGenerator, private val pause: 
                 val latest = images.quote(params[index])
                 if (latest != plan[index].quote) {
                     val remainingPlan = params.drop(index).map { ChatPlannedImage(it, images.quote(it)) }
-                    if (!confirm(ChatImagePlan(remainingPlan, output.size, changed = true)))
+                    if (!full && !confirm(ChatImagePlan(remainingPlan, output.size, changed = true)))
                         return finish("cancelled", "费用变化后用户取消，后续图片未发送")
                     plan = plan.take(index) + remainingPlan
                     // Confirmation is asynchronous: recheck the account and current price again.
                     if (!active() || images.authorizationKey() != account)
                         return finish("cancelled", "授权条件已改变，后续图片未发送")
-                    if (images.quote(params[index]) != plan[index].quote)
+                    if (!full && images.quote(params[index]) != plan[index].quote)
                         return finish("cancelled", "费用再次变化，请发送新消息重新确认")
                 }
                 attempted++ // A failed or uncertain request consumes its allowance too.
@@ -81,7 +83,7 @@ class ChatImageBatch(private val images: ChatImageGenerator, private val pause: 
                     // The shared generation gate can wait behind another task after this loop's check.
                     if (!active()) throw ChatFailure("用户已停止后续图片，本张未发送")
                     if (images.authorizationKey() != account) throw ChatFailure("账号已改变，本张未发送")
-                    if (images.quote(params[index]) != approvedQuote) throw ChatFailure("等待发送期间费用变化，本张未发送；请重新确认计划")
+                    if (!full && images.quote(params[index]) != approvedQuote) throw ChatFailure("等待发送期间费用变化，本张未发送；请重新确认计划")
                 }) { image ->
                     if (output.none { it.imageId == image.imageId }) { output += image; onImage(image) }
                 }

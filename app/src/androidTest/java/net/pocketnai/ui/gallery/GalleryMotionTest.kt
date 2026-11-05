@@ -22,6 +22,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
@@ -125,6 +130,9 @@ class GalleryMotionTest {
         var labId by mutableStateOf("lab-running")
         var labOpened = false
         var finished = false
+        var showFilters by mutableStateOf(false)
+        var filter by mutableStateOf(GalleryFilter.None)
+        var filterFontScale by mutableFloatStateOf(1f)
         lateinit var motion: ImageMotionState
         compose.mainClock.autoAdvance = false
         try {
@@ -132,6 +140,21 @@ class GalleryMotionTest {
                 MaterialTheme {
                     ImageMotionRoot {
                         motion = LocalImageMotion.current!!
+                        if (showFilters) {
+                            // Dialog/Popup have their own density owner; scale typography explicitly
+                            // so the large-text pass really changes text inside both windows.
+                            val typography = MaterialTheme.typography
+                            fun larger(style: androidx.compose.ui.text.TextStyle) = style.copy(
+                                fontSize = style.fontSize * filterFontScale, lineHeight = style.lineHeight * filterFontScale)
+                            MaterialTheme(typography = typography.copy(titleLarge = larger(typography.titleLarge),
+                                bodyLarge = larger(typography.bodyLarge), bodyMedium = larger(typography.bodyMedium),
+                                labelLarge = larger(typography.labelLarge))) {
+                                GalleryFilterDialog(filter, { filter = filter.copy(modelApiIds = it) },
+                                    { filter = filter.copy(mode = it) }, { filter = filter.copy(favoritesOnly = it) },
+                                    { filter = GalleryFilter.None }, {}, { showFilters = false })
+                            }
+                            return@ImageMotionRoot
+                        }
                         if (showLab) {
                             net.pocketnai.ui.artistlab.ArtistLabResultImage(
                                 labId, 0, labStatus, labImage, 832f / 1216f, { file }, { labOpened = true },
@@ -313,6 +336,46 @@ class GalleryMotionTest {
             compose.onNodeWithText("结果待确认").assertExists()
             compose.onAllNodesWithContentDescription("生成中").assertCountEquals(0)
             compose.onAllNodesWithContentDescription("图片已就绪").assertCountEquals(0)
+            // Compare actual screen coordinates across separate dialog/popup windows.
+            compose.mainClock.autoAdvance = true
+            fun screenBounds(tag: String): Rect {
+                val coordinates = compose.onNodeWithTag(tag).fetchSemanticsNode().layoutInfo.coordinates
+                return compose.runOnIdle { Rect(coordinates.localToScreen(Offset.Zero),
+                    Size(coordinates.size.width.toFloat(), coordinates.size.height.toFloat())) }
+            }
+            val flare = net.pocketnai.domain.openai.OpenAiImageParams.FLARE
+            val sunburst = net.pocketnai.domain.openai.OpenAiImageParams.SUNBURST
+            for (fontScale in listOf(1f, 1.35f)) {
+                compose.runOnUiThread { showFilters = true; filter = GalleryFilter.None; filterFontScale = fontScale }
+                compose.mainClock.advanceTimeBy(500)
+                val dialog = screenBounds("gallery-filter-dialog")
+                val anchor = screenBounds("gallery-model-anchor")
+                val modeAnchor = screenBounds("gallery-mode-anchor")
+                compose.onNodeWithText("全部模型").performClick()
+                compose.mainClock.advanceTimeBy(500)
+                val menu = screenBounds("gallery-model-menu")
+                for (model in listOf(flare, sunburst, flare, sunburst)) {
+                    compose.onNodeWithTag("gallery-model-$model").performScrollTo().performClick()
+                    compose.mainClock.advanceTimeBy(400)
+                    assertThat(screenBounds("gallery-filter-dialog")).isEqualTo(dialog)
+                    assertThat(screenBounds("gallery-model-anchor")).isEqualTo(anchor)
+                    assertThat(screenBounds("gallery-mode-anchor")).isEqualTo(modeAnchor)
+                    assertThat(screenBounds("gallery-model-menu")).isEqualTo(menu)
+                    if (filter.modelApiIds == setOf(sunburst)) {
+                        compose.mainClock.advanceTimeBy(400)
+                        compose.waitForIdle()
+                        android.os.SystemClock.sleep(150)
+                        val command = "screencap -p /data/local/tmp/pocketnai-filter-${if (fontScale == 1f) "normal" else "large"}.png"
+                        android.os.ParcelFileDescriptor.AutoCloseInputStream(
+                            InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)).use { it.readBytes() }
+                    }
+                }
+                println("FILTER_STABLE textScale=$fontScale dialog=$dialog anchor=$anchor menu=$menu")
+                compose.onAllNodesWithText("全部模型").onLast().performClick()
+                compose.mainClock.advanceTimeBy(300)
+                compose.runOnUiThread { showFilters = false }
+                compose.mainClock.advanceTimeBy(300)
+            }
             compose.runOnUiThread { labId = "lab-history"; labImage = image("historical", now); labStatus = "SUCCEEDED" }
             compose.mainClock.advanceTimeBy(300)
             compose.onAllNodesWithContentDescription("生成中").assertCountEquals(0)

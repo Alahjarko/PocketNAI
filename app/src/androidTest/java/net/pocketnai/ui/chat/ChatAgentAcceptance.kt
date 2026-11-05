@@ -34,6 +34,7 @@ internal class ChatAgentAcceptance(base: Context, val image: File) {
     private val store = ChatStore(database.chatConversationDao())
     var generated = 0
     var searches = 0
+    var plannedCount = 3
     var failOn = -1
     var gate: CompletableDeferred<Unit>? = null
     val viewModel = ChatViewModel(settings, object : ChatClient {
@@ -45,8 +46,12 @@ internal class ChatAgentAcceptance(base: Context, val image: File) {
             val current = messages.drop(messages.indexOfLast { it.string("role") == "user" } + 1)
             val count = current.count { it.string("role") == "tool" }
             val name = if (count == 0) "web_search" else "generate_images"
-            val arguments = if (count == 0) """{"query":"forest traveler official costume"}""" else
-                """{"images":[{"prompt":"sfw, quiet forest","negative_prompt":"lowres"},{"prompt":"sfw, sunset coast","negative_prompt":"lowres"},{"prompt":"sfw, mountain village","negative_prompt":"lowres"}]}"""
+            val arguments = if (count == 0) """{"query":"forest traveler official costume"}""" else buildJsonObject {
+                put("images", buildJsonArray { repeat(plannedCount) { index -> add(buildJsonObject {
+                    put("prompt", listOf("sfw, quiet forest", "sfw, sunset coast", "sfw, mountain village").getOrElse(index) { "sfw, landscape panel ${index + 1}" })
+                    put("negative_prompt", "lowres")
+                }) } })
+            }.toString()
             return if (count >= 2) wireMessage("assistant", "已整理本次创作结果，请查看图片与来源。")
             else buildJsonObject {
                 put("role", "assistant"); put("content", if (count == 0) "先核对角色资料。" else "准备三张独立分镜。")
@@ -82,6 +87,7 @@ internal class ChatAgentAcceptance(base: Context, val image: File) {
         assertThat(saved.entries.toString()).doesNotContain("test-only-search-placeholder")
         assertThat(saved.recoverInterruptedTools()).isEqualTo(saved)
     }
+    fun savedPermission() = LlmSettingsStore(context).config.value.effectiveToolPermission
     fun close() {
         viewModel.viewModelScope.cancel()
         database.close()

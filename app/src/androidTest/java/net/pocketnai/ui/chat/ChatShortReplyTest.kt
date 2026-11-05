@@ -41,6 +41,7 @@ class ChatShortReplyTest {
         var streaming by mutableStateOf(false)
         var jumpVisible by mutableStateOf(false)
         var agent by mutableStateOf<ChatAgentAcceptance?>(null)
+        var agentFontScale by mutableFloatStateOf(1f)
         val file = File(compose.activity.cacheDir, "chat-motion-${UUID.randomUUID()}.png")
         Bitmap.createBitmap(400, 1000, Bitmap.Config.ARGB_8888).let { bitmap ->
             bitmap.eraseColor(android.graphics.Color.BLUE)
@@ -62,7 +63,10 @@ class ChatShortReplyTest {
                 MaterialTheme {
                     ImageMotionRoot {
                         if (agent != null) {
-                            ChatScreen(agent!!.viewModel, { agent!!.image }, {})
+                            CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(
+                                androidx.compose.ui.platform.LocalDensity.current.density, agentFontScale)) {
+                                ChatScreen(agent!!.viewModel, { agent!!.image }, {})
+                            }
                             return@ImageMotionRoot
                         }
                         motion = LocalImageMotion.current!!
@@ -248,8 +252,20 @@ class ChatShortReplyTest {
             assertThat(fixture.generated).isEqualTo(0)
             assertThat(fixture.searches).isEqualTo(1)
             compose.onNodeWithTag("chat-confirm-image").performScrollTo().assertIsDisplayed()
+            // Every row remains complete; its whole surface opens the correct parameters.
+            for (index in 1..3) {
+                compose.onNodeWithTag("chat-plan-image-$index").performScrollTo().assertIsDisplayed().performClick()
+                compose.onNodeWithText("第 $index 张参数").assertIsDisplayed()
+                compose.onNodeWithText("关闭全文").performClick()
+            }
+            compose.onNodeWithTag("chat-confirm-image").performScrollTo()
+            val lastPlanRow = compose.onNodeWithTag("chat-plan-image-3").fetchSemanticsNode().boundsInRoot
+            val confirm = compose.onNodeWithTag("chat-confirm-image").fetchSemanticsNode().boundsInRoot
+            assertThat(lastPlanRow.bottom).isAtMost(confirm.top)
+            assertThat(lastPlanRow.height).isGreaterThan(100f)
             compose.onNodeWithText("本次 3 张 · 合计预计 6 Anlas").assertIsDisplayed()
-            shell("screencap -p /data/local/tmp/pocketnai-agent-plan.png")
+            compose.mainClock.advanceTimeBy(400); compose.waitForIdle(); android.os.SystemClock.sleep(150)
+            shell("screencap -p /data/local/tmp/pocketnai-agent-plan-fixed.png")
             compose.onNodeWithTag("chat-confirm-image").performClick()
             compose.waitUntil(15_000) { !fixture.viewModel.state.value.busy }
             assertThat(fixture.generated).isEqualTo(3)
@@ -273,6 +289,40 @@ class ChatShortReplyTest {
             compose.waitUntil(10_000) { !fixture.viewModel.state.value.busy }
             assertThat(fixture.generated).isEqualTo(6)
             fixture.verifySaved(1)
+            // The saved FULL mode is exercised through the real settings UI and ViewModel.
+            compose.onNodeWithContentDescription("对话菜单").performClick()
+            compose.onNodeWithText("连接与人格").performClick()
+            compose.onNodeWithText("完全允许").performScrollTo().performClick()
+            compose.mainClock.advanceTimeBy(400); compose.waitForIdle(); android.os.SystemClock.sleep(150)
+            shell("screencap -p /data/local/tmp/pocketnai-agent-full-permission.png")
+            compose.onNodeWithText("保存").performClick()
+            assertThat(fixture.savedPermission()).isEqualTo(net.pocketnai.domain.chat.ChatToolPermission.FULL)
+            fixture.gate = null
+            compose.runOnUiThread { fixture.viewModel.newConversation(); fixture.viewModel.send("直接完成三张分镜") }
+            compose.waitUntil(15_000) {
+                assertThat(fixture.viewModel.state.value.pending).isNull()
+                !fixture.viewModel.state.value.busy
+            }
+            assertThat(fixture.generated).isEqualTo(9)
+            fixture.verifySaved(3)
+            compose.runOnUiThread {
+                agentFontScale = 1.35f
+                fixture.plannedCount = 12
+                fixture.viewModel.saveConfig(fixture.viewModel.config.value.copy(toolPermission = net.pocketnai.domain.chat.ChatToolPermission.ASK), "")
+                fixture.viewModel.newConversation(); fixture.viewModel.send("规划十二张风景，先让我核对")
+            }
+            compose.waitUntil(5000) { fixture.viewModel.state.value.pending != null }
+            compose.onNodeWithTag("chat-plan-image-12").performScrollTo().assertIsDisplayed().performClick()
+            compose.onNodeWithText("第 12 张参数").assertIsDisplayed()
+            compose.onNodeWithText("关闭全文").performClick()
+            compose.onNodeWithTag("chat-confirm-image").performScrollTo().assertIsDisplayed()
+            assertThat(compose.onNodeWithTag("chat-plan-image-12").fetchSemanticsNode().boundsInRoot.bottom)
+                .isAtMost(compose.onNodeWithTag("chat-confirm-image").fetchSemanticsNode().boundsInRoot.top)
+            compose.mainClock.advanceTimeBy(400); compose.waitForIdle(); android.os.SystemClock.sleep(150)
+            shell("screencap -p /data/local/tmp/pocketnai-agent-plan-twelve-large.png")
+            compose.runOnUiThread { fixture.viewModel.stop() }
+            compose.waitUntil(5000) { !fixture.viewModel.state.value.busy }
+            assertThat(fixture.generated).isEqualTo(9)
         } finally {
             compose.runOnUiThread { agent?.close(); agent = null }
             shell("ime set $previousIme"); shell("ime disable $helperIme")

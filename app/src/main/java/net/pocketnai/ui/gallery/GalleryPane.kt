@@ -16,8 +16,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -68,6 +69,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -475,7 +479,6 @@ fun GalleryPane(
  * 最后一个被右边缘裁掉，而且"能横滚"没有任何视觉提示（2026-09-21 界面减负）：
  * 模型/模式/仅收藏收进筛选对话框，多选收进同一对话框与长按菜单。
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun GalleryFilterBar(
     filter: GalleryFilter,
@@ -487,10 +490,6 @@ private fun GalleryFilterBar(
     onEnterSelectionMode: () -> Unit,
 ) {
     var queryField by remember { mutableStateOf(TextFieldValue(filter.query)) }
-
-    // 模式名要先算成字符串：optionLabel 不是 @Composable，里面调不了 stringResource。
-    val modeOptions = GenerationMode.entries
-    val modeLabels = modeOptions.associateWith { stringResource(it.labelRes()) }
 
     var filterDialogOpen by remember { mutableStateOf(false) }
 
@@ -555,83 +554,72 @@ private fun GalleryFilterBar(
     }
 
     if (filterDialogOpen) {
-        AlertDialog(
-            onDismissRequest = { filterDialogOpen = false },
-            title = { Text(stringResource(R.string.gallery_filter_title)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = filter.favoritesOnly,
-                            onClick = { onFavoritesOnlyChange(!filter.favoritesOnly) },
-                            label = { Text(stringResource(R.string.gallery_filter_favorites)) },
-                            leadingIcon = if (filter.favoritesOnly) {
-                                {
-                                    Icon(
-                                        imageVector = Icons.Default.Favorite,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(FilterChipDefaults.IconSize),
-                                    )
-                                }
-                            } else {
-                                null
-                            },
-                        )
-                        GalleryModelFilterChip(filter.modelApiIds, onModelsChange)
-                        FilterMenuChip(
-                            allLabel = stringResource(R.string.gallery_filter_all_modes),
-                            selectedLabel = filter.mode?.let { modeLabels[it] },
-                            options = modeOptions,
-                            optionLabel = { modeLabels.getValue(it) },
-                            onSelect = onModeChange,
-                        )
-                    }
-                    TextButton(
-                        onClick = {
-                            filterDialogOpen = false
-                            onEnterSelectionMode()
-                        },
-                    ) {
-                        Icon(Icons.Default.Checklist, contentDescription = null)
-                        Text(
-                            text = stringResource(R.string.action_batch_mode),
-                            modifier = Modifier.padding(start = 4.dp),
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { filterDialogOpen = false }) {
-                    Text(stringResource(R.string.action_done))
-                }
-            },
-            dismissButton = if (filter.isActive) {
-                {
-                    TextButton(
-                        onClick = {
-                            queryField = TextFieldValue("")
-                            onClearAll()
-                        },
-                    ) {
-                        Text(stringResource(R.string.gallery_filter_clear))
-                    }
-                }
-            } else {
-                null
-            },
-        )
+        GalleryFilterDialog(filter, onModelsChange, onModeChange, onFavoritesOnlyChange,
+            onClearAll = { queryField = TextFieldValue(""); onClearAll() },
+            onEnterSelectionMode = { filterDialogOpen = false; onEnterSelectionMode() },
+            onDismiss = { filterDialogOpen = false })
     }
+}
+
+@Composable
+internal fun GalleryFilterDialog(
+    filter: GalleryFilter,
+    onModelsChange: (Set<String>) -> Unit,
+    onModeChange: (GenerationMode?) -> Unit,
+    onFavoritesOnlyChange: (Boolean) -> Unit,
+    onClearAll: () -> Unit,
+    onEnterSelectionMode: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val modeOptions = GenerationMode.entries
+    val modeLabels = modeOptions.associateWith { stringResource(it.labelRes()) }
+    AlertDialog(
+        modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth(0.9f).testTag("gallery-filter-dialog"),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.gallery_filter_title)) },
+        text = {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                GalleryModelFilterChip(filter.modelApiIds, onModelsChange)
+                FilterMenuChip(
+                    allLabel = stringResource(R.string.gallery_filter_all_modes),
+                    selectedLabel = filter.mode?.let { modeLabels[it] },
+                    options = modeOptions,
+                    optionLabel = { modeLabels.getValue(it) },
+                    onSelect = onModeChange,
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    FilterChip(
+                        selected = filter.favoritesOnly,
+                        onClick = { onFavoritesOnlyChange(!filter.favoritesOnly) },
+                        label = { Text(stringResource(R.string.gallery_filter_favorites)) },
+                        leadingIcon = { Icon(Icons.Default.Favorite, null, Modifier.size(FilterChipDefaults.IconSize)) },
+                    )
+                    TextButton(onClick = onEnterSelectionMode) {
+                        Icon(Icons.Default.Checklist, contentDescription = null)
+                        Text(stringResource(R.string.action_batch_mode), Modifier.padding(start = 4.dp))
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_done)) } },
+        dismissButton = {
+            TextButton(onClick = onClearAll, enabled = filter.isActive) {
+                Text(stringResource(R.string.gallery_filter_clear))
+            }
+        },
+    )
 }
 
 @Composable
 internal fun GalleryModelFilterChip(modelApiIds: Set<String>, onSelect: (Set<String>) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     val all = stringResource(R.string.gallery_filter_all_models)
-    Box {
-        FilterChip(selected = modelApiIds.isNotEmpty(), onClick = { expanded = true },
-            label = { Text(when (modelApiIds.size) { 0 -> all; 1 -> GalleryModels.labelOf(modelApiIds.single()); else -> "${modelApiIds.size} 个模型" }) },
-            trailingIcon = { Icon(Icons.Default.ArrowDropDown, null, Modifier.size(FilterChipDefaults.IconSize)) })
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+    Box(Modifier.fillMaxWidth().testTag("gallery-model-anchor")) {
+        FilterChip(selected = modelApiIds.isNotEmpty(), onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(),
+            label = { FilterValue(when (modelApiIds.size) { 0 -> all; 1 -> GalleryModels.labelOf(modelApiIds.single()); else -> "${modelApiIds.size} 个模型" }) })
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.testTag("gallery-model-menu")) {
             GalleryModelOptions(modelApiIds, onSelect, onDone = { expanded = false })
         }
     }
@@ -641,7 +629,7 @@ internal fun GalleryModelFilterChip(modelApiIds: Set<String>, onSelect: (Set<Str
 internal fun GalleryModelOptions(modelApiIds: Set<String>, onSelect: (Set<String>) -> Unit, onDone: () -> Unit) {
     DropdownMenuItem(text = { Text(stringResource(R.string.gallery_filter_all_models)) }, onClick = { onSelect(emptySet()); onDone() })
     GalleryModels.apiIds.forEach { id ->
-        DropdownMenuItem(text = { Text(GalleryModels.labelOf(id)) },
+        DropdownMenuItem(text = { Text(GalleryModels.labelOf(id)) }, modifier = Modifier.testTag("gallery-model-$id"),
             leadingIcon = { Checkbox(checked = id in modelApiIds, onCheckedChange = null) },
             onClick = { onSelect(if (id in modelApiIds) modelApiIds - id else modelApiIds + id) })
     }
@@ -670,18 +658,12 @@ private fun <T> FilterMenuChip(
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    Box {
+    Box(Modifier.fillMaxWidth().testTag("gallery-mode-anchor")) {
         FilterChip(
+            modifier = Modifier.fillMaxWidth(),
             selected = selectedLabel != null,
             onClick = { expanded = true },
-            label = { Text(selectedLabel ?: allLabel) },
-            trailingIcon = {
-                Icon(
-                    imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = null,
-                    modifier = Modifier.size(FilterChipDefaults.IconSize),
-                )
-            },
+            label = { FilterValue(selectedLabel ?: allLabel) },
         )
         DropdownMenu(
             expanded = expanded,
@@ -704,6 +686,14 @@ private fun <T> FilterMenuChip(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun FilterValue(text: String) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(text, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Icon(Icons.Default.ArrowDropDown, null, Modifier.size(FilterChipDefaults.IconSize))
     }
 }
 

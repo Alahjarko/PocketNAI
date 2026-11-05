@@ -6,6 +6,9 @@ import kotlinx.serialization.json.*
 @Serializable
 enum class LlmDialect { AUTO, KIMI, DEEPSEEK, OPENAI_COMPATIBLE }
 
+@Serializable
+enum class ChatToolPermission { ASK, SINGLE_IMAGE, FULL }
+
 /** 密钥单独通过 Keystore 保存，不属于可序列化配置。 */
 @Serializable
 data class LlmConfig(
@@ -16,7 +19,12 @@ data class LlmConfig(
     val maxTokens: Int = 16384,
     val autoGenerate: Boolean = false,
     val assistantName: String = "绘伴",
-)
+    val toolPermission: ChatToolPermission? = null,
+) {
+    // Existing installations retain their old behavior; FULL is never inferred during migration.
+    val effectiveToolPermission: ChatToolPermission get() = toolPermission
+        ?: if (autoGenerate) ChatToolPermission.SINGLE_IMAGE else ChatToolPermission.ASK
+}
 
 @Serializable
 data class ChatImage(val imageId: String, val relativePath: String, val width: Int, val height: Int)

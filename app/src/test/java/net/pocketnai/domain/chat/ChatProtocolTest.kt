@@ -143,7 +143,7 @@ class ChatProtocolTest {
         val confirmations = mutableListOf<ChatImagePlan>()
         val saved = mutableListOf<List<ChatImage>>()
         val batch = ChatImageBatch(fake)
-        val result = batch.execute((1..3).map { base.copy(prompt = "panel-$it") }, autoSingle = true,
+        val result = batch.execute((1..3).map { base.copy(prompt = "panel-$it") }, permission = ChatToolPermission.SINGLE_IMAGE,
             confirm = { confirmations += it; assertThat(calls.size).isEqualTo(if (it.changed) 1 else 0); true }, active = { active },
             onProgress = { _, _, _ -> }, onImage = {}, checkpoint = { saved += it })
         assertThat(confirmations).hasSize(2) // Auto-single never authorizes a multi-image plan.
@@ -156,23 +156,39 @@ class ChatProtocolTest {
         assertThat(result.message).contains("TIMEOUT_UNCERTAIN")
         assertThat(saved.first()).hasSize(1)
         assertThat(batch.remaining).isEqualTo(0)
-        assertThat(runCatching { batch.execute(listOf(base), true, { true }, { true }, { _, _, _ -> }, {}, {}) }.isFailure).isTrue()
+        assertThat(runCatching { batch.execute(listOf(base), ChatToolPermission.SINGLE_IMAGE, { true }, { true }, { _, _, _ -> }, {}, {}) }.isFailure).isTrue()
         assertThat(calls).hasSize(2)
 
         calls.clear(); failAt = -1
-        val cancelled = ChatImageBatch(fake).execute(listOf(base, base), false, { false }, { true }, { _, _, _ -> }, {}, {})
+        val cancelled = ChatImageBatch(fake).execute(listOf(base, base), ChatToolPermission.ASK, { false }, { true }, { _, _, _ -> }, {}, {})
         assertThat(cancelled.status).isEqualTo("cancelled"); assertThat(calls).isEmpty()
-        val changed = ChatImageBatch(fake).execute(listOf(base, base), false, { account = "different"; true }, { true }, { _, _, _ -> }, {}, {})
+        val changed = ChatImageBatch(fake).execute(listOf(base, base), ChatToolPermission.ASK, { account = "different"; true }, { true }, { _, _, _ -> }, {}, {})
         assertThat(changed.status).isEqualTo("cancelled"); assertThat(calls).isEmpty()
-        val stopped = ChatImageBatch(fake).execute(listOf(base, base), false, { true }, { active }, { _, _, _ -> }, { active = false }, {})
+        val stopped = ChatImageBatch(fake).execute(listOf(base, base), ChatToolPermission.ASK, { true }, { active }, { _, _, _ -> }, { active = false }, {})
         assertThat(stopped.status).isEqualTo("cancelled"); assertThat(stopped.images).hasSize(1); assertThat(calls).hasSize(1)
         calls.clear(); active = true
         val successful = ChatImageBatch(fake)
-        val all = successful.execute(List(12) { base }, false, { true }, { true }, { _, _, _ -> }, {}, {})
+        val all = successful.execute(List(12) { base }, ChatToolPermission.ASK, { true }, { true }, { _, _, _ -> }, {}, {})
         assertThat(all.images).hasSize(12); assertThat(successful.remaining).isEqualTo(0)
         calls.clear(); beforeRequest = { priceChange = 5 }
-        val queued = ChatImageBatch(fake).execute(listOf(base), true, { true }, { true }, { _, _, _ -> }, {}, {})
+        val queued = ChatImageBatch(fake).execute(listOf(base), ChatToolPermission.SINGLE_IMAGE, { true }, { true }, { _, _, _ -> }, {}, {})
         assertThat(queued.message).contains("等待发送期间费用变化")
         assertThat(calls).isEmpty() // A changed quote during gate waiting never reaches the API.
+        // FULL authorizes the bounded message, including price changes, without plan dialogs.
+        calls.clear(); priceChange = 0; beforeRequest = { priceChange = 5 }; failAt = -1
+        val full = ChatImageBatch(fake)
+        val fullResult = full.execute(List(12) { base }, ChatToolPermission.FULL,
+            { error("FULL must not request confirmation") }, { true }, { _, _, _ -> }, {}, {})
+        assertThat(fullResult.images).hasSize(12)
+        assertThat(full.remaining).isEqualTo(0)
+        assertThat(runCatching { full.execute(listOf(base), ChatToolPermission.FULL, { true }, { true }, { _, _, _ -> }, {}, {}) }.isFailure).isTrue()
+        calls.clear(); failAt = 2
+        val fullFailed = ChatImageBatch(fake)
+        val failedResult = fullFailed.execute(List(3) { base }, ChatToolPermission.FULL,
+            { error("FULL must not request confirmation") }, { true }, { _, _, _ -> }, {}, {})
+        assertThat(failedResult.status).isEqualTo("failed")
+        assertThat(calls).hasSize(2); assertThat(fullFailed.remaining).isEqualTo(0)
+        assertThat(Json.decodeFromString<LlmConfig>("{} ").effectiveToolPermission).isEqualTo(ChatToolPermission.ASK)
+        assertThat(Json.decodeFromString<LlmConfig>("""{"autoGenerate":true}""").effectiveToolPermission).isEqualTo(ChatToolPermission.SINGLE_IMAGE)
     }
 }

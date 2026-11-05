@@ -39,7 +39,7 @@ object ImageChatTools {
 
     val schema = buildJsonArray {
         singleSchema.forEach(::add)
-        add(function("generate_images", "规划多张独立图片或漫画分镜，用户确认全部参数和费用后串行生成。每条消息最多 12 张，失败不重试。", buildJsonObject {
+        add(function("generate_images", "规划多张独立图片或漫画分镜，应用按用户选择的工具权限串行执行。每条消息最多 12 张，失败不重试。", buildJsonObject {
             put("images", buildJsonObject {
                 put("type", "array"); put("minItems", 1); put("maxItems", MAX_IMAGES)
                 put("items", singleSchema[1].jsonObject["function"]!!.jsonObject["parameters"]!!)

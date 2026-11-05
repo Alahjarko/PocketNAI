@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -65,10 +66,21 @@ fun ChatSettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
                 OutlinedTextField(tokensText, { value -> tokensText = value.filter(Char::isDigit).take(5); tokensText.toIntOrNull()?.let { config = config.copy(maxTokens = it) } },
                     label = { Text("最大输出 Tokens（含思考）") }, singleLine = true)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("自动执行图片工具", modifier = Modifier.weight(1f))
-                    Switch(config.autoGenerate, { config = config.copy(autoGenerate = it) })
+                    Text("工具权限", modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                    net.pocketnai.ui.common.InfoButton("每次确认：生成前核对计划。单图自动：仅第一张单图自动执行。完全允许：发送消息即授权本条最多12张图片及已开启的搜索，可能产生Anlas和搜索费用，报价变化或未知时也不再询问。可随时停止后续任务；失败不重试，重启不续跑。")
                 }
-                Text("开启后，发送消息允许自动生成第一张单图；多图计划始终确认数量和费用后执行，每条消息最多 12 张。可能消耗 Anlas。", style = MaterialTheme.typography.bodySmall)
+                Column {
+                    ChatToolPermission.entries.forEach { permission ->
+                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(selected = config.effectiveToolPermission == permission,
+                            role = androidx.compose.ui.semantics.Role.RadioButton,
+                            onClick = { config = config.copy(toolPermission = permission) }).padding(vertical = 4.dp),
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            RadioButton(config.effectiveToolPermission == permission, onClick = null)
+                            Text(when (permission) { ChatToolPermission.ASK -> "每次确认"; ChatToolPermission.SINGLE_IMAGE -> "单图自动"; ChatToolPermission.FULL -> "完全允许" })
+                        }
+                    }
+                }
                 TextButton(onClick = { searchSettings = true }) { Text("联网搜索 · DeepSeek / Tavily") }
                 Text("人格与工具说明", style = MaterialTheme.typography.labelLarge)
                 Row {

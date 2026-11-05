@@ -135,8 +135,17 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
         }.collect { (follow, count, distance) ->
             if (follow && count > 0 && distance > 0) {
                 try {
-                    if (distance == Int.MAX_VALUE) list.scrollToItem(count - 1)
-                    else list.scrollBy(distance.toFloat())
+                    // layoutInfo can publish while LazyColumn is still laying out its children.
+                    // Defer the scroll to a new frame and use fresh bounds, never re-enter layout.
+                    withFrameNanos { }
+                    if (!following || reading != null || dragging) return@collect
+                    val info = list.layoutInfo
+                    val last = info.visibleItemsInfo.lastOrNull() ?: return@collect
+                    if (last.index < info.totalItemsCount - 1) list.scrollToItem(info.totalItemsCount - 1)
+                    else {
+                        val remaining = last.offset + last.size + info.afterContentPadding - info.viewportEndOffset
+                        if (remaining > 0) list.scrollBy(remaining.toFloat())
+                    }
                 } catch (_: CancellationException) {
                     // User dragging wins the scroll mutex; the follow observer stays alive.
                     currentCoroutineContext().ensureActive()
@@ -200,7 +209,7 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                 ChatImagePlanCard(pending.plan, { viewModel.confirmImage(pending.callId, true) },
                     { viewModel.confirmImage(pending.callId, false) }, { title, text -> reading = title to text })
             } }
-            if (state.busy) item(key = "activity", contentType = "activity") { ChatReplyIndicator(state.phase) }
+            if (state.busy && state.pending == null) item(key = "activity", contentType = "activity") { ChatReplyIndicator(state.phase) }
             if (state.stoppingImages) item { Text("将在当前图片完成后停止，剩余图片不会发送", style = MaterialTheme.typography.bodySmall) }
             state.error?.let { error -> item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
