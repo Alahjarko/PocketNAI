@@ -65,11 +65,11 @@ internal fun ChatComposer(
                 leadingActions()
                 Spacer(Modifier.weight(1f))
                 FilledIconButton(onClick = if (busy) onStop else ({ keyboard?.hide(); onSend() }),
-                    enabled = if (busy) !generating else !importing && (value.text.isNotBlank() || hasAttachments),
+                    enabled = busy || (!importing && (value.text.isNotBlank() || hasAttachments)),
                     shape = CircleShape, modifier = Modifier.size(40.dp).testTag(if (busy) "chat-stop" else "chat-send")) {
                     Crossfade(busy, animationSpec = tween(120), label = "chat-send-stop") { stopping ->
                         Icon(if (stopping) Icons.Default.Stop else Icons.Default.ArrowUpward,
-                            if (stopping) "停止回复" else "发送", modifier = Modifier.size(22.dp))
+                            if (stopping && generating) "停止后续图片" else if (stopping) "停止回复" else "发送", modifier = Modifier.size(22.dp))
                     }
                 }
             }

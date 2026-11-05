@@ -10,6 +10,7 @@
 - `persistent-api-token.txt`、`local.properties` 已被 `.gitignore` 排除，不要把它们加进版本库。
 - Token 所在首选项文件固定叫 `pocketnai_secure`，必须与 `res/xml/backup_rules.xml`、`data_extraction_rules.xml` 的排除项保持一致。
 - LLM 的独立密钥使用 `pocketnai_llm` 与专用 Keystore alias，不能写入 NovelAI 凭据槽；连接、思考协议与真实联调的授权边界见[对话专题](chat.md)。
+- DeepSeek/Tavily搜索使用同一已排除备份的加密首选项中的独立密钥槽，绑定搜索服务地址；不自动使用LLM密钥。请求关闭重定向/自动重试/正文日志，只发送经过白名单验证的检索词。见[搜索服务](chat.md#搜索服务2026-11-05)。
 
 ## 网络
 

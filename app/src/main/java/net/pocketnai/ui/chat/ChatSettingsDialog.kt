@@ -32,6 +32,7 @@ fun ChatSettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
     var chooseModel by remember { mutableStateOf(false) }
     var tokensText by remember { mutableStateOf(config.maxTokens.toString()) }
     var editFile by remember { mutableStateOf<String?>(null) }
+    var searchSettings by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("对话连接") },
@@ -67,7 +68,8 @@ fun ChatSettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
                     Text("自动执行图片工具", modifier = Modifier.weight(1f))
                     Switch(config.autoGenerate, { config = config.copy(autoGenerate = it) })
                 }
-                Text("开启后，点击发送即授权模型在本条消息内最多生成一张图片；可能消耗 Anlas。关闭时先展示生成卡片。", style = MaterialTheme.typography.bodySmall)
+                Text("开启后，发送消息允许自动生成第一张单图；多图计划始终确认数量和费用后执行，每条消息最多 12 张。可能消耗 Anlas。", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { searchSettings = true }) { Text("联网搜索 · DeepSeek / Tavily") }
                 Text("人格与工具说明", style = MaterialTheme.typography.labelLarge)
                 Row {
                     TextButton(onClick = { editFile = "soul.md" }) { Text("编辑 soul.md") }
@@ -95,6 +97,7 @@ fun ChatSettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
         }, confirmButton = { TextButton(onClick = { chooseModel = false }) { Text("关闭") } })
     }
     editFile?.let { name -> AgentFileEditor(viewModel, name) { editFile = null } }
+    if (searchSettings) ChatSearchSettingsDialog(viewModel) { searchSettings = false }
 }
 
 @Composable

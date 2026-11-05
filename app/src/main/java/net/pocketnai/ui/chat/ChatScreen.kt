@@ -197,19 +197,11 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                     { title, text -> reading = title to text }, { viewingAttachment = it })
             } }
             state.pending?.let { pending -> item {
-                Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("准备生成一张图片", style = MaterialTheme.typography.titleSmall)
-                        Text("${pending.params.model.displayName} · ${pending.params.size.label} · ${pending.quote}", style = MaterialTheme.typography.bodySmall)
-                        SelectionContainer { Text(pending.params.prompt, maxLines = 4, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall) }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { viewModel.confirmImage(true) }, modifier = Modifier.testTag("chat-confirm-image")) { Text("生成图片") }
-                            TextButton(onClick = { viewModel.confirmImage(false) }) { Text("取消") }
-                        }
-                    }
-                }
+                ChatImagePlanCard(pending.plan, { viewModel.confirmImage(pending.callId, true) },
+                    { viewModel.confirmImage(pending.callId, false) }, { title, text -> reading = title to text })
             } }
             if (state.busy) item(key = "activity", contentType = "activity") { ChatReplyIndicator(state.phase) }
+            if (state.stoppingImages) item { Text("将在当前图片完成后停止，剩余图片不会发送", style = MaterialTheme.typography.bodySmall) }
             state.error?.let { error -> item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
@@ -390,6 +382,12 @@ fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenIm
         }
         if (entry.role == "tool") {
             entry.notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+            entry.sources.forEach { source ->
+                if (ChatSearchTool.safeUrl(source.url) != null) TextButton(onClick = { runCatching { uriHandler.openUri(source.url) } }) {
+                    Text(source.title.ifBlank { source.url }, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
         } else {
             if (entry.reasoning.isNotBlank()) {
                 var expanded by remember(entry.id) { mutableStateOf(false) }

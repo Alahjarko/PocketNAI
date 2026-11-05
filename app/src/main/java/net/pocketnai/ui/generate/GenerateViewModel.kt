@@ -1542,16 +1542,11 @@ class GenerateViewModel(
     }
 
     /** 对话独立参数快照，与首页共用生成锁、计费和仓库，不覆盖用户草稿。 */
-    suspend fun quoteForChat(params: GenerationParams): String {
+    suspend fun quoteForChat(params: GenerationParams): net.pocketnai.domain.chat.ChatImageQuote {
         val estimate = costCalculator.estimate(pricingContextOf(
             UiState(params = params), accountBalanceRepository.state.value, settingsStore.subscriptionOverride.value,
         ))
-        return when (estimate) {
-            is GenerationCostEstimate.Free -> "当前报价免费"
-            is GenerationCostEstimate.UsesV5Allowance -> "使用 V5 额度"
-            is GenerationCostEstimate.EstimatedAnlas -> "预计 ${estimate.batchTotal} Anlas"
-            else -> "费用待确认，以服务端为准"
-        }
+        return net.pocketnai.domain.chat.ChatImageQuote.from(estimate)
     }
 
     fun reserveArtistLab(): Boolean {
@@ -1591,7 +1586,10 @@ class GenerateViewModel(
     suspend fun generateForChat(
         params: GenerationParams,
         onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit,
-    ): List<net.pocketnai.domain.chat.ChatImage> = generateIsolated(params, onImage, "对话生成")
+        expectedAccountFingerprint: String?,
+        beforeSend: suspend () -> Unit,
+    ): List<net.pocketnai.domain.chat.ChatImage> = generateIsolated(params, onImage, "对话生成",
+        expectedAccountFingerprint = expectedAccountFingerprint, templatesResolved = true, verifySend = beforeSend)
 
     private suspend fun generateIsolated(
         params: GenerationParams,
@@ -1601,6 +1599,7 @@ class GenerateViewModel(
         fromArtistLab: Boolean = false,
         expectedAccountFingerprint: String? = null,
         templatesResolved: Boolean = false,
+        verifySend: suspend () -> Unit = {},
     ): List<net.pocketnai.domain.chat.ChatImage> {
         if (_state.value.inFlight || _state.value.externalGenerationActive || _state.value.referenceBusy || (_state.value.artistLabActive && !fromArtistLab))
             throw net.pocketnai.domain.chat.ChatFailure("另一个图片任务正在执行，请等待完成")
@@ -1614,7 +1613,7 @@ class GenerateViewModel(
                 awaitStartup()
                 naiGenerationGate.run {
                     repository.generate(GenerationRequest(params = params), params.prompt, expectedAccountFingerprint,
-                        beforeSend = { if (fromArtistLab) onStarted(it) }, templatesResolved = templatesResolved).collect { event ->
+                        beforeSend = { verifySend(); if (fromArtistLab) onStarted(it) }, templatesResolved = templatesResolved).collect { event ->
                         when (event) {
                             is GenerationEvent.Final -> {
                                 val image = event.image

@@ -31,17 +31,26 @@
 - 不传 `temperature`，避免固定温度的思考模型拒绝请求。
 - SSE 同时聚合正文、`reasoning_content`、`reasoning_details` 与分片 `tool_calls`。空的思考字段也保留，不能把“工具阶段没有思考文本”误判成未开启思考。
 - 历史 assistant 消息连同思考与原始工具 ID 一起回传，tool 消息用 `tool_call_id` 与之配对。只有完整终止的回复才执行工具；截断、断流不执行半截参数。
-- 只提供 `get_generation_settings` 与 `generate_image`，不暴露登录、令牌、文件删除、超分、参考图编码等能力。工具参数必须通过白名单与模型参数验证。
+- 提供 `get_generation_settings`、`generate_image`、`generate_images`；搜索配置有效且启用时额外提供 `web_search`。不暴露登录、令牌、文件删除、超分、参考图编码等能力。工具参数必须通过白名单与模型参数验证。
 
 ## 图片执行与数据
 
-- 默认先显示参数和报价卡片，由用户点击“生成图片”。用户主动开启“自动执行图片工具”后，发送一次消息授权该条消息内最多执行一次图片生成。
-- 上限在代码中计数；失败或超时同样用掉本条消息的预算，模型不能自行重试。对话最多 6 次 LLM 工具轮次，不自动续跑无限任务。
+- 默认先显示参数和报价卡片，由用户确认生成。自动执行开关仅授权本条消息的第一张单图；`generate_images` 即使只列一项也必须显示计划确认，不能借自动开关跳过。
+- 2026-11-05：每条消息最多12张，计划中每项为独立单张参数，整个数组先校验，再冻结本地宏与旧随机提示词。确认卡展示数量、逐项模型/画布/提示词/报价，可查看完整参数；已知 Anlas 相加，V5 额度和未知费用单列，不伪造总价。多图按顺序执行，间隔至少1秒；每张前复核当前账号、报价与用户停止状态，费用分类/金额改变时重新确认剩余计划。使用现有 `GenerationRepository` 的账号指纹校验防止切号竞态。
+- `ChatImageBatch` 每条消息独立计数，失败/超时消耗尝试预算并封锁本条消息的后续生成；取消计划也停止该消息的生图。生成完成逐张持久化图片索引；活动预览转移到工具结果时不重复保存。停止按钮可以停止尚未发送的图片，当前请求收尾后保存结果，不取消或重发已发送的请求。进程中断只补工具结果，不恢复计划。最多12次 LLM 工具轮次。
 - 角色工具支持use_coords；省略坐标默认AI安排，明确传坐标默认手动，数量按模型6/32限制。质量词、负向预设、宏与旧随机语法走统一生成仓库。
 - `GenerateViewModel.generateForChat` 与首页共用 `inFlight`，复用原来的 `GenerationRepository`、Seed、图库与余额流水。对话参数独立快照，不覆盖首页草稿；不擅自附加参考图。
-- 真实图片任务启动后不可取消。停止按钮只停止 LLM 回复或等待确认的任务。
+- 已发送的真实图片任务不可取消；停止按钮可停止LLM、等待确认或本张完成后的后续图片。
 - Room schema 9 只增加 `chat_conversations`；对话保存消息、思考、工具关系与图片索引，原图片表保持不变。删除对话只删对话；从图库删图后对话显示图片已移除。
 - 进程重启只补齐中断工具的结果，不重新执行生成。用户需要发送新消息才能发起下一次操作。
+
+## 搜索服务（2026-11-05）
+
+- “连接与人格 → 联网搜索”选择 DeepSeek 或 Tavily，独立于聊天模型。默认关闭；搜索 Key 使用既有 `SecretBox` 加密后存于已排除备份的 `pocketnai_llm`，与聊天 Key 分槽、绑定 Base URL，更换服务/地址须填写对应 Key；不回显，不用 rememberSaveable，不自动借用聊天密钥。
+- Tavily：POST `<base>/search`，Bearer，`query`、basic、max_results=5，关闭 auto_parameters/answer/raw_content/images。DeepSeek：默认 `https://api.deepseek.com/v1` 后追加 `tools/search`；官方根地址也兼容，传 `query`、count=5、need_content=false。不上传原问题、历史、附件、位置；检索词最多128 Unicode字符。模型不能改请求端点或传任意参数。
+- 用户开启后，每条消息最多6个不同检索词，失败后该消息停止搜索，无自动重试/重定向/正文日志；客户端不走NovelAI代理。响应最多512KiB、5条来源，每条标题200字符、摘要2000字符，URL只允许无内嵌凭据的http/https。DeepSeek读summary（回落snippet），Tavily读content；认证值进入展示/上下文/历史前清理。
+- 来源标题、URL、摘要作为tool数据回传，并在聊天显示可点击来源；只在用户点链接时打开外部页面，不下载图像、不自动附成参考图。系统说明和结果中标记网页为参考资料，不能授予生成权限。搜索改善角色资料检索，不保证模型识别或跨图角色一致性。
+- 协议依据：[DeepSeek Search](https://api-docs.deepseek.com/guides/search/)、[Tavily Search](https://docs.tavily.com/documentation/api-reference/endpoint/search)。按搜索服务规则收费；不把提供商当前价格硬编码为应用保证。
 
 ## 长文与动画
 

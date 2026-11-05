@@ -40,6 +40,7 @@ class ChatShortReplyTest {
         var replyText by mutableStateOf(text)
         var streaming by mutableStateOf(false)
         var jumpVisible by mutableStateOf(false)
+        var agent by mutableStateOf<ChatAgentAcceptance?>(null)
         val file = File(compose.activity.cacheDir, "chat-motion-${UUID.randomUUID()}.png")
         Bitmap.createBitmap(400, 1000, Bitmap.Config.ARGB_8888).let { bitmap ->
             bitmap.eraseColor(android.graphics.Color.BLUE)
@@ -60,6 +61,10 @@ class ChatShortReplyTest {
             compose.setContent {
                 MaterialTheme {
                     ImageMotionRoot {
+                        if (agent != null) {
+                            ChatScreen(agent!!.viewModel, { agent!!.image }, {})
+                            return@ImageMotionRoot
+                        }
                         motion = LocalImageMotion.current!!
                         val nav = rememberNavController()
                         NavHost(nav, "chat", enterTransition = { imagePageEnter() }, exitTransition = { imagePageExit() }) {
@@ -225,7 +230,51 @@ class ChatShortReplyTest {
                 (compose.activity.window.decorView.rootWindowInsets?.getInsets(android.view.WindowInsets.Type.ime())?.bottom ?: 0) == 0
             }
             assertThat(compose.onNodeWithTag("composer").fetchSemanticsNode().boundsInRoot.bottom).isWithin(2f).of(baseline)
+            compose.runOnUiThread { agent = ChatAgentAcceptance(compose.activity, file) }
+            val fixture = agent!!
+            compose.waitUntil(5000) { fixture.viewModel.state.value.current != null }
+            compose.onNodeWithContentDescription("对话菜单").performClick()
+            compose.onNodeWithText("连接与人格").performClick()
+            compose.onNodeWithText("联网搜索 · DeepSeek / Tavily").performScrollTo().performClick()
+            compose.onAllNodesWithText("DeepSeek", useUnmergedTree = true).onLast().performClick()
+            compose.onNodeWithText("https://api.deepseek.com/v1").assertIsDisplayed()
+            shell("screencap -p /data/local/tmp/pocketnai-agent-search.png")
+            shell("input keyevent 4")
+            compose.waitForIdle()
+            shell("input keyevent 4")
+            compose.waitForIdle()
+            compose.runOnUiThread { fixture.viewModel.send("请画三张风景分镜，先查资料") }
+            compose.waitUntil(5000) { fixture.viewModel.state.value.pending != null }
+            assertThat(fixture.generated).isEqualTo(0)
+            assertThat(fixture.searches).isEqualTo(1)
+            compose.onNodeWithTag("chat-confirm-image").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("本次 3 张 · 合计预计 6 Anlas").assertIsDisplayed()
+            shell("screencap -p /data/local/tmp/pocketnai-agent-plan.png")
+            compose.onNodeWithTag("chat-confirm-image").performClick()
+            compose.waitUntil(15_000) { !fixture.viewModel.state.value.busy }
+            assertThat(fixture.generated).isEqualTo(3)
+            fixture.verifySaved(3)
+            // A timeout on image two preserves image one and never sends image three.
+            fixture.failOn = 5
+            compose.runOnUiThread { fixture.viewModel.newConversation(); fixture.viewModel.send("再规划三张分镜") }
+            compose.waitUntil(5000) { fixture.viewModel.state.value.pending != null }
+            compose.onNodeWithTag("chat-confirm-image").performScrollTo().performClick()
+            compose.waitUntil(15_000) { !fixture.viewModel.state.value.busy }
+            assertThat(fixture.generated).isEqualTo(5)
+            fixture.verifySaved(1)
+            // Stopping while a request is in flight finishes that image, then stops the rest.
+            fixture.failOn = -1; fixture.gate = kotlinx.coroutines.CompletableDeferred()
+            compose.runOnUiThread { fixture.viewModel.newConversation(); fixture.viewModel.send("准备下一组三张") }
+            compose.waitUntil(5000) { fixture.viewModel.state.value.pending != null }
+            compose.onNodeWithTag("chat-confirm-image").performScrollTo().performClick()
+            compose.waitUntil(5000) { fixture.viewModel.state.value.generating }
+            compose.onNodeWithTag("chat-stop").assertIsEnabled().performClick()
+            fixture.gate!!.complete(Unit)
+            compose.waitUntil(10_000) { !fixture.viewModel.state.value.busy }
+            assertThat(fixture.generated).isEqualTo(6)
+            fixture.verifySaved(1)
         } finally {
+            compose.runOnUiThread { agent?.close(); agent = null }
             shell("ime set $previousIme"); shell("ime disable $helperIme")
             file.delete()
         }

@@ -155,15 +155,20 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
             ChatViewModel(container.llmSettingsStore, container.chatClient, container.chatStore, container.agentFiles,
                 object : net.pocketnai.domain.chat.ChatImageGenerator {
                     override fun currentParams() = generateViewModel.state.value.params
-                    override suspend fun quote(params: net.pocketnai.domain.model.GenerationParams): String {
+                    override suspend fun prepare(params: List<net.pocketnai.domain.model.GenerationParams>): List<net.pocketnai.domain.model.GenerationParams> {
+                        val macros = container.promptFavoriteRepository.snapshot()
+                        return params.map { net.pocketnai.domain.prompt.PromptTemplates.resolve(it, macros, kotlin.random.Random.Default) }
+                    }
+                    override fun authorizationKey() = generateViewModel.artistLabAccount()
+                    override suspend fun quote(params: net.pocketnai.domain.model.GenerationParams): net.pocketnai.domain.chat.ChatImageQuote {
                         if (container.openAiImageSettings.provider.value == net.pocketnai.domain.openai.ImageProvider.OPEN_AI)
                             throw net.pocketnai.domain.chat.ChatFailure("OpenAI 图片暂时请在画廊的专用生成面板创建")
                         return generateViewModel.quoteForChat(params)
                     }
-                    override suspend fun generate(params: net.pocketnai.domain.model.GenerationParams, onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit): List<net.pocketnai.domain.chat.ChatImage> {
+                    override suspend fun generate(params: net.pocketnai.domain.model.GenerationParams, account: String?, beforeSend: suspend () -> Unit, onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit): List<net.pocketnai.domain.chat.ChatImage> {
                         if (container.openAiImageSettings.provider.value == net.pocketnai.domain.openai.ImageProvider.OPEN_AI)
                             throw net.pocketnai.domain.chat.ChatFailure("OpenAI 图片暂时请在画廊的专用生成面板创建")
-                        return generateViewModel.generateForChat(params, onImage)
+                        return generateViewModel.generateForChat(params, onImage, account, beforeSend)
                     }
                 }, container.settingsStore.chatEnabled, container.chatAttachmentStore)
         }

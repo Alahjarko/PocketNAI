@@ -4,6 +4,7 @@ import kotlinx.serialization.json.*
 import net.pocketnai.domain.model.*
 
 object ImageChatTools {
+    const val MAX_IMAGES = 12
     private fun text(description: String) = buildJsonObject { put("type", "string"); put("description", description) }
     private fun number(type: String, min: Double, max: Double) = buildJsonObject { put("type", type); put("minimum", min); put("maximum", max) }
     private fun function(name: String, description: String, properties: JsonObject, required: List<String>) = buildJsonObject {
@@ -15,7 +16,7 @@ object ImageChatTools {
             })
         })
     }
-    val schema = buildJsonArray {
+    private val singleSchema = buildJsonArray {
         add(function("get_generation_settings", "读取当前图像模型和画布设置，不读取任何密钥。", buildJsonObject {}, emptyList()))
         add(function("generate_image", "根据用户要求生成一张 NovelAI 图片；可能消耗 Anlas。", buildJsonObject {
             put("prompt", text("English positive tags")); put("negative_prompt", text("English negative tags"))
@@ -34,6 +35,29 @@ object ImageChatTools {
                 })
             })
         }, listOf("prompt", "negative_prompt")))
+    }
+
+    val schema = buildJsonArray {
+        singleSchema.forEach(::add)
+        add(function("generate_images", "规划多张独立图片或漫画分镜，用户确认全部参数和费用后串行生成。每条消息最多 12 张，失败不重试。", buildJsonObject {
+            put("images", buildJsonObject {
+                put("type", "array"); put("minItems", 1); put("maxItems", MAX_IMAGES)
+                put("items", singleSchema[1].jsonObject["function"]!!.jsonObject["parameters"]!!)
+            })
+        }, listOf("images")))
+    }
+
+    fun parsePlan(call: ToolCall, base: GenerationParams): List<GenerationParams> {
+        if (call.name == "generate_image") return listOf(parse(call, base))
+        if (call.name != "generate_images") throw ChatFailure("未知图片工具")
+        if (call.arguments.length > 192 * 1024) throw ChatFailure("多图计划过长，请减少张数或提示词")
+        val obj = runCatching { Json.parseToJsonElement(call.arguments) as? JsonObject }.getOrNull()
+            ?: throw ChatFailure("多图计划格式不正确")
+        if (obj.keys != setOf("images")) throw ChatFailure("多图计划包含不支持的参数")
+        val rows = obj["images"] as? JsonArray ?: throw ChatFailure("images 必须为数组")
+        if (rows.size !in 1..MAX_IMAGES) throw ChatFailure("每次计划须包含 1–$MAX_IMAGES 张图片")
+        // Validate the entire plan before asking for permission or issuing any request.
+        return rows.mapIndexed { index, row -> parse(ToolCall("${call.id}-$index", "generate_image", row.toString()), base) }
     }
 
     // 工具对提示词内容不预设立场：NovelAI 本身支持 NSFW，是否放行由服务端与账号策略决定，

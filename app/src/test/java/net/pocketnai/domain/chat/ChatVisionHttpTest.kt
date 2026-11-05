@@ -58,6 +58,54 @@ class ChatVisionHttpTest {
             assertThat(last!!.string("content")).isEqualTo("first-tail")
             assertThat(interruptedChatEntry("kept", last, "回复未完成")!!.calls).isEmpty()
             assertThat(server.requestCount).isEqualTo(2)
+            server.takeRequest()
+            checkSearchHttp(server)
         }
+    }
+
+    private suspend fun checkSearchHttp(server: MockWebServer) {
+        val secret = "local-search-placeholder"
+        val client = net.pocketnai.data.chat.WebSearchClient(endpoint = { config -> server.url(
+            if (config.provider == ChatSearchProvider.DEEPSEEK) "/v1/tools/search" else "/search").toString() })
+        val config = ChatSearchConfig(enabled = true)
+        val query = ChatSearchTool.query(ToolCall("s", "web_search", """{"query":"character official costume"}"""))
+        server.enqueue(MockResponse().setBody("""{"results":[{"title":"Official character","url":"https://example.org/character","content":"blue coat $secret"},{"title":"bad","url":"file:///private","content":"ignored"}]}"""))
+        val sources = client.search(config, secret, query)
+        assertThat(sources).hasSize(1)
+        assertThat(ChatSearchTool.result(sources)).doesNotContain(secret)
+        assertThat(sources.single().snippet).contains("blue coat")
+        val tavily = server.takeRequest()
+        assertThat(tavily.path).isEqualTo("/search")
+        assertThat(tavily.getHeader("Authorization")).isEqualTo("Bearer $secret")
+        val body = Json.parseToJsonElement(tavily.body.readUtf8()).jsonObject
+        assertThat(body.string("query")).isEqualTo(query)
+        assertThat(body["auto_parameters"]!!.jsonPrimitive.boolean).isFalse()
+        assertThat(body["include_images"]!!.jsonPrimitive.boolean).isFalse()
+        assertThat(body.toString()).doesNotContain(secret)
+        val deepseek = config.copy(provider = ChatSearchProvider.DEEPSEEK, baseUrl = "https://api.deepseek.com/v1")
+        assertThat(net.pocketnai.data.chat.WebSearchClient.searchEndpoint(deepseek)).isEqualTo("https://api.deepseek.com/v1/tools/search")
+        assertThat(net.pocketnai.data.chat.WebSearchClient.searchEndpoint(deepseek.copy(baseUrl = "https://api.deepseek.com"))).isEqualTo("https://api.deepseek.com/v1/tools/search")
+        server.enqueue(MockResponse().setBody("""{"results":[{"title":"Character source","url":"https://example.org/source","summary":"silver hair","snippet":"short","content":""}]}"""))
+        assertThat(client.search(deepseek, secret, query).single().snippet).isEqualTo("silver hair")
+        val ds = server.takeRequest()
+        assertThat(ds.path).isEqualTo("/v1/tools/search")
+        val dsBody = Json.parseToJsonElement(ds.body.readUtf8()).jsonObject
+        assertThat(dsBody["count"]!!.jsonPrimitive.int).isEqualTo(5)
+        assertThat(dsBody["need_content"]!!.jsonPrimitive.boolean).isFalse()
+        assertThat(dsBody).doesNotContainKey("ori_question")
+        assertThat(runCatching { ChatSearchTool.query(ToolCall("s", "web_search", """{"query":"x","url":"https://example.org"}""")) }.isFailure).isTrue()
+        server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", server.url("/unexpected")).setBody(secret))
+        val before = server.requestCount
+        val failure = runCatching { client.search(config, secret, query) }.exceptionOrNull() as ChatFailure
+        assertThat(failure.userMessage).contains("重定向")
+        assertThat(failure.userMessage).doesNotContain(secret)
+        assertThat(server.requestCount).isEqualTo(before + 1)
+        server.takeRequest()
+        server.enqueue(MockResponse().setResponseCode(401).setBody(secret))
+        val rejected = runCatching { client.search(config, secret, query) }.exceptionOrNull() as ChatFailure
+        assertThat(rejected.userMessage).contains("无效")
+        assertThat(rejected.userMessage).doesNotContain(secret)
+        assertThat(server.requestCount).isEqualTo(before + 2)
+        server.takeRequest()
     }
 }

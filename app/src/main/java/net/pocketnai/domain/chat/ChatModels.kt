@@ -37,6 +37,7 @@ data class ChatEntry(
     val images: List<ChatImage> = emptyList(),
     val notice: String? = null,
     val attachments: List<ChatAttachment> = emptyList(),
+    val sources: List<ChatSearchSource> = emptyList(),
 ) {
     val role: String get() = wire.string("role").orEmpty()
     val content: String get() = wire.string("content").orEmpty()
@@ -107,6 +108,8 @@ interface ChatClient {
 
 interface ChatImageGenerator {
     fun currentParams(): net.pocketnai.domain.model.GenerationParams
-    suspend fun quote(params: net.pocketnai.domain.model.GenerationParams): String
-    suspend fun generate(params: net.pocketnai.domain.model.GenerationParams, onImage: (ChatImage) -> Unit): List<ChatImage>
+    suspend fun prepare(params: List<net.pocketnai.domain.model.GenerationParams>): List<net.pocketnai.domain.model.GenerationParams> = params
+    fun authorizationKey(): String?
+    suspend fun quote(params: net.pocketnai.domain.model.GenerationParams): ChatImageQuote
+    suspend fun generate(params: net.pocketnai.domain.model.GenerationParams, account: String?, beforeSend: suspend () -> Unit, onImage: (ChatImage) -> Unit): List<ChatImage>
 }

@@ -38,6 +38,14 @@ class ChatProtocolTest {
             assertThat(it).isInstanceOf(ChatFailure::class.java)
             assertThat(it).hasMessageThat().contains("逆向提示词过长")
         }
+        val panels = ToolCall("panels", "generate_images", """{"images":[{"prompt":"quiet forest","negative_prompt":"lowres","seed":42},{"prompt":"sunset coast","negative_prompt":"lowres","seed":43}]}""")
+        val plan = ImageChatTools.parsePlan(panels, base)
+        assertThat(plan.map { it.prompt }).containsExactly("quiet forest", "sunset coast").inOrder()
+        assertThat(plan.map { it.baseSeed }).containsExactly(42L, 43L).inOrder()
+        assertThat(plan.all { it.sampleCount == 1 }).isTrue()
+        assertThat(runCatching { ImageChatTools.parsePlan(panels.copy(arguments = """{"images":[{"prompt":"valid","negative_prompt":""},{"prompt":"bad","negative_prompt":"","width":999}]}"""), base) }.isFailure).isTrue()
+        val tooMany = buildJsonObject { put("images", JsonArray(List(13) { Json.parseToJsonElement(call("forest").arguments) })) }
+        assertThat(runCatching { ImageChatTools.parsePlan(panels.copy(arguments = tooMany.toString()), base) }.isFailure).isTrue()
     }
 
     private fun checkOptionalSfwMode() {
@@ -98,6 +106,7 @@ class ChatProtocolTest {
         assertThat(runCatching { stream.complete() }.isFailure).isTrue()
     }
     @Test fun `中断工具只补齐结果不会重新执行且思考保留`() {
+        checkConfirmedBatch()
         val wire = Json.parseToJsonElement("""{"role":"assistant","content":null,"reasoning_content":"original","tool_calls":[{"id":"one","function":{"name":"generate_image","arguments":"{}"}}]}""") as JsonObject
         val old = ChatConversation("chat", updatedAt = 1, entries = listOf(ChatEntry("a", wire)))
         val fixed = old.recoverInterruptedTools()
@@ -110,5 +119,60 @@ class ChatProtocolTest {
         assertThat(stopped.calls).isEmpty()
         assertThat(stopped.notice).isEqualTo("回复已停止")
         assertThat(interruptedChatEntry("empty", wireMessage("assistant", ""), "回复已停止")).isNull()
+    }
+
+    private fun checkConfirmedBatch() = kotlinx.coroutines.test.runTest {
+        val base = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V4_5_CURATED))
+        val calls = mutableListOf<String>()
+        var account = "fake-account"
+        var failAt = 2
+        var active = true
+        var priceChange = 0L
+        var beforeRequest: () -> Unit = {}
+        val fake = object : ChatImageGenerator {
+            override fun currentParams() = base
+            override fun authorizationKey() = account
+            override suspend fun quote(params: GenerationParams) = ChatImageQuote("预计费用", (if (calls.isEmpty()) 1L else 2L) + priceChange)
+            override suspend fun generate(params: GenerationParams, account: String?, beforeSend: suspend () -> Unit, onImage: (ChatImage) -> Unit): List<ChatImage> {
+                beforeRequest(); beforeSend()
+                calls += params.prompt
+                if (calls.size == failAt) throw ChatFailure("TIMEOUT_UNCERTAIN")
+                return listOf(ChatImage("image-${calls.size}", "local.png", 64, 64)).onEach(onImage)
+            }
+        }
+        val confirmations = mutableListOf<ChatImagePlan>()
+        val saved = mutableListOf<List<ChatImage>>()
+        val batch = ChatImageBatch(fake)
+        val result = batch.execute((1..3).map { base.copy(prompt = "panel-$it") }, autoSingle = true,
+            confirm = { confirmations += it; assertThat(calls.size).isEqualTo(if (it.changed) 1 else 0); true }, active = { active },
+            onProgress = { _, _, _ -> }, onImage = {}, checkpoint = { saved += it })
+        assertThat(confirmations).hasSize(2) // Auto-single never authorizes a multi-image plan.
+        assertThat(confirmations[0].summary).contains("3 Anlas")
+        assertThat(confirmations[1].items).hasSize(2)
+        assertThat(confirmations[1].summary).contains("4 Anlas")
+        assertThat(calls).containsExactly("panel-1", "panel-2").inOrder()
+        assertThat(result.images).hasSize(1)
+        assertThat(result.status).isEqualTo("failed")
+        assertThat(result.message).contains("TIMEOUT_UNCERTAIN")
+        assertThat(saved.first()).hasSize(1)
+        assertThat(batch.remaining).isEqualTo(0)
+        assertThat(runCatching { batch.execute(listOf(base), true, { true }, { true }, { _, _, _ -> }, {}, {}) }.isFailure).isTrue()
+        assertThat(calls).hasSize(2)
+
+        calls.clear(); failAt = -1
+        val cancelled = ChatImageBatch(fake).execute(listOf(base, base), false, { false }, { true }, { _, _, _ -> }, {}, {})
+        assertThat(cancelled.status).isEqualTo("cancelled"); assertThat(calls).isEmpty()
+        val changed = ChatImageBatch(fake).execute(listOf(base, base), false, { account = "different"; true }, { true }, { _, _, _ -> }, {}, {})
+        assertThat(changed.status).isEqualTo("cancelled"); assertThat(calls).isEmpty()
+        val stopped = ChatImageBatch(fake).execute(listOf(base, base), false, { true }, { active }, { _, _, _ -> }, { active = false }, {})
+        assertThat(stopped.status).isEqualTo("cancelled"); assertThat(stopped.images).hasSize(1); assertThat(calls).hasSize(1)
+        calls.clear(); active = true
+        val successful = ChatImageBatch(fake)
+        val all = successful.execute(List(12) { base }, false, { true }, { true }, { _, _, _ -> }, {}, {})
+        assertThat(all.images).hasSize(12); assertThat(successful.remaining).isEqualTo(0)
+        calls.clear(); beforeRequest = { priceChange = 5 }
+        val queued = ChatImageBatch(fake).execute(listOf(base), true, { true }, { true }, { _, _, _ -> }, {}, {})
+        assertThat(queued.message).contains("等待发送期间费用变化")
+        assertThat(calls).isEmpty() // A changed quote during gate waiting never reaches the API.
     }
 }
