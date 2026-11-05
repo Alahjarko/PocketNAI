@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
@@ -56,5 +57,18 @@ class FeedbackEditorTest {
         compose.onAllNodes(hasSetTextAction())[0].performTextInputSelection(TextRange(2))
         compose.onNodeWithText("光照").performClick()
         compose.runOnIdle { assertThat(updated.prompt).isEqualTo("!macro:光照!, 1.1::honkai: star rail,official art::") }
+        val beforeClear = updated
+        compose.onNodeWithContentDescription("清空角色 1 提示词").performClick()
+        compose.runOnIdle { assertThat(updated).isEqualTo(beforeClear.copy(prompt = "")) }
+        compose.onNodeWithContentDescription("撤销清空角色 1 提示词").performClick()
+        compose.runOnIdle { assertThat(updated).isEqualTo(beforeClear) }
+        compose.onNodeWithContentDescription("清空角色 1 排除词").performClick()
+        compose.runOnIdle { assertThat(updated).isEqualTo(beforeClear.copy(negativePrompt = "")) }
+        compose.onNodeWithContentDescription("撤销清空角色 1 排除词").performClick()
+        compose.runOnIdle { assertThat(updated).isEqualTo(beforeClear) }
+        compose.onNodeWithContentDescription("清空角色 1 提示词").performClick()
+        compose.onAllNodes(hasSetTextAction())[0].performTextReplacement("new prompt")
+        compose.onAllNodes(hasSetTextAction())[0].performTextReplacement("")
+        compose.onNodeWithContentDescription("撤销清空角色 1 提示词").assertDoesNotExist()
     }
 }

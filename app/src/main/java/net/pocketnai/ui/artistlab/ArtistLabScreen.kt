@@ -34,6 +34,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.pocketnai.domain.model.GenerationParams
+import net.pocketnai.domain.model.shortDisplayName
 import net.pocketnai.domain.artistlab.ArtistLabConfig
 import net.pocketnai.domain.artistlab.ArtistLabForm
 import net.pocketnai.data.settings.GenerationDraftCodec
@@ -121,8 +122,6 @@ fun ArtistLabScreen(vm: ArtistLabViewModel, currentParams: GenerationParams, res
         val notice = message.ifBlank { run?.message.orEmpty() }
         if (notice.isNotBlank()) Text(notice, Modifier.padding(16.dp, 4.dp), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (favorites.isNotEmpty() && !onlyFavorites) Text("收藏图片置顶", Modifier.padding(16.dp, 4.dp),
-            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
         if (shown.isEmpty()) Box(Modifier.weight(1f).fillMaxWidth().padding(28.dp), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Icon(Icons.Default.Casino, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
@@ -155,12 +154,16 @@ fun ArtistLabScreen(vm: ArtistLabViewModel, currentParams: GenerationParams, res
     if (configOpen) LabConfigDialog(currentParams, form, message, vm::updateForm, { configOpen = false }) { prompt, negative, seed, count, artists, min, max ->
         vm.prepare(prompt, negative, seed, count, artists, min, max)
     }
-    approval?.let { a -> AlertDialog(onDismissRequest = vm::dismissApproval, title = { Text("确认${if (a.runId != null) "继续" else "开始"}抽卡") },
+    approval?.let { a -> AlertDialog(onDismissRequest = vm::dismissApproval, title = {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("确认${if (a.runId != null) "继续" else "开始"}抽卡", Modifier.weight(1f))
+            net.pocketnai.ui.common.InfoButton("每次只请求 1 张，完成后等待 1～2 秒。可切换应用或锁屏继续，通知栏可暂停。失败或费用变化会暂停，已发送的请求不会重试。")
+        }
+    },
         text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("${a.remaining} 张 · 每张 ${a.config.artistCount} 位画师\n权重 ${a.config.minTicks / 20.0}～${a.config.maxTicks / 20.0}，步长 0.05")
-            Text("${a.params.model.displayName} · ${a.params.size.label}\n${a.params.steps} Steps · Guidance ${a.params.guidance}\nSeed ${a.params.baseSeed}")
+            Text("${a.params.model.displayName} · ${a.params.size.label}\n${a.params.steps} Steps · Guidance ${"%.2f".format(Locale.ROOT, a.params.guidance)}\nSeed ${a.params.baseSeed}")
             Text(a.quote.labDescription(a.remaining), color = MaterialTheme.colorScheme.primary)
-            Text("每次只请求 1 张，完成后等待 1～2 秒。可切换应用或锁屏继续，通知栏可暂停。失败或费用变化会暂停，已发送的请求不会重试。", style = MaterialTheme.typography.bodySmall)
         } }, confirmButton = { TextButton(onClick = {
             if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
                 notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -211,25 +214,35 @@ private fun LabConfigDialog(params: GenerationParams, form: ArtistLabForm?, erro
             Column(Modifier.safeDrawingPadding().imePadding().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("新建抽卡实验", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                    net.pocketnai.ui.common.InfoButton("使用首页的模型与参数进行单张文生图，不携带首页参考图与独立角色。")
                     IconButton(onClick = onClose) { Icon(Icons.Default.Close, "关闭") }
                 }
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                    Text("从首页复制参数 · 单张文生图\n${params.model.displayName} · ${params.size.label} · ${params.steps} Steps · Guidance ${params.guidance}\n不携带首页参考图与独立角色。", style = MaterialTheme.typography.bodySmall)
-                    OutlinedTextField(prompt, { prompt = it }, Modifier.fillMaxWidth(), label = { Text("固定基础提示词（不含 artist:）") }, minLines = 2, maxLines = 6)
-                    OutlinedTextField(negative, { negative = it }, Modifier.fillMaxWidth(), label = { Text("固定负面提示词") }, minLines = 1, maxLines = 4)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(params.model.shortDisplayName, style = MaterialTheme.typography.titleSmall)
+                        Text(params.size.label, style = MaterialTheme.typography.titleSmall)
+                    }
+                    Text("${params.steps} Steps · Guidance ${"%.2f".format(Locale.ROOT, params.guidance)}", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(prompt, { prompt = it }, Modifier.fillMaxWidth(), label = { Text("固定基础提示词（不含 artist:）") }, minLines = 2, maxLines = 6,
+                        trailingIcon = { net.pocketnai.ui.common.ClearPromptButton(prompt, "固定基础提示词") { prompt = it; 0 } })
+                    OutlinedTextField(negative, { negative = it }, Modifier.fillMaxWidth(), label = { Text("固定负面提示词") }, minLines = 1, maxLines = 4,
+                        trailingIcon = { net.pocketnai.ui.common.ClearPromptButton(negative, "固定负面提示词") { negative = it; 0 } })
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(seed, { seed = it }, Modifier.weight(1f), label = { Text("固定 Seed") }, singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                         IconButton(onClick = { seed = Random.nextLong(0, GenerationParams.MAX_SEED + 1).toString() }) { Icon(Icons.Default.Shuffle, "随机一个固定种子") }
                     }
-                    Text("每张抽取 $artists 位画师", style = MaterialTheme.typography.titleSmall)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("每张抽取 $artists 位画师", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                        net.pocketnai.ui.common.InfoButton("每张使用相同 Seed 和基础提示词，只随机画师组合与权重。画师标签来自公开数据，NovelAI 对不同画师的识别与画风表现可能不同。")
+                    }
                     Slider(artists.toFloat(), { artists = it.roundToInt() }, valueRange = 1f..10f, steps = 8)
                     Text("单画师权重 ${min / 20.0}～${max / 20.0} · 步长 0.05", style = MaterialTheme.typography.titleSmall)
                     RangeSlider(min.toFloat()..max.toFloat(), { min = it.start.roundToInt(); max = it.endInclusive.roundToInt() }, valueRange = 10f..30f, steps = 19)
                     OutlinedTextField(count, { count = it }, Modifier.fillMaxWidth(), label = { Text("抽卡次数（1～10000）") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                    Text("每张使用相同 Seed 和基础提示词，只随机画师组合与权重。画师标签来自公开数据，NovelAI 对不同画师的识别与画风表现可能不同。", style = MaterialTheme.typography.bodySmall)
                 }
                 Button(onClick = { onPrepare(prompt, negative, seed, count, artists, min, max) }, Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
                     Text("核对参数与费用")

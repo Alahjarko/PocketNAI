@@ -52,7 +52,8 @@ class OpenAiImageRepositoryTest {
             val sha = Hashing.sha256(source)
             files.writeReference(sha, source)
             val ref = ReferenceImage("reference", ReferenceRole.IMG2IMG, 0, files.referenceRelativePath(sha), 64, 64, source.size.toLong(), sha, 1)
-            val params = OpenAiImageParams(prompt = "nsfw, 保持角色衣服，海报写\"测试\"", model = OpenAiImageParams.SUNBURST, count = 2, outputFormat = "jpeg")
+            val params = OpenAiImageParams(prompt = "nsfw, 保持角色衣服，海报写\"测试\"", model = OpenAiImageParams.SUNBURST_26,
+                complexity = "low", count = 2, outputFormat = "jpeg")
             val draft = OpenAiImageDraft(params, listOf(ref))
             settings.saveDraft(draft)
             assertThat(OpenAiImageSettings(context).loadDraft()).isEqualTo(draft)
@@ -79,7 +80,7 @@ class OpenAiImageRepositoryTest {
             assertThat(files.resolve(image.privateFilePath).extension).isEqualTo("jpeg")
             assertThat(files.resolve(image.privateFilePath).readBytes()).isEqualTo(bytes)
             val row = db.generationDao().findGeneration(image.generationId)!!
-            assertThat(row.modelApiId).isEqualTo(OpenAiImageParams.SUNBURST)
+            assertThat(row.modelApiId).isEqualTo(OpenAiImageParams.SUNBURST_26)
             assertThat(row.toString()).doesNotContain(secret)
             assertThat(Mappers.toDomain(row)!!.openAi!!.params).isEqualTo(params)
             val storedSnapshot = Mappers.toDomain(row)!!.openAi!!

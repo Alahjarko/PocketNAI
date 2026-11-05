@@ -19,14 +19,18 @@ data class OpenAiImageParams(
     val compression: Int = 100,
     val moderation: String = "auto",
     val count: Int = 1,
+    val complexity: String = "high",
 ) {
-    val modelLabel: String get() = if (model == SUNBURST) "GPT Image 2.5 Sunburst" else "GPT Image 2.5 Flare"
+    val modelLabel: String get() = labelOf(model)
+    val supportsComplexity: Boolean get() = model == FLARE_26 || model == SUNBURST_26
+    val complexityLabel: String get() = complexityLabelOf(complexity)
     val dimensions: Pair<Int, Int> get() = size.split('x').let {
         (it.getOrNull(0)?.toIntOrNull() ?: 1024) to (it.getOrNull(1)?.toIntOrNull() ?: 1024)
     }
 
     fun validate(): String? = when {
-        model !in MODELS -> "请选择 Flare 或 Sunburst 模型"
+        model !in MODELS -> "请选择支持的 GPT Image 模型"
+        supportsComplexity && complexity !in COMPLEXITIES -> "不支持的图片复杂度"
         prompt.isBlank() || prompt.length > 32_000 -> "图片描述应为 1～32000 字符"
         quality !in QUALITIES -> "不支持的图片质量"
         outputFormat !in FORMATS -> "不支持的图片格式"
@@ -41,7 +45,20 @@ data class OpenAiImageParams(
     companion object {
         const val FLARE = "gpt-image-2.5-flare"
         const val SUNBURST = "gpt-image-2.5-sunburst"
-        val MODELS = listOf(FLARE, SUNBURST)
+        const val FLARE_26 = "gpt-image-2.6-flare"
+        const val SUNBURST_26 = "gpt-image-2.6-sunburst"
+        val MODELS = listOf(FLARE_26, SUNBURST_26, FLARE, SUNBURST)
+        val COMPLEXITIES = listOf("low", "medium", "high")
+        fun complexityLabelOf(value: String): String = when (value) {
+            "low" -> "低"; "medium" -> "中"; "high" -> "高"; else -> value
+        }
+        fun labelOf(model: String): String = when (model) {
+            FLARE_26 -> "GPT Image 2.6 Flare"
+            SUNBURST_26 -> "GPT Image 2.6 Sunburst"
+            FLARE -> "GPT Image 2.5 Flare"
+            SUNBURST -> "GPT Image 2.5 Sunburst"
+            else -> model
+        }
         val QUALITIES = listOf("low", "medium", "high", "xhigh", "max", "auto")
         val FORMATS = listOf("png", "jpeg", "webp")
         val BACKGROUNDS = listOf("auto", "opaque", "transparent")

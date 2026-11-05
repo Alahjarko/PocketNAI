@@ -191,9 +191,6 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
             if (entries.isEmpty()) item {
                 Column(Modifier.fillMaxWidth().padding(vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("聊聊你想画的场景", style = MaterialTheme.typography.titleLarge)
-                    Text("人物、旅行、风景，或一个突然想到的故事。", style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (!viewModel.hasKey()) OutlinedButton(onClick = { settingsOpen = true }) { Text("连接 LLM") }
                 }
             }
@@ -231,12 +228,7 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                     Box(Modifier.size(80.dp)) {
                         net.pocketnai.ui.safety.SfwAsyncImage(resolveImage(attachment.relativePath), if (attachment.promptContext != null) "待发送图片，已附生成参数" else "待发送图片", sensitive = attachment.hasSensitivePrompt, contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).clickable { viewingAttachment = attachment })
-                        if (attachment.promptContext != null) Surface(
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            shape = RoundedCornerShape(6.dp), modifier = Modifier.align(Alignment.BottomCenter).padding(3.dp)
-                                .clickable { viewingAttachment = attachment }) {
-                            Text("含提示词", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
-                        }
+                        if (attachment.promptContext != null) AttachmentParametersButton(Modifier.align(Alignment.BottomStart).padding(3.dp)) { viewingAttachment = attachment }
                         IconButton(onClick = { viewModel.removeAttachment(attachment.id) }, enabled = !state.busy && !state.importingAttachment,
                             modifier = Modifier.align(Alignment.TopEnd).size(32.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape).testTag("chat-remove-attachment")) {
                             Icon(Icons.Default.Close, "移除图片", modifier = Modifier.size(18.dp))
@@ -374,9 +366,11 @@ fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenIm
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         entry.attachments.forEach { attachment ->
             val file = resolveImage(attachment.relativePath)
-            if (file.isFile) net.pocketnai.ui.safety.SfwAsyncImage(file, "发送的图片附件", sensitive = attachment.hasSensitivePrompt, contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth(0.72f).aspectRatio(attachment.width.toFloat() / attachment.height.coerceAtLeast(1))
-                    .clip(RoundedCornerShape(22.dp)).clickable { onOpenAttachment(attachment) })
+            if (file.isFile) Box(Modifier.fillMaxWidth(0.72f).aspectRatio(attachment.width.toFloat() / attachment.height.coerceAtLeast(1))) {
+                net.pocketnai.ui.safety.SfwAsyncImage(file, "发送的图片附件", sensitive = attachment.hasSensitivePrompt, contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)).clickable { onOpenAttachment(attachment) })
+                if (attachment.promptContext != null) AttachmentParametersButton(Modifier.align(Alignment.BottomStart).padding(8.dp)) { onOpenAttachment(attachment) }
+            }
             else Text("图片附件已丢失", style = MaterialTheme.typography.bodySmall)
         }
         entry.images.forEach { image ->
@@ -385,9 +379,6 @@ fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenIm
                 modifier = Modifier.fillMaxWidth(0.78f).aspectRatio(image.width.toFloat() / image.height.coerceAtLeast(1))
                     .sharedImage(image.imageId).clip(RoundedCornerShape(22.dp)).clickable { imageMotion?.preview = ImageOriginPreview(image.imageId, file, image.width.toFloat() / image.height.coerceAtLeast(1), "对话生成的图片"); onOpenImage(image.imageId) })
             else Text("图片已从图库移除", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        entry.attachments.filter { it.promptContext != null }.forEach { attachment ->
-            AssistChip(onClick = { onOpenAttachment(attachment) }, label = { Text("图片生成参数") })
         }
         if (entry.role == "tool") {
             entry.notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -414,6 +405,14 @@ fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenIm
             if (!streaming && !user && entry.content.isNotBlank()) ChatCopyAction(entry.content)
             entry.notice?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
+    }
+}
+
+@Composable
+private fun AttachmentParametersButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = modifier.size(32.dp)
+        .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)) {
+        Icon(Icons.Default.Tune, "查看图片参数", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
     }
 }
 

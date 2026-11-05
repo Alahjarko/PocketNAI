@@ -5,6 +5,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -30,10 +33,9 @@ fun ChatTextReader(title: String, text: String, onDismiss: () -> Unit) {
        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).padding(top = 8.dp))
-            TextButton(onClick = { copyNotice = if (runCatching { clipboard.setText(AnnotatedString(text)) }.isSuccess) "已复制全文" else "文本过长，系统无法复制全文" }) { Text("复制全文") }
-            TextButton(onClick = onDismiss) { Text("关闭全文") }
+            IconButton(onClick = { copyNotice = if (runCatching { clipboard.setText(AnnotatedString(text)) }.isSuccess) "已复制全文" else "文本过长，系统无法复制全文" }) { Icon(Icons.Default.ContentCopy, "复制全文") }
+            IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "关闭全文") }
         }
-        Text("${text.length} 字 · 分段阅读", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 20.dp))
         copyNotice?.let { Text(it, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 20.dp)) }
         if (pages == null) LinearProgressIndicator(Modifier.fillMaxWidth().padding(20.dp))
         LazyColumn(Modifier.fillMaxWidth().weight(1f).testTag("chat-full-reader"),

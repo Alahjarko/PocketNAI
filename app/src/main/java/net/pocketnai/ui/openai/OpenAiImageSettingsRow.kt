@@ -34,7 +34,12 @@ fun OpenAiImageSettingsRow() {
         var choice by remember { mutableStateOf(provider) }
         var key by remember { mutableStateOf("") }
         var error by remember { mutableStateOf<String?>(null) }
-        AlertDialog(onDismissRequest = { open = false }, title = { Text("生图服务") }, text = {
+        AlertDialog(onDismissRequest = { open = false }, title = {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text("生图服务", Modifier.weight(1f))
+                net.pocketnai.ui.common.InfoButton("OpenAI 使用你自己的 Platform 额度，支持 GPT Image 2.6 与 2.5 的 Flare 和 Sunburst。")
+            }
+        }, text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 ImageProvider.entries.forEach { item ->
                     Row(Modifier.fillMaxWidth().clickable(enabled = !busy) { choice = item }) {
@@ -43,14 +48,12 @@ fun OpenAiImageSettingsRow() {
                     }
                 }
                 if (choice == ImageProvider.OPEN_AI) {
-                    Text("使用你自己的 OpenAI Platform 额度，支持 GPT Image 2.5 Flare 和 Sunburst。", style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(value = key, onValueChange = { key = it; error = null },
                         label = { Text(if (hasKey) "替换 API 密钥（留空保留）" else "API 密钥") },
                         singleLine = true, visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
                         modifier = Modifier.fillMaxWidth())
                     if (hasKey) TextButton(onClick = { settings.clearKey(); key = "" }, enabled = !busy) { Text("移除已保存密钥") }
-                    Text("密钥经本机加密保存。两种服务分别记住自己的生成设置。", style = MaterialTheme.typography.bodySmall)
                 }
                 if (busy) Text("图片任务完成后可切换服务", style = MaterialTheme.typography.bodySmall)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }

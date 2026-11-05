@@ -45,8 +45,6 @@ internal fun OpenAiResolutionSelector(size: String, custom: Boolean, enabled: Bo
             }
             OpenAiDimensionSlider("宽度", width, enabled) { onSizeChange("${it}x$height") }
             OpenAiDimensionSlider("高度", height, enabled) { onSizeChange("${width}x$it") }
-            Text("每边最多 3840 像素，16 像素一档；宽高比 1:3～3:1，总像素最多约 829 万。",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         val error = OpenAiImageParams.sizeError(size)
         if (error != null) Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)

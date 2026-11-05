@@ -41,7 +41,7 @@ internal fun OpenAiCostEstimate(estimate: OpenAiImageEstimate?, modifier: Modifi
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            InfoButton("按 OpenAI 官方标准美元费率估算（2026-11-02）。\n\n" +
+            InfoButton("按 OpenAI 官方标准美元费率估算（2026-11-05）。\n\n" +
                 "图片输出按尺寸和质量计算；文本按描述长度粗估。" +
                 "每张参考图暂按每张成图 $0.05 预留，属于本机预算，并非官方按张定价。多张生成按逐张计入输入费用预留。\n\n" +
                 "自动质量显示低到最高档的范围；自动尺寸暂不报价。参考图、高张数和长提示词的误差可能更大。" +

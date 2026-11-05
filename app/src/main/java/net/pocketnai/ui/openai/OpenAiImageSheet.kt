@@ -51,7 +51,7 @@ fun OpenAiImageSheet(
             Column(Modifier.weight(1f)) {
                 Text("OpenAI 生图", style = MaterialTheme.typography.titleMedium)
                 Text(if (state.busy) "生成中 · ${state.activeTasks} 项任务"
-                    else (if (params.model == OpenAiImageParams.FLARE) "Flare" else "Sunburst") + " · ${params.size} · ${params.quality}",
+                    else params.modelLabel.removePrefix("GPT Image ") + " · ${params.size} · ${params.quality}",
                     style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Button(onClick = {
@@ -69,12 +69,21 @@ fun OpenAiImageSheet(
             state.message?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
             OutlinedTextField(value = params.prompt, onValueChange = { viewModel.update(params.copy(prompt = it)) },
                 label = { Text("描述你想要的图片") }, placeholder = { Text("可以用中文描述主体、构图、文字、光线和风格") },
+                trailingIcon = {
+                    net.pocketnai.ui.common.ClearPromptButton(params.prompt, "图片描述", state.revision) {
+                        viewModel.update(viewModel.state.value.draft.params.copy(prompt = it))
+                        viewModel.state.value.revision
+                    }
+                },
                 minLines = 4, maxLines = 10, enabled = true, modifier = Modifier.fillMaxWidth())
             OpenAiOption("模型", params.model, OpenAiImageParams.MODELS,
-                { if (it == OpenAiImageParams.FLARE) "GPT Image 2.5 Flare" else "GPT Image 2.5 Sunburst" },
-                true) { viewModel.update(params.copy(model = it)) }
-            Text(if (params.model == OpenAiImageParams.FLARE) "适合快速、日常的高质量生成" else "适合注重精确度的参考图编辑",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OpenAiImageParams::labelOf, true,
+                info = "Flare 适合快速迭代，Sunburst 适合精细画面与编辑。") { viewModel.update(params.copy(model = it)) }
+            if (params.supportsComplexity) OpenAiOption("复杂度", params.complexity, OpenAiImageParams.COMPLEXITIES,
+                OpenAiImageParams::complexityLabelOf, true,
+                info = "控制绘制前的规划程度，与渲染质量分开。局部修改可选低，密集文字或复杂构图可选高；高复杂度可能增加等待时间。") {
+                viewModel.update(params.copy(complexity = it))
+            }
             var customSize by rememberSaveable(state.revision) { mutableStateOf(params.size !in OpenAiImageParams.SIZE_PRESETS) }
             OpenAiResolutionSelector(params.size, customSize, true, { customSize = it }) {
                 viewModel.update(params.copy(size = it))
@@ -103,7 +112,10 @@ fun OpenAiImageSheet(
             }
             OpenAiOption("内容审核", params.moderation, listOf("auto", "low"),
                 { if (it == "auto") "自动" else "较低过滤" }, true) { viewModel.update(params.copy(moderation = it)) }
-            Text("参考图（${state.draft.references.size}/16）", style = MaterialTheme.typography.titleSmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("参考图（${state.draft.references.size}/16）", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                net.pocketnai.ui.common.InfoButton("添加参考图后按描述进行编辑。按实际用量扣除 OpenAI Platform 额度；质量、尺寸、张数和参考图都会影响费用。")
+            }
             LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(state.draft.references, key = { it.id }) { ref ->
                     Column(Modifier.width(96.dp)) {
@@ -125,8 +137,6 @@ fun OpenAiImageSheet(
                     modifier = Modifier.weight(1f)) { Text("从历史选择") }
             }
             if (state.importing) LinearProgressIndicator(Modifier.fillMaxWidth())
-            Text("添加参考图后按描述进行编辑。按实际用量扣除 OpenAI Platform 额度；质量、尺寸、张数和参考图都会影响费用。",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
     if (history) HistoryImagePickerDialog(onPick = { path ->
@@ -135,6 +145,7 @@ fun OpenAiImageSheet(
     if (confirm) AlertDialog(onDismissRequest = { confirm = false }, title = { Text("确认使用 OpenAI 额度") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("${params.modelLabel}\n${params.size} · ${params.quality} · ${params.count} 张")
+            if (params.supportsComplexity) Text("复杂度 · ${params.complexityLabel}", style = MaterialTheme.typography.bodySmall)
             OpenAiCostEstimate(estimate)
             Text("这是本次请求的粗估，实际扣费以账单为准。完成后可在详情查看用量折算金额。",
                 style = MaterialTheme.typography.bodySmall)
@@ -147,10 +158,13 @@ fun OpenAiImageSheet(
 
 @Composable
 internal fun OpenAiOption(label: String, value: String, options: List<String>, display: (String) -> String,
-    enabled: Boolean, onSelect: (String) -> Unit) {
+    enabled: Boolean, info: String? = null, onSelect: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Column {
-        Text(label, style = MaterialTheme.typography.labelLarge)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+            if (info != null) net.pocketnai.ui.common.InfoButton(info)
+        }
         Box {
             OutlinedButton(onClick = { open = true }, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
                 Text(display(value), maxLines = 1, overflow = TextOverflow.Ellipsis)

@@ -20,7 +20,9 @@ class OpenAiImageApiTest {
             Mappers.toDomain(GalleryImageRow(apiId, apiId, 1, "generations/sample.png", 832, 1216, 1L, null, null,
                 1L, "SUCCEEDED", "IMG2IMG", "sample", apiId, "Silver_hair, blue eyes", "", 1)).copy(favorite = true)
         }
-        assertThat(GalleryModels.apiIds).containsAtLeast(OpenAiImageParams.FLARE, OpenAiImageParams.SUNBURST)
+        assertThat(GalleryModels.apiIds).containsAtLeast(OpenAiImageParams.FLARE, OpenAiImageParams.SUNBURST,
+            OpenAiImageParams.FLARE_26, OpenAiImageParams.SUNBURST_26)
+        assertThat(GalleryModels.labelOf(OpenAiImageParams.SUNBURST_26)).isEqualTo("GPT Image 2.6 Sunburst")
         assertThat(GalleryModels.labelOf(OpenAiImageParams.FLARE)).contains("Flare")
         assertThat(GalleryModels.labelOf(OpenAiImageParams.SUNBURST)).contains("Sunburst")
         items.forEach { item ->
@@ -96,6 +98,23 @@ class OpenAiImageApiTest {
             val pngPayload = Json.parseToJsonElement(pngRequest.body.readUtf8()).jsonObject
             assertThat(pngPayload).doesNotContainKey("output_compression")
             assertThat(pngPayload["size"]!!.jsonPrimitive.content).isEqualTo("2160x3840")
+            for (model in listOf(OpenAiImageParams.FLARE_26, OpenAiImageParams.SUNBURST_26)) {
+                for (references in listOf(emptyList(), listOf("data:image/png;base64,fixture"))) {
+                    val next = png.copy(model = model, complexity = "medium")
+                    server.enqueue(MockResponse().setBody("""{"data":[{"b64_json":"sample"}]}"""))
+                    val result = api.generate(key, next, references)
+                    val request = server.takeRequest()
+                    assertThat(request.path).isEqualTo(if (references.isEmpty()) "/v1/images/generations" else "/v1/images/edits")
+                    val wire = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
+                    assertThat(wire["model"]!!.jsonPrimitive.content).isEqualTo(model)
+                    assertThat(wire["complexity"]!!.jsonPrimitive.content).isEqualTo("medium")
+                    assertThat(OpenAiImageCodec.decode(OpenAiImageCodec.encode(result.snapshot))!!.params).isEqualTo(next)
+                    assertThat(next.copy(complexity = "invalid").validate()).isNotNull()
+                }
+            }
+            val legacy = OpenAiImageCodec.decode("""{"params":{"prompt":"legacy","model":"gpt-image-2.5-flare"}}""")!!.params
+            assertThat(legacy.model).isEqualTo(OpenAiImageParams.FLARE)
+            assertThat(OpenAiImageApi.payload(legacy)).doesNotContainKey("complexity")
             server.enqueue(MockResponse().setBody("""{"data":[{"b64_json":"sample"}],"usage":[]} """))
             val unknownUsage = api.generate(key, png, emptyList())
             assertThat(unknownUsage.data).containsExactly("sample")
@@ -107,7 +126,7 @@ class OpenAiImageApiTest {
             assertThat((error as OpenAiImageFailure).uncertain).isTrue()
             assertThat(error.message).doesNotContain(key)
             assertThat(error.message).doesNotContain(params.prompt)
-            assertThat(server.requestCount).isEqualTo(4)
+            assertThat(server.requestCount).isEqualTo(8)
             assertThat(server.takeRequest().path).isEqualTo("/v1/images/generations")
             assertThat(OpenAiImageApi.payload(params.copy(outputFormat = "png"))).doesNotContainKey("output_compression")
         }
@@ -123,12 +142,27 @@ class OpenAiImageApiTest {
             "2880x2880" to listOf(659L, 1483L, 5930L, 10542L, 23719L),
         )
         val qualities = listOf("low", "medium", "high", "xhigh", "max")
-        for (model in OpenAiImageParams.MODELS) for ((size, expected) in fixtures) {
+        for (model in listOf(OpenAiImageParams.FLARE, OpenAiImageParams.SUNBURST)) for ((size, expected) in fixtures) {
             val params = OpenAiImageParams(model = model, size = size)
             assertThat(qualities.map { OpenAiImagePricing.outputTokens(params.copy(quality = it)) }).isEqualTo(expected)
             assertThat(qualities.map { OpenAiImagePricing.outputTokens(params.copy(
                 quality = it, size = size.split('x').reversed().joinToString("x"))) }).isEqualTo(expected)
         }
+        val fixtures26 = mapOf(
+            "1024x1024" to listOf(823L, 1449L, 1756L, 3122L, 7024L),
+            "1536x1024" to listOf(664L, 1132L, 1372L, 2459L, 5488L),
+            "3840x2160" to listOf(1558L, 2855L, 3336L, 5930L, 13342L),
+            "1024x800" to listOf(571L, 1063L, 1286L, 2256L, 5075L),
+            "2880x2880" to listOf(2768L, 4894L, 5930L, 10542L, 23719L),
+        )
+        for (model in listOf(OpenAiImageParams.FLARE_26, OpenAiImageParams.SUNBURST_26)) for ((size, expected) in fixtures26) {
+            val params = OpenAiImageParams(model = model, size = size)
+            assertThat(qualities.map { OpenAiImagePricing.outputTokens(params.copy(quality = it)) }).isEqualTo(expected)
+            assertThat(qualities.map { OpenAiImagePricing.outputTokens(params.copy(
+                quality = it, size = size.split('x').reversed().joinToString("x"))) }).isEqualTo(expected)
+        }
+        val estimate26 = OpenAiImagePricing.estimate(OpenAiImageParams(model = OpenAiImageParams.FLARE_26), 0)!!
+        assertThat(estimate26.minimumUsd).isWithin(0.00000001).of(0.02469)
         // Official floating point arithmetic places these just below / above a half-grid boundary.
         assertThat(OpenAiImagePricing.outputTokens(OpenAiImageParams(size = "944x1536", quality = "high"))).isEqualTo(1201L)
         assertThat(OpenAiImagePricing.outputTokens(OpenAiImageParams(size = "784x2048", quality = "xhigh"))).isEqualTo(1443L)

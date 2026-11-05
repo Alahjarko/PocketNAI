@@ -204,11 +204,17 @@ fun GenerateSheet(
                 label = stringResource(R.string.generate_prompt_label),
                 minLines = 4,
                 trailingIcon = {
-                    FavoriteSaveButton(
-                        field = promptField,
-                        target = PromptTarget.POSITIVE,
-                        onRequest = { saveRequest = it },
-                    )
+                    Column {
+                        FavoriteSaveButton(
+                            field = promptField,
+                            target = PromptTarget.POSITIVE,
+                            onRequest = { saveRequest = it },
+                        )
+                        net.pocketnai.ui.common.ClearPromptButton(promptField.text, "正向提示词", state.textRevision) {
+                            viewModel.replacePromptText(PromptTarget.POSITIVE, it)
+                            viewModel.state.value.textRevision
+                        }
+                    }
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -307,14 +313,20 @@ fun GenerateSheet(
                         negativeField = newValue
                         viewModel.onNegativePromptChange(newValue.text)
                     },
-                    label = stringResource(R.string.generate_negative_label),
+                    label = null,
                     minLines = 2,
                     trailingIcon = {
-                        FavoriteSaveButton(
-                            field = negativeField,
-                            target = PromptTarget.NEGATIVE,
-                            onRequest = { saveRequest = it },
-                        )
+                        Column {
+                            FavoriteSaveButton(
+                                field = negativeField,
+                                target = PromptTarget.NEGATIVE,
+                                onRequest = { saveRequest = it },
+                            )
+                            net.pocketnai.ui.common.ClearPromptButton(negativeField.text, "负向提示词", state.textRevision) {
+                                viewModel.replacePromptText(PromptTarget.NEGATIVE, it)
+                                viewModel.state.value.textRevision
+                            }
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                 )

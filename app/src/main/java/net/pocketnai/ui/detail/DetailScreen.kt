@@ -590,6 +590,7 @@ internal fun LazyListScope.detailInfoItems(
                         DetailRow("请求尺寸", openAi.params.size)
                         DetailRow("图片尺寸", "${image.width} × ${image.height}")
                         DetailRow("质量", openAi.responseQuality ?: openAi.params.quality)
+                        if (openAi.params.supportsComplexity) DetailRow("复杂度", openAi.params.complexityLabel)
                         DetailRow("背景", openAi.responseBackground ?: openAi.params.background)
                         DetailRow("格式", openAi.params.outputFormat.uppercase())
                         DetailRow("张数", "${openAi.params.count} 张（本张序号 ${image.ordinal}）")

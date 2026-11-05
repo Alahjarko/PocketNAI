@@ -36,12 +36,14 @@ fun ChatSettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
     var searchSettings by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("对话连接") },
+        title = { Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text("对话连接", Modifier.weight(1f))
+            net.pocketnai.ui.common.InfoButton("消息、人格和工具结果会发送至你填写的 LLM 服务。API Key 在本机使用 Keystore 加密保存。")
+        } },
         text = {
             Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(config.assistantName, { config = config.copy(assistantName = it.take(24)) }, label = { Text("伙伴名字") }, singleLine = true)
-                OutlinedTextField(config.baseUrl, { config = config.copy(baseUrl = it) }, label = { Text("API Base URL") }, singleLine = true,
-                    supportingText = { Text("例如 https://api.deepseek.com/v1；也支持带路径前缀的兼容网关") })
+                OutlinedTextField(config.baseUrl, { config = config.copy(baseUrl = it) }, label = { Text("API Base URL") }, singleLine = true)
                 OutlinedTextField(key, { key = it }, label = { Text(if (viewModel.hasKey()) "替换 API Key（留空保留）" else "API Key") },
                     singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -51,7 +53,10 @@ fun ChatSettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
                     if (state.models.isNotEmpty()) TextButton(onClick = { chooseModel = true }) { Text("选择模型") }
                 }
                 OutlinedTextField(config.model, { config = config.copy(model = it) }, label = { Text("模型 ID") }, singleLine = true)
-                Text("思考协议", style = MaterialTheme.typography.labelLarge)
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text("思考协议", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                    net.pocketnai.ui.common.InfoButton("返回的思考内容可在消息中展开。支持情况取决于模型；代理模型名不能识别时手动选择协议。")
+                }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     LlmDialect.entries.forEach { dialect ->
                         FilterChip(selected = config.dialect == dialect, onClick = { config = config.copy(dialect = dialect) },
@@ -62,7 +67,6 @@ fun ChatSettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
                     Text("开启思考与思考内容回传", modifier = Modifier.weight(1f))
                     Switch(config.thinking, { config = config.copy(thinking = it) })
                 }
-                Text("返回的思考内容可在消息中展开。支持情况取决于模型；代理模型名不能识别时手动选择协议。", style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(tokensText, { value -> tokensText = value.filter(Char::isDigit).take(5); tokensText.toIntOrNull()?.let { config = config.copy(maxTokens = it) } },
                     label = { Text("最大输出 Tokens（含思考）") }, singleLine = true)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -89,7 +93,6 @@ fun ChatSettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
                 }
                 if (viewModel.hasKey()) TextButton(onClick = viewModel::clearKey) { Text("移除已保存的 API Key") }
                 state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                Text("消息、人格和工具结果会发送至你填写的 LLM 服务。API Key 在本机使用 Keystore 加密保存。", style = MaterialTheme.typography.bodySmall)
             }
         },
         confirmButton = { TextButton(onClick = { if (viewModel.saveConfig(config, key)) { key = ""; onDismiss() } }, enabled = tokensText.toIntOrNull() in 1024..65536) { Text("保存") } },

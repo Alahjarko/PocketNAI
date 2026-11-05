@@ -146,6 +146,13 @@ private fun CharacterCard(
                 onValueChange = { positive = it; onUpdate(character.copy(prompt = it.text)) },
                 onFocusChanged = { focused = it },
                 label = "角色特征提示词",
+                trailingIcon = {
+                    net.pocketnai.ui.common.ClearPromptButton(positive.text, "角色 ${index + 1} 提示词", textRevision) {
+                        positive = TextFieldValue(it, TextRange(it.length))
+                        onUpdate(character.copy(prompt = it))
+                        textRevision
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 3,
             )
@@ -161,6 +168,13 @@ private fun CharacterCard(
                     value = negative,
                     onValueChange = { negative = it; onUpdate(character.copy(negativePrompt = it.text)) },
                     label = null,
+                    trailingIcon = {
+                        net.pocketnai.ui.common.ClearPromptButton(negative.text, "角色 ${index + 1} 排除词", textRevision) {
+                            negative = TextFieldValue(it, TextRange(it.length))
+                            onUpdate(character.copy(negativePrompt = it))
+                            textRevision
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 2,
                     onFocusChanged = { negativeFocused = it },

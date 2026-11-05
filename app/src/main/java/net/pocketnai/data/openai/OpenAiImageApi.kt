@@ -115,6 +115,7 @@ class OpenAiImageApi(
             put("model", params.model); put("prompt", params.prompt); put("n", params.count)
             put("size", params.size); put("quality", params.quality); put("output_format", params.outputFormat)
             put("background", params.background); put("moderation", params.moderation)
+            if (params.supportsComplexity) put("complexity", params.complexity)
             if (params.outputFormat != "png") put("output_compression", params.compression)
             if (images.isNotEmpty()) put("images", buildJsonArray {
                 images.forEach { add(buildJsonObject { put("image_url", it) }) }

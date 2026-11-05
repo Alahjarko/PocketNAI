@@ -21,6 +21,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -37,6 +38,7 @@ import net.pocketnai.R
 import net.pocketnai.domain.model.PromptFavorite
 import net.pocketnai.domain.model.PromptFavoriteKind
 import net.pocketnai.domain.model.PromptTarget
+import net.pocketnai.domain.prompt.PromptComposition
 
 /**
  * 保存收藏的对话框。
@@ -135,25 +137,28 @@ fun CreateFavoriteDialog(
 ) {
     var content by remember(existing?.id) { mutableStateOf(existing?.content.orEmpty()) }
     var name by remember(existing?.id) { mutableStateOf(existing?.name.orEmpty()) }
+    var nameEdited by remember(existing?.id) { mutableStateOf(existing != null) }
     var category by remember(existing?.id) { mutableStateOf(existing?.category.orEmpty()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (existing == null) stringResource(R.string.favorite_create_title) else "编辑片段") },
+        title = { Text((if (existing == null) "新建" else "编辑") + if (kind == PromptFavoriteKind.TAG) "标签" else "提示词") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = content,
-                    onValueChange = { content = it },
+                    onValueChange = {
+                        content = it
+                        if (!nameEdited) name = PromptComposition.defaultName(it).orEmpty()
+                    },
                     label = { Text(stringResource(R.string.favorite_create_content)) },
                     minLines = 2,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = { name = it; nameEdited = true },
                     label = { Text(stringResource(R.string.favorite_save_name)) },
-                    placeholder = { Text(stringResource(R.string.favorite_create_name_hint)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -163,20 +168,6 @@ fun CreateFavoriteDialog(
                     label = { Text(stringResource(R.string.favorite_save_category)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    text = stringResource(
-                        R.string.favorite_create_kind,
-                        stringResource(
-                            if (kind == PromptFavoriteKind.TAG) {
-                                R.string.favorites_tab_tags
-                            } else {
-                                R.string.favorites_tab_prompts
-                            },
-                        ),
-                    ),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
@@ -227,7 +218,7 @@ fun FavoritePickerDialog(
                 )
                 // "新建"放标题右边：创建是"使用已有条目"之外的另一种动作，
                 // 混进列表里会看起来像一条特殊条目。
-                TextButton(onClick = onCreate) {
+                if (!state.isEmpty || state.query.isNotBlank()) TextButton(onClick = onCreate) {
                     Icon(Icons.Default.Add, contentDescription = null)
                     Text(
                         text = stringResource(R.string.favorites_action_new),
@@ -286,12 +277,12 @@ fun FavoritePickerDialog(
                 HorizontalDivider()
 
                 if (state.isEmpty) {
-                    Text(
-                        text = stringResource(R.string.favorites_empty),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 12.dp),
-                    )
+                    if (state.query.isNotBlank()) Text("没有匹配的收藏", Modifier.padding(vertical = 12.dp),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else OutlinedButton(onClick = onCreate, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Text(if (state.kind == PromptFavoriteKind.TAG) "新建标签" else "新建提示词", Modifier.padding(start = 8.dp))
+                    }
                 } else {
                     LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
                         state.grouped.forEach { (category, favorites) ->

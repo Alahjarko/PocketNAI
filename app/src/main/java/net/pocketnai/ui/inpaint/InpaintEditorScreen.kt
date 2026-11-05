@@ -192,6 +192,7 @@ fun InpaintEditorScreen(
                     }
                 },
                 actions = {
+                    net.pocketnai.ui.common.InfoButton(stringResource(R.string.inpaint_hint))
                     TextButton(onClick = save, enabled = !saving) {
                         Text(stringResource(R.string.inpaint_done))
                     }
@@ -347,11 +348,6 @@ fun InpaintEditorScreen(
                     onChange = { dilation = it },
                 )
 
-                Text(
-                    text = stringResource(R.string.inpaint_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 // 始终保留同一行高度，否则第一笔落下后底图会重新 Fit，整幅画面跳动。
                 Text(
                     text = stringResource(R.string.inpaint_empty_hint),

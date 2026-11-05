@@ -29,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -40,6 +41,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -93,13 +96,8 @@ fun Img2ImgPanel(
     ) {
         val source = state.referenceSource
         if (source == null) {
-            Text(
-                text = stringResource(R.string.generate_reference_empty_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedCard(
                     onClick = {
                         pickImage.launch(
                             PickVisualMediaRequest(
@@ -108,28 +106,31 @@ fun Img2ImgPanel(
                         )
                     },
                     enabled = connected && !state.referenceBusy,
+                    modifier = Modifier.weight(1f),
                 ) {
-                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
-                    Text(
-                        text = stringResource(R.string.generate_reference_pick),
-                        modifier = Modifier.padding(start = 4.dp),
-                    )
+                    Column(Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
+                        Text(stringResource(R.string.generate_reference_pick))
+                    }
                 }
-                OutlinedButton(
+                OutlinedCard(
                     onClick = { historyPickerOpen = true },
                     enabled = connected && !state.referenceBusy,
+                    modifier = Modifier.weight(1f),
                 ) {
-                    Icon(Icons.Default.History, contentDescription = null)
-                    Text(
-                        text = stringResource(R.string.generate_reference_from_history),
-                        modifier = Modifier.padding(start = 4.dp),
-                    )
+                    Column(Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.History, contentDescription = null)
+                        Text(stringResource(R.string.generate_reference_from_history))
+                    }
                 }
             }
         } else {
             ReferenceSummary(
                 source = source,
                 targetSizeLabel = state.referenceTargetSize?.label.orEmpty(),
+                mask = state.inpaintMask,
                 onRemove = viewModel::onRemoveReference,
             )
             ReferenceOriginLink(source)
@@ -161,15 +162,6 @@ fun Img2ImgPanel(
                         },
                     )
                 }
-                Text(
-                    text = if (mask == null) {
-                        stringResource(R.string.inpaint_not_masked)
-                    } else {
-                        stringResource(R.string.inpaint_masked_hint)
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 if (mask != null) {
                     TextButton(onClick = viewModel::onInpaintMaskCleared) {
                         Text(stringResource(R.string.inpaint_clear))
@@ -232,6 +224,7 @@ fun Img2ImgPanel(
 private fun ReferenceSummary(
     source: ReferenceImage,
     targetSizeLabel: String,
+    mask: ReferenceImage?,
     onRemove: () -> Unit,
 ) {
     val container = LocalAppContainer.current
@@ -240,15 +233,8 @@ private fun ReferenceSummary(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        AsyncImage(
-            model = container.fileStore.resolve(source.relativePath),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(width = 72.dp, height = 72.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surface),
-        )
+        ReferenceThumbnail(container.fileStore.resolve(source.relativePath),
+            mask?.let { container.fileStore.resolve(it.relativePath) }, Modifier.size(72.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = stringResource(
@@ -273,6 +259,23 @@ private fun ReferenceSummary(
                 contentDescription = stringResource(R.string.generate_reference_remove),
             )
         }
+    }
+}
+
+/** Stored masks are black/white in source-image coordinates; both layers share the same crop. */
+@Composable
+internal fun ReferenceThumbnail(source: java.io.File, mask: java.io.File?, modifier: Modifier = Modifier) {
+    val color = MaterialTheme.colorScheme.primary
+    val tint = remember(color) { ColorFilter.colorMatrix(ColorMatrix(floatArrayOf(
+        0f, 0f, 0f, 0f, color.red * 255f,
+        0f, 0f, 0f, 0f, color.green * 255f,
+        0f, 0f, 0f, 0f, color.blue * 255f,
+        0.6f, 0f, 0f, 0f, 0f,
+    ))) }
+    Box(modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surface)) {
+        AsyncImage(source, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        if (mask != null) AsyncImage(mask, "重绘区域", Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop, colorFilter = tint)
     }
 }
 

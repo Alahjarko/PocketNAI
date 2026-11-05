@@ -256,7 +256,7 @@ class ChatShortReplyTest {
             for (index in 1..3) {
                 compose.onNodeWithTag("chat-plan-image-$index").performScrollTo().assertIsDisplayed().performClick()
                 compose.onNodeWithText("第 $index 张参数").assertIsDisplayed()
-                compose.onNodeWithText("关闭全文").performClick()
+                compose.onNodeWithContentDescription("关闭全文").performClick()
             }
             compose.onNodeWithTag("chat-confirm-image").performScrollTo()
             val lastPlanRow = compose.onNodeWithTag("chat-plan-image-3").fetchSemanticsNode().boundsInRoot
@@ -314,7 +314,7 @@ class ChatShortReplyTest {
             compose.waitUntil(5000) { fixture.viewModel.state.value.pending != null }
             compose.onNodeWithTag("chat-plan-image-12").performScrollTo().assertIsDisplayed().performClick()
             compose.onNodeWithText("第 12 张参数").assertIsDisplayed()
-            compose.onNodeWithText("关闭全文").performClick()
+            compose.onNodeWithContentDescription("关闭全文").performClick()
             compose.onNodeWithTag("chat-confirm-image").performScrollTo().assertIsDisplayed()
             assertThat(compose.onNodeWithTag("chat-plan-image-12").fetchSemanticsNode().boundsInRoot.bottom)
                 .isAtMost(compose.onNodeWithTag("chat-confirm-image").fetchSemanticsNode().boundsInRoot.top)

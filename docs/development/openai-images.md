@@ -4,7 +4,7 @@
 
 ## 入口与范围
 
-设置 → 生图服务切换 NovelAI / OpenAI。OpenAI 使用用户自己的 Platform 密钥与额度，提供 `gpt-image-2.5-flare` 和 `gpt-image-2.5-sunburst`。两种服务各自保留草稿；OpenAI 历史支持复用参数，或通过“继续编辑”把成图作为参考。
+设置 → 生图服务切换 NovelAI / OpenAI。OpenAI 使用用户自己的 Platform 密钥与额度，提供 GPT Image 2.6 与 2.5 的 Flare、Sunburst（完整ID见[2.6接入记录](../openai-image-26-2026-11-05.md)）。两种服务各自保留草稿；OpenAI 历史支持复用参数，或通过“继续编辑”把成图作为参考。增加模型不改写用户已选模型和旧草稿。
 
 第一版覆盖画廊生图和参考图编辑。对话图片工具和画师抽卡仍为 NovelAI 专用；OpenAI 模式隐藏抽卡入口，并阻止对话工具误走 NovelAI。设置页在图片任务执行期间禁止切换服务。
 
@@ -13,10 +13,12 @@
 - 固定连接 `https://api.openai.com/v1`，不套用NAI公共代理。不记录Authorization、描述或原始服务端错误。
 - 无参考图时只发一次 `POST /images/generations`；有参考图时只发一次 `POST /images/edits`，JSON 的 `images[].image_url` 使用PNG data URI。
 - 描述原样发送，不经过NAI质量词、权重、宏、负向预设或漫画文字处理。不发送NAI的Seed、采样器、步数、角色或 `input_fidelity`。
+- 2.6 的 `complexity` 为 low/medium/high，默认high，仅2.6发送；草稿、历史、复用、确认和详情共同保留。2.5请求省略此字段。现有图片路径支持PNG/JPEG/WebP，SVG、GIF和markup不在此次模型接入范围。
 - 张数1～10；质量 `low / medium / high / xhigh / max / auto`；格式PNG/JPEG/WebP；压缩仅用于JPEG/WebP；背景 `auto / opaque / transparent`（透明禁止JPEG）；审核 `auto / low`。
 - 尺寸支持 `auto`、预设与自定义。宽高为16的倍数，每边≤3840，比例1:3～3:1，总像素655360～8294400。超过2560×1440的像素量标明实验性。
 - 尺寸菜单包含3840×2160及2160×3840；自定义用独立宽/高滑条（480～3840，16px步长）、数字输入和交换宽高。拖动一边不暗改另一边，允许暂时输入超出总像素/比例的组合，但就地提示并禁用生成；界面、仓库与HTTP发送共用`OpenAiImageParams.sizeError`校验，参数仍按原`size`字符串持久化和复用。说明与验证见[尺寸控件记录](../resolution-controls-2026-11-02.md)。
 - 最多16张参考图；本机单张PNG≤14 MiB、合计≤24 MiB。响应从流中解码，读取上限64 MiB，避免复制整份base64响应造成内存尖峰。
+- 2026-11-05重新核对标准费率仍为文本输入$5、图片输入$8、图片输出$30/百万token。2.6低/中质量输出token分别在2.5计算结果上乘4.2/3.3后四舍五入，高/xhigh/max不变；不能直接复用2.5低/中质量报价。历史已冻结费率保留，证据见[2.6接入记录](../openai-image-26-2026-11-05.md)。
 - 禁止自动重试、重定向及断流降级重发。超时、5xx或已收到结果但保存失败，标记结果/计费待确认；已保存的部分结果保留，不补发缺失图片。
 - 生成前确认模型、尺寸、质量和张数，并显示粗估总价：输出采用官方 GPT Image 2.5 计算器，文本按 UTF-8 字节数÷3 粗估，每张参考图按每张成图 $0.05 本机预留（非官方按张定价）。auto质量显示low～max区间，auto尺寸不报价。完成后按有效整次usage和冻结费率折算，不再乘张数：文本输入每百万token $5、图片输入$8、图片输出$30（2026-11-02核对）。直接Images API不使用缓存/Batch折扣；无完整有效用量保持未知，不当成免费。本机预算不是账单或误差保证，见[费用粗估规则](../openai-pricing-2026-11-02.md)。
 

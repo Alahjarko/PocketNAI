@@ -3,6 +3,7 @@ package net.pocketnai.domain.openai
 import kotlinx.serialization.Serializable
 import kotlin.math.ceil
 import kotlin.math.round
+import kotlin.math.roundToLong
 
 /** Standard direct Images API prices; no Batch or Responses caching discount. */
 @Serializable
@@ -35,12 +36,12 @@ data class OpenAiImageEstimate(
 }
 
 object OpenAiImagePricing {
-    val officialRates = OpenAiImageRates()
-    // Local planning allowance only: GPT Image 2.5 input-image tokenization is not published.
+    val officialRates = OpenAiImageRates(source = "OpenAI · 2026-11-05")
+    // Local planning allowance only, not an official per-reference price.
     const val REFERENCE_ALLOWANCE_USD = 0.05
     private val qualityGrid = mapOf("low" to 16, "medium" to 24, "high" to 48, "xhigh" to 64, "max" to 96)
 
-    /** Official GPT Image 2.5 calculator, checked 2026-11-02; see docs/openai-pricing-2026-11-02.md. */
+    /** Official 2.5/2.6 calculator, checked 2026-11-05; see docs/openai-image-26-2026-11-05.md. */
     fun outputTokens(params: OpenAiImageParams): Long? {
         if (params.model !in OpenAiImageParams.MODELS || !OpenAiImageParams.validSize(params.size)) return null
         val grid = qualityGrid[params.quality] ?: return null
@@ -49,7 +50,11 @@ object OpenAiImagePricing {
         // Preserve the calculator's floating-point operation order, including near-half values.
         // round() uses ties-to-even, unlike roundToInt().
         val shortGrid = round(grid / (longEdge.toDouble() / minOf(width, height)))
-        return ceil(grid * shortGrid * (2_000_000.0 + width.toLong() * height) / 4_000_000.0).toLong()
+        val base = ceil(grid * shortGrid * (2_000_000.0 + width.toLong() * height) / 4_000_000.0).toLong()
+        if (!params.supportsComplexity) return base
+        val multiplier = when (params.quality) { "low" -> 4.2; "medium" -> 3.3; else -> 1.0 }
+        // The 2.6 multiplier is applied after ceil; JS Math.round uses positive half-up rounding.
+        return (base * multiplier).roundToLong()
     }
 
     fun estimate(params: OpenAiImageParams, referenceCount: Int): OpenAiImageEstimate? {
