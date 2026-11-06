@@ -250,6 +250,7 @@ fun DetailScreen(
                     generation = detail?.generation,
                     preview = preview,
                     isCurrentPage = pageId == state.currentId,
+                    animateMedia = pageId == state.currentId && !fullscreen,
                     errorCode = state.errorCode,
                     savedToGallery = state.savedToGallery,
                     savedMessage = savedMessage,
@@ -352,6 +353,7 @@ private fun DetailPageContent(
     generation: Generation?,
     preview: ImageOriginPreview?,
     isCurrentPage: Boolean,
+    animateMedia: Boolean,
     errorCode: net.pocketnai.core.ErrorCode?,
     savedToGallery: Boolean,
     savedMessage: String,
@@ -374,6 +376,7 @@ private fun DetailPageContent(
                     preview = preview,
                     onOpenFullscreen = onOpenFullscreen,
                     revealed = revealed,
+                    animateMedia = animateMedia,
                     // 宽屏交给 ContentScale.Fit 适配整块左栏，不再按宽高比撑高。
                     modifier = Modifier
                         .weight(1f)
@@ -418,6 +421,7 @@ private fun DetailPageContent(
                         preview = preview,
                         onOpenFullscreen = onOpenFullscreen,
                         revealed = revealed,
+                        animateMedia = animateMedia,
                         modifier = Modifier
                             .fillMaxWidth()
                             .aspectRatio(
@@ -455,6 +459,7 @@ private fun DetailImagePane(
     onOpenFullscreen: () -> Unit,
     modifier: Modifier,
     revealed: Boolean = false,
+    animateMedia: Boolean = false,
 ) {
     val container = LocalAppContainer.current
     val file = image?.let { container.generationRepository.fileOfRelativePath(it.privateFilePath) }
@@ -464,6 +469,7 @@ private fun DetailImagePane(
     val masked = net.pocketnai.ui.safety.LocalSfwDisplay.current.masks(file, sensitive, revealed)
     Box(modifier.clip(RoundedCornerShape(12.dp)).clickable(enabled = image != null, onClick = onOpenFullscreen)) {
         net.pocketnai.ui.safety.SfwAsyncImage(file = file, sensitive = sensitive, revealed = revealed,
+            animate = animateMedia,
             contentDescription = generation?.title ?: preview?.title, contentScale = ContentScale.Fit,
             modifier = Modifier.fillMaxSize().sharedImage(imageId, sensitive))
         if (masked) Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), shape = RoundedCornerShape(12.dp),
@@ -535,7 +541,7 @@ internal fun LazyListScope.detailInfoItems(
 
             if (isCurrentPage && savedToGallery) {
                 Text(
-                    text = savedMessage,
+                    text = if (image.privateFilePath.endsWith(".svg", ignoreCase = true)) "SVG 已保存到下载目录" else savedMessage,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -549,7 +555,7 @@ internal fun LazyListScope.detailInfoItems(
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onSaveClick, modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.action_save_to_gallery))
+                    Text(if (image.privateFilePath.endsWith(".svg", ignoreCase = true)) "保存 SVG 文件" else stringResource(R.string.action_save_to_gallery))
                 }
                 OutlinedButton(onClick = onCopyPrompt, modifier = Modifier.weight(1f)) {
                     Text(if (generation.openAi != null) "复制图片描述" else stringResource(R.string.action_copy_prompt))
@@ -559,8 +565,8 @@ internal fun LazyListScope.detailInfoItems(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // 局部重绘：官方文档说可以从"任意一张已生成的图片"进入，
                 // 而"这张图某处画坏了"正是用户点进详情页的常见理由。
-                OutlinedButton(onClick = onInpaint, modifier = Modifier.weight(1f)) {
-                    Text(if (generation.openAi != null) "继续编辑" else stringResource(R.string.action_inpaint))
+                if (!image.privateFilePath.endsWith(".svg", ignoreCase = true)) OutlinedButton(onClick = onInpaint, modifier = Modifier.weight(1f)) {
+                    Text(if (image.privateFilePath.endsWith(".gif", ignoreCase = true)) "编辑首帧" else if (generation.openAi != null) "继续编辑" else stringResource(R.string.action_inpaint))
                 }
 
                 if (generation.openAi == null) OutlinedButton(onClick = onOpenUpscaleDialog, modifier = Modifier.weight(1f)) {
@@ -583,6 +589,10 @@ internal fun LazyListScope.detailInfoItems(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     val time = DateFormat.getDateTimeInstance().format(Date(generation.createdAt))
                     DetailRow(stringResource(R.string.common_time), time)
+                    DetailRow("生成用时", generation.generationDurationMillis?.let { elapsed ->
+                        if (elapsed < 60_000) String.format(java.util.Locale.ROOT, "%.1f 秒", elapsed / 1000.0)
+                        else "${elapsed / 60_000} 分 ${(elapsed % 60_000) / 1000} 秒"
+                    } ?: "未记录")
                     val openAi = generation.openAi
                     if (openAi != null) {
                         DetailRow("服务", "OpenAI Platform")
@@ -594,7 +604,11 @@ internal fun LazyListScope.detailInfoItems(
                         DetailRow("背景", openAi.responseBackground ?: openAi.params.background)
                         DetailRow("格式", openAi.params.outputFormat.uppercase())
                         DetailRow("张数", "${openAi.params.count} 张（本张序号 ${image.ordinal}）")
-                        if (openAi.params.outputFormat != "png") DetailRow("压缩质量", openAi.params.compression.toString())
+                        if (openAi.params.hasCompression) DetailRow("压缩质量", openAi.params.compression.toString())
+                        if (openAi.params.isAnimated) {
+                            DetailRow("动画帧数", openAi.params.frameCount.toString())
+                            DetailRow("每帧时长", "${openAi.params.frameDurationMs} ms")
+                        }
                         DetailRow("内容审核", openAi.params.moderation)
                         openAi.usage?.let { usage ->
                             DetailRow("输入文本 token", usage.textInput.toString())
@@ -608,13 +622,17 @@ internal fun LazyListScope.detailInfoItems(
                             }
                             DetailRow("费率依据", openAi.pricing?.source ?: "OpenAI · 2026-10-31")
                             DetailRow("费用说明", "按用量折算，实际扣费以账单为准")
-                        } ?: DetailRow("费用", "接口未返回完整有效用量，请查看服务商账单")
+                        } ?: DetailRow("费用", if (openAi.params.outputFormat == "svg")
+                            "含矢量编写费用，请查看服务商账单" else "接口未返回完整有效用量，请查看服务商账单")
                         openAi.estimate?.let { estimate ->
                             DetailRow("提交前粗估", net.pocketnai.ui.openai.OpenAiCostLabels.summary(estimate))
                             if (estimate.referenceCount > 0) DetailRow("粗估说明", "含参考图预算，非官方按张定价")
                         }
                     } else {
                     DetailRow(stringResource(R.string.common_model), generation.params.model.displayName)
+                    if (generation.params.model == net.pocketnai.domain.model.ImageModel.V5_FULL) {
+                        DetailRow("Effort", generation.params.effort.label)
+                    }
                     DetailRow("生成画布", generation.params.size.label)
                     DetailRow("图片尺寸", "${image.width} × ${image.height}")
                     DetailRow(stringResource(R.string.generate_count), "${generation.params.sampleCount} 张（本张序号 ${image.ordinal}）")

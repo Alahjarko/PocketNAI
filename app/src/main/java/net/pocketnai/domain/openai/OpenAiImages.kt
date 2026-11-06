@@ -20,6 +20,8 @@ data class OpenAiImageParams(
     val moderation: String = "auto",
     val count: Int = 1,
     val complexity: String = "high",
+    val frameCount: Int = 9,
+    val frameDurationMs: Int = 200,
 ) {
     val modelLabel: String get() = labelOf(model)
     val supportsComplexity: Boolean get() = model == FLARE_26 || model == SUNBURST_26
@@ -28,12 +30,19 @@ data class OpenAiImageParams(
         (it.getOrNull(0)?.toIntOrNull() ?: 1024) to (it.getOrNull(1)?.toIntOrNull() ?: 1024)
     }
 
-    fun validate(): String? = when {
+    val formats: List<String> get() = if (supportsComplexity) FORMATS else RASTER_FORMATS
+    val isAnimated: Boolean get() = outputFormat == "gif"
+    val hasCompression: Boolean get() = outputFormat in listOf("jpeg", "webp")
+    fun validate(referenceCount: Int = 0): String? = when {
         model !in MODELS -> "请选择支持的 GPT Image 模型"
         supportsComplexity && complexity !in COMPLEXITIES -> "不支持的图片复杂度"
         prompt.isBlank() || prompt.length > 32_000 -> "图片描述应为 1～32000 字符"
         quality !in QUALITIES -> "不支持的图片质量"
-        outputFormat !in FORMATS -> "不支持的图片格式"
+        outputFormat !in formats -> "当前模型不支持此图片格式"
+        outputFormat == "svg" && (count != 1 || referenceCount > 0) -> "SVG 仅支持单张文生图，请移除参考图"
+        isAnimated && count != 1 -> "GIF 实验功能每次生成一张动图"
+        isAnimated && size != "auto" -> "GIF 实验功能使用自动帧尺寸"
+        isAnimated && (frameCount !in 2..16 || frameDurationMs !in 20..2000 || frameDurationMs % 10 != 0) -> "GIF 支持 2～16 帧，每帧 20～2000 毫秒，10 毫秒一档"
         background !in BACKGROUNDS -> "不支持的背景设置"
         background == "transparent" && outputFormat == "jpeg" -> "透明背景需要 PNG 或 WebP 格式"
         compression !in 0..100 -> "压缩质量应为 0～100"
@@ -60,7 +69,8 @@ data class OpenAiImageParams(
             else -> model
         }
         val QUALITIES = listOf("low", "medium", "high", "xhigh", "max", "auto")
-        val FORMATS = listOf("png", "jpeg", "webp")
+        val RASTER_FORMATS = listOf("png", "jpeg", "webp")
+        val FORMATS = RASTER_FORMATS + listOf("svg", "gif")
         val BACKGROUNDS = listOf("auto", "opaque", "transparent")
         const val DIMENSION_STEP = 16
         // Below 480 no aligned companion edge can satisfy both area and aspect ratio.
@@ -110,7 +120,7 @@ data class OpenAiImageSnapshot(
     val returnedImageCount: Int? = null,
 ) {
     // Null pricing belongs to legacy snapshots; these fixed constructor defaults preserve their rates.
-    val estimatedUsd: Double? get() = usage?.let { (pricing ?: OpenAiImageRates()).cost(it) }
+    val estimatedUsd: Double? get() = if (params.outputFormat == "svg") null else usage?.let { (pricing ?: OpenAiImageRates()).cost(it) }
 }
 
 object OpenAiImageCodec {

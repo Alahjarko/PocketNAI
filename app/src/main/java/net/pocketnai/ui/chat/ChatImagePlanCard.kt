@@ -34,6 +34,7 @@ internal fun ChatImagePlanCard(plan: ChatImagePlan, onConfirm: () -> Unit, onCan
                     Row(Modifier.fillMaxWidth().testTag("chat-plan-image-$ordinal")
                         .clickable(role = Role.Button, onClickLabel = "查看第 $ordinal 张完整参数") { onRead("第 $ordinal 张参数", buildString {
                         appendLine("模型：${p.model.displayName}　画布：${p.size.label}")
+                        if (p.model == net.pocketnai.domain.model.ImageModel.V5_FULL) appendLine("Effort：${p.effort.label}")
                         appendLine("步数：${p.steps}　CFG：${p.guidance}　采样器：${p.sampler}")
                         appendLine("Seed：${if (p.seedMode == net.pocketnai.domain.model.SeedMode.RANDOM) "随机" else p.baseSeed.toString()}")
                         appendLine("报价：${item.quote.label}\n\n正向提示词\n${p.prompt}\n\n逆向提示词\n${p.negativePrompt}")

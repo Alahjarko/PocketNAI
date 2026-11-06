@@ -185,13 +185,17 @@ class ReferenceImageProcessor(
 
     private fun decodeSampled(uri: Uri, factor: Int): Bitmap? = try {
         val bounds = readBounds(uri) ?: return null
-        val sample = maxOf(factor, ImageGeometry.downsampleFactor(bounds))
-        appContext.contentResolver.openInputStream(uri)?.use { stream ->
+        val sample = maxOf(factor, ImageGeometry.downsampleFactor(bounds.size))
+        if (bounds.gif) GifFirstFrame.decode(appContext.contentResolver, uri) { width, height ->
+            (width / sample).coerceAtLeast(1) to (height / sample).coerceAtLeast(1)
+        } else appContext.contentResolver.openInputStream(uri)?.use { stream ->
             BitmapFactory.decodeStream(stream, null, options(sample))
         }
     } catch (e: OutOfMemoryError) {
         null
     } catch (e: IOException) {
+        null
+    } catch (e: IllegalArgumentException) {
         null
     } catch (e: SecurityException) {
         // URI 授权已失效（例如进程重启后旧授权被回收）。
@@ -200,13 +204,21 @@ class ReferenceImageProcessor(
 
     private fun decodeSampled(file: File, factor: Int): Bitmap? = try {
         val bounds = readBounds(file) ?: return null
-        val sample = maxOf(factor, ImageGeometry.downsampleFactor(bounds))
-        BitmapFactory.decodeFile(file.absolutePath, options(sample))
+        val sample = maxOf(factor, ImageGeometry.downsampleFactor(bounds.size))
+        if (bounds.gif) GifFirstFrame.decode(file) { width, height ->
+            (width / sample).coerceAtLeast(1) to (height / sample).coerceAtLeast(1)
+        } else BitmapFactory.decodeFile(file.absolutePath, options(sample))
     } catch (e: OutOfMemoryError) {
+        null
+    } catch (e: IOException) {
+        null
+    } catch (e: IllegalArgumentException) {
         null
     }
 
-    private fun readBounds(uri: Uri): PixelSize? = try {
+    private data class SourceBounds(val size: PixelSize, val gif: Boolean)
+
+    private fun readBounds(uri: Uri): SourceBounds? = try {
         appContext.contentResolver.openInputStream(uri)?.use { stream ->
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeStream(stream, null, options)
@@ -218,15 +230,15 @@ class ReferenceImageProcessor(
         null
     }
 
-    private fun readBounds(file: File): PixelSize? {
+    private fun readBounds(file: File): SourceBounds? {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, options)
         return sizeOf(options)
     }
 
-    private fun sizeOf(options: BitmapFactory.Options): PixelSize? =
+    private fun sizeOf(options: BitmapFactory.Options): SourceBounds? =
         if (options.outWidth > 0 && options.outHeight > 0) {
-            PixelSize(options.outWidth, options.outHeight)
+            SourceBounds(PixelSize(options.outWidth, options.outHeight), options.outMimeType == "image/gif")
         } else {
             null
         }

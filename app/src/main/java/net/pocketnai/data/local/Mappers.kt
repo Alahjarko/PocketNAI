@@ -41,6 +41,8 @@ object Mappers {
         useCharacterCoordinates = generation.params.useCharacterCoordinates,
         modelApiId = generation.openAi?.params?.model ?: generation.params.model.apiModelId,
         openAiParamsJson = generation.openAi?.let(net.pocketnai.domain.openai.OpenAiImageCodec::encode),
+        generationDurationMillis = generation.generationDurationMillis,
+        effort = generation.params.effort.name,
         width = generation.params.size.width,
         height = generation.params.size.height,
         outputWidth = generation.params.outputSize?.width,
@@ -83,6 +85,7 @@ object Mappers {
             promptTemplate = entity.promptTemplate,
             params = GenerationParams(
                 model = model,
+                effort = net.pocketnai.domain.model.NovelAiEffort.fromName(entity.effort),
                 prompt = entity.prompt,
                 negativePrompt = entity.negativePrompt,
                 characters = HistoryCharacters.decode(entity.charactersJson),
@@ -113,6 +116,7 @@ object Mappers {
             errorMessage = entity.errorMessage,
             correlationId = entity.correlationId,
             openAi = openAi,
+            generationDurationMillis = entity.generationDurationMillis?.takeIf { it >= 0 },
         )
     }
 

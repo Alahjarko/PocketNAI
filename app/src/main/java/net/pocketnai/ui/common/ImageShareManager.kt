@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
 import java.io.File
+import net.pocketnai.data.files.MediaFormat
 
 /**
  * 图像系统分享工具类。
@@ -14,7 +15,6 @@ import java.io.File
  */
 object ImageShareManager {
 
-    private const val MIME_TYPE_PNG = "image/png"
 
     /**
      * 分享单张图片。
@@ -33,7 +33,7 @@ object ImageShareManager {
         }
 
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = MIME_TYPE_PNG
+            type = MediaFormat.mimeType(file)
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             if (!title.isNullOrBlank()) {
@@ -71,7 +71,7 @@ object ImageShareManager {
         if (uris.isEmpty()) return
 
         val shareIntent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
-            type = MIME_TYPE_PNG
+            type = validFiles.map(MediaFormat::mimeType).distinct().singleOrNull() ?: "image/*"
             putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             if (!title.isNullOrBlank()) {

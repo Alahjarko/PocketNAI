@@ -93,6 +93,17 @@ class GenerationDraftCodecTest {
         assertThat(restored.promptTemplate).isEqualTo("1girl, silver hair")
         assertThat(restored.negativeTemplate).isEqualTo("lowres")
         assertThat(restored.references).isEqualTo(original.references)
+
+        val medium = original.copy(params = original.params.copy(model = ImageModel.V5_FULL,
+            effort = net.pocketnai.domain.model.NovelAiEffort.MEDIUM))
+        val mediumRestored = GenerationDraftCodec.decode(GenerationDraftCodec.encode(medium))!!
+        assertThat(mediumRestored.params.effort).isEqualTo(net.pocketnai.domain.model.NovelAiEffort.MEDIUM)
+        assertThat(mediumRestored.params.steps).isEqualTo(14)
+        assertThat(mediumRestored.params.sampler).isEqualTo(Sampler.EULER_ANCESTRAL)
+        assertThat(mediumRestored.params.negativePrompt).isEqualTo(medium.params.negativePrompt)
+        assertThat(mediumRestored.params.characters).isEqualTo(medium.params.characters)
+        val oldDraft = GenerationDraftCodec.encode(medium).replace("\"effort\":\"MEDIUM\",", "").replace(",\"effort\":\"MEDIUM\"", "")
+        assertThat(GenerationDraftCodec.decode(oldDraft)!!.params.effort).isEqualTo(net.pocketnai.domain.model.NovelAiEffort.HIGH)
     }
 
     @Test

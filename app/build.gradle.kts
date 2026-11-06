@@ -172,6 +172,9 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.coil.compose)
+    implementation("io.coil-kt:coil-gif:2.7.0")
+    implementation("io.coil-kt:coil-svg:2.7.0")
+    implementation("com.caverock:androidsvg-aar:1.4")
     implementation(libs.markdown.renderer)
 
     // 只用于本地派生 NovelAI Access Key（BLAKE2b + Argon2id）。

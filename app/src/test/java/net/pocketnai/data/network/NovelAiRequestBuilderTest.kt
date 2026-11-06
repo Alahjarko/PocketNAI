@@ -14,6 +14,7 @@ import net.pocketnai.domain.model.ModelCatalog
 import net.pocketnai.domain.model.QualityTagsOption
 import net.pocketnai.domain.model.ImageOrientation
 import net.pocketnai.domain.model.ResolutionTier
+import net.pocketnai.domain.model.NovelAiEffort
 import org.junit.Test
 
 /**
@@ -93,5 +94,28 @@ class NovelAiRequestBuilderTest {
             characters = params.characters + CharacterPrompt(negativePrompt = "unused")))["parameters"]!!.jsonObject["v4_prompt"]!!.jsonObject
         assertThat(automatic["use_coords"]!!.jsonPrimitive.boolean).isFalse()
         assertThat(automatic["caption"]!!.jsonObject["char_captions"]!!.jsonArray).hasSize(2)
+
+        // Medium selects a distinct distilled model with fixed sampling and Heavy UC.
+        val mediumDraft = params.copy(effort = NovelAiEffort.MEDIUM, steps = 40,
+            cfgRescale = 0.7, negativePrompt = "CUSTOM_BASE_UC", undesiredContentPresetIndex = 3)
+        val medium = NovelAiRequestBuilder.build(v5, mediumDraft)
+        val fixed = medium["parameters"]!!.jsonObject
+        assertThat(payload["model"]!!.jsonPrimitive.content).isEqualTo("nai-diffusion-5-full")
+        assertThat(medium["model"]!!.jsonPrimitive.content).isEqualTo("nai-diffusion-5-full-medium")
+        assertThat(fixed["steps"]!!.jsonPrimitive.content).isEqualTo("14")
+        assertThat(fixed["sampler"]!!.jsonPrimitive.content).isEqualTo("k_euler_ancestral")
+        assertThat(fixed["noise_schedule"]!!.jsonPrimitive.content).isEqualTo("karras")
+        assertThat(fixed.containsKey("cfg_rescale")).isFalse()
+        assertThat(fixed.containsKey("effort")).isFalse()
+        assertThat(fixed["negative_prompt"]!!.jsonPrimitive.content).isEqualTo(negative.removeSuffix(", lowres"))
+        val fixedCharacters = fixed["v4_negative_prompt"]!!.jsonObject["caption"]!!.jsonObject["char_captions"]!!.jsonArray
+        assertThat(fixedCharacters.map { it.jsonObject["char_caption"]!!.jsonPrimitive.content }).containsExactly("", "")
+        val frozen = net.pocketnai.domain.prompt.PromptTemplates.prepare(mediumDraft, emptyList(), kotlin.random.Random(4))
+        assertThat(frozen.params.negativePrompt).isEmpty()
+        assertThat(frozen.params.characters.map { it.negativePrompt }).containsExactly("", "")
+        assertThat(mediumDraft.negativePrompt).isEqualTo("CUSTOM_BASE_UC")
+        assertThat(mediumDraft.characters).isEqualTo(params.characters)
+        val curated = ModelCatalog.profileOf(ImageModel.V5_CURATED)
+        assertThat(curated.normalize(mediumDraft.copy(model = curated.model)).effort).isEqualTo(NovelAiEffort.HIGH)
     }
 }

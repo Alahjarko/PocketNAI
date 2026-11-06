@@ -2,6 +2,7 @@ package net.pocketnai.domain.metadata
 
 import net.pocketnai.domain.model.ImageModel
 import net.pocketnai.domain.model.NoiseSchedule
+import net.pocketnai.domain.model.NovelAiEffort
 import net.pocketnai.domain.model.Sampler
 
 /**
@@ -96,6 +97,7 @@ data class ImportedSettings(
     val unsupportedNoiseSchedule: String?,
     val seed: Long?,
     val sampleCount: Int?,
+    val effort: NovelAiEffort? = null,
 ) {
     companion object {
         val EMPTY: ImportedSettings = ImportedSettings(

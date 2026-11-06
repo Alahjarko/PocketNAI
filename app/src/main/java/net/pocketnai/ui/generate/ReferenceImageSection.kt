@@ -307,7 +307,8 @@ internal fun HistoryImagePickerDialog(
             }
         },
     )
-    val items by galleryViewModel.items.collectAsStateWithLifecycle()
+    val allItems by galleryViewModel.items.collectAsStateWithLifecycle()
+    val items = remember(allItems) { allItems.filterNot { it.relativePath.endsWith(".svg", ignoreCase = true) } }
 
     AlertDialog(
         onDismissRequest = onDismiss,

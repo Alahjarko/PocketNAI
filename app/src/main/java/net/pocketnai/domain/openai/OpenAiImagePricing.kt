@@ -58,6 +58,8 @@ object OpenAiImagePricing {
     }
 
     fun estimate(params: OpenAiImageParams, referenceCount: Int): OpenAiImageEstimate? {
+        // Animation's total token budget and SVG authoring are not the still-image calculator.
+        if (params.outputFormat in listOf("gif", "svg")) return null
         if (params.count !in 1..10 || referenceCount !in 0..16 || params.prompt.length > 32_000) return null
         val low = outputTokens(if (params.quality == "auto") params.copy(quality = "low") else params) ?: return null
         val high = outputTokens(if (params.quality == "auto") params.copy(quality = "max") else params) ?: return null

@@ -90,5 +90,14 @@ class MetadataImportPlannerTest {
         // The deliberately capitalized manual marker is not the web's automatic marker.
         val manual = "comic, says \"你好\", Text: 手写文字"
         assertThat(net.pocketnai.domain.prompt.NovelAiTextPrompt.removeAutomatic(manual, emptyList(), false)).isEqualTo(manual)
+        assertThat(plan.effort).isEqualTo(net.pocketnai.domain.model.NovelAiEffort.HIGH)
+        listOf("93F4BD30", "70AB5786").forEach { hash ->
+            val imported = metadata(comment, source = "NovelAI Diffusion V5 $hash")
+            val mediumPlan = MetadataImportPlanner.plan(imported, currentParams(), MetadataImportSelection())
+            assertThat(mediumPlan.model).isEqualTo(ImageModel.V5_FULL)
+            assertThat(mediumPlan.effort).isEqualTo(net.pocketnai.domain.model.NovelAiEffort.MEDIUM)
+            assertThat(net.pocketnai.domain.chat.ChatImageContext.fromPng(imported)!!.effort).isEqualTo("medium")
+            assertThat(MetadataImportPlanner.plan(imported, currentParams(), MetadataImportSelection(settings = false)).effort).isNull()
+        }
     }
 }

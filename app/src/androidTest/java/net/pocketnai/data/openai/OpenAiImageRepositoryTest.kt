@@ -37,7 +37,8 @@ class OpenAiImageRepositoryTest {
             override fun getCacheDir() = File(root, "cache").apply { mkdirs() }
             override fun getSharedPreferences(n: String, mode: Int) = original.getSharedPreferences("$name-$n", mode)
         }
-        val db = Room.inMemoryDatabaseBuilder(context, PocketNaiDatabase::class.java).build()
+        val db = Room.inMemoryDatabaseBuilder(context, PocketNaiDatabase::class.java)
+            .addCallback(net.pocketnai.data.local.OpenAiSpendingEntity.callback).build()
         val files = GenerationFileStore(context)
         try {
             val settings = OpenAiImageSettings(context)
@@ -81,6 +82,8 @@ class OpenAiImageRepositoryTest {
             assertThat(files.resolve(image.privateFilePath).readBytes()).isEqualTo(bytes)
             val row = db.generationDao().findGeneration(image.generationId)!!
             assertThat(row.modelApiId).isEqualTo(OpenAiImageParams.SUNBURST_26)
+            assertThat(row.generationDurationMillis).isNotNull()
+            assertThat(row.generationDurationMillis!!).isAtLeast(0L)
             assertThat(row.toString()).doesNotContain(secret)
             assertThat(Mappers.toDomain(row)!!.openAi!!.params).isEqualTo(params)
             val storedSnapshot = Mappers.toDomain(row)!!.openAi!!
@@ -101,6 +104,10 @@ class OpenAiImageRepositoryTest {
             assertThat(db.generationDao().allImages().map { it.id }).containsExactly(image.id)
             assertThat(db.generationDao().findReferences(image.generationId)).hasSize(1)
             assertThat(Mappers.toDomain(db.generationDao().findGeneration(image.generationId)!!)!!.openAi).isEqualTo(revised)
+            val billed = db.generationDao().observeOpenAiSpending().first().single()
+            assertThat(billed.generationId).isEqualTo(image.generationId)
+            assertThat(billed.status).isEqualTo("PARTIAL")
+            assertThat(OpenAiImageCodec.decode(billed.snapshotJson)).isEqualTo(revised)
             kotlinx.coroutines.withTimeout(5_000) {
                 kotlinx.coroutines.coroutineScope {
                     val entered = java.util.concurrent.atomic.AtomicInteger()
@@ -128,6 +135,98 @@ class OpenAiImageRepositoryTest {
                     assertThat(rejected.estimatedUsd).isNull()
                 }
             }
+            val gif = Base64.decode("R0lGODlhIAAgAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQAFAAAACwAAAAAIAAgAAAINQABCBxIsKDBgwgTKlzIsKHDhxAjSpxIsaLFixgzatzIsaPHjyBDihxJsqTJkyhTqlzJUmRAACH5BAEUAAEALAAAAAAgACAAgQAA/wAAAAAAAAAAAAg1AAEIHEiwoMGDCBMqXMiwocOHECNKnEixosWLGDNq3Mixo8ePIEOKHEmypMmTKFOqXMlSZEAAOw==", Base64.DEFAULT)
+            val svg = """<svg xmlns="http://www.w3.org/2000/svg" width="64" height="32" viewBox="0 0 64 32"><rect width="64" height="32" fill="#ff0000"/><path d="M0 0L64 32" stroke="#0000ff"/></svg>""".toByteArray()
+            var mediaCalls = 0
+            val mediaApi = OpenAiImagesTransport { _, p, _ ->
+                mediaCalls++
+                OpenAiImageResponse(listOf(Base64.encodeToString(if (p.outputFormat == "gif") gif else svg, Base64.NO_WRAP)),
+                    OpenAiImageSnapshot(p, OpenAiImageUsage(3, 0, 100)))
+            }
+            val gifParams = params.copy(prompt = "two color animation", outputFormat = "gif", count = 1, size = "auto", frameCount = 2)
+            val disabled = OpenAiImageRepository(mediaApi, db.generationDao(), files, { secret })
+            assertThat(disabled.generate(OpenAiImageDraft(gifParams)).toList().filterIsInstance<GenerationEvent.FatalError>()).hasSize(1)
+            assertThat(mediaCalls).isEqualTo(0)
+            val mediaRepo = OpenAiImageRepository(mediaApi, db.generationDao(), files, { secret }, gifEnabled = { true })
+            val loader = (original.applicationContext as net.pocketnai.PocketNaiApplication).newImageLoader()
+            try {
+                for ((format, payload) in listOf("gif" to gif, "svg" to svg)) {
+                    val p = gifParams.copy(outputFormat = format)
+                    val media = mediaRepo.generate(OpenAiImageDraft(p)).toList().filterIsInstance<GenerationEvent.Final>().single().image
+                    val file = files.resolve(media.privateFilePath)
+                    assertThat(file.extension).isEqualTo(format)
+                    assertThat(file.readBytes()).isEqualTo(payload)
+                    assertThat(media.sha256).isEqualTo(Hashing.sha256(payload))
+                    assertThat(media.width).isEqualTo(if (format == "gif") 32 else 64)
+                    assertThat(media.height).isEqualTo(32)
+                    val still = loader.execute(net.pocketnai.ui.motion.buildSharedImageRequest(original, file, false).newBuilder().size(64).build())
+                    assertThat(still).isInstanceOf(coil.request.SuccessResult::class.java)
+                    assertThat(still.drawable is android.graphics.drawable.Animatable).isFalse()
+                    if (format == "gif") {
+                        val playing = loader.execute(net.pocketnai.ui.motion.buildSharedImageRequest(original, file, false, true).newBuilder().size(64).build())
+                        assertThat(playing).isInstanceOf(coil.request.SuccessResult::class.java)
+                        assertThat(playing.drawable is android.graphics.drawable.Animatable).isTrue()
+                        val hidden = loader.execute(net.pocketnai.ui.motion.buildSharedImageRequest(original, file, true, true))
+                        assertThat(hidden).isInstanceOf(coil.request.SuccessResult::class.java)
+                        assertThat(hidden.drawable is android.graphics.drawable.Animatable).isFalse()
+                    }
+                    if (android.os.Build.VERSION.SDK_INT >= 29) {
+                        val exported = net.pocketnai.data.export.MediaStoreExporter(original).export(file, "pocketnai-test-$name.$format")
+                        assertThat(exported).isInstanceOf(net.pocketnai.core.Outcome.Success::class.java)
+                        val uri = (exported as net.pocketnai.core.Outcome.Success).value
+                        try {
+                            assertThat(original.contentResolver.getType(uri)).isEqualTo(net.pocketnai.data.files.MediaFormat.mimeType(file))
+                            assertThat(original.contentResolver.openInputStream(uri)!!.use { it.readBytes() }).isEqualTo(payload)
+                        } finally { original.contentResolver.delete(uri, null, null) }
+                    }
+                }
+                val liveRelativePath = "generations/media-live/0001.gif"
+                val liveGif = files.resolve(liveRelativePath).also { it.parentFile!!.mkdirs() }
+                InstrumentationRegistry.getInstrumentation().context.assets.open("openai-blue-ball.gif").use { input ->
+                    liveGif.outputStream().use { input.copyTo(it) }
+                }
+                // The real 512 px result includes a large C2PA extension; the tiny synthetic
+                // animation cannot cover metadata-heavy decoding.
+                val realRequest = net.pocketnai.ui.motion.buildSharedImageRequest(original, liveGif, false)
+                    .newBuilder().size(256).build()
+                val realStill = loader.execute(realRequest)
+                if (realStill is coil.request.ErrorResult) throw realStill.throwable
+                assertThat(realStill).isInstanceOf(coil.request.SuccessResult::class.java)
+                assertThat(realStill.drawable is android.graphics.drawable.Animatable).isFalse()
+                assertThat((realStill.drawable as android.graphics.drawable.BitmapDrawable).bitmap.width).isEqualTo(256)
+                val realMasked = loader.execute(net.pocketnai.ui.motion.buildSharedImageRequest(original, liveGif, true))
+                if (realMasked is coil.request.ErrorResult) throw realMasked.throwable
+                assertThat(realMasked).isInstanceOf(coil.request.SuccessResult::class.java)
+                assertThat((realMasked.drawable as android.graphics.drawable.BitmapDrawable).bitmap.width).isEqualTo(48)
+                val originalHash = Hashing.sha256(liveGif.readBytes())
+                val importer = net.pocketnai.data.image.ReferenceImageProcessor(context, files)
+                for (referenceSource in listOf(
+                    net.pocketnai.domain.image.ReferenceSource.LocalPath(liveRelativePath),
+                    net.pocketnai.domain.image.ReferenceSource.PickedUri(android.net.Uri.fromFile(liveGif).toString()),
+                )) {
+                    val imported = importer.import(referenceSource, null)
+                    assertThat(imported).isInstanceOf(net.pocketnai.core.Outcome.Success::class.java)
+                    val prepared = (imported as net.pocketnai.core.Outcome.Success).value
+                    assertThat(prepared.width).isEqualTo(512)
+                    assertThat(prepared.height).isEqualTo(512)
+                    val normalized = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    android.graphics.BitmapFactory.decodeFile(files.resolve(prepared.relativePath).path, normalized)
+                    assertThat(normalized.outMimeType).isEqualTo("image/png")
+                }
+                assertThat(Hashing.sha256(liveGif.readBytes())).isEqualTo(originalHash)
+            } finally { loader.shutdown() }
+            for (unsafe in listOf(
+                """<?xml-stylesheet href="https://example.com/style.css"?><svg xmlns="http://www.w3.org/2000/svg" width="64" height="32"/>""",
+                """<svg xmlns="http://www.w3.org/2000/svg" width="64" height="32"><script>alert(1)</script></svg>""",
+                """<svg xmlns="http://www.w3.org/2000/svg" width="64" height="32"><use href="https://example.org/image.svg"/></svg>""",
+                """<!DOCTYPE svg [<!ENTITY ext SYSTEM "file:///etc/passwd">]><svg xmlns="http://www.w3.org/2000/svg" width="64" height="32"><text>&ext;</text></svg>""",
+            )) assertThat(runCatching { net.pocketnai.data.image.GeneratedMedia.inspect(unsafe.toByteArray(), "svg") }.isFailure).isTrue()
+            val ledger = db.generationDao().observeOpenAiSpending().first()
+            assertThat(ledger).hasSize(5)
+            db.generationDao().purgeAllGenerations()
+            assertThat(db.generationDao().observeOpenAiSpending().first()).isEqualTo(ledger)
+            db.generationDao().clearOpenAiSpending()
+            assertThat(db.generationDao().observeOpenAiSpending().first()).isEmpty()
         } finally {
             db.close()
             context.getSharedPreferences("pocketnai_openai_images", 0).edit().clear().commit()

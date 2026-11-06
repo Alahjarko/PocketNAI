@@ -6,6 +6,7 @@ import net.pocketnai.domain.model.ImageModel
 import net.pocketnai.domain.model.ImageSizePreset
 import net.pocketnai.domain.model.ModelCatalog
 import net.pocketnai.domain.model.NoiseSchedule
+import net.pocketnai.domain.model.NovelAiEffort
 import net.pocketnai.domain.model.QualityTagsOption
 import net.pocketnai.domain.model.Sampler
 
@@ -118,12 +119,13 @@ data class MetadataImportPlan(
     val useCharacterCoordinates: Boolean? = null,
     val undesiredContentPresetIndex: Int? = null,
     val notes: List<MetadataImportNote> = emptyList(),
+    val effort: NovelAiEffort? = null,
 ) {
     /** 有没有任何一项真的会改动状态。 */
     val changesAnything: Boolean
         get() = prompt != null || negativePrompt != null || model != null || size != null ||
             steps != null || guidance != null || cfgRescale != null || sampler != null ||
-            noiseSchedule != null || seed != null || qualityTags != null || characters != null
+            noiseSchedule != null || seed != null || qualityTags != null || characters != null || effort != null
 }
 
 /**
@@ -341,6 +343,7 @@ object MetadataImportPlanner {
             negativePrompt = negativePrompt,
             // 与当前模型相同时不进"将改动"清单：那是噪音，用户会以为真换了模型。
             model = if (selection.settings) importedModel?.takeIf { it != current.model } else null,
+            effort = if (selection.settings) metadata.settings.effort else null,
             size = size,
             steps = steps,
             guidance = guidance,

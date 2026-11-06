@@ -63,5 +63,32 @@ class AnlasStatisticsTest {
         repo.clearLedger()
         assertThat(repo.observeAll().first()).isEmpty()
         assertThat(AnlasStatistics.calculate(emptyList(), AnlasStatsRange.MONTH, today, zone).averageSpent).isEqualTo(0.0)
+
+        // OpenAI uses one frozen request-wide usage value; estimates and unknown results never inflate totals.
+        val params = net.pocketnai.domain.openai.OpenAiImageParams(prompt = "test", count = 10)
+        val paid = OpenAiSpendingEntry("paid", today.atStartOfDay(zone).toInstant().toEpochMilli(), "PARTIAL", params.model,
+            net.pocketnai.domain.openai.OpenAiImageSnapshot(params,
+                usage = net.pocketnai.domain.openai.OpenAiImageUsage(100, 20, 200),
+                pricing = net.pocketnai.domain.openai.OpenAiImageRates(imageOutputPerMillion = 60.0), returnedImageCount = 8))
+        val unknown = paid.copy(id = "unknown", status = "FAILED", snapshot = paid.snapshot!!.copy(usage = null,
+            estimate = net.pocketnai.domain.openai.OpenAiImageEstimate(1.0, 2.0, 0.1, 0.5, 10, 1)))
+        val legacy = paid.copy(id = "legacy", createdAt = today.minusDays(10).atStartOfDay(zone).toInstant().toEpochMilli(),
+            snapshot = paid.snapshot!!.copy(pricing = null, usage = net.pocketnai.domain.openai.OpenAiImageUsage(100, 0, 200)))
+        val invalid = paid.copy(id = "invalid", snapshot = paid.snapshot!!.copy(usage = net.pocketnai.domain.openai.OpenAiImageUsage(-1, 0, 0)))
+        val future = paid.copy(id = "future", createdAt = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli())
+        val openAiEntries = listOf(paid, paid, unknown, legacy, invalid, future)
+        val dollars = OpenAiSpendingStatistics.calculate(openAiEntries, AnlasStatsRange.ALL, today, zone)
+        assertThat(dollars.recordCount).isEqualTo(4)
+        assertThat(dollars.storedRecordCount).isEqualTo(5)
+        assertThat(dollars.knownCount).isEqualTo(2)
+        assertThat(dollars.unknownCount).isEqualTo(2)
+        assertThat(dollars.totalUsageUsd).isWithin(0.00000001).of(0.01916)
+        assertThat(dollars.trend.sumOf { it.usageUsd }).isWithin(0.00000001).of(dollars.totalUsageUsd)
+        val recentDollars = OpenAiSpendingStatistics.calculate(openAiEntries, AnlasStatsRange.WEEK, today, zone)
+        assertThat(recentDollars.trend).hasSize(7)
+        assertThat(recentDollars.totalUsageUsd).isWithin(0.00000001).of(0.01266)
+        assertThat(unknown.usageUsd).isNull()
+        assertThat(unknown.estimateMinUsd).isEqualTo(16.0)
+        assertThat(invalid.usageUsd).isNull()
     }
 }

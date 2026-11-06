@@ -2,6 +2,15 @@
 
 本文件是 [根开发约定](../../AGENTS.md) 的专题补充。修改相关功能前必须阅读；跨模块改动需同时阅读索引指向的其他专题。历史实测记录保留其日期，不构成自动发起真实生成、登录或付费调用的授权。
 
+## GIF 与 SVG 输出（2026-11-06）
+
+- OpenAI 返回的 GIF/SVG 保留原字节、扩展名、尺寸与哈希，不用 `Bitmap.compress` 落盘。GIF 制作由独立实验开关控制，关闭不影响已有动图查看。详情和全屏播放当前可见GIF；画廊保持原比例和静态首帧，右下角使用小型GIF下标，避免整屏同时播放。
+- GIF静态、播放和SFW模糊请求使用独立缓存键；遮罩始终取小尺寸静态首帧。页面离开、应用后台、详情图片移出可视区或进入全屏时停止下层动画，恢复后可重新播放。不应给所有静态卡片添加动画状态监听。
+- 静态首帧使用独立的 `GifFirstFrameDecoder`，Android 9及以上走 `ImageDecoder.decodeBitmap`，在解码前指定目标大小，最多同时解码两张。Android 8仅绘制Movie的零时刻，输出静态位图。不能仅以几十像素的合成GIF验证兼容性；设备测试包含实际返回的512px、带较大C2PA扩展的GIF。
+- SVG仅接受有界的静态矢量文档，拒绝DTD、实体、脚本、事件属性、外部引用、嵌入图片和动态元素。预览使用AndroidSVG/Coil静态渲染，不使用WebView；原SVG通过安全检查后原样保存和分享。SVG无“继续编辑/重绘”入口；GIF的“编辑首帧”只转换静态首帧为参考图。
+- 分享按实际文件提供PNG/JPEG/WebP/GIF/SVG MIME，多格式批量分享使用 `image/*`。GIF导出到Pictures，SVG导出到Downloads/PocketNAI并明确显示保存位置；均为复制，历史原件保持不变。
+- 依赖固定为与既有Coil相同的2.7.0，新增coil-gif与coil-svg。依据：[Coil GIF](https://coil-kt.github.io/coil/gifs/)、[2.7 GIF解码实现](https://github.com/coil-kt/coil/blob/2.7.0/coil-gif/src/main/java/coil/decode/ImageDecoderDecoder.kt)、[2.7 SVG解码实现](https://github.com/coil-kt/coil/blob/2.7.0/coil-svg/src/main/java/coil/decode/SvgDecoder.kt)。设备测试扩展原OpenAI集成项目，覆盖原字节保留、静态/动画解码、遮罩不播放、SVG安全拒绝、导出MIME和字节一致，未增加测试项目数。
+
 ## 参考图的请求形态
 
 - 图生图：`action` 换成 `img2img`，`parameters.image` + `parameters.strength`。

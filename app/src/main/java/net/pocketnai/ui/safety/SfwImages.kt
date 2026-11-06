@@ -17,6 +17,11 @@ import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.motion.sharedImageRequest
 import java.io.File
 import kotlin.math.roundToInt
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 data class SfwDisplayState(val enabled: Boolean = false, val ready: Boolean = false,
     val paths: Set<String> = emptySet(), val imageIds: Set<String> = emptySet(), val knownPaths: Set<String> = emptySet()) {
@@ -74,9 +79,25 @@ fun SfwAsyncImage(
     file: File?, contentDescription: String?, modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Fit, sensitive: Boolean? = null, revealed: Boolean = false,
     onSuccess: (AsyncImagePainter.State.Success) -> Unit = {}, onError: (AsyncImagePainter.State.Error) -> Unit = {},
+    animate: Boolean = false,
 ) {
     val masked = LocalSfwDisplay.current.masks(file, sensitive, revealed)
-    key(file?.absolutePath, masked) {
+    if (animate && !masked && file?.extension.equals("gif", ignoreCase = true)) {
+        val lifecycle = LocalLifecycleOwner.current.lifecycle
+        var resumed by remember(lifecycle) { mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
+        var visible by remember(file) { mutableStateOf(false) }
+        DisposableEffect(lifecycle) {
+            val observer = LifecycleEventObserver { _, _ -> resumed = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) }
+            lifecycle.addObserver(observer)
+            onDispose { lifecycle.removeObserver(observer) }
+        }
+        val playing = resumed && visible
+        key(file?.absolutePath, playing) {
+            AsyncImage(model = file?.let { sharedImageRequest(it, sensitive, revealed, playing) }, contentDescription = contentDescription,
+                modifier = modifier.onGloballyPositioned { val bounds = it.boundsInWindow(); visible = bounds.width > 0 && bounds.height > 0 },
+                contentScale = contentScale, onSuccess = onSuccess, onError = onError)
+        }
+    } else key(file?.absolutePath, masked) {
         AsyncImage(model = file?.let { sharedImageRequest(it, sensitive, revealed) }, contentDescription = contentDescription,
             modifier = modifier, contentScale = contentScale, onSuccess = onSuccess, onError = onError)
     }

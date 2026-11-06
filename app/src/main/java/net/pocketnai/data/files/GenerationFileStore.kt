@@ -137,7 +137,7 @@ class GenerationFileStore(context: Context) {
         extracted: List<ZipImageExtractor.ExtractedImage>,
         extension: String = "png",
     ): List<CommittedImage> {
-        require(extension in listOf("png", "jpeg", "webp"))
+        require(extension in listOf("png", "jpeg", "webp", "gif", "svg"))
         val destination = generationDir(generationId)
         if (!destination.exists() && !destination.mkdirs()) {
             throw java.io.IOException("无法创建历史目录: $destination")

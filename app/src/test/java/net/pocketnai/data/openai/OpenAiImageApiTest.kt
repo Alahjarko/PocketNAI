@@ -15,6 +15,37 @@ import org.junit.Test
 class OpenAiImageApiTest {
     @Test fun `编辑请求保留原文且拒绝参数及服务错误均不重发或回显秘密`() = runBlocking {
         verifyPricingAndUsage()
+        val animated = OpenAiImageParams(prompt = "A bouncing blue ball", model = OpenAiImageParams.FLARE_26,
+            outputFormat = "gif", size = "auto", frameCount = 2, frameDurationMs = 200)
+        assertThat(animated.validate()).isNull()
+        val animatedPayload = OpenAiImageApi.payload(animated)
+        assertThat(animatedPayload["frame_count"]!!.jsonPrimitive.int).isEqualTo(2)
+        assertThat(animatedPayload["frame_duration_ms"]!!.jsonPrimitive.int).isEqualTo(200)
+        assertThat(animatedPayload).doesNotContainKey("output_compression")
+        assertThat(OpenAiImagePricing.estimate(animated, 0)).isNull()
+        for (invalid in listOf(animated.copy(frameCount = 1), animated.copy(frameCount = 17),
+            animated.copy(frameDurationMs = 15), animated.copy(count = 2), animated.copy(size = "1024x1024"))) {
+            assertThat(invalid.validate()).isNotNull()
+        }
+        val vector = animated.copy(outputFormat = "svg", size = "1024x1024")
+        assertThat(vector.validate()).isNull()
+        assertThat(vector.validate(1)).isNotNull()
+        assertThat(OpenAiImageApi.payload(vector)).doesNotContainKey("frame_count")
+        assertThat(OpenAiImageApi.payload(vector)).doesNotContainKey("output_compression")
+        assertThat(OpenAiImageSnapshot(vector, OpenAiImageUsage(1, 0, 100)).estimatedUsd).isNull()
+        assertThat(OpenAiImageCodec.decode(OpenAiImageCodec.encode(OpenAiImageSnapshot(animated)))!!.params).isEqualTo(animated)
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(MockResponse().setBody("""{"data":[{"b64_json":"R0lGODlh"}]}"""))
+            val client = OpenAiImageApi(OkHttpClient(), server.url("/v1").toString())
+            client.generate("offline-fixture-only", animated, emptyList())
+            val request = server.takeRequest()
+            assertThat(request.path).isEqualTo("/v1/images/generations")
+            val wire = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
+            assertThat(wire).isEqualTo(animatedPayload)
+            assertThat(wire.keys).containsExactly("model", "prompt", "n", "size", "quality", "output_format", "background", "moderation", "complexity", "frame_count", "frame_duration_ms")
+            assertThat(server.requestCount).isEqualTo(1)
+        }
         // Cover the read-model handoff too: dropping an unrecognised NAI enum used to erase OpenAI identity.
         val items = (GalleryModels.apiIds + "future-image-model").map { apiId ->
             Mappers.toDomain(GalleryImageRow(apiId, apiId, 1, "generations/sample.png", 832, 1216, 1L, null, null,

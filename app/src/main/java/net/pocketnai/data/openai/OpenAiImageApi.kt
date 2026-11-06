@@ -44,7 +44,7 @@ class OpenAiImageApi(
     private val client = client.newBuilder().retryOnConnectionFailure(false)
         .followRedirects(false).followSslRedirects(false).build()
     override suspend fun generate(key: String, params: OpenAiImageParams, images: List<String>): OpenAiImageResponse = withContext(Dispatchers.IO) {
-        params.validate()?.let { throw OpenAiImageFailure(false, it) }
+        params.validate(images.size)?.let { throw OpenAiImageFailure(false, it) }
         require(images.size <= 16)
         val payload = payload(params, images)
         val encoded = payload.toString().toRequestBody("application/json".toMediaType())
@@ -116,7 +116,11 @@ class OpenAiImageApi(
             put("size", params.size); put("quality", params.quality); put("output_format", params.outputFormat)
             put("background", params.background); put("moderation", params.moderation)
             if (params.supportsComplexity) put("complexity", params.complexity)
-            if (params.outputFormat != "png") put("output_compression", params.compression)
+            if (params.hasCompression) put("output_compression", params.compression)
+            if (params.isAnimated) {
+                put("frame_count", params.frameCount)
+                put("frame_duration_ms", params.frameDurationMs)
+            }
             if (images.isNotEmpty()) put("images", buildJsonArray {
                 images.forEach { add(buildJsonObject { put("image_url", it) }) }
             })

@@ -163,20 +163,27 @@ fun Modifier.imageMotionChrome(zIndex: Float = 1f): Modifier {
 
 /** Keep the visible thumbnail while the destination decodes its larger image. */
 @Composable
-fun sharedImageRequest(file: File, sensitive: Boolean? = null, revealed: Boolean = false): ImageRequest {
+fun sharedImageRequest(file: File, sensitive: Boolean? = null, revealed: Boolean = false, animate: Boolean = false): ImageRequest {
     val context = LocalContext.current
     val masked = net.pocketnai.ui.safety.LocalSfwDisplay.current.masks(file, sensitive, revealed)
-    return remember(context, file, masked) {
-        buildSharedImageRequest(context, file, masked)
+    return remember(context, file, masked, animate) {
+        buildSharedImageRequest(context, file, masked, animate)
     }
 }
 
-internal fun buildSharedImageRequest(context: Context, file: File, masked: Boolean): ImageRequest {
-    val key = file.absolutePath + if (masked) "|${StrongSfwBlur.CACHE_KEY}" else ""
+internal fun buildSharedImageRequest(context: Context, file: File, masked: Boolean, animate: Boolean = false): ImageRequest {
+    val gif = file.extension.equals("gif", ignoreCase = true)
+    val key = file.absolutePath + if (masked) "|${StrongSfwBlur.CACHE_KEY}" else if (gif) {
+        if (animate) "|gif-play" else "|gif-still"
+    } else ""
     return ImageRequest.Builder(context).data(file)
         .memoryCacheKey(key)
         .placeholderMemoryCacheKey(key)
         .apply {
+            if (gif && (!animate || masked)) {
+                decoderFactory(STATIC_GIF_DECODER)
+                allowHardware(false)
+            }
             if (masked) {
                 // All masked surfaces share a tiny decoded/cached bitmap. FIT preserves the
                 // full image's aspect ratio; INEXACT lets Coil reuse that non-square result
@@ -190,6 +197,8 @@ internal fun buildSharedImageRequest(context: Context, file: File, masked: Boole
         }
         .build()
 }
+
+private val STATIC_GIF_DECODER = net.pocketnai.data.image.GifFirstFrameDecoder.Factory()
 
 /** 共享的是图片身份；当前位置和边界由布局实时测量，不持久化屏幕坐标。 */
 @OptIn(ExperimentalSharedTransitionApi::class)

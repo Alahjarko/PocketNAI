@@ -9,6 +9,12 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface GenerationDao {
+    @Query("SELECT * FROM openai_spending ORDER BY createdAt DESC, generationId")
+    fun observeOpenAiSpending(): Flow<List<OpenAiSpendingEntity>>
+
+    @Query("DELETE FROM openai_spending")
+    suspend fun clearOpenAiSpending()
+
     @Query("""SELECT i.relativePath, i.id AS imageId, g.prompt, g.charactersJson
         FROM generated_images i JOIN generations g ON g.id = i.generationId""")
     fun observeImageSafetyRows(): Flow<List<ImageSafetyRow>>
@@ -121,6 +127,9 @@ interface GenerationDao {
     /** Update response metadata without replacing the parent or touching its image/reference children. */
     @Query("UPDATE generations SET openAiParamsJson = :snapshot, updatedAt = :updatedAt WHERE id = :generationId")
     suspend fun updateOpenAiSnapshot(generationId: String, snapshot: String, updatedAt: Long)
+
+    @Query("UPDATE generations SET generationDurationMillis = :durationMillis WHERE id = :generationId")
+    suspend fun updateGenerationDuration(generationId: String, durationMillis: Long)
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun upsertImages(entities: List<GeneratedImageEntity>)

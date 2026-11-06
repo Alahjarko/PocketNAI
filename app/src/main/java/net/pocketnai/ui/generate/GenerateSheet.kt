@@ -31,6 +31,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
+import net.pocketnai.domain.model.ImageModel
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -148,6 +152,10 @@ fun GenerateSheet(
     // 费用预估由 ViewModel 从"参数 + 余额"派生，这里是纯展示。
     val costEstimate by viewModel.costEstimate.collectAsStateWithLifecycle()
     val subscriptionStatus by viewModel.subscriptionStatus.collectAsStateWithLifecycle()
+    val opusV5PresetEnabled by viewModel.opusV5PresetEnabled.collectAsStateWithLifecycle()
+    val opusNormalMinimum = opusV5PresetEnabled && subscriptionStatus.isOpus &&
+        state.params.model.family == net.pocketnai.domain.model.GenerationFamily.V5 && state.customResolution == null &&
+        profile.tierOf(state.params.size) == ResolutionTier.NORMAL
 
     Column(modifier = modifier.fillMaxWidth()) {
         SheetHeader(
@@ -300,9 +308,10 @@ fun GenerateSheet(
                 useCoordinates = state.params.useCharacterCoordinates,
                 onCoordinateModeChange = viewModel::onCharacterCoordinateModeChange,
                 macros = favoritesState.favorites,
+                negativeEnabled = !state.params.isMediumEffort,
             )
 
-            CollapsedNegativePrompt(
+            if (!state.params.isMediumEffort) CollapsedNegativePrompt(
                 label = stringResource(R.string.generate_negative_label),
                 hasContent = negativeField.text.isNotBlank(),
             ) {
@@ -384,6 +393,15 @@ fun GenerateSheet(
                 )
             }
 
+            if (state.params.model.family == net.pocketnai.domain.model.GenerationFamily.V5) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Normal 至少 28 步", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                    InfoButton("仅在当前账号具有有效 Opus 权益、使用 V5 的 Normal 预设尺寸时，限制步数不能低于 28。可以提高步数，也可自由使用其他尺寸或自定义尺寸；不修改张数和参考图。\n\nMedium Effort 固定 14 步，需使用自定义尺寸或关闭此下限。是否消耗 Anlas 仍以当前报价为准。")
+                    Switch(checked = opusV5PresetEnabled, onCheckedChange = viewModel::onOpusV5PresetEnabled,
+                        enabled = subscriptionStatus.isOpus || opusV5PresetEnabled,
+                        modifier = Modifier.semantics { contentDescription = "Normal 至少 28 步" })
+                }
+            }
             val tier = profile.tierOf(state.params.size) ?: ResolutionTier.NORMAL
             ResolutionSelector(
                 tier = tier,
@@ -436,7 +454,7 @@ fun GenerateSheet(
                     onSelect = viewModel::onQualityTagsChange,
                     modifier = Modifier.weight(1f),
                 )
-                DropdownSelector(
+                if (!state.params.isMediumEffort) DropdownSelector(
                     label = stringResource(R.string.generate_uc_preset),
                     selectedText = profile.undesiredContentPresets
                         .firstOrNull { it.index == state.params.undesiredContentPresetIndex }
@@ -474,12 +492,23 @@ fun GenerateSheet(
             }
 
             if (advancedExpanded) {
-                LabeledSlider(
+                if (state.params.model == ImageModel.V5_FULL) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        DropdownSelector(label = "Effort", selectedText = state.params.effort.label,
+                            options = if (opusNormalMinimum) listOf(net.pocketnai.domain.model.NovelAiEffort.HIGH)
+                                else net.pocketnai.domain.model.NovelAiEffort.entries,
+                            optionLabel = { it.label }, onSelect = viewModel::onEffortSelected, modifier = Modifier.weight(1f))
+                        InfoButton("Medium 使用固定 14 步、Euler Ancestral、Karras 和 Heavy 排除预设，不启用 CFG Rescale。自定义负向词与角色排除词暂不参与请求，原文保留，切回 High 后可继续编辑。Normal 的 28 步下限开启时不能选择 Medium。")
+                    }
+                }
+                if (state.params.isMediumEffort) Text("14 步 · Euler Ancestral · Karras · Heavy", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else LabeledSlider(
                     label = stringResource(R.string.generate_steps),
                     value = state.params.steps.toDouble(),
                     onValueChange = { viewModel.onStepsChange(it.toInt()) },
-                    valueRange = 1.0..50.0,
-                    steps = 48,
+                    valueRange = (if (opusNormalMinimum) 28.0 else 1.0)..50.0,
+                    steps = if (opusNormalMinimum) 21 else 48,
                     decimals = 0,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -491,7 +520,7 @@ fun GenerateSheet(
                     decimals = 1,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                LabeledSlider(
+                if (!state.params.isMediumEffort) LabeledSlider(
                     label = stringResource(R.string.generate_cfg_rescale),
                     value = state.params.cfgRescale,
                     onValueChange = viewModel::onCfgRescaleChange,
@@ -500,7 +529,7 @@ fun GenerateSheet(
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                DropdownSelector(
+                if (!state.params.isMediumEffort) DropdownSelector(
                     label = stringResource(R.string.generate_sampler),
                     selectedText = state.params.sampler.displayName,
                     options = profile.availableSamplers(),
@@ -512,7 +541,7 @@ fun GenerateSheet(
                 // 只展示当前采样器真正支持的调度，避免构造已知无效请求（规划书 3.1）。
                 val schedules: List<NoiseSchedule> =
                     profile.availableSchedulesFor(state.params.sampler).toList()
-                DropdownSelector(
+                if (!state.params.isMediumEffort) DropdownSelector(
                     label = stringResource(R.string.generate_noise_schedule),
                     selectedText = state.params.noiseSchedule.displayName,
                     options = schedules,

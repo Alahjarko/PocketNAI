@@ -81,7 +81,10 @@ class OpenAiImageViewModel(
     fun generate() {
         val current = _state.value
         if (current.importing || store.provider.value != ImageProvider.OPEN_AI) return
-        current.draft.params.validate()?.let { error -> _state.update { it.copy(message = error) }; return }
+        current.draft.params.validate(current.draft.references.size)?.let { error -> _state.update { it.copy(message = error) }; return }
+        if (current.draft.params.isAnimated && !store.gifEnabled.value) {
+            _state.update { it.copy(message = "请先在生图服务中开启 GIF 制作（实验）") }; return
+        }
         if (!store.hasKey.value) { _state.update { it.copy(message = "请在设置 → 生图服务中保存 OpenAI API 密钥") }; return }
         if (!current.busy && !nai.reserveExternalGeneration()) { _state.update { it.copy(message = "另一个图片任务正在执行，请等待完成") }; return }
         val frozen = current.draft.copy(references = current.draft.references.toList())

@@ -21,7 +21,7 @@ object OpenAiCostLabels {
 
 /** Used by both the editable form and the confirmation, so they always quote the same draft. */
 @Composable
-internal fun OpenAiCostEstimate(estimate: OpenAiImageEstimate?, modifier: Modifier = Modifier) {
+internal fun OpenAiCostEstimate(estimate: OpenAiImageEstimate?, modifier: Modifier = Modifier, unknownLabel: String = "待确定尺寸后估算") {
     Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainer) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top,
@@ -29,7 +29,7 @@ internal fun OpenAiCostEstimate(estimate: OpenAiImageEstimate?, modifier: Modifi
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("本次费用粗估", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(estimate?.let(OpenAiCostLabels::summary) ?: "待确定尺寸后估算",
+                Text(estimate?.let(OpenAiCostLabels::summary) ?: unknownLabel,
                     style = MaterialTheme.typography.titleMedium)
                 estimate?.let {
                     val note = buildList {

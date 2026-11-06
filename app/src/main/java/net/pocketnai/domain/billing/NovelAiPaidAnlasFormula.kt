@@ -4,12 +4,13 @@ import net.pocketnai.domain.model.GenerationFamily
 import kotlin.math.ceil
 
 /**
- * 官方图片生成计价公式（2026-09-14 从官方网页前端 bundle 反解，版本 `novelai-web-2026-09-14`）。
+ * 官方图片生成计价公式（2026-09-14 核对基础公式，2026-11-06 核对 V5 Full Medium）。
  *
  * ## 基础费用
  * ```text
  * area = width × height            （下限 65536）
  * raw  = ceil(2.951823174884865e-6 × area + 5.753298233447344e-7 × area × steps)
+ * // Medium instead: raw = (2.951823174884865e-6 × area + 5.753298233447344e-7 × area × 23) / 1.75
  * raw *= smeaMultiplier            // 1.0 / 1.2 / 1.4
  * if (family == V5) raw *= 1.5     // V5 单价是 V4.5 的 1.5 倍
  * perImage = max(ceil(raw × strength), 2)   // strength 只在图生图/重绘时非 1
@@ -76,9 +77,9 @@ class NovelAiPaidAnlasFormula : PaidAnlasFormula {
         val area = (width.toLong() * height.toLong()).coerceAtLeast(MIN_AREA)
         if (area > MAX_AREA) return null
 
-        var raw = ceil(
-            AREA_COEFFICIENT * area + STEP_AREA_COEFFICIENT * area * steps,
-        )
+        var raw = if (context.params.isMediumEffort) {
+            (AREA_COEFFICIENT * area + STEP_AREA_COEFFICIENT * area * 23) / 1.75
+        } else ceil(AREA_COEFFICIENT * area + STEP_AREA_COEFFICIENT * area * steps)
         raw *= context.smeaMultiplier
         if (context.params.model.family == GenerationFamily.V5) {
             raw *= V5_MULTIPLIER
@@ -98,7 +99,7 @@ class NovelAiPaidAnlasFormula : PaidAnlasFormula {
 
     companion object {
         /** 公式版本号，会显示在费用详情里，便于日后追查"这个数字是哪版算的"。 */
-        const val VERSION: String = "novelai-web-2026-09-14"
+        const val VERSION: String = "novelai-web-2026-11-06"
 
         private val SUPPORTED_FAMILIES = setOf(
             GenerationFamily.V4_5,

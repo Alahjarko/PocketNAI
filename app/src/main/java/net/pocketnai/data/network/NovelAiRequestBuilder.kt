@@ -118,8 +118,9 @@ object NovelAiRequestBuilder {
         // 官方 UI 会明确显示 "Added to the end of the prompt: ..."，
         // 因此这里必须真的改写提交给模型的正向提示词。
         val qualityPrompt = preparedPrompts?.positive ?: applyQualityTags(normalized.prompt, normalized.qualityTags, normalized.model)
-        val negative = preparedPrompts?.negative ?: net.pocketnai.domain.prompt.NovelAiPromptPresets.resolveNegative(
-            normalized.model, normalized.undesiredContentPresetIndex, qualityPrompt, normalized.negativePrompt,
+        val effectivePreset = if (normalized.isMediumEffort) 0 else normalized.undesiredContentPresetIndex
+        val negative = (if (normalized.isMediumEffort) null else preparedPrompts?.negative) ?: net.pocketnai.domain.prompt.NovelAiPromptPresets.resolveNegative(
+            normalized.model, effectivePreset, qualityPrompt, if (normalized.isMediumEffort) "" else normalized.negativePrompt,
         )
 
         val baseImage = upstreamImages[ReferenceRole.IMG2IMG]?.firstOrNull()?.takeIf { it.isNotEmpty() }
@@ -154,7 +155,7 @@ object NovelAiRequestBuilder {
             put("height", normalized.size.height)
 
             put("scale", normalized.guidance)
-            put("cfg_rescale", normalized.cfgRescale)
+            if (!normalized.isMediumEffort) put("cfg_rescale", normalized.cfgRescale)
             put("sampler", normalized.sampler.apiValue)
             put("noise_schedule", normalized.noiseSchedule.apiValue)
             put("steps", normalized.steps)
@@ -163,9 +164,9 @@ object NovelAiRequestBuilder {
             put("seed", normalized.baseSeed)
 
             // Presets are expanded client-side, as on the web. Do not send the obsolete numeric ucPreset.
-            put("ucPresetId", net.pocketnai.domain.prompt.NovelAiPromptPresets.preset(normalized.model, normalized.undesiredContentPresetIndex).id)
+            put("ucPresetId", net.pocketnai.domain.prompt.NovelAiPromptPresets.preset(normalized.model, effectivePreset).id)
             put("qualityPresetId", normalized.qualityTags.name.lowercase(java.util.Locale.ROOT))
-            put("tag_hint_uc_preset", net.pocketnai.domain.prompt.NovelAiPromptPresets.preset(normalized.model, normalized.undesiredContentPresetIndex).tagHint)
+            put("tag_hint_uc_preset", net.pocketnai.domain.prompt.NovelAiPromptPresets.preset(normalized.model, effectivePreset).tagHint)
             put("tag_hint_qt", normalized.qualityTags.tagHint)
             // 质量标签已经由本应用显式写进提示词，因此关闭服务端的自动追加，
             // 否则同一段文本可能被叠加两次。
@@ -174,7 +175,9 @@ object NovelAiRequestBuilder {
 
             // NovelAI 的 V4.5 / V5 结构化 Prompt（含多角色支持）。
             put("v4_prompt", captionBlock(text = positive, characters = normalized.characters, isNegative = false, useCoordinates = normalized.useCharacterCoordinates))
-            put("v4_negative_prompt", captionBlock(text = negative, characters = normalized.characters, isNegative = true, useCoordinates = normalized.useCharacterCoordinates))
+            put("v4_negative_prompt", captionBlock(text = negative,
+                characters = if (normalized.isMediumEffort) normalized.characters.map { it.copy(negativePrompt = "") } else normalized.characters,
+                isNegative = true, useCoordinates = normalized.useCharacterCoordinates))
 
             if (img2imgSource != null) {
                 put("image", img2imgSource)
@@ -210,7 +213,7 @@ object NovelAiRequestBuilder {
             // 见 ImageModel.inpaintingApiModelId）；常规模型 ID 不接受 infill。
             put(
                 "model",
-                if (useInpaint) profile.model.inpaintingApiModelId else profile.model.apiModelId,
+                normalized.apiModelId(useInpaint),
             )
             put("action", actionFor(img2imgSource != null, useInpaint))
             put("parameters", parameters)

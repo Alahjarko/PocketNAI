@@ -25,8 +25,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ArtistLabRunEntity::class,
         ArtistLabDrawEntity::class,
         ArtistMixFavoriteEntity::class,
+        OpenAiSpendingEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = true,
 )
 abstract class PocketNaiDatabase : RoomDatabase() {
@@ -44,6 +45,13 @@ abstract class PocketNaiDatabase : RoomDatabase() {
     abstract fun anlasTransactionDao(): AnlasTransactionDao
 
     companion object {
+        val MIGRATION_13_14: Migration = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE generations ADD COLUMN generationDurationMillis INTEGER")
+                db.execSQL("ALTER TABLE generations ADD COLUMN effort TEXT")
+                OpenAiSpendingEntity.install(db, backfill = true)
+            }
+        }
         val MIGRATION_12_13: Migration = object : Migration(12, 13) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE reference_images ADD COLUMN sourceImageId TEXT")
@@ -281,7 +289,9 @@ abstract class PocketNaiDatabase : RoomDatabase() {
                     MIGRATION_10_11,
                     MIGRATION_11_12,
                     MIGRATION_12_13,
+                    MIGRATION_13_14,
                 )
+                .addCallback(OpenAiSpendingEntity.callback)
                 .build()
     }
 }

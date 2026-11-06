@@ -84,5 +84,14 @@ class NovelAiRequestBuilderInpaintTest {
         assertThat(json.getValue("action").jsonPrimitive.content).isNotEqualTo("infill")
         assertThat(json.getValue("model").jsonPrimitive.content)
             .isEqualTo(profile.model.apiModelId)
+
+        val v5 = ModelCatalog.profileOf(ImageModel.V5_FULL)
+        val medium = NovelAiRequestBuilder.build(v5,
+            request.copy(params = GenerationParams.defaultsFor(v5).copy(effort = net.pocketnai.domain.model.NovelAiEffort.MEDIUM),
+                references = listOf(mask(), mask().copy(id = "base", role = ReferenceRole.IMG2IMG))),
+            upstreamImages = mapOf(ReferenceRole.INPAINT_MASK to listOf("MASK64"), ReferenceRole.IMG2IMG to listOf("BASE64")))
+        assertThat(medium["action"]!!.jsonPrimitive.content).isEqualTo("infill")
+        assertThat(medium["model"]!!.jsonPrimitive.content).isEqualTo("nai-diffusion-5-full-medium-inpainting")
+        assertThat(medium["parameters"]!!.jsonObject["steps"]!!.jsonPrimitive.content).isEqualTo("14")
     }
 }

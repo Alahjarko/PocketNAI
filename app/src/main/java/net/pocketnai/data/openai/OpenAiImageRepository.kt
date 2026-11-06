@@ -1,6 +1,5 @@
 package net.pocketnai.data.openai
 
-import android.graphics.BitmapFactory
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -28,6 +27,7 @@ class OpenAiImageRepository(
     private val files: GenerationFileStore,
     private val key: () -> String?,
     private val sfwEnabled: () -> Boolean = { false },
+    private val gifEnabled: () -> Boolean = { false },
 ) {
     // Bound simultaneous large responses; every submission still gets its own occupied slot first.
     private val concurrentRequests = Semaphore(3)
@@ -35,12 +35,16 @@ class OpenAiImageRepository(
     fun generate(draft: OpenAiImageDraft) = flow<GenerationEvent> {
         val id = UUID.randomUUID().toString()
         val params = draft.params
+        if (params.outputFormat == "gif" && !gifEnabled()) {
+            emit(GenerationEvent.FatalError(id, AppError.of(ErrorCode.INVALID_PARAMS, detail = "请先在设置中开启实验性 GIF 制作")))
+            return@flow
+        }
         if (net.pocketnai.domain.safety.SfwPolicy.blocks(sfwEnabled(), params.prompt)) {
             emit(GenerationEvent.FatalError(id, AppError.of(ErrorCode.INVALID_PARAMS,
                 detail = net.pocketnai.domain.safety.SfwPolicy.BLOCK_MESSAGE)))
             return@flow
         }
-        params.validate()?.let {
+        params.validate(draft.references.size)?.let {
             emit(GenerationEvent.FatalError(id, AppError.of(ErrorCode.INVALID_PARAMS, detail = it)))
             return@flow
         }
@@ -87,6 +91,15 @@ class OpenAiImageRepository(
         concurrentRequests.withPermit {
             val saved = mutableListOf<GeneratedImage>()
             var sent = false
+            var requestStartedNanos: Long? = null
+            var durationRecorded = false
+            suspend fun recordDuration() {
+                val started = requestStartedNanos ?: return
+                if (!durationRecorded) {
+                    dao.updateGenerationDuration(id, ((System.nanoTime() - started) / 1_000_000).coerceAtLeast(0))
+                    durationRecorded = true
+                }
+            }
             try {
                 val inputs = draft.references.map { ref ->
                     "data:image/png;base64," + Base64.encodeToString(files.resolve(ref.relativePath).readBytes(), Base64.NO_WRAP)
@@ -98,6 +111,7 @@ class OpenAiImageRepository(
                     return@flow
                 }
                 sent = true
+                requestStartedNanos = System.nanoTime()
                 val response = api.generate(secret, params, inputs)
                 val snapshot = response.snapshot.copy(params = params, pricing = generation.openAi!!.pricing,
                     estimate = generation.openAi.estimate, returnedImageCount = response.data.size)
@@ -106,19 +120,12 @@ class OpenAiImageRepository(
                     val image = runCatching {
                         require(raw.length <= 48 * 1024 * 1024)
                         val bytes = Base64.decode(raw, Base64.DEFAULT)
-                        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-                        require(options.outWidth > 0 && options.outHeight > 0 &&
-                            options.outWidth <= 3840 && options.outHeight <= 3840 &&
-                            options.outWidth.toLong() * options.outHeight <= 8_294_400)
-                        val extension = when (options.outMimeType) {
-                            "image/png" -> "png"; "image/jpeg" -> "jpeg"; "image/webp" -> "webp"
-                            else -> error("Unsupported image format")
-                        }
+                        val info = net.pocketnai.data.image.GeneratedMedia.inspect(bytes, params.outputFormat)
+                        val extension = info.extension
                         val temp = File(files.newIncomingDir(id), "${index + 1}.$extension")
                         temp.writeBytes(bytes)
                         val extracted = ZipImageExtractor.ExtractedImage(index + 1, temp, bytes.size.toLong(),
-                            Hashing.sha256(bytes), options.outWidth, options.outHeight)
+                            Hashing.sha256(bytes), info.width, info.height)
                         val committed = files.commitImages(id, listOf(extracted), extension).single()
                         GeneratedImage(UUID.randomUUID().toString(), id, index + 1, null,
                             "generations/$id/${(index + 1).toString().padStart(4, '0')}.$extension",
@@ -132,6 +139,7 @@ class OpenAiImageRepository(
                 }
                 if (saved.isEmpty()) throw OpenAiImageFailure(true, "OpenAI 已返回结果，但图片无法保存或解码，可能已计费，未重试")
                 val status = if (saved.size == params.count) GenerationStatus.SUCCEEDED else GenerationStatus.PARTIAL
+                recordDuration()
                 dao.updateStatus(id, status.name, System.currentTimeMillis(), null, null, null)
                 saved.forEach { emit(GenerationEvent.Final(id, it)) }
                 if (saved.size < params.count) emit(GenerationEvent.ItemError(id, null,
@@ -151,7 +159,10 @@ class OpenAiImageRepository(
                     System.currentTimeMillis(), error.code.name, error.detail, null)
                 emit(GenerationEvent.FatalError(id, error))
             } finally {
-                files.clearIncoming(id)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+                    recordDuration()
+                    files.clearIncoming(id)
+                }
             }
         }
     }.flowOn(Dispatchers.IO)

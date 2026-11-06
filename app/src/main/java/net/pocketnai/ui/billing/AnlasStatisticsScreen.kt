@@ -45,26 +45,31 @@ import java.text.NumberFormat
 
 private val TabularNumbers = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum")
 
+internal enum class SpendingTab(val label: String) { OVERVIEW("总览"), ANLAS("Anlas"), OPENAI("OpenAI") }
+
 @Composable
 fun AnlasStatisticsScreen(repository: AnlasLedgerRepository, onBack: () -> Unit) {
+    val generationDao = net.pocketnai.ui.LocalAppContainer.current.database.generationDao()
     val vm: AnlasStatisticsViewModel = viewModel(factory = viewModelFactory {
-        initializer { AnlasStatisticsViewModel(repository, createSavedStateHandle()) }
+        initializer { AnlasStatisticsViewModel(repository, createSavedStateHandle(), generationDao) }
     })
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var confirmingClear by rememberSaveable { mutableStateOf(false) }
     var clearing by remember { mutableStateOf(false) }
-    AnlasStatisticsContent(state, vm::setRange, onBack, { confirmingClear = true }, snackbar)
+    var tab by rememberSaveable { mutableStateOf(SpendingTab.OVERVIEW) }
+    AnlasStatisticsContent(state, vm::setRange, onBack, { confirmingClear = true }, snackbar,
+        selectedTab = tab, onTabChange = { tab = it })
     if (confirmingClear) {
         AlertDialog(
             onDismissRequest = { if (!clearing) confirmingClear = false },
-            title = { Text("清空本机流水？") },
-            text = { Text("将删除本机所有账号的 Anlas 流水，统计也会重置。图片、对话与服务端余额不受影响，此操作不可撤销。") },
+            title = { Text("清空 ${tab.label} 流水？") },
+            text = { Text("将删除本机所有 ${tab.label} 流水，统计也会重置。图片、对话、另一服务的流水与服务端账单不受影响，此操作不可撤销。") },
             confirmButton = {
                 TextButton(enabled = !clearing, onClick = {
                     clearing = true
-                    vm.clear { success ->
+                    vm.clear(tab == SpendingTab.OPENAI) { success ->
                         clearing = false
                         confirmingClear = false
                         scope.launch { snackbar.showSnackbar(if (success) "本机流水已清空" else "清空失败，请稍后重试") }
@@ -88,16 +93,20 @@ internal fun AnlasStatisticsContent(
     onClear: () -> Unit,
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
     listState: LazyListState = rememberLazyListState(),
+    selectedTab: SpendingTab = SpendingTab.OVERVIEW,
+    onTabChange: (SpendingTab) -> Unit = {},
 ) {
     val statistics = state.statistics
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Anlas 统计") },
+                title = { Text("消耗统计") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
                 actions = {
-                    if (statistics != null && statistics.storedRecordCount > 0) {
-                        IconButton(onClick = onClear) { Icon(Icons.Outlined.DeleteOutline, "清空本机全部流水") }
+                    net.pocketnai.ui.common.InfoButton("本机所有账号汇总。Anlas 是操作时观察到的余额扣减，0 不等于免费。OpenAI 美元金额按整次请求用量和当时保存的费率折算，不等于账单；未返回用量的请求不计入合计，生成前粗估单独显示。两种计费单位不相加。\n\n清理图片不会删除流水；按设备本地日期分组。")
+                    if ((selectedTab == SpendingTab.ANLAS && (statistics?.storedRecordCount ?: 0) > 0) ||
+                        (selectedTab == SpendingTab.OPENAI && (state.openAi?.storedRecordCount ?: 0) > 0)) {
+                        IconButton(onClick = onClear) { Icon(Icons.Outlined.DeleteOutline, "清空 ${selectedTab.label} 流水") }
                     }
                 },
             )
@@ -116,9 +125,13 @@ internal fun AnlasStatisticsContent(
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    item(key = "scope") {
-                        Text("本机所有账号 · NovelAI", style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    item(key = "provider") {
+                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                            SpendingTab.entries.forEachIndexed { index, tab ->
+                                SegmentedButton(selected = selectedTab == tab, onClick = { onTabChange(tab) },
+                                    shape = SegmentedButtonDefaults.itemShape(index, SpendingTab.entries.size)) { Text(tab.label) }
+                            }
+                        }
                     }
                     item(key = "range") {
                         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -131,6 +144,18 @@ internal fun AnlasStatisticsContent(
                             }
                         }
                     }
+                    if (selectedTab == SpendingTab.OVERVIEW) {
+                        item(key = "overview-anlas") {
+                            SpendingOverviewCard("NovelAI", "${formatAnlas(statistics.totalSpent)} Anlas", "${statistics.recordCount} 次操作") { onTabChange(SpendingTab.ANLAS) }
+                        }
+                        item(key = "overview-openai") {
+                            val openAi = state.openAi
+                            SpendingOverviewCard("OpenAI", if (openAi != null && openAi.knownCount > 0) spendingUsd(openAi.totalUsageUsd) else "—",
+                                "用量折算 · ${openAi?.recordCount ?: 0} 次请求" + if ((openAi?.unknownCount ?: 0) > 0) " · ${openAi!!.unknownCount} 次费用待确认" else "") { onTabChange(SpendingTab.OPENAI) }
+                        }
+                    } else if (selectedTab == SpendingTab.OPENAI) {
+                        state.openAi?.let { openAi -> openAiSpendingItems(openAi) }
+                    } else {
                     item(key = "summary") { StatisticsSummary(statistics) }
                     if (statistics.recordCount > 0) {
                         item(key = "trend") { SpendingTrend(statistics) }
@@ -164,15 +189,6 @@ internal fun AnlasStatisticsContent(
                         }
                         items(group.entries, key = { it.id }, contentType = { "transaction" }) { entry -> TransactionCard(entry) }
                     }
-                    item(key = "footnote") {
-                        Text(
-                            "仅统计本机记录的 NovelAI 操作，未设置条数上限；OpenAI 用量不计入 Anlas。\n" +
-                                "金额与余额是操作时的本机观察值，0 表示未观察到扣减，不等同于免费；跨设备使用、余额延迟及未成功记录的操作可能造成差异，实际账单以服务端为准。\n" +
-                                "按设备本地日期分组；操作次数不等于图片张数。清理图片不影响流水，清空流水会重置统计。",
-                            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
-                        )
                     }
                 }
             }

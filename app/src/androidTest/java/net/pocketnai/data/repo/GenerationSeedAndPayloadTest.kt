@@ -77,7 +77,7 @@ class GenerationSeedAndPayloadTest {
         .build()
 
     /** 只记录请求体，不联网；并按 ZIP 的形态产出图片，让后处理链路照常跑。 */
-    private class FakeApi(private val payloads: MutableList<JsonObject>) : NovelAiApi {
+    private class FakeApi(private val payloads: MutableList<JsonObject>, private val onGenerate: () -> Unit = {}) : NovelAiApi {
         override suspend fun fetchAccountStatus(token: String) =
             Outcome.Failure(net.pocketnai.core.AppError.of(net.pocketnai.core.ErrorCode.UNKNOWN))
 
@@ -90,6 +90,7 @@ class GenerationSeedAndPayloadTest {
             destinationZip: File,
         ): Outcome<Unit> {
             payloads += payload
+            onGenerate()
             val params = payload.getValue("parameters").jsonObject
             val inpaint = payload["action"]?.jsonPrimitive?.content == "infill"
             val bitmap = Bitmap.createBitmap(if (inpaint) params.getValue("width").jsonPrimitive.content.toInt() else 64,
@@ -143,9 +144,11 @@ class GenerationSeedAndPayloadTest {
         fileStore: GenerationFileStore,
         macros: List<net.pocketnai.domain.model.PromptFavorite> = emptyList(),
         sfwEnabled: () -> Boolean = { false },
+        monotonicNanos: () -> Long = System::nanoTime,
+        onGenerate: () -> Unit = {},
         idGenerator: () -> String = { "gen-test" },
     ) = GenerationRepository(
-        api = FakeApi(payloads),
+        api = FakeApi(payloads, onGenerate),
         credentialStore = object : CredentialStore {
             override fun hasCredential(): Boolean = true
 
@@ -165,6 +168,7 @@ class GenerationSeedAndPayloadTest {
         idGenerator = idGenerator,
         promptMacros = { macros },
         sfwEnabled = sfwEnabled,
+        monotonicNanos = monotonicNanos,
         referenceEncoder = net.pocketnai.data.image.ReferenceImageProcessor(context, fileStore),
     )
 
@@ -348,6 +352,7 @@ class GenerationSeedAndPayloadTest {
             assertThat(vm.state.value.referenceError).isNull()
         }
         val source = net.pocketnai.domain.image.ReferenceSource.LocalPath("inputs/0.png")
+        var metadataProbe: net.pocketnai.domain.metadata.MetadataProbeResult = net.pocketnai.domain.metadata.MetadataProbeResult.NotNovelAi
         try {
             main {
                 vm = GenerateViewModel(repo, net.pocketnai.ui.state.GenerationDraftStore(),
@@ -355,7 +360,7 @@ class GenerationSeedAndPayloadTest {
                     net.pocketnai.domain.prompt.TagSuggestionSource { _, _ -> emptyList() }, processor,
                     object : net.pocketnai.domain.metadata.ImageMetadataInspector {
                         override suspend fun inspect(source: net.pocketnai.domain.image.ReferenceSource) =
-                            net.pocketnai.domain.metadata.MetadataProbeResult.NotNovelAi
+                            metadataProbe
                     }, AccountBalanceRepository(FakeApi(mutableListOf()), credentials), settings)
                 store.put("generate", vm)
             }
@@ -395,6 +400,67 @@ class GenerationSeedAndPayloadTest {
             imported { vm.onDirectorReferencePicked(source) }
             assertThat(vm.state.value.referenceSource).isEqualTo(inpaintBase)
             assertThat(vm.state.value.vibeReferences).isEmpty()
+            main { vm.onSampleCountChange(2); vm.onStepsChange(16) }
+            val beforePreset = vm.state.value
+            main { vm.onOpusV5PresetEnabled(true) }
+            assertThat(vm.state.value.params).isEqualTo(beforePreset.params) // V4.5 is not targeted.
+            assertThat(net.pocketnai.data.settings.SettingsStore(testContext).opusV5PresetEnabled.value).isTrue()
+            main { vm.onModelSelected(ImageModel.V5_FULL) }
+            assertThat(vm.state.value.params.steps).isEqualTo(28)
+            assertThat(vm.state.value.params.sampleCount).isEqualTo(2)
+            assertThat(vm.state.value.profile.tierOf(vm.state.value.params.size)).isEqualTo(net.pocketnai.domain.model.ResolutionTier.NORMAL)
+            assertThat(vm.state.value.params.size.orientation).isEqualTo(beforePreset.params.targetSize.orientation)
+            assertThat(vm.state.value.params.effort).isEqualTo(net.pocketnai.domain.model.NovelAiEffort.HIGH)
+            assertThat(vm.state.value.allReferences).isEqualTo(beforePreset.allReferences)
+            assertThat(vm.state.value.promptTemplate).isEqualTo(beforePreset.promptTemplate)
+            main {
+                vm.onStepsChange(35)
+            }
+            assertThat(vm.state.value.params.steps).isEqualTo(35)
+            main {
+                vm.onResolutionTierChange(net.pocketnai.domain.model.ResolutionTier.LARGE)
+                vm.onStepsChange(16)
+            }
+            assertThat(vm.state.value.params.steps).isEqualTo(16)
+            assertThat(vm.state.value.params.sampleCount).isEqualTo(2)
+            main { vm.onResolutionTierChange(net.pocketnai.domain.model.ResolutionTier.NORMAL); vm.onStepsChange(12) }
+            assertThat(vm.state.value.params.steps).isEqualTo(28)
+            main { vm.onEffortSelected(net.pocketnai.domain.model.NovelAiEffort.MEDIUM) }
+            assertThat(vm.state.value.params.effort).isEqualTo(net.pocketnai.domain.model.NovelAiEffort.HIGH)
+            main { vm.onCustomResolutionEnabled(); vm.onStepsChange(16) }
+            assertThat(vm.state.value.params.steps).isEqualTo(16)
+            main { vm.onEffortSelected(net.pocketnai.domain.model.NovelAiEffort.MEDIUM) }
+            assertThat(vm.state.value.params.steps).isEqualTo(14)
+            assertThat(vm.state.value.negativeTemplate).isEqualTo(beforePreset.negativeTemplate)
+            val customBeforeImport = vm.state.value.customResolution
+            val canvasBeforeImport = vm.state.value.params.size
+            metadataProbe = net.pocketnai.domain.metadata.MetadataProbeResult.Found(
+                net.pocketnai.domain.metadata.NovelAiMetadataParser.parse(listOf(
+                    net.pocketnai.domain.metadata.PngTextChunks.TextChunk("Software", "NovelAI"),
+                    net.pocketnai.domain.metadata.PngTextChunks.TextChunk("Source", "NovelAI Diffusion V5 0ADF9AB7"),
+                    net.pocketnai.domain.metadata.PngTextChunks.TextChunk("Description", "sfw, imported landscape"),
+                ), kotlinx.serialization.json.Json)!!)
+            imported { vm.onReferencePicked(source) }
+            main {
+                vm.onMetadataSelectionChange(net.pocketnai.domain.metadata.MetadataImportSelection(settings = false, negativePrompt = false))
+                vm.confirmMetadataImport()
+            }
+            assertThat(vm.state.value.promptTemplate).isEqualTo("sfw, imported landscape")
+            assertThat(vm.state.value.customResolution).isEqualTo(customBeforeImport)
+            assertThat(vm.state.value.params.size).isEqualTo(canvasBeforeImport)
+            assertThat(vm.state.value.params.effort).isEqualTo(net.pocketnai.domain.model.NovelAiEffort.MEDIUM)
+            assertThat(vm.state.value.params.steps).isEqualTo(14)
+            main { vm.onResolutionTierChange(net.pocketnai.domain.model.ResolutionTier.NORMAL) }
+            assertThat(vm.state.value.customResolution).isNotNull() // Normal conflicts with fixed-14 Medium.
+            main {
+                vm.onEffortSelected(net.pocketnai.domain.model.NovelAiEffort.HIGH)
+                vm.onResolutionTierChange(net.pocketnai.domain.model.ResolutionTier.NORMAL)
+            }
+            assertThat(vm.state.value.params.steps).isEqualTo(28)
+            settings.setSubscriptionOverride(net.pocketnai.domain.billing.SubscriptionOverride.NONE)
+            main { vm.onStepsChange(12) }
+            assertThat(vm.state.value.params.steps).isEqualTo(12) // Expired/missing subscription does not apply it.
+            main { vm.onOpusV5PresetEnabled(false) }
         } finally {
             main { store.clear() }
             preferenceNames.forEach { context.deleteSharedPreferences(it) }
@@ -640,7 +706,10 @@ class GenerationSeedAndPayloadTest {
         val prefix = "artist-lab-preflight-test-" + java.util.UUID.randomUUID()
         var sfw = false
         var key = prefix
-        val repo = repository(payloads, Random(1), files, sfwEnabled = { sfw }) { key }
+        var nanos = 0L
+        var cancelRequest = false
+        val repo = repository(payloads, Random(1), files, sfwEnabled = { sfw }, monotonicNanos = { nanos },
+            onGenerate = { nanos += 3_456_000_000L; if (cancelRequest) throw kotlinx.coroutines.CancellationException("fixture") }) { key }
         val params = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V4_5_CURATED)).copy(prompt = "sfw, blue sky")
         try {
             val denied = repo.generate(GenerationRequest(params), params.prompt, expectedAccountFingerprint = "wrong-account").toList()
@@ -656,6 +725,7 @@ class GenerationSeedAndPayloadTest {
             assertThat(hookCalled).isTrue()
             assertThat(payloads).isEmpty()
             assertThat(database.generationDao().findGeneration(prefix)!!.status).isEqualTo("FAILED")
+            assertThat(database.generationDao().findGeneration(prefix)!!.generationDurationMillis).isNull()
             val marked = params.copy(prompt = "nsfw, geometry fixture")
             sfw = true; key = "$prefix-blocked"
             assertThat(repo.generate(GenerationRequest(marked), marked.prompt).toList()
@@ -670,20 +740,35 @@ class GenerationSeedAndPayloadTest {
             assertThat(payloads).hasSize(1)
             assertThat(payloads.single()["input"]!!.jsonPrimitive.content).contains("nsfw")
             key = "$prefix-queued"
-            val queued = repo.enqueue(GenerationRequest(params.copy(seedMode = SeedMode.RANDOM)), params.prompt, 123L)
+            val queued = repo.enqueue(GenerationRequest(params.copy(seedMode = SeedMode.RANDOM, model = ImageModel.V5_FULL,
+                effort = net.pocketnai.domain.model.NovelAiEffort.MEDIUM, negativePrompt = "preserved draft negative")), params.prompt, 123L)
             val frozenSeed = queued.request.params.baseSeed
             assertThat(database.generationDao().findGeneration(queued.id)!!.status).isEqualTo("QUEUED")
             assertThat(payloads).hasSize(1) // Persisting an occupied slot never sends a request.
-            val queuedEvents = repo.generate(queued.request, queued.promptTemplate, queued = queued).toList()
+            nanos += 100_000_000_000L // queue time must not be included
+            val queuedEvents = repo.generate(queued.request, queued.promptTemplate, queued = queued,
+                beforeSend = { nanos += 12_000_000_000L }).toList()
             assertThat(queuedEvents.filterIsInstance<GenerationEvent.Started>().single().generationId).isEqualTo(queued.id)
             assertThat(database.generationDao().findGeneration(queued.id)!!.status).isEqualTo("SUCCEEDED")
+            val completedImage = queuedEvents.filterIsInstance<GenerationEvent.Final>().single().image
+            assertThat(repo.loadDetail(completedImage.id)!!.generation.generationDurationMillis).isEqualTo(3456L)
+            val restoredMedium = repo.loadDetail(completedImage.id)!!.generation.params
+            assertThat(restoredMedium.effort).isEqualTo(net.pocketnai.domain.model.NovelAiEffort.MEDIUM)
+            assertThat(restoredMedium.steps).isEqualTo(14)
+            assertThat(restoredMedium.negativePrompt).isEmpty()
+            assertThat(payloads.last()["model"]!!.jsonPrimitive.content).isEqualTo("nai-diffusion-5-full-medium")
             assertThat(payloads.last()["parameters"]!!.jsonObject["seed"]!!.jsonPrimitive.longOrNull).isEqualTo(frozenSeed)
             key = "$prefix-unsent"
             val interrupted = repo.enqueue(GenerationRequest(params), params.prompt, 124L)
             repo.failQueued(interrupted.id, net.pocketnai.core.AppError.of(net.pocketnai.core.ErrorCode.INVALID_PARAMS))
             assertThat(database.generationDao().findGeneration(interrupted.id)!!.status).isEqualTo("FAILED")
             assertThat(payloads).hasSize(2)
-        } finally { listOf(prefix, "$prefix-blocked", "$prefix-late", "$prefix-allowed", "$prefix-queued", "$prefix-unsent").forEach(files::deleteGeneration) }
+            assertThat(database.generationDao().findGeneration(interrupted.id)!!.generationDurationMillis).isNull()
+            key = "$prefix-canceled"; cancelRequest = true
+            assertThat(runCatching { repo.generate(GenerationRequest(params), params.prompt).toList() }.exceptionOrNull())
+                .isInstanceOf(kotlinx.coroutines.CancellationException::class.java)
+            assertThat(database.generationDao().findGeneration(key)!!.generationDurationMillis).isEqualTo(3456L)
+        } finally { listOf(prefix, "$prefix-blocked", "$prefix-late", "$prefix-allowed", "$prefix-queued", "$prefix-unsent", "$prefix-canceled").forEach(files::deleteGeneration) }
     }
 
     @After

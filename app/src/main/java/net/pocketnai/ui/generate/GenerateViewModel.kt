@@ -308,6 +308,41 @@ class GenerateViewModel(
     private val naiGenerationGate = net.pocketnai.domain.model.SerialGenerationGate()
     private val _state = MutableStateFlow(restoreDraft())
     val state: StateFlow<UiState> = _state.asStateFlow()
+    val opusV5PresetEnabled: StateFlow<Boolean> = settingsStore.opusV5PresetEnabled
+
+    fun onOpusV5PresetEnabled(enabled: Boolean) {
+        if (enabled && _state.value.params.isMediumEffort && isOpusV5Normal(_state.value)) {
+            _state.update { opusMinimumConflict(it) }
+            return
+        }
+        settingsStore.setOpusV5PresetEnabled(enabled)
+        if (enabled) _state.update { applyOpusV5Preset(it) }
+    }
+
+    private fun isOpusV5Normal(current: UiState): Boolean =
+        current.params.model.family == net.pocketnai.domain.model.GenerationFamily.V5 && current.customResolution == null &&
+            current.profile.tierOf(current.params.size) == ResolutionTier.NORMAL &&
+            subscriptionStatusOf(accountBalanceRepository.state.value).isOpus
+
+    private fun opusMinimumConflict(current: UiState): UiState {
+        val message = "Medium Effort 固定 14 步，请先使用自定义尺寸或关闭 Normal 的 28 步下限"
+        return if (current.error?.detail == message) current else current.copy(error = AppError.of(ErrorCode.INVALID_PARAMS, detail = message))
+    }
+
+    /** Enforce only the opted-in Normal lower bound; never change dimensions, count or prompt text. */
+    private fun applyOpusV5Preset(current: UiState): UiState {
+        if (!settingsStore.opusV5PresetEnabled.value || !isOpusV5Normal(current)) return current
+        if (current.params.isMediumEffort) return opusMinimumConflict(current)
+        return if (current.params.steps >= 28) current else current.copy(params = current.params.copy(steps = 28))
+    }
+
+    fun onEffortSelected(effort: net.pocketnai.domain.model.NovelAiEffort) {
+        _state.update { current ->
+            if (effort == net.pocketnai.domain.model.NovelAiEffort.MEDIUM &&
+                settingsStore.opusV5PresetEnabled.value && isOpusV5Normal(current)) return@update opusMinimumConflict(current)
+            applyOpusV5Preset(current.copy(params = current.profile.normalize(current.params.copy(effort = effort)), error = null))
+        }
+    }
 
     private fun restoreDraft(): UiState {
         val draft = draftPreferences.load() ?: GenerationDraft.defaults()
@@ -443,6 +478,12 @@ class GenerateViewModel(
     }
 
     init {
+        // Covers imported/restored parameters and entitlement changes; compareAndSet cannot overwrite a newer edit.
+        viewModelScope.launch {
+            combine(_state, settingsStore.opusV5PresetEnabled, accountBalanceRepository.state) { current, _, _ ->
+                current to applyOpusV5Preset(current)
+            }.collect { (before, after) -> if (before != after) _state.compareAndSet(before, after) }
+        }
         // 余额状态镜像到 UiState：界面要显示它，但它的来源是账户级的仓库。
         viewModelScope.launch {
             accountBalanceRepository.state.collect { balance ->
@@ -611,7 +652,8 @@ class GenerateViewModel(
 
                 else -> null
             }
-            current.copy(params = target.normalize(migrated), modelSwitchNotice = notice, error = null, referenceError = null)
+            applyOpusV5Preset(current.copy(params = target.normalize(migrated), modelSwitchNotice = notice,
+                error = null, referenceError = null))
         }
     }
 
@@ -621,11 +663,13 @@ class GenerateViewModel(
             val next = current.profile.sizeInTier(tier, current.params.size)
                 ?: return@update current
             // 选档位即退出自定义模式：同一时刻只能有一套尺寸是"生效的"。
-            current.copy(
+            val candidate = current.copy(
                 params = current.params.copy(size = next, outputSize = null),
                 customResolution = null,
                 customResolutionError = null,
             )
+            if (candidate.params.isMediumEffort && settingsStore.opusV5PresetEnabled.value && isOpusV5Normal(candidate))
+                opusMinimumConflict(current) else applyOpusV5Preset(candidate)
         }
     }
 
@@ -634,11 +678,13 @@ class GenerateViewModel(
         _state.update { current ->
             val tier = current.profile.tierOf(current.params.size) ?: ResolutionTier.NORMAL
             val next = current.profile.sizeFor(tier, orientation) ?: return@update current
-            current.copy(
+            val candidate = current.copy(
                 params = current.params.copy(size = next, outputSize = null),
                 customResolution = null,
                 customResolutionError = null,
             )
+            if (candidate.params.isMediumEffort && settingsStore.opusV5PresetEnabled.value && isOpusV5Normal(candidate))
+                opusMinimumConflict(current) else applyOpusV5Preset(candidate)
         }
     }
 
@@ -674,11 +720,13 @@ class GenerateViewModel(
                 .minByOrNull { kotlin.math.abs(it.size.totalPixels - area) }
                 ?.size
                 ?: profile.defaultSize
-            current.copy(
+            val candidate = current.copy(
                 customResolution = null,
                 customResolutionError = null,
                 params = current.params.copy(size = nearest, outputSize = null),
             )
+            if (candidate.params.isMediumEffort && settingsStore.opusV5PresetEnabled.value && isOpusV5Normal(candidate))
+                opusMinimumConflict(current) else applyOpusV5Preset(candidate)
         }
     }
 
@@ -762,7 +810,8 @@ class GenerateViewModel(
 
     fun onStepsChange(steps: Int) {
         _state.update { current ->
-            current.copy(params = current.params.copy(steps = steps.coerceIn(1, 50)))
+            if (current.params.isMediumEffort) current
+            else applyOpusV5Preset(current.copy(params = current.params.copy(steps = steps.coerceIn(1, 50))))
         }
     }
 
@@ -978,6 +1027,7 @@ class GenerateViewModel(
             val profile = ModelCatalog.profileOf(targetModel)
             val updated = state.params.copy(
                 model = targetModel,
+                effort = plan.effort ?: state.params.effort,
                 prompt = plan.prompt ?: state.params.prompt,
                 negativePrompt = plan.negativePrompt ?: state.params.negativePrompt,
                 size = plan.size ?: state.params.size,
@@ -1003,14 +1053,14 @@ class GenerateViewModel(
                 inpaintReferences = if (candidate.source != null) emptyList() else state.inpaintReferences,
                 // 元数据里的尺寸不在预设里但合法时，把它当作自定义尺寸接住：
                 // 那张图本来就是按这个尺寸生成的，因此不需要裁切（exactOutput = false）。
-                customResolution = plan.size?.let { size ->
+                customResolution = if (plan.size == null) state.customResolution else plan.size.let { size ->
                     if (profile.tierOf(size) == null) {
                         CustomResolution(size.width, size.height, exactOutput = false)
                     } else {
                         null
                     }
                 },
-                customResolutionError = null,
+                customResolutionError = if (plan.size == null) state.customResolutionError else null,
                 // 模板与提交值保持一致：勾了"实际提示词"时官方网页也是把展开值写进输入框
                 // （模板原文不再保留），否则那个勾选项在我们这里等于没有作用 ——
                 // 提交时提示词会从模板重新抽选一遍。
@@ -1420,6 +1470,7 @@ class GenerateViewModel(
     fun generate() {
         val snapshot = _state.value
         if (!snapshot.canGenerate) return
+        if (!checkOpusMinimumBeforeSubmission(snapshot)) return
         if (snapshot.blockingViolations.isNotEmpty()) {
             _state.update { it.copy(error = AppError.of(ErrorCode.INVALID_PARAMS)) }
             return
@@ -1457,9 +1508,20 @@ class GenerateViewModel(
         return estimate.batchTotal > balance.totalAnlas
     }
 
+    private fun checkOpusMinimumBeforeSubmission(snapshot: UiState): Boolean {
+        if (settingsStore.opusV5PresetEnabled.value && isOpusV5Normal(snapshot) &&
+            (snapshot.params.steps < 28 || snapshot.params.isMediumEffort)) {
+            _state.update { if (it.params.isMediumEffort) opusMinimumConflict(it)
+                else applyOpusV5Preset(it).copy(modelSwitchNotice = "Normal 步数已调整到 28，请核对后生成") }
+            return false
+        }
+        return true
+    }
+
     private fun startGeneration() {
         val snapshot = _state.value
         if (!snapshot.canGenerate) return
+        if (!checkOpusMinimumBeforeSubmission(snapshot)) return
 
         // 规划书 8.3：先固定本次 Randomizer 展开结果，再作为请求快照提交。
         val resolvedPrompt = snapshot.promptTemplate

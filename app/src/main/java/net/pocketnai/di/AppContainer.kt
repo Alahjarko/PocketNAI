@@ -71,7 +71,7 @@ class AppContainer(application: Application) {
     val openAiImageApi by lazy { net.pocketnai.data.openai.OpenAiImageApi() }
     val openAiImageRepository by lazy {
         net.pocketnai.data.openai.OpenAiImageRepository(openAiImageApi, database.generationDao(), fileStore,
-            openAiImageSettings::apiKey, sfwEnabled = { settingsStore.sfwMode.value })
+            openAiImageSettings::apiKey, sfwEnabled = { settingsStore.sfwMode.value }, gifEnabled = { openAiImageSettings.gifEnabled.value })
     }
     val openAiImageViewModel by lazy {
         net.pocketnai.ui.openai.OpenAiImageViewModel(openAiImageSettings, openAiImageRepository,

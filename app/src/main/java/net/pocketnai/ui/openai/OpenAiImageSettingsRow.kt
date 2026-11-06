@@ -34,6 +34,7 @@ fun OpenAiImageSettingsRow() {
         var choice by remember { mutableStateOf(provider) }
         var key by remember { mutableStateOf("") }
         var error by remember { mutableStateOf<String?>(null) }
+        var gifEnabled by remember { mutableStateOf(settings.gifEnabled.value) }
         AlertDialog(onDismissRequest = { open = false }, title = {
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Text("生图服务", Modifier.weight(1f))
@@ -48,6 +49,10 @@ fun OpenAiImageSettingsRow() {
                     }
                 }
                 if (choice == ImageProvider.OPEN_AI) {
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text("GIF 制作（实验）", Modifier.weight(1f))
+                        Switch(gifEnabled, { gifEnabled = it }, enabled = !busy)
+                    }
                     OutlinedTextField(value = key, onValueChange = { key = it; error = null },
                         label = { Text(if (hasKey) "替换 API 密钥（留空保留）" else "API 密钥") },
                         singleLine = true, visualTransformation = PasswordVisualTransformation(),
@@ -63,7 +68,7 @@ fun OpenAiImageSettingsRow() {
                 try {
                     if (key.isNotBlank()) settings.saveKey(key)
                     if (choice == ImageProvider.OPEN_AI && !settings.hasKey.value) error = "请先填写 API 密钥"
-                    else { settings.setProvider(choice); key = ""; open = false }
+                    else { settings.setProvider(choice); settings.setGifEnabled(gifEnabled); key = ""; open = false }
                 } catch (_: Exception) { error = "配置未保存，请检查密钥格式后重试" }
             }) { Text("保存") }
         }, dismissButton = { TextButton(onClick = { open = false }) { Text("取消") } })

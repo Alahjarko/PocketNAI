@@ -18,6 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import net.pocketnai.ui.motion.GenerationImageReveal
@@ -91,6 +93,12 @@ internal fun GalleryMotionCard(
                 modifier = Modifier.align(Alignment.TopStart).padding(6.dp)
                     .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
                     .padding(horizontal = 6.dp, vertical = 3.dp))
+            if (imageFile?.extension.equals("gif", ignoreCase = true)) Text("GIF",
+                color = Color.White, style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp)
+                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 5.dp, vertical = 2.dp)
+                    .semantics { contentDescription = "查看动图" })
             if (item?.favorite == true) Box(Modifier.align(if (isSelectionMode) Alignment.BottomStart else Alignment.TopEnd)
                 .padding(6.dp).background(Color.Black.copy(alpha = 0.35f), CircleShape).padding(4.dp)) {
                 Icon(Icons.Default.Favorite, "收藏", tint = Color.White, modifier = Modifier.size(12.dp))

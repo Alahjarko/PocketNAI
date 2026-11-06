@@ -101,4 +101,8 @@ data class GenerationEntity(
     val useCharacterCoordinates: Boolean? = null,
     /** v12: nullable provider-specific snapshot; legacy rows remain NovelAI. */
     val openAiParamsJson: String? = null,
+    /** v14: null for historical/interrupted requests without a measured duration. */
+    val generationDurationMillis: Long? = null,
+    /** v14: legacy rows retain High effort. */
+    val effort: String? = null,
 )

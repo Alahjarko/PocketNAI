@@ -133,6 +133,10 @@ class GalleryMotionTest {
         var showFilters by mutableStateOf(false)
         var filter by mutableStateOf(GalleryFilter.None)
         var filterFontScale by mutableFloatStateOf(1f)
+        var showMedia by mutableStateOf(false)
+        val gifFile = File(dir, "two-frames.gif").apply {
+            writeBytes(android.util.Base64.decode("R0lGODlhIAAgAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQAFAAAACwAAAAAIAAgAAAINQABCBxIsKDBgwgTKlzIsKHDhxAjSpxIsaLFixgzatzIsaPHjyBDihxJsqTJkyhTqlzJUmRAACH5BAEUAAEALAAAAAAgACAAgQAA/wAAAAAAAAAAAAg1AAEIHEiwoMGDCBMqXMiwocOHECNKnEixosWLGDNq3Mixo8ePIEOKHEmypMmTKFOqXMlSZEAAOw==", android.util.Base64.DEFAULT))
+        }
         lateinit var motion: ImageMotionState
         compose.mainClock.autoAdvance = false
         try {
@@ -140,6 +144,26 @@ class GalleryMotionTest {
                 MaterialTheme {
                     ImageMotionRoot {
                         motion = LocalImageMotion.current!!
+                        if (showMedia) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("GIF · 画廊首帧")
+                                Box(Modifier.size(128.dp).testTag("gif-gallery")) {
+                                    GalleryMotionCard(GalleryMotionSlot("gif", now,
+                                        image("gif", now).copy(relativePath = gifFile.path, width = 32, height = 32), null, false),
+                                        gifFile, null, false, false, {}, {}, {}, {})
+                                }
+                                Text("GIF · 详情播放")
+                                net.pocketnai.ui.safety.SfwAsyncImage(gifFile, "动图", animate = true,
+                                    modifier = Modifier.size(128.dp).testTag("gif-playing"))
+                                Text("SFW · 静态遮罩")
+                                CompositionLocalProvider(net.pocketnai.ui.safety.LocalSfwDisplay provides
+                                    net.pocketnai.ui.safety.SfwDisplayState(enabled = true, ready = true)) {
+                                    net.pocketnai.ui.safety.SfwAsyncImage(gifFile, "遮罩", sensitive = true, animate = true,
+                                        modifier = Modifier.size(128.dp).testTag("gif-masked"))
+                                }
+                            }
+                            return@ImageMotionRoot
+                        }
                         if (showFilters) {
                             // Dialog/Popup have their own density owner; scale typography explicitly
                             // so the large-text pass really changes text inside both windows.
@@ -380,6 +404,27 @@ class GalleryMotionTest {
             compose.mainClock.advanceTimeBy(300)
             compose.onAllNodesWithContentDescription("生成中").assertCountEquals(0)
             compose.onAllNodesWithContentDescription("图片已就绪").assertCountEquals(0)
+            compose.runOnUiThread { showMedia = true }
+            compose.mainClock.autoAdvance = true
+            compose.onNodeWithContentDescription("查看动图").assertIsDisplayed()
+            fun centerColor(tag: String): Int {
+                val bitmap = compose.onNodeWithTag(tag).captureToImage().asAndroidBitmap()
+                return try { bitmap.getPixel(bitmap.width / 2, bitmap.height / 2) } finally { bitmap.recycle() }
+            }
+            compose.waitUntil(5000) { centerColor("gif-gallery") == android.graphics.Color.RED }
+            compose.waitUntil(5000) { centerColor("gif-masked") == android.graphics.Color.RED }
+            val maskedColor = centerColor("gif-masked")
+            val colors = mutableSetOf<Int>()
+            repeat(16) {
+                android.os.SystemClock.sleep(80)
+                val color = centerColor("gif-playing")
+                if (color == android.graphics.Color.RED || color == android.graphics.Color.BLUE) {
+                    if (colors.add(color)) screenshot("gif-frame-${colors.size}")
+                }
+                assertThat(centerColor("gif-gallery")).isEqualTo(android.graphics.Color.RED)
+                assertThat(centerColor("gif-masked")).isEqualTo(maskedColor)
+            }
+            assertThat(colors).containsExactly(android.graphics.Color.RED, android.graphics.Color.BLUE)
         } finally { dir.deleteRecursively() }
     }
 

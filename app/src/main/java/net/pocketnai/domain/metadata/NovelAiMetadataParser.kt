@@ -12,6 +12,7 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 import net.pocketnai.domain.model.ImageModel
 import net.pocketnai.domain.model.NoiseSchedule
+import net.pocketnai.domain.model.NovelAiEffort
 import net.pocketnai.domain.model.Sampler
 
 /**
@@ -39,6 +40,8 @@ object NovelAiModelHashes {
 
     /** V5 Full 的哈希；其余 V5 哈希按官方默认走 Curated。 */
     private val V5_FULL = setOf("657484A5", "0ADF9AB7")
+    /** Official frontend model metadata sources, checked 2026-11-06. */
+    private val V5_FULL_MEDIUM = setOf("93F4BD30", "70AB5786")
 
     private val V4_5_FULL = setOf("4BDE2A90", "1229B44F", "B9F340FD", "F3D95188")
     private val V4_5_CURATED = setOf("C02D4F98", "5AB81C7C", "B5A2A797")
@@ -57,7 +60,7 @@ object NovelAiModelHashes {
         val hash = hashOf(source)
 
         if (source.contains("NovelAI Diffusion V5")) {
-            return if (hash in V5_FULL) ImageModel.V5_FULL else ImageModel.V5_CURATED
+            return if (hash in V5_FULL || hash in V5_FULL_MEDIUM) ImageModel.V5_FULL else ImageModel.V5_CURATED
         }
 
         val isV4Family = source.contains("NovelAI Diffusion V4") ||
@@ -75,6 +78,12 @@ object NovelAiModelHashes {
 
             else -> null
         }
+    }
+
+    fun effort(source: String?): NovelAiEffort? = when {
+        source == null || resolve(source) == null -> null
+        hashOf(source) in V5_FULL_MEDIUM -> NovelAiEffort.MEDIUM
+        else -> NovelAiEffort.HIGH
     }
 
     /** 取出 `Source` 末尾那一段 8 位十六进制哈希（`NovelAI Diffusion V5 0ADF9AB7`）。 */
@@ -243,6 +252,7 @@ object NovelAiMetadataParser {
 
         return ImportedSettings(
             model = sourceModel,
+            effort = NovelAiModelHashes.effort(source),
             unsupportedModelSource = source?.takeIf { sourceModel == null && it.isNotBlank() },
             width = comment?.int("width"),
             height = comment?.int("height"),

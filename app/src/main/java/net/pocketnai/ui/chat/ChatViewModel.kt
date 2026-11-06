@@ -250,6 +250,7 @@ class ChatViewModel(
                                 "get_generation_settings" -> {
                                     val p = images.currentParams()
                                     result = buildJsonObject { put("model", p.model.apiModelId); put("width", p.size.width); put("height", p.size.height)
+                                        put("effort", p.effort.name.lowercase())
                                         put("steps", p.steps); put("guidance", p.guidance); put("max_images_per_message", ImageChatTools.MAX_IMAGES)
                                         put("remaining_images", batch.remaining); put("search_available", searchAvailable)
                                         put("tool_permission", cfg.effectiveToolPermission.name.lowercase())

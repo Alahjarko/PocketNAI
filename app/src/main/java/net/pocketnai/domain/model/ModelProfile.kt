@@ -193,6 +193,7 @@ data class ModelProfile(
      * - 尺寸不合法时换回默认尺寸。
      */
     fun normalize(params: GenerationParams): GenerationParams {
+        val medium = model == ImageModel.V5_FULL && params.effort == NovelAiEffort.MEDIUM
         val sampler = if (params.sampler in samplerSchedules) params.sampler else defaultSampler
         val schedules = availableSchedulesFor(sampler)
         val schedule = when {
@@ -207,12 +208,13 @@ data class ModelProfile(
         }
         return params.copy(
             model = model,
-            steps = stepsRange.clamp(params.steps.toDouble()).toInt(),
+            effort = if (model == ImageModel.V5_FULL) params.effort else NovelAiEffort.HIGH,
+            steps = if (medium) 14 else stepsRange.clamp(params.steps.toDouble()).toInt(),
             guidance = guidanceRange.clamp(params.guidance),
-            cfgRescale = cfgRescaleRange.clamp(params.cfgRescale),
+            cfgRescale = if (medium) 0.0 else cfgRescaleRange.clamp(params.cfgRescale),
             sampleCount = params.sampleCount.coerceIn(1, maxSampleCount),
-            sampler = sampler,
-            noiseSchedule = schedule,
+            sampler = if (medium) Sampler.EULER_ANCESTRAL else sampler,
+            noiseSchedule = if (medium) NoiseSchedule.KARRAS else schedule,
             size = normalizedSize,
             // 最终尺寸必须**装得进**画布，否则裁切会越界。
             // 装不下（例如尺寸被换回默认值）就丢掉裁切，宁可输出大图也不能崩在解码上。

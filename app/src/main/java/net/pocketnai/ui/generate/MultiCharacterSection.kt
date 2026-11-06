@@ -55,6 +55,7 @@ fun MultiCharacterSection(
     useCoordinates: Boolean = false,
     onCoordinateModeChange: (Boolean) -> Unit = {},
     macros: List<net.pocketnai.domain.model.PromptFavorite> = emptyList(),
+    negativeEnabled: Boolean = true,
 ) {
     var expanded by remember { mutableStateOf(characters.isNotEmpty()) }
     var positionsOpen by remember { mutableStateOf(false) }
@@ -92,6 +93,7 @@ fun MultiCharacterSection(
                         onDelete = { onRemoveCharacter(index) },
                         showPosition = useCoordinates,
                         macros = macros,
+                        negativeEnabled = negativeEnabled,
                     )
                 }
             }
@@ -119,6 +121,7 @@ private fun CharacterCard(
     onDelete: () -> Unit,
     showPosition: Boolean,
     macros: List<net.pocketnai.domain.model.PromptFavorite>,
+    negativeEnabled: Boolean,
 ) {
     var positive by remember(character.id, textRevision) {
         mutableStateOf(TextFieldValue(character.prompt, TextRange(character.prompt.length)))
@@ -163,7 +166,7 @@ private fun CharacterCard(
                     macros = macros,
                 )
             }
-            CollapsedNegativePrompt("角色专属排除词", negative.text.isNotBlank()) {
+            if (negativeEnabled) CollapsedNegativePrompt("角色专属排除词", negative.text.isNotBlank()) {
                 WeightHighlightedTextField(
                     value = negative,
                     onValueChange = { negative = it; onUpdate(character.copy(negativePrompt = it.text)) },

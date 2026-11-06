@@ -112,6 +112,7 @@ class GenerationRepository(
     private val random: Random = Random.Default,
     private val promptMacros: suspend () -> List<net.pocketnai.domain.model.PromptFavorite> = { emptyList() },
     private val sfwEnabled: () -> Boolean = { false },
+    private val monotonicNanos: () -> Long = System::nanoTime,
 ) {
 
     fun observeGenerations(): Flow<List<GenerationSummary>> =
@@ -349,6 +350,16 @@ class GenerationRepository(
             return@flow
         }
 
+        val requestStartedNanos = monotonicNanos()
+        var timingRecorded = false
+        suspend fun recordDuration() {
+            if (!timingRecorded) {
+                val elapsed = ((monotonicNanos() - requestStartedNanos) / 1_000_000).coerceAtLeast(0)
+                withContext(kotlinx.coroutines.NonCancellable) { dao.updateGenerationDuration(generationId, elapsed) }
+                timingRecorded = true
+            }
+        }
+        try {
         var archiveToDelete: File? = null
         val extracted: ZipImageExtractor.Result.Success = if (useStreaming) {
             var streamFailure: AppError? = null
@@ -529,8 +540,12 @@ class GenerationRepository(
         fileStore.clearIncoming(generationId)
         fileStore.clearPreviews(generationId)
 
+        recordDuration()
         images.forEach { emit(GenerationEvent.Final(generationId, it)) }
         emit(GenerationEvent.Completed(generationId, status))
+        } finally {
+            recordDuration()
+        }
     }.flowOn(Dispatchers.IO)
 
     /** 详情页需要的完整信息：图片本身 + 它所属的生成记录与参数（含参考图）。 */

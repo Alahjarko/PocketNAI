@@ -114,6 +114,7 @@ fun FullscreenImageViewer(
         ) {
             net.pocketnai.ui.safety.SfwAsyncImage(
                 file = imageFile, revealed = revealed,
+                animate = true,
                 contentDescription = contentDescription,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier

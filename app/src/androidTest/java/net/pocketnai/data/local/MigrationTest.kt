@@ -22,7 +22,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class MigrationTest {
 
-    @Test fun migrate10To13KeepsHistoryAndReferenceOrigins() {
+    @Test fun migrate10To14KeepsHistoryReferencesAndUnknownDuration() {
         helper.createDatabase("prompt-migration-test", 10).use { db ->
             db.execSQL("""INSERT INTO generations (id,createdAt,updatedAt,status,title,promptTemplate,mode,prompt,negativePrompt,modelApiId,width,height,sampleCount,steps,guidance,cfgRescale,sampler,noiseSchedule,seedMode,baseSeed,qualityTags,qualityTagsEnabled,ucPresetIndex,modelConfigVersion,requestSnapshotVersion,charactersJson)
                 VALUES ('old',1,1,'SUCCEEDED','old title','sfw','TXT2IMG','sfw','','nai-diffusion-4-5-curated',832,1216,1,23,7.0,0.0,'k_euler_ancestral','karras','FIXED',42,'NONE',0,0,'v1',3,'[]')""")
@@ -32,17 +32,35 @@ class MigrationTest {
         }
         helper.runMigrationsAndValidate("prompt-migration-test", 13, true,
             PocketNaiDatabase.MIGRATION_10_11, PocketNaiDatabase.MIGRATION_11_12, PocketNaiDatabase.MIGRATION_12_13).use { db ->
-            db.query("SELECT title,charactersJson,useCharacterCoordinates,openAiParamsJson FROM generations WHERE id='old'").use {
+            db.execSQL("UPDATE generations SET openAiParamsJson=?,modelApiId='gpt-image-2.6-flare' WHERE id='old'",
+                arrayOf("""{"params":{"prompt":"fixture","model":"gpt-image-2.6-flare"},"usage":{"textInput":10,"imageInput":0,"imageOutput":100}}"""))
+        }
+        helper.runMigrationsAndValidate("prompt-migration-test", 14, true, PocketNaiDatabase.MIGRATION_13_14).use { db ->
+            db.query("SELECT title,charactersJson,useCharacterCoordinates,openAiParamsJson,generationDurationMillis,effort FROM generations WHERE id='old'").use {
                 assertThat(it.moveToFirst()).isTrue(); assertThat(it.getString(0)).isEqualTo("old title"); assertThat(it.getString(1)).isEqualTo("[]"); assertThat(it.isNull(2)).isTrue()
-                assertThat(it.isNull(3)).isTrue()
+                assertThat(it.getString(3)).contains("imageOutput")
+                assertThat(it.isNull(5)).isTrue()
+                assertThat(it.isNull(4)).isTrue()
             }
             db.query("SELECT sourceImageId,relativePath FROM reference_images WHERE id='ref'").use {
                 assertThat(it.moveToFirst()).isTrue(); assertThat(it.isNull(0)).isTrue(); assertThat(it.getString(1)).isEqualTo("references/old.png")
             }
             db.execSQL("UPDATE reference_images SET sourceImageId='old-image' WHERE id='ref'")
             db.query("SELECT COUNT(*) FROM generated_images").use { assertThat(it.moveToFirst()).isTrue(); assertThat(it.getInt(0)).isEqualTo(1) }
+            db.execSQL("UPDATE generations SET generationDurationMillis=12345 WHERE id='old'")
+            db.query("SELECT generationDurationMillis FROM generations WHERE id='old'").use {
+                assertThat(it.moveToFirst()).isTrue(); assertThat(it.getLong(0)).isEqualTo(12345)
+            }
             db.execSQL("INSERT INTO chat_conversations VALUES ('chat','title',2,'[]')")
             db.query("SELECT entriesJson FROM chat_conversations").use { assertThat(it.moveToFirst()).isTrue(); assertThat(it.getString(0)).isEqualTo("[]") }
+            db.query("SELECT snapshotJson FROM openai_spending WHERE generationId='old'").use {
+                assertThat(it.moveToFirst()).isTrue(); assertThat(it.getString(0)).contains("imageOutput")
+            }
+            db.execSQL("PRAGMA foreign_keys=ON")
+            db.execSQL("DELETE FROM generations WHERE id='old'")
+            db.query("SELECT COUNT(*) FROM openai_spending WHERE generationId='old'").use {
+                assertThat(it.moveToFirst()).isTrue(); assertThat(it.getInt(0)).isEqualTo(1)
+            }
         }
     }
 

@@ -18,6 +18,13 @@ class SettingsStore(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    private val _opusV5PresetEnabled = MutableStateFlow(prefs.getBoolean("opus_v5_preset_enabled", false))
+    val opusV5PresetEnabled: StateFlow<Boolean> = _opusV5PresetEnabled.asStateFlow()
+    fun setOpusV5PresetEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("opus_v5_preset_enabled", enabled).apply()
+        _opusV5PresetEnabled.value = enabled
+    }
+
     private val _sfwMode = MutableStateFlow(prefs.getBoolean("sfw_mode", false))
     val sfwMode: StateFlow<Boolean> = _sfwMode.asStateFlow()
     fun setSfwMode(enabled: Boolean) {

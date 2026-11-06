@@ -25,12 +25,13 @@ data class ChatImageContext(
     val quality: String? = null,
     val characters: List<ChatContextCharacter> = emptyList(),
     val truncated: Boolean = false,
+    val effort: String? = null,
 ) {
     fun redacted(secret: String?): ChatImageContext {
         if (secret.isNullOrBlank()) return this
         fun clean(value: String) = value.replace(secret, "[API Key 已隐藏]")
         return copy(provider = clean(provider), prompt = clean(prompt), negativePrompt = clean(negativePrompt),
-            model = model?.let(::clean), sampler = sampler?.let(::clean), quality = quality?.let(::clean),
+            model = model?.let(::clean), sampler = sampler?.let(::clean), quality = quality?.let(::clean), effort = effort?.let(::clean),
             characters = characters.map { it.copy(prompt = clean(it.prompt), negativePrompt = clean(it.negativePrompt)) })
     }
 
@@ -43,6 +44,7 @@ data class ChatImageContext(
         val result = copy(provider = clip(provider, 24), prompt = clip(prompt, 6000), negativePrompt = clip(negativePrompt, 3000),
             model = model?.let { clip(it, 120) }, sampler = sampler?.let { clip(it, 80) }, quality = quality?.let { clip(it, 32) },
             guidance = guidance?.takeIf { it.isFinite() },
+            effort = effort?.let { clip(it, 16) },
             characters = characters.take(32).map { it.copy(prompt = clip(it.prompt, 256), negativePrompt = clip(it.negativePrompt, 128),
                 x = it.x?.takeIf { value -> value.isFinite() }, y = it.y?.takeIf { value -> value.isFinite() }) })
         return result.copy(truncated = truncated || result != this)
@@ -60,6 +62,7 @@ data class ChatImageContext(
             val p = generation.params
             return ChatImageContext("NovelAI", p.prompt, p.negativePrompt, p.model.apiModelId,
                 width, height, p.steps, p.guidance, imageSeed, p.sampler.apiValue,
+                effort = p.effort.name.lowercase(),
                 characters = p.characters.filterNot { it.isBlank }.map { ChatContextCharacter(it.prompt, it.negativePrompt,
                     it.centerX.takeIf { _ -> p.useCharacterCoordinates }, it.centerY.takeIf { _ -> p.useCharacterCoordinates }) })
         }
@@ -70,6 +73,7 @@ data class ChatImageContext(
             return ChatImageContext("NovelAI", metadata.actualPrompt ?: metadata.prompt.orEmpty(),
                 metadata.actualNegativePrompt ?: metadata.negativePrompt.orEmpty(), p.model?.apiModelId,
                 p.width, p.height, p.steps, p.guidance, p.seed, p.sampler?.apiValue,
+                effort = p.effort?.name?.lowercase(),
                 characters = metadata.characters.map { ChatContextCharacter(it.actualPrompt ?: it.prompt,
                     it.actualNegativePrompt ?: it.negativePrompt.orEmpty(), it.centerX, it.centerY) })
         }

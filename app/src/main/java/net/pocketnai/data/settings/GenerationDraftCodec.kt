@@ -73,6 +73,7 @@ object GenerationDraftCodec {
         val baseSeed: Long = 0L,
         val qualityTags: String = "",
         val ucPresetIndex: Int = -1,
+        val effort: String = "HIGH",
         /**
          * 编辑区里挂着的参考图。
          *
@@ -136,6 +137,7 @@ object GenerationDraftCodec {
                 baseSeed = params.baseSeed,
                 qualityTags = params.qualityTags.name,
                 ucPresetIndex = params.undesiredContentPresetIndex,
+                effort = params.effort.name,
                 references = draft.references.map { it.toDto() },
                 characters = params.characters,
                 useCharacterCoordinates = params.useCharacterCoordinates,
@@ -208,6 +210,7 @@ object GenerationDraftCodec {
             } ?: profile.defaultUndesiredContentPresetIndex,
             characters = dto.characters,
             useCharacterCoordinates = dto.useCharacterCoordinates ?: dto.characters.any { !it.isBlank },
+            effort = net.pocketnai.domain.model.NovelAiEffort.fromName(dto.effort),
         )
 
         return GenerationDraft(

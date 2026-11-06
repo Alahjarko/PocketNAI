@@ -81,7 +81,12 @@ data class GenerationParams(
     val characters: List<CharacterPrompt> = emptyList(),
     /** New drafts use AI placement; legacy snapshots explicitly restore their old coordinate mode. */
     val useCharacterCoordinates: Boolean = false,
+    val effort: NovelAiEffort = NovelAiEffort.HIGH,
 ) {
+    val isMediumEffort: Boolean get() = model == ImageModel.V5_FULL && effort == NovelAiEffort.MEDIUM
+    fun apiModelId(inpainting: Boolean = false): String = if (isMediumEffort) {
+        if (inpainting) "nai-diffusion-5-full-medium-inpainting" else "nai-diffusion-5-full-medium"
+    } else if (inpainting) model.inpaintingApiModelId else model.apiModelId
     /**
      * 把"这一次生成实际使用的 seed"定下来。
      *

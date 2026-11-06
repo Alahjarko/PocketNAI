@@ -87,6 +87,13 @@ class AnlasCostCalculatorTest {
         ) as GenerationCostEstimate.EstimatedAnlas
 
         assertThat(estimate.batchTotal).isEqualTo(26L)
+        val full = ModelCatalog.profileOf(ImageModel.V5_FULL)
+        val paid = context(profile = full, usage = V5UsageLimit(0, true, null), steps = 14)
+        val medium = paid.copy(params = paid.params.copy(effort = net.pocketnai.domain.model.NovelAiEffort.MEDIUM))
+        // Official Medium formula uses unrounded 23-step base / 1.75, then V5 multiplier.
+        assertThat(calculator.estimate(medium).total()).isEqualTo(15L)
+        assertThat(calculator.estimate(medium.copy(strengthMultiplier = 0.5)).total()).isEqualTo(8L)
+        assertThat(calculator.estimate(medium.copy(params = medium.params.copy(size = ImageSizePreset(1536, 1024)))).total()).isEqualTo(22L)
     }
 
     @Test

@@ -22,12 +22,15 @@ object PromptTemplates {
             return PromptRandomizer.resolve(text, Random(seed)) to PromptRandomizer.resolve(decorated, Random(seed))
         }
         val quality = applyQualityTags(params.prompt, params.qualityTags, params.model)
-        val negative = NovelAiPromptPresets.resolveNegative(params.model, params.undesiredContentPresetIndex, quality, params.negativePrompt)
+        val preset = if (params.isMediumEffort) 0 else params.undesiredContentPresetIndex
+        val customNegative = if (params.isMediumEffort) "" else params.negativePrompt
+        val negative = NovelAiPromptPresets.resolveNegative(params.model, preset, quality, customNegative)
         val positivePair = pair(params.prompt, quality)
-        val negativePair = pair(params.negativePrompt, negative)
-        val resolved = params.copy(prompt = positivePair.first, negativePrompt = negativePair.first,
+        val negativePair = pair(customNegative, negative)
+        val resolved = params.copy(prompt = positivePair.first, negativePrompt = negativePair.first, undesiredContentPresetIndex = preset,
             characters = params.characters.map {
-                it.copy(prompt = pair(it.prompt, it.prompt).first, negativePrompt = pair(it.negativePrompt, it.negativePrompt).first)
+                it.copy(prompt = pair(it.prompt, it.prompt).first,
+                    negativePrompt = if (params.isMediumEffort) "" else pair(it.negativePrompt, it.negativePrompt).first)
             })
         return Frozen(resolved, Prepared(positivePair.second, negativePair.second))
     }

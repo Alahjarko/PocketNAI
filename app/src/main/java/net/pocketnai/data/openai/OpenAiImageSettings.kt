@@ -17,6 +17,12 @@ class OpenAiImageSettings(context: Context) {
     val provider = _provider.asStateFlow()
     private val _hasKey = MutableStateFlow(prefs.contains("key_ciphertext"))
     val hasKey = _hasKey.asStateFlow()
+    private val _gifEnabled = MutableStateFlow(prefs.getBoolean("gif_enabled", false))
+    val gifEnabled = _gifEnabled.asStateFlow()
+    fun setGifEnabled(value: Boolean) {
+        check(prefs.edit().putBoolean("gif_enabled", value).commit()) { "设置未保存" }
+        _gifEnabled.value = value
+    }
 
     fun setProvider(value: ImageProvider) {
         check(prefs.edit().putString("provider", value.name).commit()) { "模式保存失败" }

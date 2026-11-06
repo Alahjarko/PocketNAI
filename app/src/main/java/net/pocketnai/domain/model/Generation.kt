@@ -43,6 +43,8 @@ data class Generation(
     val correlationId: String? = null,
     /** Present only for OpenAI generations; params retains the legacy storage fields. */
     val openAi: net.pocketnai.domain.openai.OpenAiImageSnapshot? = null,
+    /** Monotonic elapsed time from image request start through saved result; excludes queue/preflight. */
+    val generationDurationMillis: Long? = null,
 ) {
     val displayModel: String get() = openAi?.params?.modelLabel ?: params.model.displayName
     val isActive: Boolean get() = status == GenerationStatus.GENERATING || status == GenerationStatus.QUEUED

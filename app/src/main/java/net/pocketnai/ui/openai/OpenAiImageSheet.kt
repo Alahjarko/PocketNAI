@@ -34,6 +34,14 @@ fun OpenAiImageSheet(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val hasKey by LocalAppContainer.current.openAiImageSettings.hasKey.collectAsStateWithLifecycle()
     val params = state.draft.params
+    val gifEnabled by LocalAppContainer.current.openAiImageSettings.gifEnabled.collectAsStateWithLifecycle()
+    val validation = params.validate(state.draft.references.size)
+        ?: if (params.isAnimated && !gifEnabled) "请先在生图服务中开启 GIF 制作（实验）" else null
+    val unknownCost = when (params.outputFormat) {
+        "gif" -> "GIF 费用待返回用量后核算"
+        "svg" -> "SVG 含矢量编写费用，以账单为准"
+        else -> "待确定尺寸后估算"
+    }
     val estimate = remember(params, state.draft.references.size) {
         OpenAiImagePricing.estimate(params, state.draft.references.size)
     }
@@ -51,14 +59,15 @@ fun OpenAiImageSheet(
             Column(Modifier.weight(1f)) {
                 Text("OpenAI 生图", style = MaterialTheme.typography.titleMedium)
                 Text(if (state.busy) "生成中 · ${state.activeTasks} 项任务"
-                    else params.modelLabel.removePrefix("GPT Image ") + " · ${params.size} · ${params.quality}",
+                    else params.modelLabel.removePrefix("GPT Image ") + " · " +
+                        (if (params.isAnimated) "GIF ${params.frameCount} 帧" else "${params.size} · ${params.quality}"),
                     style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Button(onClick = {
                 if (!hasKey) onSettings()
                 else { keyboard?.hide(); confirm = true }
             }, enabled = !state.importing && (!hasKey ||
-                (params.prompt.isNotBlank() && OpenAiImageParams.sizeError(params.size) == null)),
+                validation == null),
                 modifier = Modifier.height(56.dp)) {
                 Text(if (!hasKey) "配置密钥" else "生成")
             }
@@ -78,34 +87,49 @@ fun OpenAiImageSheet(
                 minLines = 4, maxLines = 10, enabled = true, modifier = Modifier.fillMaxWidth())
             OpenAiOption("模型", params.model, OpenAiImageParams.MODELS,
                 OpenAiImageParams::labelOf, true,
-                info = "Flare 适合快速迭代，Sunburst 适合精细画面与编辑。") { viewModel.update(params.copy(model = it)) }
+                info = "Flare 适合快速迭代，Sunburst 适合精细画面与编辑。") {
+                val next = params.copy(model = it)
+                viewModel.update(if (next.outputFormat in next.formats) next else next.copy(outputFormat = "png"))
+            }
             if (params.supportsComplexity) OpenAiOption("复杂度", params.complexity, OpenAiImageParams.COMPLEXITIES,
                 OpenAiImageParams::complexityLabelOf, true,
                 info = "控制绘制前的规划程度，与渲染质量分开。局部修改可选低，密集文字或复杂构图可选高；高复杂度可能增加等待时间。") {
                 viewModel.update(params.copy(complexity = it))
             }
             var customSize by rememberSaveable(state.revision) { mutableStateOf(params.size !in OpenAiImageParams.SIZE_PRESETS) }
-            OpenAiResolutionSelector(params.size, customSize, true, { customSize = it }) {
+            if (!params.isAnimated) OpenAiResolutionSelector(params.size, customSize, true, { customSize = it }) {
                 viewModel.update(params.copy(size = it))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.weight(1f)) { OpenAiOption("质量", params.quality, OpenAiImageParams.QUALITIES, {
                     when (it) { "low" -> "低"; "medium" -> "中"; "high" -> "高"; "xhigh" -> "极高"; "max" -> "最高"; else -> "自动" }
                 }, true) { viewModel.update(params.copy(quality = it)) } }
-                Box(Modifier.weight(1f)) { OpenAiOption("张数", params.count.toString(), (1..10).map(Int::toString), { "$it 张" }, true) {
+                Box(Modifier.weight(1f)) { OpenAiOption("张数", params.count.toString(), (1..if (params.outputFormat in listOf("gif", "svg")) 1 else 10).map(Int::toString), { "$it 张" }, true) {
                     viewModel.update(params.copy(count = it.toInt()))
                 } }
             }
-            OpenAiCostEstimate(estimate)
+            OpenAiCostEstimate(estimate, unknownLabel = unknownCost)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(Modifier.weight(1f)) { OpenAiOption("格式", params.outputFormat, OpenAiImageParams.FORMATS, String::uppercase, true) {
-                    viewModel.update(params.copy(outputFormat = it))
+                Box(Modifier.weight(1f)) { OpenAiOption("格式", params.outputFormat, params.formats.filter { it != "gif" || gifEnabled }, String::uppercase, true) {
+                    if (it == "gif" || params.size == "auto") customSize = false
+                    viewModel.update(params.copy(outputFormat = it, count = if (it in listOf("gif", "svg")) 1 else params.count,
+                        size = if (it == "gif") "auto" else params.size))
                 } }
                 Box(Modifier.weight(1f)) { OpenAiOption("背景", params.background, OpenAiImageParams.BACKGROUNDS, {
                     when (it) { "transparent" -> "透明"; "opaque" -> "不透明"; else -> "自动" }
                 }, true) { viewModel.update(params.copy(background = it)) } }
             }
-            if (params.outputFormat != "png") {
+            if (params.isAnimated) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.weight(1f)) { OpenAiOption("帧数", params.frameCount.toString(), (2..16).map(Int::toString), { "$it 帧" }, true) {
+                        viewModel.update(params.copy(frameCount = it.toInt()))
+                    } }
+                    Box(Modifier.weight(1f)) { OpenAiOption("每帧时长", params.frameDurationMs.toString(), listOf(20,50,100,200,500,1000,2000).map(Int::toString), { "$it ms" }, true) {
+                        viewModel.update(params.copy(frameDurationMs = it.toInt()))
+                    } }
+                }
+            }
+            if (params.hasCompression) {
                 Text("压缩质量 ${params.compression}", style = MaterialTheme.typography.labelLarge)
                 Slider(params.compression.toFloat(), { viewModel.update(params.copy(compression = it.toInt())) },
                     valueRange = 0f..100f, enabled = true)
@@ -137,6 +161,7 @@ fun OpenAiImageSheet(
                     modifier = Modifier.weight(1f)) { Text("从历史选择") }
             }
             if (state.importing) LinearProgressIndicator(Modifier.fillMaxWidth())
+            validation?.takeIf { params.prompt.isNotBlank() }?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }
     if (history) HistoryImagePickerDialog(onPick = { path ->
@@ -146,12 +171,14 @@ fun OpenAiImageSheet(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("${params.modelLabel}\n${params.size} · ${params.quality} · ${params.count} 张")
             if (params.supportsComplexity) Text("复杂度 · ${params.complexityLabel}", style = MaterialTheme.typography.bodySmall)
-            OpenAiCostEstimate(estimate)
-            Text("这是本次请求的粗估，实际扣费以账单为准。完成后可在详情查看用量折算金额。",
+            if (params.isAnimated) Text("${params.frameCount} 帧 · ${params.frameDurationMs} ms / 帧")
+            OpenAiCostEstimate(estimate, unknownLabel = unknownCost)
+            Text(if (estimate == null) "实际扣费以账单为准；费用未知不代表免费。"
+                else "这是本次请求的粗估，实际扣费以账单为准。完成后可在详情查看用量折算金额。",
                 style = MaterialTheme.typography.bodySmall)
-            params.validate()?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            validation?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
-    }, confirmButton = { TextButton(enabled = params.validate() == null, onClick = {
+    }, confirmButton = { TextButton(enabled = validation == null, onClick = {
         confirm = false; viewModel.generate()
     }) { Text("生成 ${params.count} 张") } }, dismissButton = { TextButton(onClick = { confirm = false }) { Text("取消") } })
 }

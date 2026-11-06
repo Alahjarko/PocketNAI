@@ -372,7 +372,7 @@ fun GalleryPane(
                             }
                         },
                     ) {
-                        Text(stringResource(R.string.action_save_to_gallery))
+                        Text(if (target.relativePath.endsWith(".svg", ignoreCase = true)) "保存 SVG 文件" else stringResource(R.string.action_save_to_gallery))
                     }
 
                     TextButton(
@@ -400,13 +400,13 @@ fun GalleryPane(
                         Text(stringResource(R.string.action_copy_prompt))
                     }
 
-                    TextButton(
+                    if (!target.relativePath.endsWith(".svg", ignoreCase = true)) TextButton(
                         onClick = {
                             actionTarget = null
                             onInpaintImage(target)
                         },
                     ) {
-                        Text(stringResource(R.string.action_inpaint))
+                        Text(if (target.relativePath.endsWith(".gif", ignoreCase = true)) "编辑首帧" else stringResource(R.string.action_inpaint))
                     }
 
                     TextButton(
@@ -716,7 +716,8 @@ private fun saveToSystemGallery(
         when (val outcome = exporter.export(source, displayName)) {
             is Outcome.Success -> {
                 repository.markExported(item.imageId, outcome.value.toString())
-                snackbarHostState.showSnackbar(context.getString(R.string.detail_saved_to_gallery))
+                snackbarHostState.showSnackbar(if (source.extension.equals("svg", ignoreCase = true)) "SVG 已保存到下载目录"
+                    else context.getString(R.string.detail_saved_to_gallery))
             }
 
             is Outcome.Failure -> {
@@ -868,7 +869,8 @@ private fun saveMultipleToSystemGallery(
             }
         }
         if (successCount > 0) {
-            snackbarHostState.showSnackbar(context.getString(R.string.batch_save_success, successCount))
+            snackbarHostState.showSnackbar(if (items.any { it.relativePath.endsWith(".svg", ignoreCase = true) })
+                "已保存 $successCount 个文件，SVG 位于下载目录" else context.getString(R.string.batch_save_success, successCount))
         } else {
             snackbarHostState.showSnackbar(context.getString(R.string.common_unknown))
         }
