@@ -105,6 +105,7 @@ object Routes {
     const val SETTINGS = "settings"
     const val ANLAS_STATISTICS = "anlas-statistics"
     const val CHAT = "chat"
+    const val CHAT_SETTINGS = "chat-settings"
     const val ARTIST_LAB = "artist-lab"
     const val DETAIL = "detail/{imageId}"
     const val REFERENCE_DETAIL = "reference-detail/{imageId}"
@@ -350,7 +351,7 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                             onRequestConnect = { navController.navigate(Routes.CONNECT) },
                             onOpenStatistics = { navController.navigate(Routes.ANLAS_STATISTICS) { launchSingleTop = true } },
                             updateViewModel = updateViewModel,
-                            chatViewModel = chatViewModel,
+                            onOpenChatSettings = { navController.navigate(Routes.CHAT_SETTINGS) { launchSingleTop = true } },
                         )
                     }
                 }
@@ -369,6 +370,9 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                         onBack = { navController.popBackStack() },
                     )
                 }
+            }
+            composable(Routes.CHAT_SETTINGS) {
+                net.pocketnai.ui.chat.ChatSettingsScreen(chatViewModel) { navController.popBackStack() }
             }
             composable(Routes.CHAT) {
                 ImageMotionRoute(this, Routes.CHAT) {

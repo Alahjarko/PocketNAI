@@ -47,6 +47,8 @@ import net.pocketnai.data.security.CredentialStore
 import net.pocketnai.data.security.CredentialType
 import net.pocketnai.domain.account.SavedAccount
 import net.pocketnai.ui.common.messageRes
+import net.pocketnai.ui.connect.AccountDisconnectConfirmation
+import net.pocketnai.ui.connect.NovelAiDisconnectTarget
 
 /** 添加账号的两种来源，与连接页的 [net.pocketnai.ui.connect.AuthMode] 同义。 */
 private enum class AddAccountMode {
@@ -67,6 +69,7 @@ fun AccountSwitchDialog(
     var accounts by remember { mutableStateOf(credentialStore.listAccounts()) }
     var addDialogOpen by remember { mutableStateOf(false) }
     var renamingAccount by remember { mutableStateOf<SavedAccount?>(null) }
+    var removalTarget by remember { mutableStateOf<Pair<SavedAccount, NovelAiDisconnectTarget>?>(null) }
 
     // 添加成功（VM 给出新账号 id）→ 刷新列表、关弹窗、走统一的切换后刷新。
     LaunchedEffect(addAccountUi.lastAddedId) {
@@ -105,9 +108,9 @@ fun AccountSwitchDialog(
                             },
                             onRename = { renamingAccount = account },
                             onDelete = {
-                                credentialStore.deleteAccount(account.id)
-                                accounts = credentialStore.listAccounts()
-                                onAccountSwitched()
+                                val snapshot = NovelAiDisconnectTarget.capture(credentialStore)
+                                if (account in snapshot.accounts) removalTarget = account to snapshot
+                                else accounts = credentialStore.listAccounts()
                             },
                         )
                     }
@@ -130,6 +133,30 @@ fun AccountSwitchDialog(
             }
         },
     )
+
+    removalTarget?.let { (account, snapshot) ->
+        AccountDisconnectConfirmation(
+            title = "移除 NovelAI 账号？",
+            message = "将从本机移除“${account.name}”（指纹 ${account.tokenFingerprint}）及其凭据。再次使用需重新添加令牌或登录。" +
+                (if (account.isActive) {
+                    if (snapshot.accounts.size > 1) "\n\n这是当前账号，移除后将尝试切换到其他已保存账号。"
+                    else "\n\n这是当前唯一账号，移除后将断开 NovelAI 连接。"
+                } else "\n\n当前连接与其他已保存账号不受影响。") +
+                "\n\n本机历史图片、收藏、生成草稿与已导出的图片会保留；不会注销服务端账号或撤销服务端令牌。",
+            confirmLabel = "确认移除",
+            onConfirm = {
+                if (snapshot.isCurrent(credentialStore) && credentialStore.deleteAccount(account.id)) {
+                    accounts = credentialStore.listAccounts()
+                    onAccountSwitched()
+                    true
+                } else false
+            },
+            onDismiss = {
+                removalTarget = null
+                accounts = credentialStore.listAccounts()
+            },
+        )
+    }
 
     // 添加新账号弹窗
     if (addDialogOpen) {
@@ -224,7 +251,7 @@ private fun AccountItemCard(
                 IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
                     Icon(
                         Icons.Default.Delete,
-                        contentDescription = "删除账号",
+                        contentDescription = "移除账号",
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(16.dp),
                     )

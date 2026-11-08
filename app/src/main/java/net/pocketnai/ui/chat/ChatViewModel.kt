@@ -41,6 +41,37 @@ class ChatViewModel(
     private val _state = MutableStateFlow(UiState())
     val state = _state.asStateFlow()
     val config = settings.config
+    val providers = settings.catalog
+    val credentialRevision = settings.credentialRevision
+    val configurationError = settings.configurationError
+
+    private fun requireIdleConfiguration() {
+        if (_state.value.busy) throw ChatFailure("请先停止当前回复，待图片任务结束后再修改配置")
+    }
+    private fun changeConfiguration(action: () -> Unit): Boolean = try {
+        requireIdleConfiguration()
+        action()
+        _state.update { it.copy(error = null) }
+        true
+    } catch (e: ChatFailure) {
+        _state.update { it.copy(error = e.userMessage) }; false
+    } catch (_: Exception) {
+        _state.update { it.copy(error = "无法加密或保存配置") }; false
+    }
+    fun hasProviderKey(id: String) = settings.hasProviderKey(id)
+    fun saveProvider(provider: LlmProvider, key: String) = changeConfiguration {
+        ChatProtocol.endpoint(provider.baseUrl, "models")
+        settings.saveProvider(provider, key)
+    }
+    fun deleteProvider(id: String) = changeConfiguration { settings.deleteProvider(id) }
+    fun selectModel(providerId: String, modelId: String) = changeConfiguration { settings.selectModel(providerId, modelId) }
+    fun savePreferences(next: LlmConfig) = changeConfiguration { settings.savePreferences(next) }
+    suspend fun providerModels(provider: LlmProvider, key: String): List<String> {
+        ChatProtocol.endpoint(provider.baseUrl, "models")
+        val token = key.trim().ifEmpty { settings.providerKey(provider.id, provider.baseUrl).orEmpty() }
+        if (token.isBlank()) throw ChatFailure("请填写该提供商地址对应的 API Key")
+        return api.models(LlmConfig(baseUrl = provider.baseUrl.trim()), token).distinct().sorted()
+    }
     val searchConfig = settings.searchConfig
     @Volatile private var stopImages = false
     private var job: Job? = null
@@ -92,10 +123,11 @@ class ChatViewModel(
         _state.update { it.copy(error = null) }; true
     } catch (e: ChatFailure) { _state.update { it.copy(error = e.userMessage) }; false }
     catch (_: Exception) { _state.update { it.copy(error = "无法加密或保存 API 配置") }; false }
-    fun clearKey() { settings.clearKey(); stop(); _state.update { it.copy(models = emptyList()) } }
+    fun clearKey() = changeConfiguration { settings.clearKey(); _state.update { it.copy(models = emptyList()) } }
     fun hasSearchKey() = settings.hasSearchKey()
-    fun clearSearchKey() { settings.clearSearchKey() }
+    fun clearSearchKey() = changeConfiguration { settings.clearSearchKey() }
     fun saveSearchConfig(next: ChatSearchConfig, key: String): Boolean = try {
+        requireIdleConfiguration()
         WebSearchClient.searchEndpoint(next)
         if (settings.hasSearchKey() && (next.baseUrl.trim().trimEnd('/') != searchConfig.value.baseUrl.trim().trimEnd('/') || next.provider != searchConfig.value.provider) && key.isBlank())
             throw ChatFailure("更换搜索地址时请填写对应的 API Key")

@@ -16,7 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -89,7 +88,7 @@ fun ConnectScreen(onConnected: () -> Unit) {
         },
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var disconnectTarget by remember { mutableStateOf<NovelAiDisconnectTarget?>(null) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -126,8 +125,9 @@ fun ConnectScreen(onConnected: () -> Unit) {
                 loginMethod = state.account?.loginMethod,
                 hintLength = state.hint?.length,
                 fingerprint = state.hint?.fingerprint,
-                onReplace = viewModel::disconnect,
-                onDelete = { showDeleteConfirm = true },
+                onDisconnect = {
+                    disconnectTarget = NovelAiDisconnectTarget.capture(container.credentialStore)
+                },
             )
         } else {
             ModeSelector(
@@ -175,26 +175,18 @@ fun ConnectScreen(onConnected: () -> Unit) {
         Spacer(Modifier.height(8.dp))
     }
 
-    if (showDeleteConfirm) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = { Text(stringResource(R.string.connect_delete_confirm_title)) },
-            text = { Text(stringResource(R.string.connect_delete_confirm_message)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteConfirm = false
-                        viewModel.disconnect()
-                    },
-                ) {
-                    Text(stringResource(R.string.connect_delete))
-                }
+    disconnectTarget?.let { target ->
+        AccountDisconnectConfirmation(
+            title = "断开 NovelAI 连接？",
+            message = target.disconnectMessage,
+            confirmLabel = "确认断开",
+            onConfirm = {
+                if (target.isCurrent(container.credentialStore)) {
+                    viewModel.disconnect()
+                    true
+                } else false
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
-            },
+            onDismiss = { disconnectTarget = null },
         )
     }
 }
@@ -402,8 +394,7 @@ private fun ConnectedCard(
     loginMethod: String?,
     hintLength: Int?,
     fingerprint: String?,
-    onReplace: () -> Unit,
-    onDelete: () -> Unit,
+    onDisconnect: () -> Unit,
 ) {
     Card(
         colors = CardDefaults.cardColors(
@@ -471,13 +462,8 @@ private fun ConnectedCard(
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onReplace) {
-                    Text(stringResource(R.string.connect_replace))
-                }
-                OutlinedButton(onClick = onDelete) {
-                    Text(stringResource(R.string.connect_delete))
-                }
+            OutlinedButton(onClick = onDisconnect) {
+                Text("断开连接")
             }
         }
     }

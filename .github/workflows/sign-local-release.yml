@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       staging_tag:
-        description: Temporary branch containing PocketNAI-unsigned.apk and matching draft release
+        description: Temporary draft release (and input branch unless unsigned_from_release is enabled)
         required: true
         type: string
       unsigned_sha256:
@@ -16,8 +16,18 @@ on:
         description: Exact source commit used for local compilation
         required: true
         type: string
+      unsigned_from_release:
+        description: Download unsigned APK from staging draft instead of committing a binary branch
+        required: false
+        default: false
+        type: boolean
+      reference_version_code:
+        description: Previous public build for signature comparison (empty preserves same-version replacement mode)
+        required: false
+        default: ""
+        type: string
       version_code:
-        description: Existing build number to preserve
+        description: Build number of the locally compiled APK
         required: true
         type: string
       previous_sha256:
@@ -47,6 +57,8 @@ jobs:
       UNSIGNED_SHA256: ${{ inputs.unsigned_sha256 }}
       SOURCE_SHA: ${{ inputs.source_sha }}
       VERSION_CODE: ${{ inputs.version_code }}
+      REFERENCE_VERSION_CODE: ${{ inputs.reference_version_code || inputs.version_code }}
+      UNSIGNED_FROM_RELEASE: ${{ inputs.unsigned_from_release }}
       PREVIOUS_SHA256: ${{ inputs.previous_sha256 }}
       PUBLISH_SHA256: ${{ inputs.publish_sha256 }}
     steps:
@@ -57,9 +69,16 @@ jobs:
           [[ "$UNSIGNED_SHA256" =~ ^[0-9a-f]{64}$ ]]
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]]
+          [[ "$REFERENCE_VERSION_CODE" =~ ^[1-9][0-9]*$ ]]
+          if [[ "$REFERENCE_VERSION_CODE" != "$VERSION_CODE" ]]; then
+            test "$REFERENCE_VERSION_CODE" -lt "$VERSION_CODE"
+            test -z "$PUBLISH_SHA256" # New versions are sign-only; never replace another release.
+          fi
           [[ "$PREVIOUS_SHA256" =~ ^[0-9a-f]{64}$ ]]
           [[ -z "$PUBLISH_SHA256" || "$PUBLISH_SHA256" =~ ^[0-9a-f]{64}$ ]]
           test "$(gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          test "$(gh release view "build-$REFERENCE_VERSION_CODE" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,isPrerelease --jq '(.isDraft == false) and (.isPrerelease == false)')" = true
 
       - uses: actions/checkout@v4
         with:
@@ -67,6 +86,7 @@ jobs:
           persist-credentials: false
 
       - uses: actions/checkout@v4
+        if: ${{ !inputs.unsigned_from_release }}
         with:
           ref: ${{ inputs.staging_tag }}
           path: local-input
@@ -87,12 +107,18 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/local-apk" "$RUNNER_TEMP/previous-apk" "$RUNNER_TEMP/signed-apk"
-          cp local-input/PocketNAI-unsigned.apk "$RUNNER_TEMP/local-apk/"
+          if [[ "$UNSIGNED_FROM_RELEASE" == "true" ]]; then
+            gh release download "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" \
+              --pattern PocketNAI-unsigned.apk --dir "$RUNNER_TEMP/local-apk"
+          else
+            cp local-input/PocketNAI-unsigned.apk "$RUNNER_TEMP/local-apk/"
+          fi
           printf '%s  %s\n' "$UNSIGNED_SHA256" "$RUNNER_TEMP/local-apk/PocketNAI-unsigned.apk" | sha256sum -c -
           python3 scripts/verify-share-manifest.py "$RUNNER_TEMP/local-apk/PocketNAI-unsigned.apk" --version-code "$VERSION_CODE"
-          gh release download "build-$VERSION_CODE" --repo "$GITHUB_REPOSITORY" \
+          gh release download "build-$REFERENCE_VERSION_CODE" --repo "$GITHUB_REPOSITORY" \
             --pattern PocketNAI.apk --dir "$RUNNER_TEMP/previous-apk"
           printf '%s  %s\n' "$PREVIOUS_SHA256" "$RUNNER_TEMP/previous-apk/PocketNAI.apk" | sha256sum -c -
+          python3 scripts/verify-share-manifest.py "$RUNNER_TEMP/previous-apk/PocketNAI.apk" --version-code "$REFERENCE_VERSION_CODE"
 
       - name: Sign with existing project key
         if: inputs.publish_sha256 == ''
@@ -135,7 +161,10 @@ jobs:
               return {value.lower() for value in values}
           assert certificates('previous-cert.txt') == certificates('current-cert.txt'), 'Signing certificate mismatch'
           with zipfile.ZipFile(root / 'local-apk/PocketNAI-unsigned.apk') as unsigned, zipfile.ZipFile(root / 'signed-apk/PocketNAI.apk') as signed:
-              payload = lambda z: {name: z.read(name) for name in z.namelist() if not name.startswith('META-INF/')}
+              signature = re.compile(r'META-INF/(?:MANIFEST\.MF|[^/]+\.(?:SF|RSA|DSA|EC))', re.I)
+              for apk in (unsigned, signed):
+                  assert len(apk.namelist()) == len(set(apk.namelist())), 'Duplicate APK entry'
+              payload = lambda z: {name: z.read(name) for name in z.namelist() if not signature.fullmatch(name)}
               assert payload(unsigned) == payload(signed), 'Signed APK differs from local compiled payload'
           print('Signing certificate matches previous release')
           PY

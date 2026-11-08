@@ -68,7 +68,9 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             // 优化构建仍用原来的签名，保证覆盖安装保留历史和凭据。
-            signingConfig = signingConfigs.findByName("pinned") ?: signingConfigs.getByName("debug")
+            // Explicit opt-in for local compilation followed by CI signing; debug is unaffected.
+            signingConfig = if (System.getenv("PNAI_UNSIGNED_RELEASE") == "1") null
+                else signingConfigs.findByName("pinned") ?: signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

@@ -6,6 +6,8 @@
 
 - 本地云机没有原签名密钥时，不能使用自动创建的debug keystore。可本地注入目标版本构建优化Release无签名包，再通过`sign-local-release.yml`仅签名，不重新编译或导出密钥。输入通过独立临时Git分支传递，并核对本地SHA-256；签名后先与目标旧版证书比较，结果存于匹配的临时草稿Release。下载核对包内版本和所有编译内容一致后，第二次以`publish_sha256`指定已验证包的摘要，才允许覆盖公开附件；同时核对`previous_sha256`，避免覆盖别人刚更新的包。覆盖既有版本/附件/标签须有用户明确授权；完成后清理自己创建的临时分支和草稿。不要调用默认加号发布脚本来执行同版本覆盖。
 
+- 新版本的本地编译／云端签名：设置 `PNAI_UNSIGNED_RELEASE=1`（只影响 release，不改 debug 签名），同时注入新构建号，再运行单测与 `:app:assembleRelease`。将 `app-release-unsigned.apk` 以 `PocketNAI-unsigned.apk` 上传到 `local-sign-<新构建号>-<源码SHA前12位>` 临时草稿 Release；调用 `sign-local-release.yml`，启用 `unsigned_from_release`，明确设置 `reference_version_code` 为上一公开版本，传入两包摘要与源码 SHA，保持 `publish_sha256` 为空。此模式只签名回传草稿，禁止跨版本覆盖。下载核验签名、版本与全部非签名 ZIP 内容后，再用匹配源码 SHA 创建全新的 `build-N` Release，附件命名 `PocketNAI.apk`；验证公开下载后，仅清理本次临时草稿／标签。无需向 Git 提交 APK，也不把签名密钥导出到云机。
+
 - 2026-11-02：正式发布 workflow 显式安装 `platforms;android-35` 与 `build-tools;34.0.0`，不依赖 runner 的预装版本，不安装/启动模拟器。签名解析兼容 `Signer #1`、SDK 范围与 `V2 Signer` 等输出，仍需实际校验 APK 并比较证书集合。保留已验证 APK 和测试报告为 Actions artifact，再创建正式 Release；标签通过 `--target` 固定到本次构建 SHA，附件仍命名 `PocketNAI.apk`。多行发布说明原样写入文件传给 `--notes-file`。
 
 - 云端 workflow 在发布前下载上一版 `PocketNAI.apk`，用 `apksigner verify --print-certs` 校验两包并比较签名证书SHA-256集合；不一致或无法核验时停止发布，不能以另一把可用密钥替代。用于比较的旧包只读，不覆盖或删除既有Release。

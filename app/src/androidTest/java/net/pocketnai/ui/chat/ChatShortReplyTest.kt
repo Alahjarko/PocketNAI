@@ -41,6 +41,10 @@ class ChatShortReplyTest {
         var streaming by mutableStateOf(false)
         var jumpVisible by mutableStateOf(false)
         var agent by mutableStateOf<ChatAgentAcceptance?>(null)
+        var agentSettings by mutableStateOf(false)
+        var disconnectOpen by mutableStateOf(false)
+        var disconnectAllowed by mutableStateOf(true)
+        var disconnectCount = 0
         var agentFontScale by mutableFloatStateOf(1f)
         val file = File(compose.activity.cacheDir, "chat-motion-${UUID.randomUUID()}.png")
         Bitmap.createBitmap(400, 1000, Bitmap.Config.ARGB_8888).let { bitmap ->
@@ -59,13 +63,23 @@ class ChatShortReplyTest {
         lateinit var list: androidx.compose.foundation.lazy.LazyListState
         compose.mainClock.autoAdvance = false
         try {
+            compose.runOnUiThread {
+                // The generic test Activity must match MainActivity's manifest IME policy.
+                compose.activity.window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            }
             compose.setContent {
                 MaterialTheme {
+                    if (disconnectOpen) net.pocketnai.ui.connect.AccountDisconnectConfirmation(
+                        "断开连接？", "仅离线测试账号，不访问用户凭据", "确认断开",
+                        onConfirm = { if (disconnectAllowed) { disconnectCount++; true } else false },
+                        onDismiss = { disconnectOpen = false },
+                    )
                     ImageMotionRoot {
                         if (agent != null) {
                             CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(
                                 androidx.compose.ui.platform.LocalDensity.current.density, agentFontScale)) {
-                                ChatScreen(agent!!.viewModel, { agent!!.image }, {})
+                                if (agentSettings) ChatSettingsScreen(agent!!.viewModel) { agentSettings = false }
+                                else ChatScreen(agent!!.viewModel, { agent!!.image }, {})
                             }
                             return@ImageMotionRoot
                         }
@@ -107,6 +121,24 @@ class ChatShortReplyTest {
                 }
             }
             compose.mainClock.advanceTimeBy(500)
+            compose.mainClock.autoAdvance = true
+            compose.runOnUiThread { disconnectOpen = true }
+            compose.onNodeWithText("取消").performClick()
+            compose.waitForIdle()
+            compose.onNodeWithText("确认断开").assertDoesNotExist()
+            assertThat(disconnectCount).isEqualTo(0)
+            compose.runOnUiThread { disconnectOpen = true; disconnectAllowed = false }
+            compose.onNodeWithText("确认断开").performClick()
+            compose.onNodeWithText("确认断开").assertIsNotEnabled()
+            assertThat(disconnectCount).isEqualTo(0)
+            compose.onNodeWithText("取消").performClick()
+            compose.waitForIdle()
+            compose.onNodeWithText("确认断开").assertDoesNotExist()
+            compose.runOnUiThread { disconnectOpen = true; disconnectAllowed = true }
+            compose.onNodeWithText("确认断开").assertIsEnabled().performClick()
+            compose.waitForIdle()
+            assertThat(disconnectCount).isEqualTo(1)
+            compose.mainClock.autoAdvance = false
             compose.waitUntil(5000) { compose.onAllNodesWithText("角色、服装、场景与光线的要点").fetchSemanticsNodes().size == 12 }
             compose.onAllNodesWithTag("chat-read-full").assertCountEquals(0)
             val baseline = compose.onNodeWithTag("composer").fetchSemanticsNode().boundsInRoot.bottom
@@ -209,7 +241,10 @@ class ChatShortReplyTest {
             compose.mainClock.autoAdvance = true
             compose.onNodeWithTag("chat-input").performClick()
             compose.waitUntil(10_000) {
-                (compose.activity.window.decorView.rootWindowInsets?.getInsets(android.view.WindowInsets.Type.ime())?.bottom ?: 0) > 200
+                val ime = compose.activity.window.decorView.rootWindowInsets?.getInsets(android.view.WindowInsets.Type.ime())?.bottom ?: 0
+                // Insets can arrive before Compose's corresponding measure pass on Redroid.
+                ime > 200 && compose.onNodeWithTag("composer").fetchSemanticsNode().boundsInWindow.bottom <=
+                    compose.activity.window.decorView.height - ime
             }
             val keyboardTop = compose.activity.window.decorView.height -
                 compose.activity.window.decorView.rootWindowInsets.getInsets(android.view.WindowInsets.Type.ime()).bottom
@@ -234,18 +269,44 @@ class ChatShortReplyTest {
                 (compose.activity.window.decorView.rootWindowInsets?.getInsets(android.view.WindowInsets.Type.ime())?.bottom ?: 0) == 0
             }
             assertThat(compose.onNodeWithTag("composer").fetchSemanticsNode().boundsInRoot.bottom).isWithin(2f).of(baseline)
+            net.pocketnai.data.chat.verifyLlmProviderPersistence(compose.activity)
             compose.runOnUiThread { agent = ChatAgentAcceptance(compose.activity, file) }
             val fixture = agent!!
             compose.waitUntil(5000) { fixture.viewModel.state.value.current != null }
             compose.onNodeWithContentDescription("对话菜单").performClick()
-            compose.onNodeWithText("连接与人格").performClick()
-            compose.onNodeWithText("联网搜索 · DeepSeek / Tavily").performScrollTo().performClick()
+            compose.onNodeWithText("连接与人格").assertDoesNotExist()
+            shell("input keyevent 4")
+            compose.runOnUiThread { agentSettings = true }
+            val originalProviderId = fixture.viewModel.providers.value.activeProviderId!!
+            compose.onNodeWithText("添加提供商").performClick()
+            compose.onNodeWithText("提供商名称").performTextInput("Offline second")
+            compose.onNodeWithText("API Key").performTextInput("test-only-second-provider")
+            compose.onNodeWithText("手动添加").performScrollTo().performClick()
+            compose.onNodeWithText("模型 ID").performTextInput("offline-agent")
+            compose.onNodeWithText("确定").performClick()
+            compose.onNodeWithText("保存").performClick()
+            assertThat(fixture.viewModel.providers.value.providers).hasSize(2)
+            assertThat(fixture.viewModel.providers.value.activeProviderId).isEqualTo(originalProviderId)
+            compose.waitForIdle(); instrumentation.waitForIdleSync(); android.os.SystemClock.sleep(350)
+            shell("screencap -p /data/local/tmp/pocketnai-provider-settings.png")
+            compose.onNodeWithContentDescription("返回设置").performClick()
+            compose.onNodeWithTag("chat-model-picker").performClick()
+            compose.onAllNodesWithText("offline-agent").onLast().performClick()
+            assertThat(fixture.viewModel.providers.value.activeProviderId).isNotEqualTo(originalProviderId)
+            assertThat(fixture.savedPermission()).isEqualTo(net.pocketnai.domain.chat.ChatToolPermission.SINGLE_IMAGE)
+            compose.onNodeWithTag("chat-model-picker").performClick()
+            compose.waitForIdle(); instrumentation.waitForIdleSync(); android.os.SystemClock.sleep(350)
+            shell("screencap -p /data/local/tmp/pocketnai-model-picker.png")
+            compose.onAllNodesWithText("offline-agent").onFirst().performClick()
+            assertThat(fixture.viewModel.providers.value.activeProviderId).isEqualTo(originalProviderId)
+            compose.runOnUiThread { agentSettings = true }
+            compose.onNodeWithText("联网搜索").performScrollTo().performClick()
             compose.onAllNodesWithText("DeepSeek", useUnmergedTree = true).onLast().performClick()
             compose.onNodeWithText("https://api.deepseek.com/v1").assertIsDisplayed()
             shell("screencap -p /data/local/tmp/pocketnai-agent-search.png")
             shell("input keyevent 4")
             compose.waitForIdle()
-            shell("input keyevent 4")
+            compose.onNodeWithContentDescription("返回设置").performClick()
             compose.waitForIdle()
             compose.runOnUiThread { fixture.viewModel.send("请画三张风景分镜，先查资料") }
             compose.waitUntil(5000) { fixture.viewModel.state.value.pending != null }
@@ -290,13 +351,14 @@ class ChatShortReplyTest {
             assertThat(fixture.generated).isEqualTo(6)
             fixture.verifySaved(1)
             // The saved FULL mode is exercised through the real settings UI and ViewModel.
-            compose.onNodeWithContentDescription("对话菜单").performClick()
-            compose.onNodeWithText("连接与人格").performClick()
+            compose.runOnUiThread { agentSettings = true }
+            compose.onNodeWithText("人格与工具权限").performScrollTo().performClick()
             compose.onNodeWithText("完全允许").performScrollTo().performClick()
             compose.mainClock.advanceTimeBy(400); compose.waitForIdle(); android.os.SystemClock.sleep(150)
             shell("screencap -p /data/local/tmp/pocketnai-agent-full-permission.png")
             compose.onNodeWithText("保存").performClick()
             assertThat(fixture.savedPermission()).isEqualTo(net.pocketnai.domain.chat.ChatToolPermission.FULL)
+            compose.onNodeWithContentDescription("返回设置").performClick()
             fixture.gate = null
             compose.runOnUiThread { fixture.viewModel.newConversation(); fixture.viewModel.send("直接完成三张分镜") }
             compose.waitUntil(15_000) {

@@ -3,7 +3,7 @@ package net.pocketnai.ui.settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -11,6 +11,9 @@ import androidx.compose.ui.unit.dp
 import net.pocketnai.data.repo.BalanceState
 import net.pocketnai.domain.billing.SubscriptionStatus
 import net.pocketnai.ui.billing.AccountUsageContent
+import net.pocketnai.ui.LocalAppContainer
+import net.pocketnai.ui.connect.AccountDisconnectConfirmation
+import net.pocketnai.ui.connect.NovelAiDisconnectTarget
 
 /** 令牌和用量是同一账户组的上下两段，不再散落为独立设置项或等级弹窗。 */
 @Composable
@@ -25,6 +28,23 @@ internal fun NovelAiAccountCard(
     onDisconnect: () -> Unit,
     onRefresh: () -> Unit,
 ) {
+    var showDisconnectConfirm by remember { mutableStateOf(false) }
+    if (showDisconnectConfirm) {
+        val credentialStore = LocalAppContainer.current.credentialStore
+        val target = remember { NovelAiDisconnectTarget.capture(credentialStore) }
+        AccountDisconnectConfirmation(
+            title = "断开 NovelAI 连接？",
+            message = target.disconnectMessage,
+            confirmLabel = "确认断开",
+            onConfirm = {
+                if (target.isCurrent(credentialStore)) {
+                    onDisconnect()
+                    true
+                } else false
+            },
+            onDismiss = { showDisconnectConfirm = false },
+        )
+    }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Surface(shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp),
             color = MaterialTheme.colorScheme.surfaceContainerLow) {
@@ -38,7 +58,10 @@ internal fun NovelAiAccountCard(
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     TextButton(onClick = onManage) { Text("切换令牌") }
-                    TextButton(onClick = if (connected) onDisconnect else onConnect) { Text(if (connected) "断开" else "连接") }
+                    TextButton(onClick = {
+                        if (connected) showDisconnectConfirm = true
+                        else onConnect()
+                    }) { Text(if (connected) "断开连接" else "连接") }
                 }
             }
         }

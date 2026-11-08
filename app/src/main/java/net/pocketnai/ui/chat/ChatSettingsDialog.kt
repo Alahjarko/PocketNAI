@@ -2,117 +2,131 @@ package net.pocketnai.ui.chat
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.pocketnai.domain.chat.*
+import java.util.UUID
 
-@OptIn(ExperimentalLayoutApi::class)
+/** Settings owns all connection/persona editors; chat only offers model selection. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatSettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
+fun ChatSettingsScreen(viewModel: ChatViewModel, onBack: () -> Unit) {
+    val catalog by viewModel.providers.collectAsStateWithLifecycle()
+    val keyRevision by viewModel.credentialRevision.collectAsStateWithLifecycle()
+    val configurationError by viewModel.configurationError.collectAsStateWithLifecycle()
+    val config by viewModel.config.collectAsStateWithLifecycle()
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    var editing by remember { mutableStateOf<LlmProvider?>(null) }
+    var deleting by remember { mutableStateOf<LlmProvider?>(null) }
+    var persona by remember { mutableStateOf(false) }
+    var search by remember { mutableStateOf(false) }
+    var picker by remember { mutableStateOf(false) }
+    val selectedProvider = catalog.providers.firstOrNull { it.id == catalog.activeProviderId }
+    Scaffold(topBar = {
+        TopAppBar(title = { Text("连接与人格") }, navigationIcon = {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回设置") }
+        })
+    }) { padding ->
+        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (state.busy) item { Text("正在回复，结束或停止后可修改连接配置", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            item {
+                Card {
+                    ListItem(headlineContent = { Text("当前模型") }, supportingContent = { Text(if (selectedProvider != null && config.model.isNotBlank()) "${selectedProvider.name} · ${config.model}" else "尚未选择模型") },
+                        trailingContent = { Icon(Icons.Default.SwapHoriz, null) }, modifier = Modifier.clickable(enabled = !state.busy) { picker = true })
+                }
+            }
+            item {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("提供商", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    TextButton(onClick = { editing = LlmProvider(UUID.randomUUID().toString(), "") }, enabled = !state.busy) { Icon(Icons.Default.Add, null); Text("添加提供商") }
+                }
+            }
+            if (catalog.providers.isEmpty()) item { Text("添加提供商后，可保存多个模型并在对话中快速切换。", style = MaterialTheme.typography.bodyMedium) }
+            items(catalog.providers, key = { it.id }) { provider ->
+                val hasKey = remember(provider, keyRevision) { viewModel.hasProviderKey(provider.id) }
+                Card {
+                    ListItem(headlineContent = { Text(provider.name) }, supportingContent = {
+                        Text("${provider.models.size} 个模型 · ${if (hasKey) "密钥已保存" else "未配置密钥"}")
+                    }, trailingContent = {
+                        Row {
+                            IconButton(onClick = { editing = provider }, enabled = !state.busy) { Icon(Icons.Default.Edit, "编辑 ${provider.name}") }
+                            IconButton(onClick = { deleting = provider }, enabled = !state.busy) { Icon(Icons.Default.DeleteOutline, "删除 ${provider.name}") }
+                        }
+                    }, modifier = Modifier.clickable(enabled = !state.busy) { editing = provider })
+                }
+            }
+            item {
+                Card {
+                    ListItem(headlineContent = { Text("人格与工具权限") }, supportingContent = { Text(config.assistantName) },
+                        trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) }, modifier = Modifier.clickable(enabled = !state.busy) { persona = true })
+                    HorizontalDivider()
+                    ListItem(headlineContent = { Text("联网搜索") }, supportingContent = { Text("DeepSeek / Tavily") },
+                        trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) }, modifier = Modifier.clickable(enabled = !state.busy) { search = true })
+                }
+            }
+            (configurationError ?: state.error)?.let { error -> item { Text(error, color = MaterialTheme.colorScheme.error) } }
+        }
+    }
+    editing?.let { provider -> LlmProviderEditor(viewModel, provider) { editing = null } }
+    deleting?.let { provider ->
+        AlertDialog(onDismissRequest = { deleting = null }, title = { Text("删除提供商？") },
+            text = { Text("将移除“${provider.name}”的连接、已保存密钥和模型列表。对话历史、图片和人格文件会保留。若正在使用此提供商，需要重新选择模型。") },
+            confirmButton = { TextButton(onClick = { if (viewModel.deleteProvider(provider.id)) deleting = null }, enabled = !state.busy) { Text("确认删除") } },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("取消") } })
+    }
+    if (persona) ChatPreferencesDialog(viewModel) { persona = false }
+    if (search) ChatSearchSettingsDialog(viewModel) { search = false }
+    if (picker) ChatModelPicker(viewModel) { picker = false }
+}
+
+@Composable
+fun ChatPreferencesDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
     val stored by viewModel.config.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
     var config by remember { mutableStateOf(stored) }
-    // API Key 不使用 rememberSaveable，不进入 SavedState 或崩溃恢复数据。
-    var key by remember { mutableStateOf("") }
-    var chooseModel by remember { mutableStateOf(false) }
-    var tokensText by remember { mutableStateOf(config.maxTokens.toString()) }
     var editFile by remember { mutableStateOf<String?>(null) }
-    var searchSettings by remember { mutableStateOf(false) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Text("对话连接", Modifier.weight(1f))
-            net.pocketnai.ui.common.InfoButton("消息、人格和工具结果会发送至你填写的 LLM 服务。API Key 在本机使用 Keystore 加密保存。")
-        } },
-        text = {
-            Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(config.assistantName, { config = config.copy(assistantName = it.take(24)) }, label = { Text("伙伴名字") }, singleLine = true)
-                OutlinedTextField(config.baseUrl, { config = config.copy(baseUrl = it) }, label = { Text("API Base URL") }, singleLine = true)
-                OutlinedTextField(key, { key = it }, label = { Text(if (viewModel.hasKey()) "替换 API Key（留空保留）" else "API Key") },
-                    singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { viewModel.fetchModels(config, key) }, enabled = !state.loadingModels) {
-                        Text(if (state.loadingModels) "获取中…" else "获取模型列表")
-                    }
-                    if (state.models.isNotEmpty()) TextButton(onClick = { chooseModel = true }) { Text("选择模型") }
-                }
-                OutlinedTextField(config.model, { config = config.copy(model = it) }, label = { Text("模型 ID") }, singleLine = true)
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Text("思考协议", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-                    net.pocketnai.ui.common.InfoButton("返回的思考内容可在消息中展开。支持情况取决于模型；代理模型名不能识别时手动选择协议。")
-                }
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    LlmDialect.entries.forEach { dialect ->
-                        FilterChip(selected = config.dialect == dialect, onClick = { config = config.copy(dialect = dialect) },
-                            label = { Text(when (dialect) { LlmDialect.AUTO -> "自动"; LlmDialect.KIMI -> "Kimi"; LlmDialect.DEEPSEEK -> "DeepSeek"; else -> "OpenAI 兼容" }) })
-                    }
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("开启思考与思考内容回传", modifier = Modifier.weight(1f))
-                    Switch(config.thinking, { config = config.copy(thinking = it) })
-                }
-                OutlinedTextField(tokensText, { value -> tokensText = value.filter(Char::isDigit).take(5); tokensText.toIntOrNull()?.let { config = config.copy(maxTokens = it) } },
-                    label = { Text("最大输出 Tokens（含思考）") }, singleLine = true)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("工具权限", modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-                    net.pocketnai.ui.common.InfoButton("每次确认：生成前核对计划。单图自动：仅第一张单图自动执行。完全允许：发送消息即授权本条最多12张图片及已开启的搜索，可能产生Anlas和搜索费用，报价变化或未知时也不再询问。可随时停止后续任务；失败不重试，重启不续跑。")
-                }
-                Column {
-                    ChatToolPermission.entries.forEach { permission ->
-                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(selected = config.effectiveToolPermission == permission,
-                            role = androidx.compose.ui.semantics.Role.RadioButton,
-                            onClick = { config = config.copy(toolPermission = permission) }).padding(vertical = 4.dp),
-                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            RadioButton(config.effectiveToolPermission == permission, onClick = null)
-                            Text(when (permission) { ChatToolPermission.ASK -> "每次确认"; ChatToolPermission.SINGLE_IMAGE -> "单图自动"; ChatToolPermission.FULL -> "完全允许" })
-                        }
-                    }
-                }
-                TextButton(onClick = { searchSettings = true }) { Text("联网搜索 · DeepSeek / Tavily") }
-                Text("人格与工具说明", style = MaterialTheme.typography.labelLarge)
-                Row {
-                    TextButton(onClick = { editFile = "soul.md" }) { Text("编辑 soul.md") }
-                    TextButton(onClick = { editFile = "tools.md" }) { Text("编辑 tools.md") }
-                }
-                if (viewModel.hasKey()) TextButton(onClick = viewModel::clearKey) { Text("移除已保存的 API Key") }
-                state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("人格与工具权限") }, text = {
+        Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(config.assistantName, { config = config.copy(assistantName = it.take(24)) }, label = { Text("伙伴名字") }, singleLine = true)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("工具权限", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                net.pocketnai.ui.common.InfoButton("每次确认：生成前核对计划。单图自动：仅第一张单图自动执行。完全允许：发送消息即授权本条最多12张图片及已开启的搜索，可能产生Anlas和搜索费用，报价变化或未知时也不再询问。可随时停止后续任务；失败不重试，重启不续跑。")
             }
-        },
-        confirmButton = { TextButton(onClick = { if (viewModel.saveConfig(config, key)) { key = ""; onDismiss() } }, enabled = tokensText.toIntOrNull() in 1024..65536) { Text("保存") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-    )
-    if (chooseModel) {
-        var search by remember { mutableStateOf("") }
-        AlertDialog(onDismissRequest = { chooseModel = false }, title = { Text("选择模型") }, text = {
-            Column {
-                OutlinedTextField(search, { search = it }, label = { Text("筛选模型") }, singleLine = true)
-                LazyColumn(Modifier.heightIn(max = 330.dp)) {
-                    items(state.models.filter { it.contains(search, ignoreCase = true) }) { model ->
-                        TextButton(onClick = { config = config.copy(model = model); chooseModel = false }) { Text(model) }
-                    }
+            ChatToolPermission.entries.forEach { permission ->
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(config.effectiveToolPermission == permission,
+                    role = androidx.compose.ui.semantics.Role.RadioButton, onClick = { config = config.copy(toolPermission = permission) }).padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    RadioButton(config.effectiveToolPermission == permission, onClick = null)
+                    Text(when (permission) { ChatToolPermission.ASK -> "每次确认"; ChatToolPermission.SINGLE_IMAGE -> "单图自动"; ChatToolPermission.FULL -> "完全允许" })
                 }
             }
-        }, confirmButton = { TextButton(onClick = { chooseModel = false }) { Text("关闭") } })
-    }
+            Text("人格与工具说明", style = MaterialTheme.typography.labelLarge)
+            TextButton(onClick = { editFile = "soul.md" }) { Text("编辑 soul.md") }
+            TextButton(onClick = { editFile = "tools.md" }) { Text("编辑 tools.md") }
+            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
+    }, confirmButton = { TextButton(onClick = { if (viewModel.savePreferences(config)) onDismiss() }, enabled = !state.busy) { Text("保存") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } })
     editFile?.let { name -> AgentFileEditor(viewModel, name) { editFile = null } }
-    if (searchSettings) ChatSearchSettingsDialog(viewModel) { searchSettings = false }
 }
 
 @Composable

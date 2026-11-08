@@ -63,6 +63,8 @@
 
 ## 凭据与认证（双认证模式）
 
+- 断开 NovelAI、移除单个已保存账号、移除 OpenAI 生图密钥均须二次确认；取消、返回或点外侧不执行。确认时复核非秘密账号快照／密钥 revision，目标已变化则拒绝操作。NovelAI 当前 `clear()` 会移除全部已保存账号，确认文案必须明确数量和范围，不误称仅退出当前账号；历史图片、收藏与草稿保留，不撤销服务端账号或令牌。
+
 - **绝不允许**把密码、Access Key、PST 或 Access Token 写进日志、数据库、SharedPreferences
   （`pocketnai_secure` 里的 Keystore 密文除外）、图片元数据、剪贴板、异常 detail 或测试代码。
   也不要读 `persistent-api-token.txt`，不要代发真实登录或真实生成请求。

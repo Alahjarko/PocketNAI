@@ -72,7 +72,10 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
     val chrome = remember(viewModel) { viewModel.state.map { it.copy(partial = null) }.distinctUntilChanged() }
     val state by chrome.collectAsStateWithLifecycle(initialValue = viewModel.state.value.copy(partial = null))
     val config by viewModel.config.collectAsStateWithLifecycle()
-    var settingsOpen by remember { mutableStateOf(false) }
+    val catalog by viewModel.providers.collectAsStateWithLifecycle()
+    val keyRevision by viewModel.credentialRevision.collectAsStateWithLifecycle()
+    val hasKey = remember(catalog, keyRevision) { viewModel.hasKey() }
+    var modelsOpen by remember { mutableStateOf(false) }
     var sessionsOpen by remember { mutableStateOf(false) }
     var imagesOpen by remember { mutableStateOf(false) }
     var input by rememberSaveable(state.current?.id, stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
@@ -154,7 +157,7 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
         }
     }
     fun submit() {
-        if (!viewModel.hasKey() || config.model.isBlank()) { settingsOpen = true; return }
+        if (!hasKey || config.model.isBlank()) { modelsOpen = true; return }
         if (state.busy || state.importingAttachment || (input.text.isBlank() && state.draftAttachments.isEmpty())) return
         following = true
         viewModel.send(input.text)
@@ -169,7 +172,6 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                 DropdownMenu(menuOpen, { menuOpen = false }) {
                     DropdownMenuItem(text = { Text("新对话") }, onClick = { viewModel.newConversation(); menuOpen = false }, enabled = !state.busy)
                     DropdownMenuItem(text = { Text("历史对话") }, onClick = { sessionsOpen = true; menuOpen = false })
-                    DropdownMenuItem(text = { Text("连接与人格") }, onClick = { settingsOpen = true; menuOpen = false })
                 }
             }
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -177,8 +179,14 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                     Icon(Icons.Default.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     Text(config.assistantName.ifBlank { "绘伴" }, style = MaterialTheme.typography.titleMedium, maxLines = 1)
                 }
-                if (config.model.isNotBlank()) Text(config.model, style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                TextButton(onClick = { modelsOpen = true }, enabled = !state.busy,
+                    modifier = Modifier.testTag("chat-model-picker"), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                    val providerName = catalog.providers.firstOrNull { it.id == catalog.activeProviderId }?.name
+                    Text(if (config.model.isBlank()) "选择模型" else "${providerName.orEmpty()} · ${config.model}",
+                        modifier = Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Icon(Icons.Default.ArrowDropDown, "切换模型", Modifier.size(18.dp))
+                }
             }
             IconButton(onClick = { imagesOpen = true }, modifier = Modifier.testTag("chat-image-history").background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)) {
                 Icon(Icons.Default.History, "打开对话图片记录")
@@ -191,7 +199,9 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
             if (entries.isEmpty()) item {
                 Column(Modifier.fillMaxWidth().padding(vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    if (!viewModel.hasKey()) OutlinedButton(onClick = { settingsOpen = true }) { Text("连接 LLM") }
+                    if (!hasKey || config.model.isBlank()) {
+                        Text("请在设置 → 连接与人格配置提供商和模型", style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
             }
             items(entries, key = { it.id }, contentType = { it.role }) { entry ->
@@ -256,7 +266,7 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                 }
             })
     })
-    if (settingsOpen) ChatSettingsDialog(viewModel) { settingsOpen = false }
+    if (modelsOpen) ChatModelPicker(viewModel) { modelsOpen = false }
     if (voiceError) AlertDialog(onDismissRequest = { voiceError = false }, title = { Text("语音输入暂不可用") },
         text = { Text("当前设备未提供系统语音识别服务，可以使用输入法的语音输入。") },
         confirmButton = { TextButton(onClick = { voiceError = false }) { Text("确定") } })

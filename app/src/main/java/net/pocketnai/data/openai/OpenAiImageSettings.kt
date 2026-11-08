@@ -17,6 +17,9 @@ class OpenAiImageSettings(context: Context) {
     val provider = _provider.asStateFlow()
     private val _hasKey = MutableStateFlow(prefs.contains("key_ciphertext"))
     val hasKey = _hasKey.asStateFlow()
+    // Process-local identity for pending removal dialogs; never expose or decrypt the key.
+    private val _keyRevision = MutableStateFlow(0L)
+    val keyRevision = _keyRevision.asStateFlow()
     private val _gifEnabled = MutableStateFlow(prefs.getBoolean("gif_enabled", false))
     val gifEnabled = _gifEnabled.asStateFlow()
     fun setGifEnabled(value: Boolean) {
@@ -28,16 +31,22 @@ class OpenAiImageSettings(context: Context) {
         check(prefs.edit().putString("provider", value.name).commit()) { "模式保存失败" }
         _provider.value = value
     }
+    @Synchronized
     fun saveKey(raw: String) {
         val value = raw.trim()
         require(value.isNotEmpty() && value.length <= 1024 && value.none { it.isWhitespace() || it.isISOControl() }) { "API 密钥格式不正确" }
         check(prefs.edit().putString("key_ciphertext", box.encrypt(value)).commit()) { "密钥保存失败" }
+        _keyRevision.value += 1L
         _hasKey.value = true
     }
     fun apiKey(): String? = prefs.getString("key_ciphertext", null)?.let(box::decrypt)
-    fun clearKey() {
+    @Synchronized
+    fun clearKey(expectedRevision: Long): Boolean {
+        if (!_hasKey.value || _keyRevision.value != expectedRevision) return false
         check(prefs.edit().remove("key_ciphertext").commit()) { "密钥移除失败" }
+        _keyRevision.value += 1L
         _hasKey.value = false
+        return true
     }
     fun loadDraft(): OpenAiImageDraft = runCatching {
         OpenAiImageCodec.json.decodeFromString<OpenAiImageDraft>(prefs.getString("draft", "")!!)

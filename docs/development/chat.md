@@ -4,14 +4,19 @@
 
 - 设置页“实验性对话”默认关闭。开启后，在窄屏底部栏、宽屏侧栏增加“对话”；关闭不删除记录。
 - 连接配置支持 HTTPS 的 OpenAI-compatible Chat Completions。Base URL 的路径前缀原样保留，在其后追加 `/models` 或 `/chat/completions`，不猜测追加 `/v1`。
-- 模型列表由用户点击获取，也允许手动填写模型 ID。思考默认开启；自动协议根据模型名／Base URL 判断，也可手动选择 Kimi、DeepSeek、OpenAI 兼容。
+- 设置 →「连接与人格」是独立二级页面，管理提供商、人格／工具权限和联网搜索；对话菜单不再包含配置编辑入口。对话顶部仅保留按提供商分组、可搜索的快捷模型选择器。
+- 每个提供商使用稳定独立 ID，分别保存名称、Base URL、加密密钥和多个模型；模型按「提供商 ID + 模型 ID」识别，同名模型可以分属不同服务。每个模型独立保存思考协议、思考开关和输出 Tokens。模型列表由用户点击获取并勾选添加，也允许手动添加／编辑；获取列表不自动保存、更不会调用聊天或生图。
+- 旧单连接配置与密文在同一次提交中迁移为默认提供商，不解密再序列化，不丢失空模型、人格名字、思考设置和工具权限。迁移／持久化失败保留原值，损坏配置不得按空列表覆盖。
+- 切换模型不修改人格或工具授权；添加第二个提供商不自动切换。删除当前提供商／当前模型后清空选择，不悄悄改用另一个服务。回复或图片工具执行期间禁止切换和编辑连接，当前请求使用开始时的配置快照。删除提供商必须二次确认，不删除聊天或图片历史。
 - API Key 不属于 `LlmConfig`，仅在 `pocketnai_llm.xml` 中以独立 Keystore alias `pocketnai_llm_secret_key` 加密保存；该首选项在两套备份规则中排除。输入框不得使用 `rememberSaveable`，也不得回显已保存的密钥。
 - LLM 独立客户端不走 NovelAI 公益代理，无自动重试、无正文日志、无自动重定向；错误只显示固定文案和 HTTP 状态。
-- 已保存 Key 绑定对应 Base URL；更换地址必须填写新 Key。阻止把当前 Key 当消息／人格发送，并移除服务端误回显到正文、思考、工具参数中的当前认证值。
+- 已保存 Key 绑定提供商 ID 和对应 Base URL，密文按提供商与规范化地址分槽；更换地址必须填写新 Key，获取模型时也不能借用其他地址／提供商的密钥。密钥状态使用独立 revision 通知界面，避免仅替换密钥时配置相等而不刷新。阻止把当前 Key 当消息／人格发送，并移除服务端误回显到正文、思考、工具参数中的当前认证值。
+
+设计参考：[Rikkahub 的提供商设置分层](https://github.com/rikkahub/rikkahub/blob/fe5a28f9a25fb6267065881d7738dd909ad9e51e/app/src/main/java/me/rerere/rikkahub/ui/pages/setting/SettingProviderDetailPage.kt)、[按提供商分组的模型选择器](https://github.com/rikkahub/rikkahub/blob/fe5a28f9a25fb6267065881d7738dd909ad9e51e/app/src/main/java/me/rerere/rikkahub/ui/components/ai/ModelList.kt)。本项目独立实现交互与持久化，不复制其 AGPL 代码；本轮仍使用 OpenAI-compatible 协议，不新增 Claude/Gemini 原生协议或密钥轮换。
 
 ## 图片附件（2026-10-05）
 
-- 输入框加号只负责添加图片，提供“从相册选择”“从软件画廊选择”；连接与人格保留在顶部菜单。附件显示可预览、可移除的缩略图，每条消息最多 4 张，也支持只发图片。
+- 输入框加号只负责添加图片，提供“从相册选择”“从软件画廊选择”；连接与人格在设置二级入口管理，顶部提供模型快捷切换。附件显示可预览、可移除的缩略图，每条消息最多 4 张，也支持只发图片。
 - 从图库选图复制为独立聊天附件，不修改原生成图。相册走系统 Photo Picker 的 URI 授权，不申请全图库访问权限。导入按 EXIF 旋转／镜像、最长边不超过 1600，统一 JPEG 并清掉元数据；单张上限 512 KiB，原图读取上限 20 MiB。
 - 私有文件路径 `files/chat-attachments/<uuid>.jpg`，`ChatEntry.attachments` 保存索引、尺寸、MIME 和可选生成参数白名单；旧附件默认无参数，无需改变 Room schema。取消／移除待发送图片只删除该附件副本；删除对话时先核对其他对话与草稿的存活引用，再删除不再使用的附件。
 - 发送时才将主动添加的附件编码成 `content` 数组中的 `image_url` data URL，与 text 部分一起发至当前 LLM。base64 不写 Room、草稿或日志；未主动添加的生成图片不会发送给 LLM，附件不会自动作为 NovelAI 参考图。图片上下文原始 JPEG 总量上限 8 MiB。

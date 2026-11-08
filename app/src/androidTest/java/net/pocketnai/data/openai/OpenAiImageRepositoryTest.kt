@@ -44,6 +44,13 @@ class OpenAiImageRepositoryTest {
             val settings = OpenAiImageSettings(context)
             val secret = "test-only-openai-repository-key"
             settings.saveKey(secret)
+            val oldRevision = settings.keyRevision.value
+            settings.saveKey("test-only-replacement-key")
+            assertThat(settings.clearKey(oldRevision)).isFalse()
+            assertThat(settings.hasKey.value).isTrue()
+            assertThat(settings.clearKey(settings.keyRevision.value)).isTrue()
+            assertThat(settings.hasKey.value).isFalse()
+            settings.saveKey(secret)
             assertThat(context.getSharedPreferences("pocketnai_openai_images", 0).all.toString()).doesNotContain(secret)
             assertThat(OpenAiImageSettings(context).apiKey()).isEqualTo(secret)
             val bitmap = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
