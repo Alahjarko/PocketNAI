@@ -26,9 +26,13 @@ import java.io.File
 
 /** Explicit benchmark build only: separate app ID, no INTERNET permission, no user data. */
 class CreationWorkflowPreviewActivity : ComponentActivity() {
+    private companion object {
+        // Match PocketNaiApplication's process-scoped dependencies across font/rotation changes.
+        var sharedContainer: AppContainer? = null
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val container = AppContainer(application)
+        val container = sharedContainer ?: AppContainer(application).also { sharedContainer = it }
         lifecycleScope.launch {
             container.awaitStartup()
             withContext(Dispatchers.IO) {
