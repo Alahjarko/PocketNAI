@@ -427,7 +427,10 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                             },
                             onAskAssistant = if (chatEnabled) ({ path, id ->
                                 chatViewModel.addGalleryImage(path, id)
-                                navController.navigateToTab(Routes.CHAT)
+                                // Close the image route before saving tab state; otherwise
+                                // returning to Gallery restores this detail page as its top.
+                                navController.popBackStack()
+                                if (navController.currentDestination?.route != Routes.CHAT) navController.navigateToTab(Routes.CHAT)
                             }) else null,
                             onInpaint = { relativePath ->
                                 // 详情页 → 以当前这张图作为重绘底图并进入编辑器。
