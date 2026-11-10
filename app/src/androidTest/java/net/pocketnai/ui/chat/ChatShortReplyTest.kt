@@ -272,6 +272,12 @@ class ChatShortReplyTest {
             net.pocketnai.data.chat.verifyLlmProviderPersistence(compose.activity)
             compose.runOnUiThread { agent = ChatAgentAcceptance(compose.activity, file) }
             val fixture = agent!!
+            fun startAgentConversation(text: String) {
+                val previous = fixture.viewModel.state.value.current?.id
+                compose.runOnUiThread { fixture.viewModel.newConversation() }
+                compose.waitUntil(5000) { fixture.viewModel.state.value.current?.id != previous && !fixture.viewModel.state.value.switchingConversation }
+                compose.runOnUiThread { fixture.viewModel.send(text) }
+            }
             compose.waitUntil(5000) { fixture.viewModel.state.value.current != null }
             fixture.seedHeldDraft()
             compose.runOnUiThread { fixture.viewModel.selectConversation(fixture.draftId) }
@@ -367,7 +373,7 @@ class ChatShortReplyTest {
             fixture.verifySaved(3)
             // A timeout on image two preserves image one and never sends image three.
             fixture.failOn = 5
-            compose.runOnUiThread { fixture.viewModel.newConversation(); fixture.viewModel.send("再规划三张分镜") }
+            startAgentConversation("再规划三张分镜")
             compose.waitUntil(5000) { fixture.viewModel.state.value.pending != null }
             compose.onNodeWithTag("chat-confirm-image").performScrollTo().performClick()
             compose.waitUntil(15_000) { !fixture.viewModel.state.value.busy }
@@ -375,7 +381,7 @@ class ChatShortReplyTest {
             fixture.verifySaved(1)
             // Stopping while a request is in flight finishes that image, then stops the rest.
             fixture.failOn = -1; fixture.gate = kotlinx.coroutines.CompletableDeferred()
-            compose.runOnUiThread { fixture.viewModel.newConversation(); fixture.viewModel.send("准备下一组三张") }
+            startAgentConversation("准备下一组三张")
             compose.waitUntil(5000) { fixture.viewModel.state.value.pending != null }
             compose.onNodeWithTag("chat-confirm-image").performScrollTo().performClick()
             compose.waitUntil(5000) { fixture.viewModel.state.value.generating }
@@ -394,7 +400,7 @@ class ChatShortReplyTest {
             assertThat(fixture.savedPermission()).isEqualTo(net.pocketnai.domain.chat.ChatToolPermission.FULL)
             compose.onNodeWithContentDescription("返回设置").performClick()
             fixture.gate = null
-            compose.runOnUiThread { fixture.viewModel.newConversation(); fixture.viewModel.send("直接完成三张分镜") }
+            startAgentConversation("直接完成三张分镜")
             compose.waitUntil(15_000) {
                 assertThat(fixture.viewModel.state.value.pending).isNull()
                 !fixture.viewModel.state.value.busy
@@ -405,8 +411,8 @@ class ChatShortReplyTest {
                 agentFontScale = 1.35f
                 fixture.plannedCount = 12
                 fixture.viewModel.saveConfig(fixture.viewModel.config.value.copy(toolPermission = net.pocketnai.domain.chat.ChatToolPermission.ASK), "")
-                fixture.viewModel.newConversation(); fixture.viewModel.send("规划十二张风景，先让我核对")
             }
+            startAgentConversation("规划十二张风景，先让我核对")
             compose.waitUntil(5000) { fixture.viewModel.state.value.pending != null }
             compose.onNodeWithTag("chat-plan-image-12").performScrollTo().assertIsDisplayed().performClick()
             compose.onNodeWithText("第 12 张参数").assertIsDisplayed()

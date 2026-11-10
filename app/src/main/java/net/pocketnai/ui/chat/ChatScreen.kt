@@ -235,6 +235,7 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
         ChatJumpToLatest(visible = !following && (entries.isNotEmpty() || state.busy), onClick = { following = true })
     }, composer = {
         ChatComposer(value = input, onValueChange = { input = it; viewModel.updateDraft(it.text, it.selection.start, it.selection.end) }, assistantName = config.assistantName,
+            editingEnabled = !state.switchingConversation && state.current != null,
             busy = state.busy, generating = state.generating, importing = state.importingAttachment || state.switchingConversation || state.current == null,
             hasAttachments = state.draftAttachments.isNotEmpty(), onSend = { submit() }, onStop = viewModel::stop,
             attachments = {

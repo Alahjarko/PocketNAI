@@ -36,6 +36,7 @@ internal fun ChatComposer(
     onSend: () -> Unit,
     onStop: () -> Unit,
     modifier: Modifier = Modifier,
+    editingEnabled: Boolean = true,
     attachments: @Composable () -> Unit = {},
     leadingActions: @Composable RowScope.() -> Unit = {},
 ) {
@@ -48,6 +49,7 @@ internal fun ChatComposer(
         Column {
             attachments()
             BasicTextField(value, onValueChange,
+                enabled = editingEnabled,
                 modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 6.dp).testTag("chat-input"),
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary), maxLines = 6,
