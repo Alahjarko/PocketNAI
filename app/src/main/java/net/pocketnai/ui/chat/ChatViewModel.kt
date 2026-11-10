@@ -259,7 +259,7 @@ class ChatViewModel(
         scheduleDraftSave()
     }
     private fun importAttachment(import: suspend () -> ChatAttachment) {
-        if (_state.value.busy || _state.value.importingAttachment) return
+        if (_state.value.busy || _state.value.importingAttachment || _state.value.switchingConversation) return
         if (_state.value.draftAttachments.size >= ChatAttachment.MAX_COUNT) { _state.update { it.copy(error = "每条消息最多添加 4 张图片") }; return }
         _state.update { it.copy(importingAttachment = true, error = null) }
         viewModelScope.launch {

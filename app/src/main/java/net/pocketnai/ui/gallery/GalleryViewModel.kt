@@ -61,11 +61,9 @@ class GalleryViewModel(
     val items: StateFlow<List<GalleryItem>> = combine(
         page.map { it.items },
         favorites.observeFavoriteIds(),
-        _filter,
-    ) { gallery, favoriteIds, filter ->
+    ) { gallery, favoriteIds ->
         gallery.asSequence()
             .map { item -> item.copy(favorite = item.imageId in favoriteIds) }
-            .filter { GallerySearch.matches(it, filter) }
             .toList()
     }.flowOn(Dispatchers.Default).stateIn(
         scope = viewModelScope,
@@ -103,7 +101,7 @@ class GalleryViewModel(
     val selectedImageIds: StateFlow<Set<String>> = _selectedImageIds.asStateFlow()
 
     fun enterSelectionMode(initialSelectedId: String? = null) {
-        limitBeforeSelection = limit.value
+        if (!_isSelectionMode.value) limitBeforeSelection = limit.value
         limit.value = Int.MAX_VALUE
         _isSelectionMode.value = true
         _selectedImageIds.value = if (initialSelectedId != null) setOf(initialSelectedId) else emptySet()

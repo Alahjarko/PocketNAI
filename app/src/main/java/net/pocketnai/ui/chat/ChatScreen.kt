@@ -256,7 +256,7 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
             if (state.importingAttachment) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 20.dp))
             }, leadingActions = {
                 Box {
-                    IconButton(onClick = { focus.clearFocus(); keyboard?.hide(); attachmentMenu = true }, enabled = !state.busy && !state.importingAttachment,
+                    IconButton(onClick = { focus.clearFocus(); keyboard?.hide(); attachmentMenu = true }, enabled = !state.busy && !state.importingAttachment && !state.switchingConversation && state.current != null,
                         modifier = Modifier.testTag("chat-attach-button")) { Icon(Icons.Default.Add, "添加图片") }
                     DropdownMenu(attachmentMenu, { attachmentMenu = false }) {
                         DropdownMenuItem(text = { Text("从相册选择") }, onClick = { attachmentMenu = false; photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
