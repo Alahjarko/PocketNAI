@@ -1,6 +1,5 @@
 package net.pocketnai.ui.chat
 
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
@@ -11,11 +10,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import net.pocketnai.domain.chat.LlmProvider
 import net.pocketnai.domain.chat.LlmProviderCatalog
@@ -84,6 +82,7 @@ internal fun ChatConnectionOverview(
                 }
             }
             items(catalog.providers, key = { "provider:${it.id}" }) { provider ->
+                var menu by remember(provider.id) { mutableStateOf(false) }
                 SettingsCard(Modifier.animateItem(fadeInSpec = tween(160), fadeOutSpec = tween(100),
                     placementSpec = spring(dampingRatio = 1f, stiffness = 600f))) {
                     SettingsNavigationRow(provider.name,
@@ -94,8 +93,16 @@ internal fun ChatConnectionOverview(
                                 if (provider.id == catalog.activeProviderId) {
                                     Icon(Icons.Default.CheckCircle, "当前提供商", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                                 }
-                                IconButton(onClick = { onDelete(provider) }, enabled = !busy) {
-                                    Icon(Icons.Default.DeleteOutline, "删除 ${provider.name}", Modifier.size(21.dp))
+                                Box {
+                                    IconButton(onClick = { menu = true }, enabled = !busy) {
+                                        Icon(Icons.Default.MoreVert, "提供商选项 ${provider.name}", Modifier.size(21.dp))
+                                    }
+                                    DropdownMenu(menu, onDismissRequest = { menu = false }) {
+                                        DropdownMenuItem(text = { Text("编辑提供商") }, leadingIcon = { Icon(Icons.Default.Edit, null) },
+                                            onClick = { menu = false; onEdit(provider) }, enabled = !busy)
+                                        DropdownMenuItem(text = { Text("删除提供商") }, leadingIcon = { Icon(Icons.Default.DeleteOutline, null) },
+                                            onClick = { menu = false; onDelete(provider) }, enabled = !busy)
+                                    }
                                 }
                             }
                         })
