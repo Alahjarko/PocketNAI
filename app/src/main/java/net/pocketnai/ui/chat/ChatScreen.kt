@@ -78,7 +78,14 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
     var modelsOpen by remember { mutableStateOf(false) }
     var sessionsOpen by remember { mutableStateOf(false) }
     var imagesOpen by remember { mutableStateOf(false) }
-    var input by rememberSaveable(state.current?.id, stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
+    var input by rememberSaveable(state.current?.id, stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(state.draftText, androidx.compose.ui.text.TextRange(state.draftSelectionStart, state.draftSelectionEnd)))
+    }
+    // Keep the live IME composition locally; storage only carries text and selection.
+    LaunchedEffect(state.current?.id, state.draftText) {
+        if (input.text != state.draftText) input = TextFieldValue(state.draftText,
+            androidx.compose.ui.text.TextRange(state.draftSelectionStart, state.draftSelectionEnd))
+    }
     var attachmentMenu by remember { mutableStateOf(false) }
     var galleryPicker by remember { mutableStateOf(false) }
     var viewingAttachment by remember { mutableStateOf<ChatAttachment?>(null) }
@@ -161,7 +168,6 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
         if (state.busy || state.importingAttachment || (input.text.isBlank() && state.draftAttachments.isEmpty())) return
         following = true
         viewModel.send(input.text)
-        input = TextFieldValue("")
     }
     ChatPageLayout(header = {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -228,8 +234,8 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
     }, floating = {
         ChatJumpToLatest(visible = !following && (entries.isNotEmpty() || state.busy), onClick = { following = true })
     }, composer = {
-        ChatComposer(value = input, onValueChange = { input = it }, assistantName = config.assistantName,
-            busy = state.busy, generating = state.generating, importing = state.importingAttachment,
+        ChatComposer(value = input, onValueChange = { input = it; viewModel.updateDraft(it.text, it.selection.start, it.selection.end) }, assistantName = config.assistantName,
+            busy = state.busy, generating = state.generating, importing = state.importingAttachment || state.switchingConversation || state.current == null,
             hasAttachments = state.draftAttachments.isNotEmpty(), onSend = { submit() }, onStop = viewModel::stop,
             attachments = {
             if (state.draftAttachments.isNotEmpty()) LazyRow(Modifier.fillMaxWidth().testTag("chat-attachment-strip"),
@@ -270,20 +276,10 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
     if (voiceError) AlertDialog(onDismissRequest = { voiceError = false }, title = { Text("语音输入暂不可用") },
         text = { Text("当前设备未提供系统语音识别服务，可以使用输入法的语音输入。") },
         confirmButton = { TextButton(onClick = { voiceError = false }) { Text("确定") } })
-    if (sessionsOpen) ModalBottomSheet(onDismissRequest = { sessionsOpen = false }) {
-        Text("历史对话", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(20.dp))
-        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 500.dp)) {
-            items(state.conversations, key = { it.id }) { chat ->
-                ListItem(headlineContent = { Text(chat.title, maxLines = 2) },
-                    supportingContent = { Text("${chat.entries.count { it.role == "user" }} 条消息") },
-                    modifier = Modifier.clickable(enabled = !state.busy) { viewModel.selectConversation(chat.id); sessionsOpen = false },
-                    trailingContent = { IconButton(onClick = { deleteId = chat.id }, enabled = !state.busy) { Icon(Icons.Default.DeleteOutline, "删除对话") } })
-            }
-        }
-        Spacer(Modifier.height(32.dp))
-    }
+    if (sessionsOpen) ChatHistorySheet(state, viewModel, onDelete = { deleteId = it }) { sessionsOpen = false }
     if (imagesOpen) ModalBottomSheet(onDismissRequest = { imagesOpen = false }) {
-        val images = (listOfNotNull(state.current) + state.conversations).flatMap { chat -> chat.entries.asReversed().flatMap { it.images } }.distinctBy { it.imageId }
+        LaunchedEffect(Unit) { viewModel.loadImageHistory() }
+        val images = state.historyImages
         Text("对话生成的图片", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(20.dp))
         if (images.isEmpty()) Text("这里会显示聊天中生成的图片", modifier = Modifier.padding(20.dp))
         LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
@@ -362,8 +358,11 @@ private fun ChatTimelineEntry(entry: ChatEntry?, viewModel: ChatViewModel, resol
         })
         partial
     }
-    if (shown != null) ChatMessageBubble(shown, resolveImage, onOpenImage, streaming = entry == null,
-        onRead = onRead, onOpenAttachment = onOpenAttachment)
+    if (shown != null) {
+        ChatMessageBubble(shown, resolveImage, onOpenImage, streaming = entry == null,
+            onRead = onRead, onOpenAttachment = onOpenAttachment)
+        shown.promptEdit?.let { ChatPromptEditCard(shown.id, it, viewModel) }
+    }
 }
 
 @Composable
@@ -402,9 +401,9 @@ fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenIm
             if (entry.reasoning.isNotBlank()) {
                 var expanded by remember(entry.id) { mutableStateOf(false) }
                 TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "收起思考过程" else "思考过程") }
-                if (expanded) Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(0.92f)) {
+                net.pocketnai.ui.common.AnimatedDisclosure(expanded) { Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(0.92f)) {
                     BoundedChatText(entry.reasoning, "思考过程", streaming, onRead, small = true)
-                }
+                } }
             }
             if (entry.content.isNotBlank()) {
                 if (user) Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.primaryContainer,

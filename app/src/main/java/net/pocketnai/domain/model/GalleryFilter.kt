@@ -79,11 +79,11 @@ object GallerySearch {
     }
 
     /** 关键词按空格切分，顺带支持用户顺手打出来的逗号。 */
-    private fun terms(query: String): List<String> =
+    fun terms(query: String): List<String> =
         query.split(' ', ',', '\n', '\t', '，')
             .map { normalize(it) }
             .filter { it.isNotEmpty() }
 
-    private fun normalize(text: String): String =
+    fun normalize(text: String): String =
         text.lowercase().replace('_', ' ')
 }

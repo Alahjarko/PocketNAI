@@ -156,6 +156,15 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
             ChatViewModel(container.llmSettingsStore, container.chatClient, container.chatStore, container.agentFiles,
                 object : net.pocketnai.domain.chat.ChatImageGenerator {
                     override fun currentParams() = generateViewModel.state.value.params
+                    override fun promptSnapshot() = if (container.openAiImageSettings.provider.value == net.pocketnai.domain.openai.ImageProvider.OPEN_AI)
+                        openAiViewModel.promptSnapshot() else generateViewModel.promptSnapshot()
+                    override fun applyPromptEdit(edit: net.pocketnai.domain.chat.PromptEdit): Int? {
+                        val isOpenAi = container.openAiImageSettings.provider.value == net.pocketnai.domain.openai.ImageProvider.OPEN_AI
+                        if ((edit.provider == "openai") != isOpenAi) return null
+                        return if (isOpenAi) openAiViewModel.applyPromptEdit(edit) else generateViewModel.applyPromptEdit(edit)
+                    }
+                    override fun undoPromptEdit(provider: String, revision: Int) = if (provider == "openai")
+                        openAiViewModel.undoPromptEdit(revision) else generateViewModel.undoPromptEdit(revision)
                     override suspend fun prepare(params: List<net.pocketnai.domain.model.GenerationParams>): List<net.pocketnai.domain.model.GenerationParams> {
                         val macros = container.promptFavoriteRepository.snapshot()
                         return params.map { net.pocketnai.domain.prompt.PromptTemplates.resolve(it, macros, kotlin.random.Random.Default) }
@@ -416,6 +425,10 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                                     launchSingleTop = true
                                 }
                             },
+                            onAskAssistant = if (chatEnabled) ({ path, id ->
+                                chatViewModel.addGalleryImage(path, id)
+                                navController.navigateToTab(Routes.CHAT)
+                            }) else null,
                             onInpaint = { relativePath ->
                                 // 详情页 → 以当前这张图作为重绘底图并进入编辑器。
                                 generateViewModel.onInpaintBasePicked(ReferenceSource.LocalPath(relativePath))

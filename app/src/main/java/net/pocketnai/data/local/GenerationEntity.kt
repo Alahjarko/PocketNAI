@@ -40,6 +40,7 @@ data class GenerationEntity(
     // ---- GenerationParams 展平 ----
     /** 本次实际提交的提示词（Randomizer 已展开）。 */
     val prompt: String,
+    val searchPrompt: String? = null,
     val negativePrompt: String,
     val modelApiId: String,
     /** **请求画布**宽高（64 对齐）。计费与同 Seed 复现都以它为准。 */

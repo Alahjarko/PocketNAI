@@ -22,12 +22,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FavoriteImageEntity::class,
         AnlasTransactionEntity::class,
         ChatConversationEntity::class,
+        ChatDraftEntity::class,
         ArtistLabRunEntity::class,
         ArtistLabDrawEntity::class,
         ArtistMixFavoriteEntity::class,
         OpenAiSpendingEntity::class,
     ],
-    version = 14,
+    version = 15,
     exportSchema = true,
 )
 abstract class PocketNaiDatabase : RoomDatabase() {
@@ -45,6 +46,18 @@ abstract class PocketNaiDatabase : RoomDatabase() {
     abstract fun anlasTransactionDao(): AnlasTransactionDao
 
     companion object {
+        val MIGRATION_14_15: Migration = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE chat_conversations ADD COLUMN pinnedAt INTEGER")
+                db.execSQL("CREATE TABLE IF NOT EXISTS chat_drafts (conversationId TEXT NOT NULL PRIMARY KEY, text TEXT NOT NULL, selectionStart INTEGER NOT NULL, selectionEnd INTEGER NOT NULL, attachmentsJson TEXT NOT NULL)")
+                db.execSQL("ALTER TABLE generations ADD COLUMN searchPrompt TEXT")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_generated_images_createdAt_ordinal_id ON generated_images(createdAt, ordinal, id)")
+                db.query("SELECT id, prompt FROM generations").use { cursor ->
+                    while (cursor.moveToNext()) db.execSQL("UPDATE generations SET searchPrompt = ? WHERE id = ?",
+                        arrayOf(net.pocketnai.domain.model.GallerySearch.normalize(cursor.getString(1)), cursor.getString(0)))
+                }
+            }
+        }
         val MIGRATION_13_14: Migration = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE generations ADD COLUMN generationDurationMillis INTEGER")
@@ -290,6 +303,7 @@ abstract class PocketNaiDatabase : RoomDatabase() {
                     MIGRATION_11_12,
                     MIGRATION_12_13,
                     MIGRATION_13_14,
+                    MIGRATION_14_15,
                 )
                 .addCallback(OpenAiSpendingEntity.callback)
                 .build()

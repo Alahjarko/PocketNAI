@@ -39,6 +39,10 @@ object ImageChatTools {
 
     val schema = buildJsonArray {
         singleSchema.forEach(::add)
+        add(function("propose_prompt_edit", "提供可编辑的提示词修改卡，用户点应用后才写入生成面板，不生成图片。修改或优化提示词且尚未要求出图时优先用此工具。", buildJsonObject {
+            put("title", text("简短说明本次调整")); put("prompt", text("修改后的完整正向提示词或OpenAI描述；不修改时省略"))
+            put("negative_prompt", text("修改后的完整排除词；不修改时省略，OpenAI图片不得提供"))
+        }, emptyList()))
         add(function("generate_images", "规划多张独立图片或漫画分镜，应用按用户选择的工具权限串行执行。每条消息最多 12 张，失败不重试。", buildJsonObject {
             put("images", buildJsonObject {
                 put("type", "array"); put("minItems", 1); put("maxItems", MAX_IMAGES)

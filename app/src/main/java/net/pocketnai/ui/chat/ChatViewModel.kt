@@ -24,7 +24,15 @@ class ChatViewModel(
     data class PendingImage(val callId: String, val plan: ChatImagePlan)
     data class UiState(
         val current: ChatConversation? = null,
-        val conversations: List<ChatConversation> = emptyList(),
+        val conversations: List<net.pocketnai.data.local.ChatSummary> = emptyList(),
+        val draftText: String = "",
+        val draftSelectionStart: Int = 0,
+        val draftSelectionEnd: Int = 0,
+        val switchingConversation: Boolean = false,
+        val historyImages: List<ChatImage> = emptyList(),
+        val appliedEditId: String? = null,
+        val appliedEditRevision: Int? = null,
+        val appliedEditProvider: String? = null,
         val busy: Boolean = false,
         val generating: Boolean = false,
         val phase: String = "",
@@ -77,41 +85,112 @@ class ChatViewModel(
     private var job: Job? = null
     private var confirmation: CompletableDeferred<Boolean>? = null
     private var initialized = false
+    private var draftSave: Job? = null
+
+    private fun currentDraft(s: UiState = _state.value) = ChatStore.Draft(s.draftText,
+        s.draftSelectionStart, s.draftSelectionEnd, s.draftAttachments)
+    private suspend fun flushDraft() {
+        draftSave?.cancelAndJoin()
+        val s = _state.value
+        s.current?.let { store.saveDraft(it, currentDraft(s)) }
+    }
+    private fun scheduleDraftSave() {
+        draftSave?.cancel()
+        val s = _state.value
+        val chat = s.current ?: return
+        val draft = currentDraft(s)
+        draftSave = viewModelScope.launch {
+            delay(250)
+            try { store.saveDraft(chat, draft) }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { _state.update { it.copy(error = "草稿暂未保存，请保留当前页面") } }
+        }
+    }
+    fun updateDraft(text: String, start: Int, end: Int) {
+        if (_state.value.switchingConversation) return
+        val safe = listOfNotNull(settings.apiKey(), settings.searchKey()).filter { it.isNotBlank() }
+            .fold(text.take(64 * 1024)) { value, secret -> value.replace(secret, "[API Key 已隐藏]") }
+        _state.update { it.copy(draftText = safe, draftSelectionStart = start.coerceIn(0, safe.length), draftSelectionEnd = end.coerceIn(0, safe.length)) }
+        scheduleDraftSave()
+    }
+    fun renameConversation(id: String, title: String) {
+        if (_state.value.busy) return
+        viewModelScope.launch { runCatching {
+            store.rename(id, title)
+            _state.update { s -> s.copy(current = s.current?.let { if (it.id == id) it.copy(title = title.trim().take(120)) else it }) }
+        }.onFailure { _state.update { it.copy(error = "无法重命名对话") } } }
+    }
+    fun pinConversation(id: String, pinned: Boolean) {
+        viewModelScope.launch { runCatching { store.pin(id, pinned) }.onFailure { _state.update { it.copy(error = "无法保存置顶状态") } } }
+    }
+    fun loadImageHistory() {
+        viewModelScope.launch { runCatching { store.imageHistory() }
+            .onSuccess { rows -> _state.update { it.copy(historyImages = rows) } }
+            .onFailure { _state.update { it.copy(error = "无法读取图片记录") } } }
+    }
+    fun applyPromptEdit(id: String, edit: PromptEdit): Boolean {
+        if (_state.value.busy) return false
+        val revision = images.applyPromptEdit(edit) ?: run { _state.update { it.copy(error = "生成面板已改变，请打开建议重新核对后应用") }; return false }
+        _state.update { it.copy(appliedEditId = id, appliedEditRevision = revision, appliedEditProvider = edit.provider) }
+        return true
+    }
+    fun promptSnapshot() = images.promptSnapshot()
+    fun undoPromptEdit(): Boolean {
+        val s = _state.value
+        val ok = s.appliedEditRevision?.let { images.undoPromptEdit(s.appliedEditProvider.orEmpty(), it) } == true
+        _state.update { it.copy(appliedEditId = null, appliedEditRevision = null,
+            error = if (ok) null else "草稿已继续编辑，保留当前内容") }
+        return ok
+    }
 
     init {
         viewModelScope.launch {
             enabled.collect { if (!it && _state.value.busy) stop() }
         }
         viewModelScope.launch {
-            store.observeAll().collect { chats ->
+            store.observeSummaries().collect { chats ->
                 _state.update { it.copy(conversations = chats) }
                 if (!initialized) {
                     initialized = true
-                    val chat = chats.firstOrNull()?.recoverInterruptedTools() ?: fresh()
-                    _state.update { it.copy(current = chat) }
+                    val chat = chats.firstOrNull()?.let { store.load(it.id) }?.recoverInterruptedTools() ?: fresh()
+                    val draft = store.draft(chat.id)
+                    _state.update { it.copy(current = chat, draftText = draft.text, draftSelectionStart = draft.start,
+                        draftSelectionEnd = draft.end, draftAttachments = draft.attachments) }
                     if (chat.entries.isNotEmpty()) store.save(chat)
                 }
             }
         }
     }
     private fun fresh() = ChatConversation(UUID.randomUUID().toString(), updatedAt = System.currentTimeMillis())
-    fun newConversation() { if (!_state.value.busy && !_state.value.importingAttachment) { clearDraftAttachments(); _state.update { it.copy(current = fresh(), partial = null, streamId = null, error = null) } } }
+    fun newConversation() = switchConversation(null)
     fun selectConversation(id: String) {
-        if (_state.value.busy || _state.value.importingAttachment) return
+        if (id == _state.value.current?.id) return
+        switchConversation(id)
+    }
+    private fun switchConversation(id: String?) {
+        if (_state.value.busy || _state.value.importingAttachment || _state.value.switchingConversation) return
+        _state.update { it.copy(switchingConversation = true) }
         viewModelScope.launch {
-            runCatching { store.load(id)?.recoverInterruptedTools() }.onSuccess { chat ->
-                if (chat != null) { clearDraftAttachments(); _state.update { it.copy(current = chat, error = null) }; store.save(chat) }
-            }.onFailure { _state.update { it.copy(error = "无法读取该对话") } }
+            try {
+                flushDraft()
+                val chat = if (id == null) fresh() else store.load(id)?.recoverInterruptedTools() ?: throw ChatFailure("无法读取该对话")
+                val draft = store.draft(chat.id)
+                _state.update { it.copy(current = chat, partial = null, streamId = null, error = null, draftText = draft.text,
+                    draftSelectionStart = draft.start, draftSelectionEnd = draft.end, draftAttachments = draft.attachments) }
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { _state.update { it.copy(error = "无法保存草稿或读取对话") } }
+            finally { _state.update { it.copy(switchingConversation = false) } }
         }
     }
     fun deleteConversation(id: String) {
         if (_state.value.busy || _state.value.importingAttachment) return
         viewModelScope.launch {
+            flushDraft()
             val old = store.load(id)
             store.delete(id)
-            val alive = (store.observeAll().first().flatMap { it.entries }.flatMap { it.attachments } + _state.value.draftAttachments).map { it.id }.toSet()
+            val alive = (store.observeAll().first().flatMap { it.entries }.flatMap { it.attachments } + store.draftAttachments()).map { it.id }.toSet()
             old?.entries?.flatMap { it.attachments }?.filter { it.id !in alive }?.distinctBy { it.id }?.forEach { attachments.discard(it) }
-            if (_state.value.current?.id == id) newConversation()
+            if (_state.value.current?.id == id) _state.update { it.copy(current = fresh(), draftText = "", draftAttachments = emptyList(), draftSelectionStart = 0, draftSelectionEnd = 0) }
         }
     }
     fun hasKey() = settings.hasKey()
@@ -172,6 +251,7 @@ class ChatViewModel(
         _state.update { it.copy(draftAttachments = it.draftAttachments.map { attachment ->
             if (attachment.id == id) attachment.copy(promptContext = null) else attachment
         }) }
+        scheduleDraftSave()
     }
     private fun importAttachment(import: suspend () -> ChatAttachment) {
         if (_state.value.busy || _state.value.importingAttachment) return
@@ -182,6 +262,7 @@ class ChatViewModel(
                 val imported = import()
                 val attachment = imported.copy(promptContext = imported.promptContext?.redacted(settings.apiKey())?.bounded())
                 _state.update { it.copy(draftAttachments = it.draftAttachments + attachment) }
+                scheduleDraftSave()
             } catch (failure: ChatFailure) { _state.update { it.copy(error = failure.userMessage) } }
             catch (_: Exception) { _state.update { it.copy(error = "无法添加图片，请重新选择") } }
             finally { _state.update { it.copy(importingAttachment = false) } }
@@ -191,7 +272,7 @@ class ChatViewModel(
         if (_state.value.busy || _state.value.importingAttachment) return
         val removed = _state.value.draftAttachments.firstOrNull { it.id == id } ?: return
         _state.update { it.copy(draftAttachments = it.draftAttachments.filterNot { image -> image.id == id }) }
-        viewModelScope.launch { attachments.discard(removed) }
+        viewModelScope.launch { flushDraft(); attachments.discard(removed) }
     }
     private fun clearDraftAttachments() {
         val unused = _state.value.draftAttachments
@@ -200,12 +281,12 @@ class ChatViewModel(
     }
 
     fun send(text: String) {
-        if ((text.isBlank() && _state.value.draftAttachments.isEmpty()) || _state.value.busy || _state.value.importingAttachment || !enabled.value) return
+        if ((text.isBlank() && _state.value.draftAttachments.isEmpty()) || _state.value.busy || _state.value.importingAttachment || _state.value.switchingConversation || !enabled.value) return
         val attached = _state.value.draftAttachments.toList()
         val cfg = config.value
         stopImages = false
+        _state.update { it.copy(busy = true, error = null, phase = "正在思考") }
         job = viewModelScope.launch {
-            _state.update { it.copy(busy = true, error = null, phase = "正在思考") }
             var chat = _state.value.current ?: fresh()
             suspend fun persist() {
                 chat = chat.copy(updatedAt = System.currentTimeMillis())
@@ -219,6 +300,7 @@ class ChatViewModel(
                 }
             }
             try {
+                flushDraft()
                 val token = settings.apiKey()?.takeIf { it.isNotBlank() } ?: throw ChatFailure("请先配置 LLM API Key")
                 val searchCfg = searchConfig.value
                 val searchToken = settings.searchKey().orEmpty()
@@ -244,7 +326,9 @@ class ChatViewModel(
                 chat = chat.copy(title = if (chat.entries.isEmpty()) userText.take(28) else chat.title,
                     entries = chat.entries + ChatEntry(UUID.randomUUID().toString(), wireMessage("user", userText), attachments = safeAttached))
                 persist()
-                _state.update { it.copy(draftAttachments = emptyList()) }
+                _state.update { s -> if (s.draftText == text) s.copy(draftAttachments = emptyList(), draftText = "", draftSelectionStart = 0, draftSelectionEnd = 0)
+                    else s.copy(draftAttachments = emptyList()) }
+                flushDraft()
                 val imageCache = mutableMapOf<String, String>()
                 val batch = ChatImageBatch(images)
                 val searched = mutableSetOf<String>()
@@ -286,7 +370,18 @@ class ChatViewModel(
                                         put("steps", p.steps); put("guidance", p.guidance); put("max_images_per_message", ImageChatTools.MAX_IMAGES)
                                         put("remaining_images", batch.remaining); put("search_available", searchAvailable)
                                         put("tool_permission", cfg.effectiveToolPermission.name.lowercase())
-                                        put("max_characters", CharacterPrompt.limitFor(p.model)); put("use_coords", p.useCharacterCoordinates) }.toString()
+                                        put("max_characters", CharacterPrompt.limitFor(p.model)); put("use_coords", p.useCharacterCoordinates)
+                                        val snapshot = images.promptSnapshot()
+                                        put("prompt_edit_provider", snapshot.provider); put("prompt", snapshot.beforePrompt.take(16000))
+                                        snapshot.beforeNegative?.let { value -> put("negative_prompt", value.take(16000)) }
+                                    }.toString()
+                                }
+                                "propose_prompt_edit" -> {
+                                    val edit = PromptEdit.parse(call, images.promptSnapshot())
+                                    chat = chat.copy(entries = chat.entries.map { if (it.id == assistant.id) it.copy(promptEdit = edit) else it })
+                                    _state.update { it.copy(current = chat) }
+                                    notice = "改词建议已准备，可编辑后应用到生成面板"
+                                    result = "{\"status\":\"proposal_created\",\"applied\":false,\"generated\":false}"
                                 }
                                 "generate_image", "generate_images" -> {
                                     val params = images.prepare(ImageChatTools.parsePlan(call, images.currentParams()))

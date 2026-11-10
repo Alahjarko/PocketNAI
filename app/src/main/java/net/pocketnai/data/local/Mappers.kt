@@ -36,6 +36,7 @@ object Mappers {
         promptTemplate = generation.promptTemplate,
         mode = generation.mode.name,
         prompt = generation.params.prompt,
+        searchPrompt = net.pocketnai.domain.model.GallerySearch.normalize(generation.params.prompt),
         negativePrompt = generation.params.negativePrompt,
         charactersJson = HistoryCharacters.encode(generation.params.characters),
         useCharacterCoordinates = generation.params.useCharacterCoordinates,

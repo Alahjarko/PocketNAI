@@ -52,6 +52,23 @@ class OpenAiImageViewModel(
         }
     }
     fun update(params: OpenAiImageParams) { _state.update { it.copy(draft = it.draft.copy(params = params), message = null) } }
+    private data class PromptUndo(val revision: Int, val before: String, val after: String)
+    private var promptUndo: PromptUndo? = null
+    fun promptSnapshot() = net.pocketnai.domain.chat.PromptEdit(beforePrompt = _state.value.draft.params.prompt, beforeNegative = null, provider = "openai")
+    fun applyPromptEdit(edit: net.pocketnai.domain.chat.PromptEdit): Int? {
+        val current = _state.value
+        if (edit.provider != "openai" || edit.negative != null || edit.prompt == null || edit.beforePrompt != current.draft.params.prompt) return null
+        val revision = current.revision + 1
+        promptUndo = PromptUndo(revision, current.draft.params.prompt, edit.prompt)
+        _state.value = current.copy(draft = current.draft.copy(params = current.draft.params.copy(prompt = edit.prompt)), revision = revision)
+        return revision
+    }
+    fun undoPromptEdit(revision: Int): Boolean {
+        val undo = promptUndo?.takeIf { it.revision == revision && _state.value.revision == revision && _state.value.draft.params.prompt == it.after } ?: return false
+        _state.update { it.copy(draft = it.draft.copy(params = it.draft.params.copy(prompt = undo.before)), revision = it.revision + 1) }
+        promptUndo = null
+        return true
+    }
     fun restore(params: OpenAiImageParams, references: List<ReferenceImage>) {
         _state.update { it.copy(draft = OpenAiImageDraft(params, references), revision = it.revision + 1, message = null) }
     }

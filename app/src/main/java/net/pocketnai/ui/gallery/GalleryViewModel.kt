@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import net.pocketnai.data.repo.FavoriteImageRepository
 import net.pocketnai.data.repo.GenerationRepository
@@ -44,10 +45,20 @@ class GalleryViewModel(
 
     /** 当前筛选条件。界面用它决定筛选控件的高亮状态与"无结果"的措辞。 */
     val filter: StateFlow<GalleryFilter> = _filter.asStateFlow()
+    private val limit = MutableStateFlow(120)
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val page = combine(_filter, limit) { f, n -> f to n }.flatMapLatest { (f, n) -> repository.observeGalleryWindow(f, n) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS), GenerationRepository.GalleryPage(GalleryFilter.None, 120, emptyList(), false))
+    val hasMore = page.map { it.hasMore }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS), false)
+    fun loadMore() {
+        val p = page.value
+        if (p.hasMore && p.limit == limit.value && p.filter == _filter.value) limit.value = (limit.value + 120).coerceAtMost(Int.MAX_VALUE - 1)
+    }
+    suspend fun fullOrder() = repository.galleryOrder(_filter.value)
 
     /** 过滤后的瀑布流内容。[GalleryItem.favorite] 已按收藏表补齐。 */
     val items: StateFlow<List<GalleryItem>> = combine(
-        repository.observeGallery(),
+        page.map { it.items },
         favorites.observeFavoriteIds(),
         _filter,
     ) { gallery, favoriteIds, filter ->
@@ -64,7 +75,8 @@ class GalleryViewModel(
     internal val motionSlots = GalleryMotionSlots()
 
     /** Includes finished jobs so a visible placeholder survives until its image is decoded. */
-    val generations: StateFlow<List<GenerationSummary>> = repository.observeGenerations()
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val generations: StateFlow<List<GenerationSummary>> = limit.flatMapLatest { repository.observeRecentGenerations(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS), emptyList())
 
     private val _undoGenerationIds = MutableStateFlow<Set<String>>(emptySet())
@@ -86,9 +98,12 @@ class GalleryViewModel(
     val isSelectionMode: StateFlow<Boolean> = _isSelectionMode.asStateFlow()
 
     private val _selectedImageIds = MutableStateFlow<Set<String>>(emptySet())
+    private var limitBeforeSelection = 120
     val selectedImageIds: StateFlow<Set<String>> = _selectedImageIds.asStateFlow()
 
     fun enterSelectionMode(initialSelectedId: String? = null) {
+        limitBeforeSelection = limit.value
+        limit.value = Int.MAX_VALUE
         _isSelectionMode.value = true
         _selectedImageIds.value = if (initialSelectedId != null) setOf(initialSelectedId) else emptySet()
     }
@@ -96,6 +111,7 @@ class GalleryViewModel(
     fun exitSelectionMode() {
         _isSelectionMode.value = false
         _selectedImageIds.value = emptySet()
+        limit.value = limitBeforeSelection
     }
 
     fun toggleSelect(imageId: String) {
@@ -147,18 +163,19 @@ class GalleryViewModel(
 
     // ---- 筛选 ----
 
-    fun onQueryChange(query: String) = _filter.update { it.copy(query = query) }
+    fun onQueryChange(query: String) { limit.value = 120; _filter.update { it.copy(query = query) } }
 
     /** 空集合表示全部模型，集合内按 OR 匹配。 */
-    fun onModelsChange(modelApiIds: Set<String>) = _filter.update { it.copy(modelApiIds = modelApiIds) }
+    fun onModelsChange(modelApiIds: Set<String>) { limit.value = 120; _filter.update { it.copy(modelApiIds = modelApiIds) } }
 
     /** [mode] 为 null 表示"全部模式"。 */
-    fun onModeChange(mode: GenerationMode?) = _filter.update { it.copy(mode = mode) }
+    fun onModeChange(mode: GenerationMode?) { limit.value = 120; _filter.update { it.copy(mode = mode) } }
 
     fun onFavoritesOnlyChange(enabled: Boolean) =
-        _filter.update { it.copy(favoritesOnly = enabled) }
+        _filter.update { limit.value = 120; it.copy(favoritesOnly = enabled) }
 
     fun clearFilter() {
+        limit.value = 120
         _filter.value = GalleryFilter.None
     }
 

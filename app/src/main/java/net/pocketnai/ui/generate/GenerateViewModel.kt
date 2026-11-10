@@ -628,6 +628,28 @@ class GenerateViewModel(
         }
     }
 
+    private var promptEditUndo: Pair<Int, Pair<String, String>>? = null
+    fun promptSnapshot() = net.pocketnai.domain.chat.PromptEdit(beforePrompt = _state.value.promptTemplate, beforeNegative = _state.value.negativeTemplate)
+    fun applyPromptEdit(edit: net.pocketnai.domain.chat.PromptEdit): Int? {
+        val current = _state.value
+        if (edit.provider != "novelai" || (edit.prompt != null && edit.beforePrompt != current.promptTemplate) ||
+            (edit.negative != null && edit.beforeNegative != current.negativeTemplate)) return null
+        val next = current.copy(promptTemplate = edit.prompt ?: current.promptTemplate, negativeTemplate = edit.negative ?: current.negativeTemplate,
+            params = current.params.copy(prompt = edit.prompt ?: current.promptTemplate, negativePrompt = edit.negative ?: current.negativeTemplate),
+            textRevision = current.textRevision + 1)
+        promptEditUndo = next.textRevision to (current.promptTemplate to current.negativeTemplate)
+        _state.value = next
+        return next.textRevision
+    }
+    fun undoPromptEdit(revision: Int): Boolean {
+        val previous = promptEditUndo?.takeIf { it.first == revision && _state.value.textRevision == revision } ?: return false
+        val (positive, negative) = previous.second
+        _state.update { it.copy(promptTemplate = positive, negativeTemplate = negative,
+            params = it.params.copy(prompt = positive, negativePrompt = negative), textRevision = it.textRevision + 1) }
+        promptEditUndo = null
+        return true
+    }
+
     /**
      * 切换模型。
      *

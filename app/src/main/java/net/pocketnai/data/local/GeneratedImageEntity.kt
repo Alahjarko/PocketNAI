@@ -21,7 +21,7 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.CASCADE,
         ),
     ],
-    indices = [Index("generationId")],
+    indices = [Index("generationId"), Index(value = ["createdAt", "ordinal", "id"])],
 )
 data class GeneratedImageEntity(
     @PrimaryKey val id: String,

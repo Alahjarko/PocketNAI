@@ -112,6 +112,7 @@ fun DetailScreen(
     onBack: () -> Unit,
     onParamsReused: () -> Unit,
     onInpaint: (String) -> Unit,
+    onAskAssistant: ((String, String) -> Unit)? = null,
 ) {
     val container = LocalAppContainer.current
     val viewModel: DetailViewModel = viewModel(
@@ -295,6 +296,8 @@ fun DetailScreen(
                     onOpenUpscaleDialog = { showUpscaleDialog = true },
                     onDelete = viewModel::deleteGeneration,
                     onDismissError = viewModel::dismissError,
+                    onAskAssistant = if (onAskAssistant != null && detail != null && !detail.image.privateFilePath.endsWith(".svg", true))
+                        ({ onAskAssistant(detail.image.privateFilePath, detail.image.id) }) else null,
                 )
 
                 pageId in state.failedIds -> CenteredHint(
@@ -365,6 +368,7 @@ private fun DetailPageContent(
     onOpenUpscaleDialog: () -> Unit,
     onDelete: () -> Unit,
     onDismissError: () -> Unit,
+    onAskAssistant: (() -> Unit)? = null,
     revealed: Boolean = false,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -405,6 +409,7 @@ private fun DetailPageContent(
                         onOpenUpscaleDialog = onOpenUpscaleDialog,
                         onDelete = onDelete,
                         onDismissError = onDismissError,
+                        onAskAssistant = onAskAssistant,
                     )
                 }
             }
@@ -444,6 +449,7 @@ private fun DetailPageContent(
                     onOpenUpscaleDialog = onOpenUpscaleDialog,
                     onDelete = onDelete,
                     onDismissError = onDismissError,
+                        onAskAssistant = onAskAssistant,
                 )
             }
         }
@@ -499,6 +505,7 @@ internal fun LazyListScope.detailInfoItems(
     onOpenUpscaleDialog: () -> Unit,
     onDelete: () -> Unit,
     onDismissError: () -> Unit,
+    onAskAssistant: (() -> Unit)? = null,
 ) {
     item(key = "actions") {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -552,6 +559,7 @@ internal fun LazyListScope.detailInfoItems(
             Button(onClick = onReuseParams, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.action_reuse_params))
             }
+            onAskAssistant?.let { ask -> OutlinedButton(onClick = ask, modifier = Modifier.fillMaxWidth()) { Text("交给绘伴调整") } }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onSaveClick, modifier = Modifier.weight(1f)) {
@@ -585,7 +593,7 @@ internal fun LazyListScope.detailInfoItems(
                     contentDescription = if (parametersExpanded) "收起参数" else "展开参数",
                 )
             }
-            AnimatedVisibility(visible = parametersExpanded) {
+            net.pocketnai.ui.common.AnimatedDisclosure(parametersExpanded) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     val time = DateFormat.getDateTimeInstance().format(Date(generation.createdAt))
                     DetailRow(stringResource(R.string.common_time), time)

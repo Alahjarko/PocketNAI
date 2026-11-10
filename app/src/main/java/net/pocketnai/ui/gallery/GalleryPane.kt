@@ -133,6 +133,7 @@ fun GalleryPane(
         },
     )
     val items by viewModel.items.collectAsStateWithLifecycle()
+    val hasMore by viewModel.hasMore.collectAsStateWithLifecycle()
     val generations by viewModel.generations.collectAsStateWithLifecycle()
     val previews by container.generationPreviewStore.previews.collectAsStateWithLifecycle()
     val filter by viewModel.filter.collectAsStateWithLifecycle()
@@ -149,6 +150,13 @@ fun GalleryPane(
     var pendingSave by remember { mutableStateOf<GalleryItem?>(null) }
     var pendingBatchSave by remember { mutableStateOf<List<GalleryItem>?>(null) }
     var confirmBatchDelete by remember { mutableStateOf(false) }
+    var requestedTask by remember { mutableStateOf<String?>(null) }
+    var openingImage by remember { mutableStateOf(false) }
+    LaunchedEffect(gridState) {
+        snapshotFlow { gridState.layoutInfo.let { info ->
+            Triple(info.visibleItemsInfo.lastOrNull()?.index ?: -1, info.totalItemsCount, hasMore)
+        } }.collect { (last, count, more) -> if (more && count > 0 && last >= count - 16) viewModel.loadMore() }
+    }
 
     BackHandler(enabled = isSelectionMode) {
         viewModel.exitSelectionMode()
@@ -210,6 +218,11 @@ fun GalleryPane(
     val sections = remember(items, generations, filter, isSelectionMode, motionRevision) {
         viewModel.motionSlots.sections(items, generations, !isSelectionMode, filter = filter)
     }
+    LaunchedEffect(sections, requestedTask) {
+        val id = requestedTask ?: return@LaunchedEffect
+        val index = sections.flatMap { it.slots }.indexOfFirst { it.generation?.id == id || it.image?.generationId == id }
+        if (index >= 0) { gridState.scrollToItem(index + 1); requestedTask = null }
+    }
     Column(modifier = modifier.fillMaxSize()) {
         if (isSelectionMode) {
             GallerySelectionTopBar(
@@ -233,6 +246,7 @@ fun GalleryPane(
                 onFavoritesOnlyChange = viewModel::onFavoritesOnlyChange,
                 onClearAll = viewModel::clearFilter,
                 onEnterSelectionMode = { viewModel.enterSelectionMode() },
+                taskAction = { GenerationTasksButton(generations) { id -> viewModel.clearFilter(); requestedTask = id } },
             )
         }
 
@@ -256,8 +270,15 @@ fun GalleryPane(
                     onClick = { item ->
                         if (isSelectionMode) viewModel.toggleSelect(item.imageId)
                         else {
-                            container.galleryOrderSnapshot.publish(items.map { it.imageId })
-                            onOpenImage(item.imageId)
+                            if (!openingImage) {
+                                openingImage = true
+                                scope.launch {
+                                    try {
+                                        container.galleryOrderSnapshot.publish(viewModel.fullOrder())
+                                        onOpenImage(item.imageId)
+                                    } finally { openingImage = false }
+                                }
+                            }
                         }
                     },
                     onLongClick = { item ->
@@ -488,10 +509,12 @@ private fun GalleryFilterBar(
     onFavoritesOnlyChange: (Boolean) -> Unit,
     onClearAll: () -> Unit,
     onEnterSelectionMode: () -> Unit,
+    taskAction: @Composable () -> Unit = {},
 ) {
     var queryField by remember { mutableStateOf(TextFieldValue(filter.query)) }
 
     var filterDialogOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(filter.query) { if (filter.query != queryField.text) queryField = TextFieldValue(filter.query) }
 
     // 角标只数"藏起来"的条件：关键词就写在搜索框里，不必再数一遍。
     val hiddenActiveCount = (if (filter.modelApiIds.isNotEmpty()) 1 else 0) +
@@ -533,6 +556,7 @@ private fun GalleryFilterBar(
             singleLine = true,
             modifier = Modifier.weight(1f),
         )
+        taskAction()
         Box {
             IconButton(onClick = { filterDialogOpen = true }) {
                 Icon(

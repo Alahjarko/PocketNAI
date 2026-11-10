@@ -491,7 +491,8 @@ fun GenerateSheet(
                 )
             }
 
-            if (advancedExpanded) {
+            net.pocketnai.ui.common.AnimatedDisclosure(advancedExpanded) {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 if (state.params.model == ImageModel.V5_FULL) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         DropdownSelector(label = "Effort", selectedText = state.params.effort.label,
@@ -593,6 +594,8 @@ fun GenerateSheet(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(stringResource(R.string.generate_restore_model_defaults))
+                }
+
                 }
             }
 

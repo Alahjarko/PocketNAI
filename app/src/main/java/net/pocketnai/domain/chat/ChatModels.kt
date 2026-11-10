@@ -46,6 +46,7 @@ data class ChatEntry(
     val notice: String? = null,
     val attachments: List<ChatAttachment> = emptyList(),
     val sources: List<ChatSearchSource> = emptyList(),
+    val promptEdit: PromptEdit? = null,
 ) {
     val role: String get() = wire.string("role").orEmpty()
     val content: String get() = wire.string("content").orEmpty()
@@ -116,6 +117,9 @@ interface ChatClient {
 
 interface ChatImageGenerator {
     fun currentParams(): net.pocketnai.domain.model.GenerationParams
+    fun promptSnapshot() = PromptEdit(beforePrompt = currentParams().prompt, beforeNegative = currentParams().negativePrompt)
+    fun applyPromptEdit(edit: PromptEdit): Int? = null
+    fun undoPromptEdit(provider: String, revision: Int): Boolean = false
     suspend fun prepare(params: List<net.pocketnai.domain.model.GenerationParams>): List<net.pocketnai.domain.model.GenerationParams> = params
     fun authorizationKey(): String?
     suspend fun quote(params: net.pocketnai.domain.model.GenerationParams): ChatImageQuote

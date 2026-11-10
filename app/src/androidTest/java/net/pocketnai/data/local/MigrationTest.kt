@@ -22,7 +22,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class MigrationTest {
 
-    @Test fun migrate10To14KeepsHistoryReferencesAndUnknownDuration() {
+    @Test fun migrate10To15KeepsHistoryReferencesDraftsAndUnknownDuration() {
         helper.createDatabase("prompt-migration-test", 10).use { db ->
             db.execSQL("""INSERT INTO generations (id,createdAt,updatedAt,status,title,promptTemplate,mode,prompt,negativePrompt,modelApiId,width,height,sampleCount,steps,guidance,cfgRescale,sampler,noiseSchedule,seedMode,baseSeed,qualityTags,qualityTagsEnabled,ucPresetIndex,modelConfigVersion,requestSnapshotVersion,charactersJson)
                 VALUES ('old',1,1,'SUCCEEDED','old title','sfw','TXT2IMG','sfw','','nai-diffusion-4-5-curated',832,1216,1,23,7.0,0.0,'k_euler_ancestral','karras','FIXED',42,'NONE',0,0,'v1',3,'[]')""")
@@ -35,7 +35,14 @@ class MigrationTest {
             db.execSQL("UPDATE generations SET openAiParamsJson=?,modelApiId='gpt-image-2.6-flare' WHERE id='old'",
                 arrayOf("""{"params":{"prompt":"fixture","model":"gpt-image-2.6-flare"},"usage":{"textInput":10,"imageInput":0,"imageOutput":100}}"""))
         }
-        helper.runMigrationsAndValidate("prompt-migration-test", 14, true, PocketNaiDatabase.MIGRATION_13_14).use { db ->
+        helper.runMigrationsAndValidate("prompt-migration-test", 15, true, PocketNaiDatabase.MIGRATION_13_14, PocketNaiDatabase.MIGRATION_14_15).use { db ->
+            db.query("SELECT searchPrompt FROM generations WHERE id='old'").use {
+                assertThat(it.moveToFirst()).isTrue(); assertThat(it.getString(0)).isEqualTo("sfw")
+            }
+            db.execSQL("INSERT INTO chat_drafts VALUES ('draft','未发送',1,2,'[]')")
+            db.query("SELECT text,selectionEnd FROM chat_drafts WHERE conversationId='draft'").use {
+                assertThat(it.moveToFirst()).isTrue(); assertThat(it.getString(0)).isEqualTo("未发送"); assertThat(it.getInt(1)).isEqualTo(2)
+            }
             db.query("SELECT title,charactersJson,useCharacterCoordinates,openAiParamsJson,generationDurationMillis,effort FROM generations WHERE id='old'").use {
                 assertThat(it.moveToFirst()).isTrue(); assertThat(it.getString(0)).isEqualTo("old title"); assertThat(it.getString(1)).isEqualTo("[]"); assertThat(it.isNull(2)).isTrue()
                 assertThat(it.getString(3)).contains("imageOutput")
@@ -51,7 +58,7 @@ class MigrationTest {
             db.query("SELECT generationDurationMillis FROM generations WHERE id='old'").use {
                 assertThat(it.moveToFirst()).isTrue(); assertThat(it.getLong(0)).isEqualTo(12345)
             }
-            db.execSQL("INSERT INTO chat_conversations VALUES ('chat','title',2,'[]')")
+            db.execSQL("INSERT INTO chat_conversations (id,title,updatedAt,entriesJson) VALUES ('chat','title',2,'[]')")
             db.query("SELECT entriesJson FROM chat_conversations").use { assertThat(it.moveToFirst()).isTrue(); assertThat(it.getString(0)).isEqualTo("[]") }
             db.query("SELECT snapshotJson FROM openai_spending WHERE generationId='old'").use {
                 assertThat(it.moveToFirst()).isTrue(); assertThat(it.getString(0)).contains("imageOutput")

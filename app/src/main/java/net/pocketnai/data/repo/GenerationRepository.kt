@@ -125,6 +125,16 @@ class GenerationRepository(
     fun observeGallery(): Flow<List<GalleryItem>> =
         dao.observeGalleryImages().map { rows -> rows.map(Mappers::toDomain) }.flowOn(Dispatchers.Default)
 
+    data class GalleryPage(val filter: net.pocketnai.domain.model.GalleryFilter, val limit: Int, val items: List<GalleryItem>, val hasMore: Boolean)
+    fun observeGalleryWindow(filter: net.pocketnai.domain.model.GalleryFilter, limit: Int): Flow<GalleryPage> =
+        dao.observeGalleryWindow(net.pocketnai.data.local.GalleryQueries.build(filter, if (limit == Int.MAX_VALUE) limit else limit + 1))
+            .map { rows -> GalleryPage(filter, limit, rows.take(limit).map(Mappers::toDomain), rows.size > limit) }.flowOn(Dispatchers.Default)
+    suspend fun galleryOrder(filter: net.pocketnai.domain.model.GalleryFilter): List<String> = withContext(Dispatchers.IO) {
+        dao.galleryIds(net.pocketnai.data.local.GalleryQueries.build(filter, Int.MAX_VALUE, idsOnly = true))
+    }
+    fun observeRecentGenerations(limit: Int): Flow<List<GenerationSummary>> = dao.observeRecentGenerations(limit)
+        .map { rows -> rows.mapNotNull { row -> Mappers.toDomain(row.generation)?.let { GenerationSummary(it, row.imageCount) } } }.flowOn(Dispatchers.Default)
+
     fun observeImageSafety(): Flow<List<Pair<net.pocketnai.data.local.ImageSafetyRow, Boolean>>> =
         dao.observeImageSafetyRows().map { rows -> rows.map { row ->
             row to (net.pocketnai.domain.safety.SfwPolicy.containsSensitivePrompt(row.prompt) ||
