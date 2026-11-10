@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -148,12 +150,14 @@ fun SettingsScreen(
             Column {
                 SettingsRow(
                     title = stringResource(R.string.settings_balance_ledger),
+                    icon = Icons.Default.QueryStats,
                     subtitle = stringResource(R.string.settings_ledger_subtitle),
                     onClick = onOpenStatistics,
                 )
                 SettingsDivider()
                 SettingsRow(
                     title = stringResource(R.string.proxy_section_title),
+                    icon = Icons.Default.Language,
                     subtitle = proxySummaryLabel(
                         enabled = proxySettings.enabled,
                         mode = proxySettings.mode,
@@ -174,6 +178,7 @@ fun SettingsScreen(
                 SettingsDivider()
                 SettingsRow(
                     title = "实验性对话",
+                    icon = Icons.Default.ChatBubbleOutline,
                     subtitle = if (chatEnabled) "已在导航栏显示对话" else "开启后在导航栏显示对话",
                     onClick = { container.settingsStore.setChatEnabled(!chatEnabled) },
                     trailing = { Switch(chatEnabled, container.settingsStore::setChatEnabled) },
@@ -181,12 +186,14 @@ fun SettingsScreen(
                 SettingsDivider()
                 SettingsRow(
                     title = "连接与人格",
-                    subtitle = "LLM 提供商与模型 · 人格 · 工具权限 · 联网搜索",
+                    icon = Icons.Default.Hub,
+                    subtitle = "模型服务、人格与工具",
                     onClick = onOpenChatSettings,
                 )
                 SettingsDivider()
                 SettingsRow(
                     title = "抽卡实验室（实验）",
+                    icon = Icons.Default.Palette,
                     subtitle = "随机画师串 · 固定种子 · 收藏与批次清理",
                     onClick = { container.settingsStore.setArtistLabEnabled(!artistLabEnabled) },
                     trailing = { Switch(artistLabEnabled, container.settingsStore::setArtistLabEnabled) },
@@ -194,12 +201,14 @@ fun SettingsScreen(
                 SettingsDivider()
                 SettingsRow(
                     title = stringResource(R.string.settings_storage),
+                    icon = Icons.Default.Storage,
                     subtitle = "私有历史占用 ${formatBytes(state.usedBytes)}",
                     onClick = { storageDialogOpen = true },
                 )
                 SettingsDivider()
                 SettingsRow(
                     title = stringResource(R.string.update_section_title),
+                    icon = Icons.Default.SystemUpdate,
                     subtitle = "${stringResource(R.string.settings_version)} " +
                         "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})",
                     onClick = { updateDialogOpen = true },
@@ -344,24 +353,14 @@ fun SettingsScreen(
 private fun SettingsRow(
     title: String,
     subtitle: String,
+    icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     trailing: (@Composable () -> Unit)? = null,
 ) {
-    ListItem(
-        headlineContent = { Text(title) },
-        supportingContent = { Text(subtitle) },
-        trailingContent = trailing ?: {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = modifier.clickable(enabled = enabled, onClick = onClick),
-    )
+    SettingsNavigationRow(title, subtitle, icon, onClick, modifier, enabled, trailing = trailing)
+
 }
 
 @Composable

@@ -15,6 +15,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.pocketnai.domain.chat.ChatSearchProvider
+import net.pocketnai.ui.settings.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.TravelExplore
 
 @Composable
 internal fun ChatSearchSettingsDialog(viewModel: ChatViewModel, onDismiss: () -> Unit) {
@@ -25,29 +28,38 @@ internal fun ChatSearchSettingsDialog(viewModel: ChatViewModel, onDismiss: () ->
     var hasKey by remember { mutableStateOf(viewModel.hasSearchKey()) }
     var removing by remember { mutableStateOf<net.pocketnai.domain.chat.ChatSearchConfig?>(null) }
     val boundKey = hasKey && config.provider == stored.provider && config.baseUrl.trim().trimEnd('/') == stored.baseUrl.trim().trimEnd('/')
-    AlertDialog(onDismissRequest = onDismiss, title = {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("联网搜索", Modifier.weight(1f))
-            net.pocketnai.ui.common.InfoButton("开启后，发送消息允许 agent 按需检索，每条消息最多 6 次。检索词发送至搜索服务，摘要发送至当前 LLM；可能消耗搜索服务额度。搜索密钥独立加密保存。\n\nDeepSeek 使用其平台 API Key，按搜索服务规则计费；不会自动使用聊天密钥。")
-            Switch(config.enabled, { config = config.copy(enabled = it) }, modifier = Modifier.semantics { contentDescription = "启用联网搜索" })
-        }
-    }, text = {
-        Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ChatSearchProvider.entries.forEach { provider ->
-                    FilterChip(config.provider == provider, onClick = {
-                        config = config.copy(provider = provider, baseUrl = provider.defaultUrl); key = ""
-                    }, label = { Text(provider.label) })
-                }
+    SettingsEditorSheet("联网搜索", Icons.Default.TravelExplore, onDismiss, saveEnabled = !state.busy,
+        onSave = {
+            val saved = viewModel.saveSearchConfig(config, key)
+            if (saved) key = ""
+            saved
+        }) {
+        SettingsCard {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("启用联网搜索", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                net.pocketnai.ui.common.InfoButton("开启后，发送消息允许 agent 按需检索，每条消息最多 6 次。检索词发送至搜索服务，摘要发送至当前 LLM；可能消耗搜索服务额度。搜索密钥独立加密保存。\n\nDeepSeek 使用其平台 API Key，按搜索服务规则计费；不会自动使用聊天密钥。")
+                Switch(config.enabled, { config = config.copy(enabled = it) }, modifier = Modifier.semantics { contentDescription = "启用联网搜索" })
             }
-            OutlinedTextField(config.baseUrl, { config = config.copy(baseUrl = it) }, label = { Text("搜索 API Base URL") }, singleLine = true)
-            OutlinedTextField(key, { key = it }, label = { Text(if (boundKey) "替换搜索 API Key（留空保留）" else "${config.provider.label} API Key") }, singleLine = true,
-                visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
-            if (hasKey) TextButton(onClick = { removing = stored }, enabled = !state.busy) { Text("移除搜索密钥") }
-            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
-    }, confirmButton = { TextButton(onClick = { if (viewModel.saveSearchConfig(config, key)) { key = ""; onDismiss() } }) { Text("保存") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } })
+        SettingsSection("搜索服务")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ChatSearchProvider.entries.forEach { provider ->
+                FilterChip(config.provider == provider, onClick = {
+                    config = config.copy(provider = provider, baseUrl = provider.defaultUrl); key = ""
+                }, label = { Text(provider.label) })
+            }
+        }
+        SettingsCard {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(config.baseUrl, { config = config.copy(baseUrl = it) }, Modifier.fillMaxWidth(), label = { Text("搜索 API Base URL") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
+                OutlinedTextField(key, { key = it }, Modifier.fillMaxWidth(), label = { Text(if (boundKey) "替换搜索 API Key（留空保留）" else "${config.provider.label} API Key") }, singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+            }
+        }
+        if (hasKey) TextButton(onClick = { removing = stored }, enabled = !state.busy) { Text("移除搜索密钥") }
+        state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+    }
     removing?.let { target ->
         net.pocketnai.ui.connect.AccountDisconnectConfirmation(
             title = "移除搜索密钥？",

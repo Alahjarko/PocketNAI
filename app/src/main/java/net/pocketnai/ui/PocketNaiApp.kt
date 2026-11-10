@@ -293,7 +293,7 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
             popEnterTransition = {
                 when (initialState.destination.route) {
                     Routes.DETAIL, Routes.REFERENCE_DETAIL -> imagePageEnter()
-                    Routes.ANLAS_STATISTICS, Routes.INPAINT -> fadeIn(tween(260)) + scaleIn(tween(260), initialScale = 0.96f)
+                    Routes.ANLAS_STATISTICS, Routes.CHAT_SETTINGS, Routes.INPAINT -> fadeIn(tween(260)) + scaleIn(tween(260), initialScale = 0.96f)
                     else -> fadeIn(tween(160))
                 }
             },
@@ -371,7 +371,11 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                     )
                 }
             }
-            composable(Routes.CHAT_SETTINGS) {
+            composable(Routes.CHAT_SETTINGS,
+                enterTransition = { fadeIn(tween(220)) + slideInHorizontally(tween(300)) { it / 7 } },
+                popExitTransition = { fadeOut(tween(220)) + scaleOut(tween(300), targetScale = .96f) +
+                    slideOutHorizontally(tween(300)) { it / 5 } },
+            ) {
                 net.pocketnai.ui.chat.ChatSettingsScreen(chatViewModel) { navController.popBackStack() }
             }
             composable(Routes.CHAT) {
