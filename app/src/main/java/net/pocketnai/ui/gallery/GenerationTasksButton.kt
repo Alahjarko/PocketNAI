@@ -30,7 +30,7 @@ internal fun GenerationTasksButton(generations: List<GenerationSummary>, onLocat
         var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
         LaunchedEffect(active.isNotEmpty()) { while (active.isNotEmpty()) { delay(1000); now = System.currentTimeMillis() } }
         Text(if (active.isEmpty()) "当前没有进行中的任务" else "进行中 · ${active.size}", style = MaterialTheme.typography.titleSmall)
-        val recent = generations.filterNot { it in active }.take(8)
+        val recent = generations.filterNot { it in active }.sortedByDescending { it.generation.updatedAt }.take(8)
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(active + recent, key = { it.generation.id }) { row ->
                 val g = row.generation
@@ -39,6 +39,8 @@ internal fun GenerationTasksButton(generations: List<GenerationSummary>, onLocat
                     g.status == GenerationStatus.QUEUED -> "排队中"
                     g.status == GenerationStatus.GENERATING -> "生成中"
                     g.errorCode == net.pocketnai.core.ErrorCode.TIMEOUT_UNCERTAIN -> "结果待确认"
+                    g.status == GenerationStatus.FAILED -> "未完成"
+                    g.status == GenerationStatus.PARTIAL -> "部分完成 · 已保存 ${row.imageCount} 张"
                     row.imageCount > 0 -> "已保存 ${row.imageCount} 张"
                     else -> "已结束"
                 }

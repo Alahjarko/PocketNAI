@@ -13,7 +13,7 @@ interface GenerationDao {
     fun observeGalleryWindow(query: androidx.sqlite.db.SupportSQLiteQuery): Flow<List<GalleryImageRow>>
     @androidx.room.RawQuery
     suspend fun galleryIds(query: androidx.sqlite.db.SupportSQLiteQuery): List<String>
-    @Query("SELECT g.*, (SELECT COUNT(*) FROM generated_images i WHERE i.generationId=g.id) AS imageCount FROM generations g WHERE g.deletedAt IS NULL AND (g.status IN ('QUEUED','GENERATING') OR g.id IN (SELECT id FROM generations WHERE deletedAt IS NULL ORDER BY createdAt DESC LIMIT :limit)) ORDER BY g.createdAt DESC")
+    @Query("SELECT g.*, (SELECT COUNT(*) FROM generated_images i WHERE i.generationId=g.id) AS imageCount FROM generations g WHERE g.deletedAt IS NULL AND (g.status IN ('QUEUED','GENERATING') OR g.id IN (SELECT id FROM generations WHERE deletedAt IS NULL ORDER BY updatedAt DESC LIMIT :limit)) ORDER BY g.createdAt DESC")
     fun observeRecentGenerations(limit: Int): Flow<List<GenerationWithCount>>
     @Query("SELECT * FROM openai_spending ORDER BY createdAt DESC, generationId")
     fun observeOpenAiSpending(): Flow<List<OpenAiSpendingEntity>>
