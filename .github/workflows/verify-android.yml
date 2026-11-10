@@ -1,7 +1,7 @@
 name: Verify Android (no emulator)
+# Default compilation and tests run in the existing Instabox workspace.
+# Keep this workflow as a manually requested fallback; pushes must not spend CI minutes.
 on:
-  push:
-    branches: ["feat/**", "fix/**"]
   workflow_dispatch:
 permissions:
   contents: read

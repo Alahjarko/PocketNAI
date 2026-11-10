@@ -4,6 +4,8 @@
 
 ## 检查更新与发布（GitHub Release）
 
+- 2026-11-10用户指定：后续编译、测试和APK打包默认使用已有Instabox工作区，GitHub完整构建仅保留手动备用。`verify-android.yml`已取消开发分支自动触发，避免一次开发反复消耗CI资源。原公开签名密钥未存于沙箱时，沿用下述`sign-local-release.yml`仅签名路径，GitHub不再重跑编译；正式Release仍须核对源码、版本、原证书及公开附件摘要。已开始的0.1.35完整构建按用户要求正常完成，见[发布记录](../release-0.1.35.md)。
+
 - 本地云机没有原签名密钥时，不能使用自动创建的debug keystore。可本地注入目标版本构建优化Release无签名包，再通过`sign-local-release.yml`仅签名，不重新编译或导出密钥。输入通过独立临时Git分支传递，并核对本地SHA-256；签名后先与目标旧版证书比较，结果存于匹配的临时草稿Release。下载核对包内版本和所有编译内容一致后，第二次以`publish_sha256`指定已验证包的摘要，才允许覆盖公开附件；同时核对`previous_sha256`，避免覆盖别人刚更新的包。覆盖既有版本/附件/标签须有用户明确授权；完成后清理自己创建的临时分支和草稿。不要调用默认加号发布脚本来执行同版本覆盖。
 
 - 新版本的本地编译／云端签名：设置 `PNAI_UNSIGNED_RELEASE=1`（只影响 release，不改 debug 签名），同时注入新构建号，再运行单测与 `:app:assembleRelease`。将 `app-release-unsigned.apk` 以 `PocketNAI-unsigned.apk` 上传到 `local-sign-<新构建号>-<源码SHA前12位>` 临时草稿 Release；调用 `sign-local-release.yml`，启用 `unsigned_from_release`，明确设置 `reference_version_code` 为上一公开版本，传入两包摘要与源码 SHA，保持 `publish_sha256` 为空。此模式只签名回传草稿，禁止跨版本覆盖。下载核验签名、版本与全部非签名 ZIP 内容后，再用匹配源码 SHA 创建全新的 `build-N` Release，附件命名 `PocketNAI.apk`；验证公开下载后，仅清理本次临时草稿／标签。无需向 Git 提交 APK，也不把签名密钥导出到云机。
