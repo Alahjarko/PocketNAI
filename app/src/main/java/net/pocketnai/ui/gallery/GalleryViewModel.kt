@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import net.pocketnai.data.repo.FavoriteImageRepository
 import net.pocketnai.data.repo.GenerationRepository
@@ -123,6 +124,9 @@ class GalleryViewModel(
     fun selectAll(imageIds: Collection<String>) {
         _selectedImageIds.value = imageIds.toSet()
     }
+    fun selectAllMatching() {
+        viewModelScope.launch { _selectedImageIds.value = repository.galleryOrder(_filter.value).toSet() }
+    }
 
     fun deselectAll() {
         _selectedImageIds.value = emptySet()
@@ -130,24 +134,24 @@ class GalleryViewModel(
 
     fun batchToggleFavorite(items: List<GalleryItem>) {
         val selectedIds = _selectedImageIds.value
-        val targets = items.filter { it.imageId in selectedIds }
-        if (targets.isEmpty()) return
-        val allFavorited = targets.all { it.favorite }
-        val targetFavoriteState = !allFavorited
+        val filter = _filter.value
         viewModelScope.launch {
-            targets.forEach { item ->
-                favorites.setFavorite(item.imageId, favorite = targetFavoriteState)
+            val targets = repository.galleryOrder(filter).filter { it in selectedIds }
+            val favoriteIds = favorites.observeFavoriteIds().first()
+            val targetFavoriteState = !targets.all { it in favoriteIds }
+            targets.forEach { id ->
+                favorites.setFavorite(id, favorite = targetFavoriteState)
             }
         }
     }
 
     fun batchDelete(items: List<GalleryItem>) {
         val selectedIds = _selectedImageIds.value
-        val targets = items.filter { it.imageId in selectedIds }
-        if (targets.isEmpty()) return
-        val generationIds = targets.map { it.generationId }.toSet()
+        val filter = _filter.value
         exitSelectionMode()
         viewModelScope.launch {
+            val targets = repository.observeGalleryWindow(filter, Int.MAX_VALUE).first().items.filter { it.imageId in selectedIds }
+            val generationIds = targets.map { it.generationId }.toSet()
             generationIds.forEach { repository.markDeleted(it) }
             _undoGenerationIds.value = generationIds
             purgeJob?.cancel()

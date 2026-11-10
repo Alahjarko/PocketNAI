@@ -129,63 +129,24 @@ fun SaveFavoriteDialog(
  * 当前分页，不在这里再选一次 —— 分页本身就是用户的"我现在在整理哪一类"。
  */
 @Composable
-fun CreateFavoriteDialog(
-    kind: PromptFavoriteKind,
-    onConfirm: (name: String, content: String, category: String) -> Unit,
-    onDismiss: () -> Unit,
-    existing: PromptFavorite? = null,
-) {
+fun CreateFavoriteDialog(kind: PromptFavoriteKind, onConfirm: (String, String, String) -> Unit,
+    onDismiss: () -> Unit, existing: PromptFavorite? = null) {
     var content by remember(existing?.id) { mutableStateOf(existing?.content.orEmpty()) }
     var name by remember(existing?.id) { mutableStateOf(existing?.name.orEmpty()) }
     var nameEdited by remember(existing?.id) { mutableStateOf(existing != null) }
     var category by remember(existing?.id) { mutableStateOf(existing?.category.orEmpty()) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text((if (existing == null) "新建" else "编辑") + if (kind == PromptFavoriteKind.TAG) "标签" else "提示词") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = content,
-                    onValueChange = {
-                        content = it
-                        if (!nameEdited) name = PromptComposition.defaultName(it).orEmpty()
-                    },
-                    label = { Text(stringResource(R.string.favorite_create_content)) },
-                    minLines = 2,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it; nameEdited = true },
-                    label = { Text(stringResource(R.string.favorite_save_name)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = category,
-                    onValueChange = { category = it },
-                    label = { Text(stringResource(R.string.favorite_save_category)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(name, content, category) },
-                // 空内容没有可存的（保存侧也会拦，这里先让按钮不可点）。
-                enabled = content.isNotBlank(),
-            ) {
-                Text(stringResource(R.string.action_confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_cancel))
-            }
-        },
-    )
+    var pending by remember { mutableStateOf<Triple<String, String, String>?>(null) }
+    net.pocketnai.ui.settings.SettingsEditorSheet(
+        (if (existing == null) "新建" else "编辑") + if (kind == PromptFavoriteKind.TAG) "标签" else "提示词",
+        Icons.Default.Add, onDismiss = { pending?.let { onConfirm(it.first, it.second, it.third) } ?: onDismiss() },
+        saveEnabled = content.isNotBlank(), onSave = { pending = Triple(name, content, category); true }) {
+        OutlinedTextField(content, { content = it; if (!nameEdited) name = PromptComposition.defaultName(it).orEmpty() },
+            label = { Text(stringResource(R.string.favorite_create_content)) }, minLines = 3, maxLines = 10, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(name, { name = it; nameEdited = true }, label = { Text(stringResource(R.string.favorite_save_name)) },
+            singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(category, { category = it }, label = { Text(stringResource(R.string.favorite_save_category)) },
+            singleLine = true, modifier = Modifier.fillMaxWidth())
+    }
 }
 
 /**
@@ -195,126 +156,42 @@ fun CreateFavoriteDialog(
  * 所以给它最省事的手势；会覆盖用户已有内容的操作收进菜单里。
  */
 @Composable
-fun FavoritePickerDialog(
-    state: PromptFavoritesViewModel.UiState,
-    onQueryChange: (String) -> Unit,
-    onKindChange: (PromptFavoriteKind) -> Unit,
-    onAppend: (PromptFavorite) -> Unit,
-    onReplace: (PromptFavorite) -> Unit,
-    onCreate: () -> Unit,
-    onDelete: (PromptFavorite) -> Unit,
-    onDismiss: () -> Unit,
-    onDismissNotice: () -> Unit,
-    onEdit: (PromptFavorite) -> Unit = {},
-    onUseMacro: (PromptFavorite) -> Unit = {},
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = stringResource(R.string.favorites_title),
-                    modifier = Modifier.weight(1f),
-                )
-                // "新建"放标题右边：创建是"使用已有条目"之外的另一种动作，
-                // 混进列表里会看起来像一条特殊条目。
-                if (!state.isEmpty || state.query.isNotBlank()) TextButton(onClick = onCreate) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Text(
-                        text = stringResource(R.string.favorites_action_new),
-                        modifier = Modifier.padding(start = 4.dp),
-                    )
-                }
+fun FavoritePickerDialog(state: PromptFavoritesViewModel.UiState, onQueryChange: (String) -> Unit,
+    onKindChange: (PromptFavoriteKind) -> Unit, onAppend: (PromptFavorite) -> Unit,
+    onReplace: (PromptFavorite) -> Unit, onCreate: () -> Unit, onDelete: (PromptFavorite) -> Unit,
+    onDismiss: () -> Unit, onDismissNotice: () -> Unit, onEdit: (PromptFavorite) -> Unit = {},
+    onUseMacro: (PromptFavorite) -> Unit = {}) {
+    var pending by remember { mutableStateOf<(() -> Unit)?>(null) }
+    net.pocketnai.ui.settings.SettingsEditorSheet(stringResource(R.string.favorites_title), Icons.Default.Add,
+        onDismiss = { val action = pending; if (action != null) action() else onDismiss() }, scrollContent = false) {
+        val close = net.pocketnai.ui.settings.LocalSettingsSheetDismiss.current
+        fun finish(action: () -> Unit) { pending = action; close() }
+        OutlinedTextField(state.query, onQueryChange, label = { Text(stringResource(R.string.favorites_search)) },
+            singleLine = true, modifier = Modifier.fillMaxWidth())
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(state.kind == PromptFavoriteKind.PROMPT, { onKindChange(PromptFavoriteKind.PROMPT) },
+                label = { Text("${stringResource(R.string.favorites_tab_prompts)} (${state.promptCount})") })
+            FilterChip(state.kind == PromptFavoriteKind.TAG, { onKindChange(PromptFavoriteKind.TAG) },
+                label = { Text("${stringResource(R.string.favorites_tab_tags)} (${state.tagCount})") })
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (state.kind == PromptFavoriteKind.TAG) "标签" else "提示词", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+            TextButton(onClick = { finish(onCreate) }) { Icon(Icons.Default.Add, null); Text("新建") }
+        }
+        state.notice?.let { notice -> Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(notice, Modifier.weight(1f), color = MaterialTheme.colorScheme.error)
+            TextButton(onClick = onDismissNotice) { Text("知道了") }
+        } }
+        if (state.isEmpty) Text(if (state.query.isNotBlank()) "没有匹配的收藏" else "还没有收藏", Modifier.padding(16.dp))
+        LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+            state.grouped.forEach { (category, favorites) ->
+                item(key = "header-$category") { Text(category, Modifier.padding(top = 12.dp, bottom = 4.dp), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium) }
+                items(favorites, key = { it.id }) { favorite -> FavoriteRow(favorite,
+                    onAppend = { onAppend(favorite) }, onReplace = { onReplace(favorite) }, onDelete = { onDelete(favorite) },
+                    onEdit = { finish { onEdit(favorite) } }, onUseMacro = { finish { onUseMacro(favorite) } }) }
             }
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = state.query,
-                    onValueChange = onQueryChange,
-                    label = { Text(stringResource(R.string.favorites_search)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = state.kind == PromptFavoriteKind.PROMPT,
-                        onClick = { onKindChange(PromptFavoriteKind.PROMPT) },
-                        label = {
-                            Text(
-                                stringResource(R.string.favorites_tab_prompts) +
-                                    " (${state.promptCount})",
-                            )
-                        },
-                    )
-                    FilterChip(
-                        selected = state.kind == PromptFavoriteKind.TAG,
-                        onClick = { onKindChange(PromptFavoriteKind.TAG) },
-                        label = {
-                            Text(
-                                stringResource(R.string.favorites_tab_tags) +
-                                    " (${state.tagCount})",
-                            )
-                        },
-                    )
-                }
-
-                state.notice?.let { notice ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = notice,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.weight(1f),
-                        )
-                        TextButton(onClick = onDismissNotice) {
-                            Text(stringResource(R.string.action_confirm))
-                        }
-                    }
-                }
-
-                HorizontalDivider()
-
-                if (state.isEmpty) {
-                    if (state.query.isNotBlank()) Text("没有匹配的收藏", Modifier.padding(vertical = 12.dp),
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    else OutlinedButton(onClick = onCreate, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Text(if (state.kind == PromptFavoriteKind.TAG) "新建标签" else "新建提示词", Modifier.padding(start = 8.dp))
-                    }
-                } else {
-                    LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
-                        state.grouped.forEach { (category, favorites) ->
-                            item(key = "header-$category") {
-                                Text(
-                                    text = category,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
-                                )
-                            }
-                            items(favorites, key = { it.id }) { favorite ->
-                                FavoriteRow(
-                                    favorite = favorite,
-                                    onAppend = { onAppend(favorite) },
-                                    onReplace = { onReplace(favorite) },
-                                    onDelete = { onDelete(favorite) },
-                                    onEdit = { onEdit(favorite) },
-                                    onUseMacro = { onUseMacro(favorite) },
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_confirm))
-            }
-        },
-    )
+        }
+    }
 }
 
 @Composable

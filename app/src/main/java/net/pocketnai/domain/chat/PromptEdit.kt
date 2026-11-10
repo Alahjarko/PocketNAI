@@ -12,6 +12,12 @@ data class PromptEdit(
     val beforeNegative: String? = "",
     val provider: String = "novelai",
 ) {
+    fun redacted(secret: String): PromptEdit {
+        if (secret.isBlank()) return this
+        fun clean(text: String) = text.replace(secret, "[API Key 已隐藏]")
+        return copy(title = clean(title), prompt = prompt?.let(::clean), negative = negative?.let(::clean),
+            beforePrompt = clean(beforePrompt), beforeNegative = beforeNegative?.let(::clean))
+    }
     companion object {
         fun parse(call: ToolCall, base: PromptEdit): PromptEdit {
             if (call.arguments.length > 96 * 1024) throw ChatFailure("改词建议过长")

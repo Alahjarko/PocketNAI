@@ -63,6 +63,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -232,7 +234,7 @@ fun GalleryPane(
                     if (selectedImageIds.size == items.size) {
                         viewModel.deselectAll()
                     } else {
-                        viewModel.selectAll(items.map { it.imageId })
+                        viewModel.selectAllMatching()
                     }
                 },
                 onExit = viewModel::exitSelectionMode,
@@ -276,7 +278,9 @@ fun GalleryPane(
                                     try {
                                         container.galleryOrderSnapshot.publish(viewModel.fullOrder())
                                         onOpenImage(item.imageId)
-                                    } finally { openingImage = false }
+                                    } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                                    catch (_: Exception) { snackbarHostState.showSnackbar("无法读取图片列表，请稍后再试") }
+                                    finally { openingImage = false }
                                 }
                             }
                         }

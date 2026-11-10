@@ -39,6 +39,12 @@ class MigrationTest {
             db.query("SELECT searchPrompt FROM generations WHERE id='old'").use {
                 assertThat(it.moveToFirst()).isTrue(); assertThat(it.getString(0)).isEqualTo("sfw")
             }
+            db.query(GalleryQueries.build(net.pocketnai.domain.model.GalleryFilter(query = "SFW", modelApiIds = setOf("gpt-image-2.6-flare")), 1)).use {
+                assertThat(it.count).isEqualTo(1)
+            }
+            db.query(GalleryQueries.build(net.pocketnai.domain.model.GalleryFilter(query = "%' OR 1=1--"), 1)).use {
+                assertThat(it.count).isEqualTo(0)
+            }
             db.execSQL("INSERT INTO chat_drafts VALUES ('draft','未发送',1,2,'[]')")
             db.query("SELECT text,selectionEnd FROM chat_drafts WHERE conversationId='draft'").use {
                 assertThat(it.moveToFirst()).isTrue(); assertThat(it.getString(0)).isEqualTo("未发送"); assertThat(it.getInt(1)).isEqualTo(2)

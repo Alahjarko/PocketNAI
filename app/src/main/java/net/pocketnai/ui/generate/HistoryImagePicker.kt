@@ -29,6 +29,7 @@ import net.pocketnai.ui.gallery.GalleryModelFilterChip
 import net.pocketnai.ui.gallery.GalleryViewModel
 import net.pocketnai.ui.safety.SfwAsyncImage
 import net.pocketnai.ui.settings.SettingsEditorSheet
+import kotlinx.coroutines.flow.collect
 
 /** One selection surface shared by NovelAI references, OpenAI editing and chat attachments. */
 @Composable

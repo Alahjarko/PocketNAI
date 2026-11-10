@@ -17,6 +17,16 @@ class ChatProtocolTest {
     }
     @Test fun `DeepSeek与Moonshot思考默认启用且图片工具不预设内容立场`() {
         checkOptionalSfwMode()
+        val proposal = PromptEdit.parse(ToolCall("edit", "propose_prompt_edit", """{"title":"柔和光线","prompt":"soft evening light"}"""),
+            PromptEdit(beforePrompt = "morning light", beforeNegative = "lowres"))
+        assertThat(proposal.prompt).isEqualTo("soft evening light")
+        assertThat(proposal.negative).isNull()
+        assertThat(proposal.beforeNegative).isEqualTo("lowres")
+        assertThat(proposal.redacted("light").beforePrompt).doesNotContain("light")
+        assertThat(runCatching { PromptEdit.parse(ToolCall("x", "propose_prompt_edit", """{"negative_prompt":"lowres"}"""),
+            PromptEdit(beforeNegative = null, provider = "openai")) }.exceptionOrNull()).isInstanceOf(ChatFailure::class.java)
+        assertThat(runCatching { PromptEdit.parse(ToolCall("x", "propose_prompt_edit", """{"prompt":"forest","seed":42}"""), PromptEdit()) }.exceptionOrNull())
+            .isInstanceOf(ChatFailure::class.java)
         listOf(LlmConfig(model = "deepseek-flash"), LlmConfig(model = "kimi-k2.6")).forEach {
             val body = ChatProtocol.request(it, listOf(wireMessage("user", "hello")), ImageChatTools.schema)
             assertThat((body["thinking"] as JsonObject).string("type")).isEqualTo("enabled")
