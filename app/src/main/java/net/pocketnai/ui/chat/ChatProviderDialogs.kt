@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import net.pocketnai.domain.chat.*
 import net.pocketnai.ui.settings.*
 
@@ -29,12 +30,14 @@ fun LlmProviderEditor(viewModel: ChatViewModel, initial: LlmProvider, onDismiss:
     var discovered by remember { mutableStateOf<List<String>?>(null) }
     var editingModel by remember { mutableStateOf<LlmModel?>(null) }
     var originalModelId by remember { mutableStateOf<String?>(null) }
+    var discoveryJob by remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val credentialRevision by viewModel.credentialRevision.collectAsStateWithLifecycle()
     val hasKey = remember(initial.id, credentialRevision) { viewModel.hasProviderKey(initial.id) }
     SettingsEditorSheet(if (initial.name.isBlank()) "添加提供商" else "编辑提供商", Icons.Default.Dns,
         onDismiss, saveEnabled = !loading && !state.busy && provider.name.isNotBlank(), scrollContent = false,
+        onClosing = { discoveryJob?.cancel() },
         onSave = {
             val saved = viewModel.saveProvider(provider, key)
             if (saved) key = "" else error = viewModel.state.value.error
@@ -80,7 +83,7 @@ fun LlmProviderEditor(viewModel: ChatViewModel, initial: LlmProvider, onDismiss:
                 OutlinedButton(onClick = {
                     loading = true; error = null
                     val request = provider
-                    scope.launch {
+                    discoveryJob = scope.launch {
                         try {
                             val found = viewModel.providerModels(request, key)
                             if (found.isEmpty()) error = "没有返回模型，可手动添加模型 ID" else discovered = found

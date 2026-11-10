@@ -95,9 +95,12 @@ internal fun SettingsEditorSheet(
     saveEnabled: Boolean = true,
     onSave: (() -> Boolean)? = null,
     scrollContent: Boolean = true,
+    onClosing: () -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val closingAction by rememberUpdatedState(onClosing)
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true,
+        confirmValueChange = { value -> if (value == SheetValue.Hidden) closingAction(); true })
     val scope = rememberCoroutineScope()
     var closing by remember { mutableStateOf(false) }
     fun close() {
