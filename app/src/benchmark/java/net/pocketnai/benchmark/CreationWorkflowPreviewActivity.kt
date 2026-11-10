@@ -11,6 +11,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.*
+import net.pocketnai.domain.chat.ChatEntry
+import net.pocketnai.domain.chat.PromptEdit
 import net.pocketnai.data.local.*
 import net.pocketnai.di.AppContainer
 import net.pocketnai.domain.model.*
@@ -65,6 +69,11 @@ class CreationWorkflowPreviewActivity : ComponentActivity() {
                 repeat(2) { n -> db.generationDao().upsertGeneration(Mappers.toEntity(Generation("active-$n", now + 1000 + n,
                     now, if (n == 0) GenerationStatus.QUEUED else GenerationStatus.GENERATING,
                     "离线任务 $n", "sfw, silver hair", base.copy(prompt = "sfw, silver hair"), 1))) }
+                db.chatConversationDao().find("current-demo")?.takeIf { it.entriesJson == "[]" }?.let { row ->
+                    val entry = ChatEntry("offline-edit", buildJsonObject { put("role", "assistant"); put("content", "保持构图，仅调整光线。") },
+                        promptEdit = PromptEdit(title = "柔化光线", prompt = "soft evening light"))
+                    db.chatConversationDao().save(row.copy(entriesJson = Json.encodeToString(listOf(entry))))
+                }
                 val start = System.nanoTime()
                 val page = container.generationRepository.observeGalleryWindow(GalleryFilter.None, 120).first()
                 val firstPageMs = (System.nanoTime() - start) / 1_000_000.0
@@ -76,6 +85,8 @@ class CreationWorkflowPreviewActivity : ComponentActivity() {
                     "first_page" to page.items.size, "has_more" to page.hasMore, "summaries" to summaries.size, "first_query_ms" to firstPageMs)).toString())
             }
             container.settingsStore.setChatEnabled(true)
+            // Preview navigation without saving credentials or contacting a provider.
+            container.sessionState.update(true)
             setContent { PocketNaiTheme { CompositionLocalProvider(LocalAppContainer provides container) { PocketNaiApp(checkUpdatesOnLaunch = false) } } }
         }
     }
