@@ -66,9 +66,12 @@ class CreationWorkflowPreviewActivity : ComponentActivity() {
                 // fixture's two fake jobs so each preview launch can exercise the task sheet.
                 val now = System.currentTimeMillis()
                 val base = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V4_5_CURATED))
-                repeat(2) { n -> db.generationDao().upsertGeneration(Mappers.toEntity(Generation("active-$n", now + 1000 + n,
-                    now, if (n == 0) GenerationStatus.QUEUED else GenerationStatus.GENERATING,
-                    "离线任务 $n", "sfw, silver hair", base.copy(prompt = "sfw, silver hair"), 1))) }
+                repeat(2) { n ->
+                    val status = if (n == 0) GenerationStatus.QUEUED else GenerationStatus.GENERATING
+                    db.generationDao().upsertGeneration(Mappers.toEntity(Generation("active-$n", now + 1000 + n,
+                        now, status, "离线任务 $n", "sfw, silver hair", base.copy(prompt = "sfw, silver hair"), 1)))
+                    db.generationDao().updateStatus("active-$n", status.name, now, null, null, null)
+                }
                 db.chatConversationDao().find("current-demo")?.takeIf { it.entriesJson == "[]" }?.let { row ->
                     val entry = ChatEntry("offline-edit", buildJsonObject { put("role", "assistant"); put("content", "保持构图，仅调整光线。") },
                         promptEdit = PromptEdit(title = "柔化光线", prompt = "soft evening light"))
