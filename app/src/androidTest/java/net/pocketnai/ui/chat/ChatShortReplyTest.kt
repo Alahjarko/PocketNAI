@@ -288,11 +288,17 @@ class ChatShortReplyTest {
             fixture.verifyHeldDraft("保持构图，柔化光线")
             compose.runOnUiThread { fixture.viewModel.newConversation() }
             compose.waitUntil(5000) { fixture.viewModel.state.value.current?.id != fixture.draftId && !fixture.viewModel.state.value.switchingConversation }
-            compose.runOnUiThread { fixture.proposeOnly = true; fixture.viewModel.send("仅给出改词建议，不生成图片") }
+            compose.runOnUiThread { fixture.proposeOnly = true }
+            compose.onNodeWithTag("chat-input").performTextReplacement("仅给出改词建议，不生成图片")
+            compose.onNodeWithTag("chat-send").performClick()
             compose.waitUntil(10_000) { !fixture.viewModel.state.value.busy && fixture.viewModel.state.value.current?.entries?.any { it.promptEdit != null } == true }
             compose.onNodeWithText("应用到生成面板").performScrollTo().performClick()
             assertThat(fixture.editedPrompt).isEqualTo("soft evening light")
             assertThat(fixture.generated).isEqualTo(0)
+            InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()?.let { bitmap ->
+                File(compose.activity.getExternalFilesDir(null), "creation-prompt-card.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                bitmap.recycle()
+            }
             compose.onNodeWithText("撤销应用").performScrollTo().performClick()
             assertThat(fixture.editedPrompt).isNull()
             compose.runOnUiThread { fixture.proposeOnly = false; fixture.viewModel.newConversation() }
