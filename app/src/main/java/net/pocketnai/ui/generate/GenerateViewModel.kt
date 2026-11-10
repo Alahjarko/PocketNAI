@@ -628,7 +628,8 @@ class GenerateViewModel(
         }
     }
 
-    private var promptEditUndo: Pair<Int, Pair<String, String>>? = null
+    private data class PromptUndo(val revision: Int, val beforePositive: String, val beforeNegative: String, val afterPositive: String, val afterNegative: String)
+    private var promptEditUndo: PromptUndo? = null
     fun promptSnapshot() = net.pocketnai.domain.chat.PromptEdit(beforePrompt = _state.value.promptTemplate, beforeNegative = _state.value.negativeTemplate)
     fun applyPromptEdit(edit: net.pocketnai.domain.chat.PromptEdit): Int? {
         val current = _state.value
@@ -637,13 +638,15 @@ class GenerateViewModel(
         val next = current.copy(promptTemplate = edit.prompt ?: current.promptTemplate, negativeTemplate = edit.negative ?: current.negativeTemplate,
             params = current.params.copy(prompt = edit.prompt ?: current.promptTemplate, negativePrompt = edit.negative ?: current.negativeTemplate),
             textRevision = current.textRevision + 1)
-        promptEditUndo = next.textRevision to (current.promptTemplate to current.negativeTemplate)
+        promptEditUndo = PromptUndo(next.textRevision, current.promptTemplate, current.negativeTemplate, next.promptTemplate, next.negativeTemplate)
         _state.value = next
         return next.textRevision
     }
     fun undoPromptEdit(revision: Int): Boolean {
-        val previous = promptEditUndo?.takeIf { it.first == revision && _state.value.textRevision == revision } ?: return false
-        val (positive, negative) = previous.second
+        val current = _state.value
+        val previous = promptEditUndo?.takeIf { it.revision == revision && current.textRevision == revision &&
+            current.promptTemplate == it.afterPositive && current.negativeTemplate == it.afterNegative } ?: return false
+        val positive = previous.beforePositive; val negative = previous.beforeNegative
         _state.update { it.copy(promptTemplate = positive, negativeTemplate = negative,
             params = it.params.copy(prompt = positive, negativePrompt = negative), textRevision = it.textRevision + 1) }
         promptEditUndo = null

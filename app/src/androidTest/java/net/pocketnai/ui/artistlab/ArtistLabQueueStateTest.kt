@@ -164,7 +164,7 @@ class ArtistLabQueueStateTest {
                 assertThat(h.generate.undoPromptEdit(revision)).isTrue()
                 assertThat(h.generate.state.value.params).isEqualTo(before.params)
                 val next = h.generate.applyPromptEdit(h.generate.promptSnapshot().copy(prompt = "sfw, forest"))!!
-                h.generate.replacePromptText(PromptTarget.POSITIVE, "sfw, user changed")
+                h.generate.onPromptChange("sfw, user changed")
                 assertThat(h.generate.undoPromptEdit(next)).isFalse()
                 assertThat(h.generate.state.value.promptTemplate).isEqualTo("sfw, user changed")
                 h.generate.replacePromptText(PromptTarget.POSITIVE, before.promptTemplate)
