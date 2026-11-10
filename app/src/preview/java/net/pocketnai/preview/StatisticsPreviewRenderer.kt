@@ -58,6 +58,7 @@ object StatisticsPreviewRenderer {
         }
         ExperiencePreviewRenderer.render()
         AssistantPreviewRenderer.render()
+        ProviderSettingsPreviewRenderer.render()
         SfwPreviewRenderer.render()
         MotionPolishPreviewRenderer.render()
         ThemeResponsePreviewRenderer.render()
