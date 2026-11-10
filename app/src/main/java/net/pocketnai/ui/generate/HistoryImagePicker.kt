@@ -48,7 +48,7 @@ internal fun HistoryImagePickerDialog(onPick: (String) -> Unit, onDismiss: () ->
     var preview by remember { mutableStateOf<GalleryItem?>(null) }
     var confirmed by remember { mutableStateOf(false) }
     LaunchedEffect(grid) {
-        snapshotFlow { Triple(grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1, items.size, hasMore) }
+        snapshotFlow { grid.layoutInfo.let { Triple(it.visibleItemsInfo.lastOrNull()?.index ?: -1, it.totalItemsCount, hasMore) } }
             .collect { (last, count, more) -> if (more && (count == 0 || last >= count - 12)) vm.loadMore() }
     }
     SettingsEditorSheet("从历史选择图片", Icons.Default.PhotoLibrary, onDismiss = {
