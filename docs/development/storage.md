@@ -6,7 +6,7 @@
 
 ## 数据库
 
-- 当前 schema 版本 **14**。新增表（如 `prompt_favorites`、`reference_images`、`favorite_images`）用独立 `CREATE TABLE`，
+- 当前 schema 版本 **15**。新增表（如 `prompt_favorites`、`reference_images`、`favorite_images`）用独立 `CREATE TABLE`，
   不要触碰既有表。v3 → v4 新增了 `reference_images` 表与 `generations.mode` 列（可空，见下）；
   v4 → v5 给 `generations` 加 `outputWidth/outputHeight`；v5 → v6 新增 `favorite_images` 表；
   v6 → v7 新增 `anlas_transactions` 表（Anlas 消耗流水，2026-09-18）。
@@ -31,6 +31,8 @@
 - v13 → v14 仅给 `generations` 加可空 `generationDurationMillis`、`effort`，并独立新增无图片外键的 `openai_spending` 流水表。旧图耗时为空，不以创建时间或文件时间猜测；旧 Effort 按 High 解释。流水通过插入与状态/快照更新触发器同步，迁移一次回填，删除图片保留流水；主动清空流水后不会在下次启动重新回填。新建数据库也要安装同一组触发器。
 - 生成耗时从实际图片请求开始，以单调时钟计到结果保存；不含排队、发送前校验和参考图准备。已发送失败/取消保留实际经过时间，未发送及旧记录显示“未记录”。同一批返回图片共享其请求耗时，不作逐张平均。
 - Effort 同步写草稿、历史、元数据导入与对话参数快照。Medium 保留编辑草稿的负向词，发送和历史快照按官方固定 Heavy 预设处理；不能在重启或复用时默默变回 High。协议证据见 [Effort 核对](../novelai-effort-2026-11-06.md)。
+
+- v14 → v15仅增加`chat_conversations.pinnedAt`、独立`chat_drafts`表、`generations.searchPrompt`归一化搜索列和图片排序索引。旧搜索列用与新写入相同的Kotlin大小写/下划线规则回填，不重建历史表。草稿保存文字、选区和附件索引，不保存base64或认证值。会话列表只查询摘要，打开选定会话才读取正文；置顶仅影响列表排序，启动恢复仍按最近更新时间选择。切换前先保存当前草稿，异步切换完成前暂禁编辑，防止内容落入另一会话。
 
 ## 参考图的文件存储
 
