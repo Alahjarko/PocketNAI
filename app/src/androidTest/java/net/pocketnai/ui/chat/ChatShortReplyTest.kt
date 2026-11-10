@@ -298,6 +298,9 @@ class ChatShortReplyTest {
             compose.onNodeWithTag("chat-input").performTextReplacement("仅给出改词建议，不生成图片")
             compose.onNodeWithTag("chat-send").performClick()
             compose.waitUntil(10_000) { !fixture.viewModel.state.value.busy && fixture.viewModel.state.value.current?.entries?.any { it.promptEdit != null } == true }
+            compose.waitUntil(5000) {
+                (compose.activity.window.decorView.rootWindowInsets?.getInsets(android.view.WindowInsets.Type.ime())?.bottom ?: 0) == 0
+            }
             compose.onNodeWithText("应用到生成面板").performScrollTo().performClick()
             assertThat(fixture.editedPrompt).isEqualTo("soft evening light")
             assertThat(fixture.generated).isEqualTo(0)
