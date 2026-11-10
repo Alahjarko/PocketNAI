@@ -20,7 +20,7 @@ internal object GalleryQueries {
             args.addAll(filter.modelApiIds.sorted())
         }
         filter.mode?.let { sql.append(" AND COALESCE(g.mode,'TXT2IMG')=?"); args.add(it.name) }
-        GallerySearch.terms(filter.query).forEach {
+        GallerySearch.terms(filter.query).distinct().forEach {
             sql.append(" AND INSTR(COALESCE(g.searchPrompt,REPLACE(LOWER(g.prompt),'_',' ')),?)>0")
             args.add(it)
         }

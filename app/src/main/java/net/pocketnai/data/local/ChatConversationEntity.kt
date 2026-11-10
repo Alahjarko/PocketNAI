@@ -41,6 +41,8 @@ interface ChatConversationDao {
     suspend fun rename(id: String, title: String)
     @Query("UPDATE chat_conversations SET pinnedAt = :time WHERE id = :id")
     suspend fun pin(id: String, time: Long?)
+    @Query("SELECT pinnedAt FROM chat_conversations WHERE id = :id")
+    suspend fun pinnedAt(id: String): Long?
     @Query("SELECT * FROM chat_drafts WHERE conversationId = :id")
     suspend fun draft(id: String): ChatDraftEntity?
     @Query("SELECT * FROM chat_drafts")
@@ -51,4 +53,10 @@ interface ChatConversationDao {
     suspend fun deleteDraft(id: String)
     @Query("DELETE FROM chat_conversations WHERE id = :id")
     suspend fun delete(id: String)
+    @Transaction
+    suspend fun deleteWithDraft(id: String) { deleteDraft(id); delete(id) }
+    @Transaction
+    suspend fun putDraft(chat: ChatConversationEntity, draft: ChatDraftEntity?) {
+        if (draft == null) deleteDraft(chat.id) else { ensureConversation(chat); saveDraft(draft) }
+    }
 }

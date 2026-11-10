@@ -26,11 +26,9 @@ class ChatStore(private val dao: ChatConversationDao) {
             json.decodeFromString<List<ChatAttachment>>(it.attachmentsJson))
     } ?: Draft() }
     suspend fun saveDraft(chat: ChatConversation, draft: Draft) = withContext(Dispatchers.IO) {
-        if (draft.text.isEmpty() && draft.attachments.isEmpty()) dao.deleteDraft(chat.id)
-        else {
-            dao.ensureConversation(ChatConversationEntity(chat.id, chat.title, chat.updatedAt, "[]"))
-            dao.saveDraft(ChatDraftEntity(chat.id, draft.text, draft.start, draft.end, json.encodeToString(draft.attachments)))
-        }
+        val row = if (draft.text.isEmpty() && draft.attachments.isEmpty()) null else
+            ChatDraftEntity(chat.id, draft.text, draft.start, draft.end, json.encodeToString(draft.attachments))
+        dao.putDraft(ChatConversationEntity(chat.id, chat.title, chat.updatedAt, "[]"), row)
     }
     suspend fun clearDraft(id: String) = dao.deleteDraft(id)
     suspend fun draftAttachments(): List<ChatAttachment> = withContext(Dispatchers.IO) {
@@ -38,6 +36,9 @@ class ChatStore(private val dao: ChatConversationDao) {
     }
     suspend fun imageHistory() = withContext(Dispatchers.IO) {
         observeAll().first().flatMap { it.entries.asReversed().flatMap { entry -> entry.images } }.distinctBy { it.imageId }
+    }
+    suspend fun liveAttachmentIds() = withContext(Dispatchers.IO) {
+        (observeAll().first().flatMap { it.entries }.flatMap { it.attachments } + draftAttachments()).map { it.id }.toSet()
     }
     fun observeAll() = flow {
         // 缓存归每个订阅所有，避免新 token/新消息让全部历史重新解析。
@@ -57,7 +58,7 @@ class ChatStore(private val dao: ChatConversationDao) {
     suspend fun save(chat: ChatConversation) = withContext(Dispatchers.IO) {
         val encoded = json.encodeToString(chat.entries)
         if (encoded.toByteArray(Charsets.UTF_8).size > 1536 * 1024) throw ChatFailure("对话记录过长，请新建对话；已保存的历史保留")
-        dao.save(ChatConversationEntity(chat.id, chat.title, chat.updatedAt, encoded, dao.find(chat.id)?.pinnedAt))
+        dao.save(ChatConversationEntity(chat.id, chat.title, chat.updatedAt, encoded, dao.pinnedAt(chat.id)))
     }
-    suspend fun delete(id: String) { dao.deleteDraft(id); dao.delete(id) }
+    suspend fun delete(id: String) = dao.deleteWithDraft(id)
 }

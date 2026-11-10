@@ -152,11 +152,14 @@ class ChatViewModel(
                 _state.update { it.copy(conversations = chats) }
                 if (!initialized) {
                     initialized = true
-                    val chat = chats.firstOrNull()?.let { store.load(it.id) }?.recoverInterruptedTools() ?: fresh()
-                    val draft = store.draft(chat.id)
-                    _state.update { it.copy(current = chat, draftText = draft.text, draftSelectionStart = draft.start,
-                        draftSelectionEnd = draft.end, draftAttachments = draft.attachments) }
-                    if (chat.entries.isNotEmpty()) store.save(chat)
+                    try {
+                        val chat = chats.maxByOrNull { it.updatedAt }?.let { store.load(it.id) }?.recoverInterruptedTools() ?: fresh()
+                        val draft = store.draft(chat.id)
+                        _state.update { it.copy(current = chat, draftText = draft.text, draftSelectionStart = draft.start,
+                            draftSelectionEnd = draft.end, draftAttachments = draft.attachments) }
+                        if (chat.entries.isNotEmpty()) store.save(chat)
+                    } catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { _state.update { it.copy(current = fresh(), error = "上次会话暂时无法读取，历史与草稿已保留") } }
                 }
             }
         }
@@ -187,9 +190,11 @@ class ChatViewModel(
         viewModelScope.launch {
             flushDraft()
             val old = store.load(id)
+            val oldDraft = store.draft(id)
             store.delete(id)
-            val alive = (store.observeAll().first().flatMap { it.entries }.flatMap { it.attachments } + store.draftAttachments()).map { it.id }.toSet()
-            old?.entries?.flatMap { it.attachments }?.filter { it.id !in alive }?.distinctBy { it.id }?.forEach { attachments.discard(it) }
+            val alive = store.liveAttachmentIds()
+            (old?.entries.orEmpty().flatMap { it.attachments } + oldDraft.attachments)
+                .filter { it.id !in alive }.distinctBy { it.id }.forEach { attachments.discard(it) }
             if (_state.value.current?.id == id) _state.update { it.copy(current = fresh(), draftText = "", draftAttachments = emptyList(), draftSelectionStart = 0, draftSelectionEnd = 0) }
         }
     }
@@ -272,12 +277,9 @@ class ChatViewModel(
         if (_state.value.busy || _state.value.importingAttachment) return
         val removed = _state.value.draftAttachments.firstOrNull { it.id == id } ?: return
         _state.update { it.copy(draftAttachments = it.draftAttachments.filterNot { image -> image.id == id }) }
-        viewModelScope.launch { flushDraft(); attachments.discard(removed) }
-    }
-    private fun clearDraftAttachments() {
-        val unused = _state.value.draftAttachments
-        _state.update { it.copy(draftAttachments = emptyList()) }
-        viewModelScope.launch { unused.forEach { attachments.discard(it) } }
+        viewModelScope.launch { try { flushDraft(); if (removed.id !in store.liveAttachmentIds()) attachments.discard(removed) }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { _state.update { it.copy(error = "附件移除尚未保存，请保留当前页面后重试") } } }
     }
 
     fun send(text: String) {

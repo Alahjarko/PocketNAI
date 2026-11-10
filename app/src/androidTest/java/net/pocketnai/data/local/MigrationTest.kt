@@ -69,6 +69,14 @@ class MigrationTest {
             db.query("SELECT snapshotJson FROM openai_spending WHERE generationId='old'").use {
                 assertThat(it.moveToFirst()).isTrue(); assertThat(it.getString(0)).contains("imageOutput")
             }
+            repeat(480) { index -> db.execSQL("""INSERT INTO generated_images
+                (id,generationId,ordinal,seed,relativePath,width,height,byteSize,sha256,metadataJson,createdAt,exportedUri)
+                VALUES (?,'old',?,42,'offline.png',832,1216,1,'offline',NULL,1,NULL)""", arrayOf("page-$index", index + 2)) }
+            val all = net.pocketnai.domain.model.GalleryFilter(modelApiIds = setOf("gpt-image-2.6-flare", "gpt-image-2.5-sunburst"))
+            db.query(GalleryQueries.build(all, 120)).use { assertThat(it.count).isEqualTo(120) }
+            db.query(GalleryQueries.build(all, Int.MAX_VALUE, idsOnly = true)).use { assertThat(it.count).isEqualTo(481) }
+            db.execSQL("INSERT INTO favorite_images VALUES ('old-image',1)")
+            db.query(GalleryQueries.build(all.copy(favoritesOnly = true), 120)).use { assertThat(it.count).isEqualTo(1) }
             db.execSQL("PRAGMA foreign_keys=ON")
             db.execSQL("DELETE FROM generations WHERE id='old'")
             db.query("SELECT COUNT(*) FROM openai_spending WHERE generationId='old'").use {

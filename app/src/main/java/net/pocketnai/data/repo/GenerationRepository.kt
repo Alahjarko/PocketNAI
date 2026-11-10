@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import net.pocketnai.core.AppError
 import net.pocketnai.core.ErrorCode
 import net.pocketnai.core.Hashing
@@ -126,11 +127,23 @@ class GenerationRepository(
         dao.observeGalleryImages().map { rows -> rows.map(Mappers::toDomain) }.flowOn(Dispatchers.Default)
 
     data class GalleryPage(val filter: net.pocketnai.domain.model.GalleryFilter, val limit: Int, val items: List<GalleryItem>, val hasMore: Boolean)
-    fun observeGalleryWindow(filter: net.pocketnai.domain.model.GalleryFilter, limit: Int): Flow<GalleryPage> =
-        dao.observeGalleryWindow(net.pocketnai.data.local.GalleryQueries.build(filter, if (limit == Int.MAX_VALUE) limit else limit + 1))
-            .map { rows -> GalleryPage(filter, limit, rows.take(limit).map(Mappers::toDomain), rows.size > limit) }.flowOn(Dispatchers.Default)
+    fun observeGalleryWindow(filter: net.pocketnai.domain.model.GalleryFilter, limit: Int): Flow<GalleryPage> {
+        // Pasted long prompts can exceed SQLite's expression/parameter limits. Keep exact
+        // matching in this rare path, while ordinary queries stay bounded in the database.
+        val fallback = net.pocketnai.domain.model.GallerySearch.terms(filter.query).distinct().size > 128
+        val sqlFilter = if (fallback) filter.copy(query = "") else filter
+        val sqlLimit = if (fallback || limit == Int.MAX_VALUE) Int.MAX_VALUE else limit + 1
+        return dao.observeGalleryWindow(net.pocketnai.data.local.GalleryQueries.build(sqlFilter, sqlLimit)).map { rows ->
+            val data = rows.asSequence().map(Mappers::toDomain).filter { item ->
+                !fallback || net.pocketnai.domain.model.GallerySearch.matches(item.copy(favorite = filter.favoritesOnly), filter)
+            }.take(if (limit == Int.MAX_VALUE) limit else limit + 1).toList()
+            GalleryPage(filter, limit, data.take(limit), data.size > limit)
+        }.flowOn(Dispatchers.Default)
+    }
     suspend fun galleryOrder(filter: net.pocketnai.domain.model.GalleryFilter): List<String> = withContext(Dispatchers.IO) {
-        dao.galleryIds(net.pocketnai.data.local.GalleryQueries.build(filter, Int.MAX_VALUE, idsOnly = true))
+        if (net.pocketnai.domain.model.GallerySearch.terms(filter.query).distinct().size > 128)
+            observeGalleryWindow(filter, Int.MAX_VALUE).first().items.map { it.imageId }
+        else dao.galleryIds(net.pocketnai.data.local.GalleryQueries.build(filter, Int.MAX_VALUE, idsOnly = true))
     }
     fun observeRecentGenerations(limit: Int): Flow<List<GenerationSummary>> = dao.observeRecentGenerations(limit)
         .map { rows -> rows.mapNotNull { row -> Mappers.toDomain(row.generation)?.let { GenerationSummary(it, row.imageCount) } } }.flowOn(Dispatchers.Default)

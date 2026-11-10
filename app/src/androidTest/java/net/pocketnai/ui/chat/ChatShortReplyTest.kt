@@ -273,6 +273,30 @@ class ChatShortReplyTest {
             compose.runOnUiThread { agent = ChatAgentAcceptance(compose.activity, file) }
             val fixture = agent!!
             compose.waitUntil(5000) { fixture.viewModel.state.value.current != null }
+            fixture.seedHeldDraft()
+            compose.runOnUiThread { fixture.viewModel.selectConversation(fixture.draftId) }
+            compose.waitUntil(5000) { fixture.viewModel.state.value.current?.id == fixture.draftId && !fixture.viewModel.state.value.switchingConversation }
+            compose.onNodeWithTag("chat-input").assertTextContains("保持构图")
+            compose.onNodeWithTag("chat-input").performTextReplacement("保持构图，柔化光线")
+            compose.runOnUiThread { fixture.viewModel.newConversation() }
+            compose.waitUntil(5000) { fixture.viewModel.state.value.current?.id != fixture.draftId && !fixture.viewModel.state.value.switchingConversation }
+            compose.onNodeWithTag("chat-input").performTextReplacement("另一个创作草稿")
+            compose.runOnUiThread { fixture.viewModel.selectConversation(fixture.draftId) }
+            compose.waitUntil(5000) { fixture.viewModel.state.value.current?.id == fixture.draftId && !fixture.viewModel.state.value.switchingConversation }
+            compose.onNodeWithTag("chat-input").assertTextContains("保持构图，柔化光线")
+            assertThat(fixture.viewModel.state.value.draftAttachments.single().id).isEqualTo("held")
+            fixture.verifyHeldDraft("保持构图，柔化光线")
+            compose.runOnUiThread { fixture.viewModel.newConversation() }
+            compose.waitUntil(5000) { fixture.viewModel.state.value.current?.id != fixture.draftId && !fixture.viewModel.state.value.switchingConversation }
+            compose.runOnUiThread { fixture.proposeOnly = true; fixture.viewModel.send("仅给出改词建议，不生成图片") }
+            compose.waitUntil(10_000) { !fixture.viewModel.state.value.busy && fixture.viewModel.state.value.current?.entries?.any { it.promptEdit != null } == true }
+            compose.onNodeWithText("应用到生成面板").performScrollTo().performClick()
+            assertThat(fixture.editedPrompt).isEqualTo("soft evening light")
+            assertThat(fixture.generated).isEqualTo(0)
+            compose.onNodeWithText("撤销应用").performScrollTo().performClick()
+            assertThat(fixture.editedPrompt).isNull()
+            compose.runOnUiThread { fixture.proposeOnly = false; fixture.viewModel.newConversation() }
+            compose.waitUntil(5000) { fixture.viewModel.state.value.current?.entries?.isEmpty() == true && !fixture.viewModel.state.value.switchingConversation }
             compose.onNodeWithContentDescription("对话菜单").performClick()
             compose.onNodeWithText("连接与人格").assertDoesNotExist()
             shell("input keyevent 4")

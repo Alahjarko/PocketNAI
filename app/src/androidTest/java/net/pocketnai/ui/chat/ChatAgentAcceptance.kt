@@ -7,6 +7,7 @@ import androidx.room.Room
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.*
 import net.pocketnai.data.chat.*
@@ -36,6 +37,8 @@ internal class ChatAgentAcceptance(base: Context, val image: File) {
     var searches = 0
     var plannedCount = 3
     var failOn = -1
+    var proposeOnly = false
+    var editedPrompt: String? = null
     var gate: CompletableDeferred<Unit>? = null
     val viewModel = ChatViewModel(settings, object : ChatClient {
         override suspend fun models(config: LlmConfig, apiKey: String) = emptyList<String>()
@@ -45,6 +48,13 @@ internal class ChatAgentAcceptance(base: Context, val image: File) {
             assertThat(tools.toString()).contains("web_search")
             val current = messages.drop(messages.indexOfLast { it.string("role") == "user" } + 1)
             val count = current.count { it.string("role") == "tool" }
+            if (proposeOnly) return if (count > 0) wireMessage("assistant", "改词建议已准备好。") else buildJsonObject {
+                put("role", "assistant"); put("content", "保持构图，仅调整光线。")
+                put("tool_calls", buildJsonArray { add(buildJsonObject {
+                    put("id", "prompt-edit-$id"); put("type", "function")
+                    put("function", buildJsonObject { put("name", "propose_prompt_edit"); put("arguments", """{"title":"柔化光线","prompt":"soft evening light"}""") })
+                }) })
+            }
             val name = if (count == 0) "web_search" else "generate_images"
             val arguments = if (count == 0) """{"query":"forest traveler official costume"}""" else buildJsonObject {
                 put("images", buildJsonArray { repeat(plannedCount) { index -> add(buildJsonObject {
@@ -63,6 +73,8 @@ internal class ChatAgentAcceptance(base: Context, val image: File) {
         }
     }, store, AgentFiles(context), object : ChatImageGenerator {
         override fun currentParams() = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V4_5_CURATED))
+        override fun applyPromptEdit(edit: PromptEdit): Int { editedPrompt = edit.prompt; return 1 }
+        override fun undoPromptEdit(provider: String, revision: Int): Boolean { editedPrompt = null; return true }
         override fun authorizationKey() = "offline-account"
         override suspend fun quote(params: GenerationParams) = ChatImageQuote("预计 2 Anlas", 2)
         override suspend fun generate(params: GenerationParams, account: String?, beforeSend: suspend () -> Unit, onImage: (ChatImage) -> Unit): List<ChatImage> {
@@ -88,6 +100,23 @@ internal class ChatAgentAcceptance(base: Context, val image: File) {
         assertThat(saved.recoverInterruptedTools()).isEqualTo(saved)
     }
     fun savedPermission() = LlmSettingsStore(context).config.value.effectiveToolPermission
+    val draftId = "held-draft-$id"
+    private val heldAttachment = File(directory, "chat-attachments/held.jpg")
+    fun seedHeldDraft() = runBlocking {
+        heldAttachment.parentFile!!.mkdirs(); image.copyTo(heldAttachment)
+        val chat = ChatConversation(draftId, "持续创作", System.currentTimeMillis())
+        store.saveDraft(chat, ChatStore.Draft("保持构图", 2, 2,
+            listOf(ChatAttachment("held", "chat-attachments/held.jpg", "image/jpeg", 400, 1000))))
+    }
+    fun verifyHeldDraft(expected: String) = runBlocking {
+        val draft = store.draft(draftId)
+        assertThat(draft.text).isEqualTo(expected)
+        assertThat(draft.attachments.single().id).isEqualTo("held")
+        assertThat(heldAttachment.isFile).isTrue()
+        store.rename(draftId, "保留的草稿"); store.pin(draftId, true)
+        val summary = store.observeSummaries().first { rows -> rows.any { it.id == draftId && it.pinnedAt != null } }.first { it.id == draftId }
+        assertThat(summary.title).isEqualTo("保留的草稿"); assertThat(summary.hasDraft).isTrue()
+    }
     fun close() {
         viewModel.viewModelScope.cancel()
         database.close()

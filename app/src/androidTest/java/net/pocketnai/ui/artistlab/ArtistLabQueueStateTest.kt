@@ -156,6 +156,19 @@ class ArtistLabQueueStateTest {
             assertThat(h.store.dao.observeMixFavorites().first()).isEmpty()
             assertThat(h.store.dao.run(run.id)).isNotNull()
             assertThat(h.payloads).hasSize(2)
+            h.main {
+                val before = h.generate.state.value
+                val edit = h.generate.promptSnapshot().copy(prompt = "sfw, soft evening light")
+                val revision = h.generate.applyPromptEdit(edit)!!
+                assertThat(h.generate.state.value.params).isEqualTo(before.params.copy(prompt = "sfw, soft evening light"))
+                assertThat(h.generate.undoPromptEdit(revision)).isTrue()
+                assertThat(h.generate.state.value.params).isEqualTo(before.params)
+                val next = h.generate.applyPromptEdit(h.generate.promptSnapshot().copy(prompt = "sfw, forest"))!!
+                h.generate.replacePromptText(PromptTarget.POSITIVE, "sfw, user changed")
+                assertThat(h.generate.undoPromptEdit(next)).isFalse()
+                assertThat(h.generate.state.value.promptTemplate).isEqualTo("sfw, user changed")
+                h.generate.replacePromptText(PromptTarget.POSITIVE, before.promptTemplate)
+            }
         } finally { observer.cancelAndJoin(); h.close() }
     }
 
