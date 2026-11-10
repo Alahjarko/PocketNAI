@@ -325,7 +325,7 @@ class ChatViewModel(
                 if (!withinContext(listOf(wireMessage("system", systemPrompt)) + chat.entries.map(::contextWire) +
                         ChatProtocol.withImageContext(wireMessage("user", userText), safeAttached.map { it.promptContext }, token)))
                     throw ChatFailure("对话上下文过长，请新建对话；历史消息仍可完整阅读")
-                chat = chat.copy(title = if (chat.entries.isEmpty()) userText.take(28) else chat.title,
+                chat = chat.copy(title = if (chat.entries.isEmpty() && chat.title == "新对话") userText.take(28) else chat.title,
                     entries = chat.entries + ChatEntry(UUID.randomUUID().toString(), wireMessage("user", userText), attachments = safeAttached))
                 persist()
                 _state.update { s -> if (s.draftText == text) s.copy(draftAttachments = emptyList(), draftText = "", draftSelectionStart = 0, draftSelectionEnd = 0)
