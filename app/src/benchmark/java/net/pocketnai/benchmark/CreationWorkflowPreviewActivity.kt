@@ -52,15 +52,19 @@ class CreationWorkflowPreviewActivity : ComponentActivity() {
                                 file.relativeTo(filesDir).path, 160, 224, file.length(), "demo", null, generation.createdAt, null)))
                             if (n % 7 == 0) db.favoriteImageDao().add(FavoriteImageEntity("demo-image-$n", now))
                         }
-                        repeat(2) { n -> db.generationDao().upsertGeneration(Mappers.toEntity(Generation("active-$n", now + 1000 + n,
-                            now, if (n == 0) GenerationStatus.QUEUED else GenerationStatus.GENERATING,
-                            "离线任务 $n", "sfw, silver hair", base.copy(prompt = "sfw, silver hair"), 1))) }
                         val body = "[{\"id\":\"old\",\"wire\":{\"role\":\"assistant\",\"content\":\"${"offline creative notes ".repeat(700)}\"}}]"
                         repeat(2000) { n -> db.chatConversationDao().save(ChatConversationEntity("history-$n", "创作记录 $n", now - n, body)) }
                         db.chatConversationDao().save(ChatConversationEntity("current-demo", "当前创作", now + 1000, "[]"))
                         db.chatConversationDao().saveDraft(ChatDraftEntity("current-demo", "保持构图，只调整光线", 4, 4, "[]"))
                     }
                 }
+                // Startup cleanup correctly closes abandoned jobs. Refresh only this isolated
+                // fixture's two fake jobs so each preview launch can exercise the task sheet.
+                val now = System.currentTimeMillis()
+                val base = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V4_5_CURATED))
+                repeat(2) { n -> db.generationDao().upsertGeneration(Mappers.toEntity(Generation("active-$n", now + 1000 + n,
+                    now, if (n == 0) GenerationStatus.QUEUED else GenerationStatus.GENERATING,
+                    "离线任务 $n", "sfw, silver hair", base.copy(prompt = "sfw, silver hair"), 1))) }
                 val start = System.nanoTime()
                 val page = container.generationRepository.observeGalleryWindow(GalleryFilter.None, 120).first()
                 val firstPageMs = (System.nanoTime() - start) / 1_000_000.0
@@ -72,7 +76,7 @@ class CreationWorkflowPreviewActivity : ComponentActivity() {
                     "first_page" to page.items.size, "has_more" to page.hasMore, "summaries" to summaries.size, "first_query_ms" to firstPageMs)).toString())
             }
             container.settingsStore.setChatEnabled(true)
-            setContent { PocketNaiTheme { CompositionLocalProvider(LocalAppContainer provides container) { PocketNaiApp() } } }
+            setContent { PocketNaiTheme { CompositionLocalProvider(LocalAppContainer provides container) { PocketNaiApp(checkUpdatesOnLaunch = false) } } }
         }
     }
 }

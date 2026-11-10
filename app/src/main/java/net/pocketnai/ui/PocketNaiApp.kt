@@ -128,15 +128,15 @@ private data class TabSpec(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Unit = {}) {
+fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Unit = {}, checkUpdatesOnLaunch: Boolean = true) {
     net.pocketnai.ui.safety.SfwDisplayProvider {
-        ImageMotionRoot { PocketNaiAppContent(sharedImageUri, onSharedImageHandled) }
+        ImageMotionRoot { PocketNaiAppContent(sharedImageUri, onSharedImageHandled, checkUpdatesOnLaunch) }
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: () -> Unit) {
+private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: () -> Unit, checkUpdatesOnLaunch: Boolean) {
     val imageMotion = LocalImageMotion.current!!
     val container = LocalAppContainer.current
     val connected by container.sessionState.connected.collectAsStateWithLifecycle()
@@ -214,8 +214,8 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
     val updateState by updateViewModel.state.collectAsStateWithLifecycle()
 
     // 启动后静默查一次（失败不打扰；对同一个构建点过"稍后"的不再弹）。
-    LaunchedEffect(Unit) {
-        updateViewModel.checkOnLaunch()
+    LaunchedEffect(checkUpdatesOnLaunch) {
+        if (checkUpdatesOnLaunch) updateViewModel.checkOnLaunch()
     }
 
     // 下载好的 APK 由界面调起系统安装器：需要 Activity context 与 FileProvider，
