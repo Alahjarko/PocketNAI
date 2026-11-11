@@ -68,14 +68,14 @@ class AppContainer(application: Application) {
                 object : net.pocketnai.domain.chat.ChatImageGenerator {
                     override fun currentParams() = generateViewModel.state.value.params
                     override fun promptSnapshot() = if (openAiImageSettings.provider.value == net.pocketnai.domain.openai.ImageProvider.OPEN_AI)
-                        openAiViewModel.promptSnapshot() else generateViewModel.promptSnapshot()
+                        openAiImageViewModel.promptSnapshot() else generateViewModel.promptSnapshot()
                     override fun applyPromptEdit(edit: net.pocketnai.domain.chat.PromptEdit): Int? {
                         val isOpenAi = openAiImageSettings.provider.value == net.pocketnai.domain.openai.ImageProvider.OPEN_AI
                         if ((edit.provider == "openai") != isOpenAi) return null
-                        return if (isOpenAi) openAiViewModel.applyPromptEdit(edit) else generateViewModel.applyPromptEdit(edit)
+                        return if (isOpenAi) openAiImageViewModel.applyPromptEdit(edit) else generateViewModel.applyPromptEdit(edit)
                     }
                     override fun undoPromptEdit(provider: String, revision: Int) = if (provider == "openai")
-                        openAiViewModel.undoPromptEdit(revision) else generateViewModel.undoPromptEdit(revision)
+                        openAiImageViewModel.undoPromptEdit(revision) else generateViewModel.undoPromptEdit(revision)
                     override suspend fun prepare(params: List<net.pocketnai.domain.model.GenerationParams>): List<net.pocketnai.domain.model.GenerationParams> {
                         val macros = promptFavoriteRepository.snapshot()
                         return params.map { net.pocketnai.domain.prompt.PromptTemplates.resolve(it, macros, kotlin.random.Random.Default) }
