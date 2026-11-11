@@ -20,6 +20,7 @@ class ChatViewModel(
     private val enabled: StateFlow<Boolean>,
     private val attachments: ChatAttachmentStore,
     private val search: ChatSearchClient = WebSearchClient(),
+    private val backgroundTasks: net.pocketnai.domain.task.BackgroundTasks,
 ) : ViewModel() {
     data class PendingImage(val callId: String, val plan: ChatImagePlan)
     data class UiState(
@@ -286,6 +287,15 @@ class ChatViewModel(
         if ((text.isBlank() && _state.value.draftAttachments.isEmpty()) || _state.value.busy || _state.value.importingAttachment || _state.value.switchingConversation || !enabled.value) return
         val attached = _state.value.draftAttachments.toList()
         val cfg = config.value
+        val background = try {
+            backgroundTasks.begin(net.pocketnai.domain.task.BackgroundTasks.Kind.CHAT) {
+                _state.update { it.copy(error = net.pocketnai.domain.task.BackgroundTaskUnavailable.MESSAGE) }
+                stop()
+            }
+        } catch (_: net.pocketnai.domain.task.BackgroundTaskUnavailable) {
+            _state.update { it.copy(error = net.pocketnai.domain.task.BackgroundTaskUnavailable.MESSAGE) }
+            return
+        }
         stopImages = false
         _state.update { it.copy(busy = true, error = null, phase = "正在思考") }
         job = viewModelScope.launch {
@@ -302,6 +312,7 @@ class ChatViewModel(
                 }
             }
             try {
+                background.awaitReady()
                 flushDraft()
                 val token = settings.apiKey()?.takeIf { it.isNotBlank() } ?: throw ChatFailure("请先配置 LLM API Key")
                 val searchCfg = searchConfig.value
@@ -344,6 +355,7 @@ class ChatViewModel(
                     val messages = listOf(wireMessage("system", systemPrompt)) + attachments.messages(chat.entries, imageCache, token).map(::clean)
                     val responseId = UUID.randomUUID().toString()
                     _state.update { it.copy(streamId = responseId, partial = null) }
+                    background.ensureRunning()
                     val reply = api.complete(cfg, token, messages, toolSchema) { partial ->
                         val cleaned = clean(partial)
                         _state.update { it.copy(partial = cleaned,
@@ -395,7 +407,9 @@ class ChatViewModel(
                                             val id = "${call.id}-${UUID.randomUUID()}"
                                             confirmation = CompletableDeferred()
                                             _state.update { it.copy(generating = false, pending = PendingImage(id, plan), phase = "等待确认 ${plan.items.size} 张图片") }
+                                            background.waitingForUser(true)
                                             try { confirmation!!.await() } finally {
+                                                background.waitingForUser(false)
                                                 confirmation = null; _state.update { it.copy(pending = null) }
                                             }
                                         },
@@ -425,6 +439,7 @@ class ChatViewModel(
                                     if (!searched.add(query.lowercase())) throw ChatFailure("重复检索已跳过，请使用已有结果")
                                     if (secrets.any { query.contains(it) } || "[API Key 已隐藏]" in query) throw ChatFailure("检索词不能包含 API Key")
                                     _state.update { it.copy(phase = "正在搜索角色与设定") }
+                                    background.ensureRunning()
                                     try {
                                         sources = search.search(searchCfg, searchToken, query).filterNot { token in it.url }.map { source ->
                                             source.copy(title = source.title.replace(token, "[API Key 已隐藏]"),
@@ -463,15 +478,17 @@ class ChatViewModel(
                 }
                 _state.update { it.copy(error = e.userMessage) }
             }
-            catch (_: Exception) {
+            catch (failure: Exception) {
                 withContext(NonCancellable) {
                     chat = chat.recoverInterruptedTools()
                     preserveInterruptedReply("回复未完成")
                     runCatching { persist() }
                 }
-                _state.update { it.copy(error = "对话任务失败，未自动重试") }
+                _state.update { it.copy(error = if (failure is net.pocketnai.domain.task.BackgroundTaskUnavailable)
+                    failure.message else "对话任务失败，未自动重试") }
             }
             finally {
+                background.close()
                 confirmation = null
                 _state.update { it.copy(busy = false, generating = false, stoppingImages = false, pending = null, partial = null, streamId = null, phase = "") }
             }

@@ -52,12 +52,17 @@ class ArtistLabQueueStateTest {
         }
         override fun stop() { stops++ }
     }
-    private inner class Harness(val background: ArtistLabBackgroundExecution = FakeBackground()) {
+    private inner class Harness(val background: ArtistLabBackgroundExecution = FakeBackground(),
+        val execution: net.pocketnai.domain.task.BackgroundTasks = net.pocketnai.testing.FakeBackgroundTasks()) {
         val name = "artist_lab_state_test_${UUID.randomUUID()}"
+        val preferences = mutableSetOf<String>()
         val context = object : ContextWrapper(instrumentation.targetContext) {
             override fun getApplicationContext(): Context = this
             override fun getFilesDir() = File(super.getCacheDir(), name).also { it.mkdirs() }
-            override fun getSharedPreferences(name: String, mode: Int) = super.getSharedPreferences("${this@Harness.name}_$name", mode)
+            override fun getSharedPreferences(name: String, mode: Int): android.content.SharedPreferences {
+                preferences.add(name)
+                return super.getSharedPreferences("${this@Harness.name}_$name", mode)
+            }
         }
         val database = Room.inMemoryDatabaseBuilder(context, PocketNaiDatabase::class.java).build()
         val files = GenerationFileStore(context)
@@ -104,7 +109,8 @@ class ArtistLabQueueStateTest {
                     TagSuggestionSource { _, _ -> emptyList() },
                     object : ReferenceImageImporter { override suspend fun import(source: ReferenceSource, transform: ImageTransform?) = error("不得导入") },
                     object : ImageMetadataInspector { override suspend fun inspect(source: ReferenceSource) = error("不得读取图片") },
-                    AccountBalanceRepository(api, credentials), settings, AnlasCostCalculator(NovelAiPaidAnlasFormula()), credentialStore = credentials)
+                    AccountBalanceRepository(api, credentials), settings, AnlasCostCalculator(NovelAiPaidAnlasFormula()),
+                    credentialStore = credentials, backgroundTasks = execution)
                 lab = ArtistLabViewModel(store, repository, FavoriteImageRepository(database.favoriteImageDao()), generate, settings.artistLabEnabled, background)
                 states.put("generate", generate); states.put("lab", lab)
             }
@@ -126,6 +132,7 @@ class ArtistLabQueueStateTest {
             main { background.stop() }
             main { states.clear() }
             database.close()
+            preferences.toList().forEach { context.getSharedPreferences(it, Context.MODE_PRIVATE).edit().clear().commit() }
             // File 是独立命名的测试 cache 子目录。
             context.filesDir.deleteRecursively()
         }
@@ -246,6 +253,138 @@ class ArtistLabQueueStateTest {
             automation.dropShellPermissionIdentity()
             h.close()
         }
+        verifyOrdinaryAndChatBackgroundExecution()
+    }
+
+    /** Same platform lifecycle contract as the batch above, with the ordinary/OpenAI/chat owners. */
+    private suspend fun verifyOrdinaryAndChatBackgroundExecution() {
+        val host = (instrumentation.targetContext.applicationContext as PocketNaiApplication).container.backgroundTasks
+        check(host.session == null) { "不得影响已有图片或对话任务" }
+        fun shell(command: String) = instrumentation.uiAutomation.executeShellCommand(command).use {
+            java.io.FileInputStream(it.fileDescriptor).bufferedReader().readText()
+        }
+        fun foreground() = instrumentation.targetContext.getSystemService(ActivityManager::class.java)
+            .getRunningServices(100).any {
+                it.service.className == net.pocketnai.data.task.GenerationForegroundService::class.java.name && it.foreground
+            }
+        fun awake() = shell("dumpsys power").contains("PocketNAI:Generation")
+        suspend fun waitFor(check: () -> Boolean) { withTimeout(15_000) { while (!check()) delay(30) } }
+
+        // An actual resumed Activity starts protection; no borrowed background-start permission.
+        val ordinary = Harness(execution = host)
+        val first = androidx.test.core.app.ActivityScenario.launch(androidx.activity.ComponentActivity::class.java)
+        try {
+            ordinary.holdFirst = true
+            ordinary.main { ordinary.generate.onPromptChange("sfw, quiet field"); ordinary.generate.generate() }
+            withTimeout(10_000) { ordinary.entered.await() }
+            assertThat(foreground()).isTrue()
+            first.recreate()
+            first.close() // A finished page must not cancel the process-owned image operation.
+            shell("input keyevent 3"); shell("input keyevent 223")
+            waitFor { awake() }
+            assertThat(instrumentation.targetContext.getSystemService(android.os.PowerManager::class.java).isInteractive).isFalse()
+            ordinary.release.complete(Unit)
+            waitFor { !ordinary.generate.state.value.inFlight }
+            assertThat(ordinary.payloads).hasSize(1)
+            assertThat(ordinary.database.generationDao().allImages()).hasSize(1)
+            waitFor { host.session == null && !foreground() && !awake() }
+        } finally {
+            shell("input keyevent 224"); first.close(); ordinary.close()
+        }
+
+        val h = Harness(execution = host)
+        val activity = androidx.test.core.app.ActivityScenario.launch(androidx.activity.ComponentActivity::class.java)
+        val openEntered = CompletableDeferred<Unit>(); val openRelease = CompletableDeferred<Unit>()
+        val llmEntered = CompletableDeferred<Unit>(); val llmRelease = CompletableDeferred<Unit>()
+        var openRequests = 0
+        var llmRequests = 0
+        var chat: net.pocketnai.ui.chat.ChatViewModel? = null
+        var open: net.pocketnai.ui.openai.OpenAiImageViewModel? = null
+        try {
+            val openSettings = net.pocketnai.data.openai.OpenAiImageSettings(h.context).apply {
+                saveKey("offline-openai-placeholder"); setProvider(net.pocketnai.domain.openai.ImageProvider.OPEN_AI)
+            }
+            val bitmap = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
+            val bytes = java.io.ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+            bitmap.recycle()
+            val encoded = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+            val openRepository = net.pocketnai.data.openai.OpenAiImageRepository(
+                net.pocketnai.data.openai.OpenAiImagesTransport { _, params, _ ->
+                    openRequests++; openEntered.complete(Unit); openRelease.await()
+                    net.pocketnai.data.openai.OpenAiImageResponse(listOf(encoded), net.pocketnai.domain.openai.OpenAiImageSnapshot(params))
+                }, h.database.generationDao(), h.files, openSettings::apiKey)
+            val llm = net.pocketnai.data.chat.LlmSettingsStore(h.context).apply {
+                save(net.pocketnai.domain.chat.LlmConfig(model = "offline-background", toolPermission = net.pocketnai.domain.chat.ChatToolPermission.ASK),
+                    "offline-chat-placeholder")
+            }
+            h.main {
+                open = net.pocketnai.ui.openai.OpenAiImageViewModel(openSettings, openRepository,
+                    object : ReferenceImageImporter { override suspend fun import(source: ReferenceSource, transform: ImageTransform?) = error("不得导入") },
+                    h.generate, GenerationDraftStore(), backgroundTasks = host).also {
+                    h.states.put("openai", it); it.update(it.state.value.draft.params.copy(prompt = "sfw, blue sky"))
+                }
+                chat = net.pocketnai.ui.chat.ChatViewModel(llm, object : net.pocketnai.domain.chat.ChatClient {
+                    override suspend fun models(config: net.pocketnai.domain.chat.LlmConfig, apiKey: String) = emptyList<String>()
+                    override suspend fun complete(config: net.pocketnai.domain.chat.LlmConfig, apiKey: String,
+                        messages: List<kotlinx.serialization.json.JsonObject>, tools: kotlinx.serialization.json.JsonArray,
+                        onPartial: (kotlinx.serialization.json.JsonObject) -> Unit): kotlinx.serialization.json.JsonObject {
+                        llmRequests++
+                        if (llmRequests > 1) return net.pocketnai.domain.chat.wireMessage("assistant", "图片已保存")
+                        llmEntered.complete(Unit); llmRelease.await()
+                        return kotlinx.serialization.json.Json.parseToJsonElement("""{"role":"assistant","content":"","tool_calls":[{"id":"background-image","type":"function","function":{"name":"generate_image","arguments":"{\"prompt\":\"sfw, quiet forest\"}"}}]}""") as kotlinx.serialization.json.JsonObject
+                    }
+                }, net.pocketnai.data.chat.ChatStore(h.database.chatConversationDao()), net.pocketnai.data.chat.AgentFiles(h.context),
+                    object : net.pocketnai.domain.chat.ChatImageGenerator {
+                        override fun currentParams() = h.generate.state.value.params
+                        override fun authorizationKey() = h.generate.artistLabAccount()
+                        override suspend fun quote(params: GenerationParams) = net.pocketnai.domain.chat.ChatImageQuote("离线报价", 0)
+                        override suspend fun generate(params: GenerationParams, account: String?, beforeSend: suspend () -> Unit,
+                            onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit) = h.generate.generateForChat(params, onImage, account, beforeSend)
+                    }, MutableStateFlow(true), net.pocketnai.data.chat.ChatAttachmentStore(h.context), backgroundTasks = host)
+                    .also { h.states.put("chat", it) }
+            }
+            val vm = chat!!; val oa = open!!
+            waitFor { vm.state.value.current != null }
+            h.holdFirst = true
+            h.main { vm.send("绘制一张安静的森林"); oa.generate() }
+            withTimeout(10_000) { llmEntered.await(); openEntered.await() }
+            assertThat(host.status.value.images).isEqualTo(1)
+            assertThat(host.status.value.chats).isEqualTo(1)
+            activity.recreate(); activity.close()
+            shell("input keyevent 3"); shell("input keyevent 223")
+            openRelease.complete(Unit)
+            waitFor { !oa.state.value.busy }
+            assertThat(openRequests).isEqualTo(1)
+            assertThat(h.database.generationDao().allImages()).hasSize(1)
+            assertThat(foreground()).isTrue() // Completing one owner cannot stop the other.
+            llmRelease.complete(Unit)
+            waitFor { vm.state.value.pending != null && !host.status.value.needsCpu && !awake() }
+            assertThat(h.payloads).isEmpty()
+            h.main { vm.confirmImage(vm.state.value.pending!!.callId, true) }
+            withTimeout(10_000) { h.entered.await() } // The image tool starts while the Activity is gone and screen is off.
+            waitFor { awake() }
+            assertThat(foreground()).isTrue()
+            h.release.complete(Unit)
+            waitFor { !vm.state.value.busy }
+            assertThat(h.payloads).hasSize(1)
+            assertThat(llmRequests).isEqualTo(2)
+            assertThat(h.database.generationDao().allImages()).hasSize(2)
+            assertThat(vm.state.value.current!!.entries.sumOf { it.images.size }).isEqualTo(1)
+            waitFor { host.session == null && !foreground() && !awake() }
+        } finally {
+            h.main { chat?.stop(); openRelease.complete(Unit); llmRelease.complete(Unit); h.release.complete(Unit) }
+            waitFor { chat?.state?.value?.busy != true && open?.state?.value?.busy != true }
+            shell("input keyevent 224"); activity.close(); h.close()
+        }
+
+        val denied = Harness(execution = net.pocketnai.testing.FakeBackgroundTasks().apply { failStart = true })
+        try {
+            denied.main { denied.generate.onPromptChange("sfw, field"); denied.generate.generate() }
+            assertThat(denied.payloads).isEmpty()
+            assertThat(denied.generate.state.value.inFlight).isFalse()
+            assertThat(denied.generate.state.value.error).isNotNull()
+            assertThat(denied.database.generationDao().allGenerationIds()).isEmpty()
+        } finally { denied.close() }
     }
 
     @Test fun uncertainSecondRequestStopsQueueAndResumeSkipsIt() = runBlocking<Unit> {

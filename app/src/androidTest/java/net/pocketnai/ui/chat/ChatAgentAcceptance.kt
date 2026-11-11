@@ -19,7 +19,8 @@ import java.util.UUID
 import com.google.common.truth.Truth.assertThat
 
 /** Real ViewModel and Room, isolated preferences/files, fake APIs only. */
-internal class ChatAgentAcceptance(base: Context, val image: File) {
+internal class ChatAgentAcceptance(base: Context, val image: File,
+    backgroundTasks: net.pocketnai.domain.task.BackgroundTasks = net.pocketnai.testing.FakeBackgroundTasks()) {
     private val id = UUID.randomUUID().toString()
     private val directory = File(base.cacheDir, "agent-$id").apply { mkdirs() }
     private val context = object : ContextWrapper(base) {
@@ -89,7 +90,7 @@ internal class ChatAgentAcceptance(base: Context, val image: File) {
             searches++
             return listOf(ChatSearchSource("角色官方设定（离线样本）", "https://example.org/character", "Travel outfit, blue coat"))
         }
-    })
+    }, backgroundTasks = backgroundTasks)
     fun verifySaved(expectedImages: Int) = runBlocking {
         val current = viewModel.state.value.current!!
         val saved = store.load(current.id)!!

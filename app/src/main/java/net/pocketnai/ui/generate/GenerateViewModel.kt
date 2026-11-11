@@ -106,6 +106,7 @@ class GenerateViewModel(
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
     private val clock: () -> Long = System::currentTimeMillis,
     private val awaitStartup: suspend () -> Unit = {},
+    private val backgroundTasks: net.pocketnai.domain.task.BackgroundTasks,
 ) : ViewModel() {
 
     data class UiState(
@@ -1565,6 +1566,13 @@ class GenerateViewModel(
         val epoch = naiGenerationGate.epoch
         // Preparation runs immediately even while another request owns the serial gate.
         val account = artistLabAccount()
+        val background = try {
+            backgroundTasks.begin(net.pocketnai.domain.task.BackgroundTasks.Kind.NOVEL_AI_IMAGE) { naiGenerationGate.stopPending() }
+        } catch (_: net.pocketnai.domain.task.BackgroundTaskUnavailable) {
+            _state.update { it.copy(error = AppError.of(ErrorCode.UNKNOWN,
+                detail = net.pocketnai.domain.task.BackgroundTaskUnavailable.MESSAGE)) }
+            return
+        }
         val prepared = viewModelScope.async { awaitStartup(); repository.enqueue(request, snapshot.promptTemplate, submittedAt, account) }
         _state.update { it.copy(inFlight = true, homeOutstanding = it.homeOutstanding + 1,
             submissionRevision = it.submissionRevision + 1, error = null, modelSwitchNotice = null) }
@@ -1572,13 +1580,15 @@ class GenerateViewModel(
             var queued: GenerationRepository.QueuedGeneration? = null
             try {
                 withContext(kotlinx.coroutines.NonCancellable) {
+                    background.awaitReady()
                     naiGenerationGate.run(epoch) {
                         val task = prepared.await().also { queued = it }
                         val before = accountBalanceRepository.latestOrNull()
                         val billing = before?.let { BillingSession(it, clock() - it.fetchedAtMillis,
                             ObservedBalanceChange.DEFAULT_MAX_PRE_SNAPSHOT_AGE_MS, task.request.params.sampleCount) }
                         _state.update { it.copy(completedImages = 0) }
-                        repository.generate(task.request, task.promptTemplate, queued = task).collect { event ->
+                        repository.generate(task.request, task.promptTemplate, queued = task,
+                            beforeSend = { background.ensureRunning() }).collect { event ->
                             when (event) {
                                 is GenerationEvent.Started -> Unit
                                 is GenerationEvent.Final -> _state.update { it.copy(completedImages = it.completedImages + 1) }
@@ -1608,6 +1618,8 @@ class GenerateViewModel(
                 // A stopped queue is known unsent; never label it as a billable timeout or replay it.
                 val error = when (failure) {
                     is GenerationRepository.QueuePreparationFailure -> failure.error
+                    is net.pocketnai.domain.task.BackgroundTaskUnavailable -> AppError.of(ErrorCode.UNKNOWN,
+                        detail = net.pocketnai.domain.task.BackgroundTaskUnavailable.MESSAGE)
                     is net.pocketnai.domain.model.SerialGenerationGate.Stopped -> AppError.of(ErrorCode.INVALID_PARAMS,
                         detail = "前一任务未完成，此排队任务未发送；请核对后手动提交")
                     else -> if (queued != null) AppError.of(ErrorCode.TIMEOUT_UNCERTAIN,
@@ -1622,6 +1634,7 @@ class GenerateViewModel(
                 _state.update { if (failure is net.pocketnai.domain.model.SerialGenerationGate.Stopped && it.error != null) it
                     else it.copy(error = error) }
             } finally {
+                background.close()
                 _state.update { val remaining = (it.homeOutstanding - 1).coerceAtLeast(0)
                     it.copy(homeOutstanding = remaining, inFlight = remaining > 0) }
             }
@@ -1694,13 +1707,16 @@ class GenerateViewModel(
         val billing = before?.let { BillingSession(it, clock() - it.fetchedAtMillis,
             ObservedBalanceChange.DEFAULT_MAX_PRE_SNAPSHOT_AGE_MS, params.sampleCount) }
         val images = mutableListOf<net.pocketnai.domain.chat.ChatImage>()
+        val background = if (fromArtistLab) null else backgroundTasks.begin(
+            net.pocketnai.domain.task.BackgroundTasks.Kind.NOVEL_AI_IMAGE) { }
         _state.update { it.copy(inFlight = true, completedImages = 0, error = null) }
         try {
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                background?.awaitReady()
                 awaitStartup()
                 naiGenerationGate.run {
                     repository.generate(GenerationRequest(params = params), params.prompt, expectedAccountFingerprint,
-                        beforeSend = { verifySend(); if (fromArtistLab) onStarted(it) }, templatesResolved = templatesResolved).collect { event ->
+                        beforeSend = { background?.ensureRunning(); verifySend(); if (fromArtistLab) onStarted(it) }, templatesResolved = templatesResolved).collect { event ->
                         when (event) {
                             is GenerationEvent.Final -> {
                                 val image = event.image
@@ -1735,7 +1751,7 @@ class GenerateViewModel(
                     }
                 }
             }
-        } finally { _state.update { it.copy(inFlight = false) } }
+        } finally { background?.close(); _state.update { it.copy(inFlight = false) } }
         if (images.isEmpty()) throw net.pocketnai.domain.chat.ChatFailure("没有收到最终图片，未自动重试")
         return images
     }

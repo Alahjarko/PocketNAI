@@ -361,7 +361,8 @@ class GenerationSeedAndPayloadTest {
                     object : net.pocketnai.domain.metadata.ImageMetadataInspector {
                         override suspend fun inspect(source: net.pocketnai.domain.image.ReferenceSource) =
                             metadataProbe
-                    }, AccountBalanceRepository(FakeApi(mutableListOf()), credentials), settings)
+                    }, AccountBalanceRepository(FakeApi(mutableListOf()), credentials), settings,
+                    backgroundTasks = net.pocketnai.testing.FakeBackgroundTasks())
                 store.put("generate", vm)
             }
             imported { vm.onReferencePicked(source) }

@@ -62,6 +62,37 @@ import java.util.concurrent.TimeUnit
  * 数据库和网络客户端要到真正使用时才创建。
  */
 class AppContainer(application: Application) {
+    val backgroundTasks by lazy { net.pocketnai.data.task.AndroidBackgroundTasks(application) }
+    val chatViewModel: net.pocketnai.ui.chat.ChatViewModel by lazy {
+        net.pocketnai.ui.chat.ChatViewModel(llmSettingsStore, chatClient, chatStore, agentFiles,
+                object : net.pocketnai.domain.chat.ChatImageGenerator {
+                    override fun currentParams() = generateViewModel.state.value.params
+                    override fun promptSnapshot() = if (openAiImageSettings.provider.value == net.pocketnai.domain.openai.ImageProvider.OPEN_AI)
+                        openAiViewModel.promptSnapshot() else generateViewModel.promptSnapshot()
+                    override fun applyPromptEdit(edit: net.pocketnai.domain.chat.PromptEdit): Int? {
+                        val isOpenAi = openAiImageSettings.provider.value == net.pocketnai.domain.openai.ImageProvider.OPEN_AI
+                        if ((edit.provider == "openai") != isOpenAi) return null
+                        return if (isOpenAi) openAiViewModel.applyPromptEdit(edit) else generateViewModel.applyPromptEdit(edit)
+                    }
+                    override fun undoPromptEdit(provider: String, revision: Int) = if (provider == "openai")
+                        openAiViewModel.undoPromptEdit(revision) else generateViewModel.undoPromptEdit(revision)
+                    override suspend fun prepare(params: List<net.pocketnai.domain.model.GenerationParams>): List<net.pocketnai.domain.model.GenerationParams> {
+                        val macros = promptFavoriteRepository.snapshot()
+                        return params.map { net.pocketnai.domain.prompt.PromptTemplates.resolve(it, macros, kotlin.random.Random.Default) }
+                    }
+                    override fun authorizationKey() = generateViewModel.artistLabAccount()
+                    override suspend fun quote(params: net.pocketnai.domain.model.GenerationParams): net.pocketnai.domain.chat.ChatImageQuote {
+                        if (openAiImageSettings.provider.value == net.pocketnai.domain.openai.ImageProvider.OPEN_AI)
+                            throw net.pocketnai.domain.chat.ChatFailure("OpenAI 图片暂时请在画廊的专用生成面板创建")
+                        return generateViewModel.quoteForChat(params)
+                    }
+                    override suspend fun generate(params: net.pocketnai.domain.model.GenerationParams, account: String?, beforeSend: suspend () -> Unit, onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit): List<net.pocketnai.domain.chat.ChatImage> {
+                        if (openAiImageSettings.provider.value == net.pocketnai.domain.openai.ImageProvider.OPEN_AI)
+                            throw net.pocketnai.domain.chat.ChatFailure("OpenAI 图片暂时请在画廊的专用生成面板创建")
+                        return generateViewModel.generateForChat(params, onImage, account, beforeSend)
+                    }
+                }, settingsStore.chatEnabled, chatAttachmentStore, backgroundTasks = backgroundTasks)
+    }
     private val processScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val startupPreparation by lazy {
         processScope.async { generationRepository.cleanupOnStartup() }
@@ -75,7 +106,7 @@ class AppContainer(application: Application) {
     }
     val openAiImageViewModel by lazy {
         net.pocketnai.ui.openai.OpenAiImageViewModel(openAiImageSettings, openAiImageRepository,
-            referenceImageProcessor, generateViewModel, draftStore, awaitStartup = ::awaitStartup)
+            referenceImageProcessor, generateViewModel, draftStore, awaitStartup = ::awaitStartup, backgroundTasks = backgroundTasks)
     }
 
     val artistLabStore by lazy { net.pocketnai.data.artistlab.ArtistLabStore(application, database) }
@@ -88,7 +119,7 @@ class AppContainer(application: Application) {
             tagSuggestionSource, referenceImageProcessor, imageMetadataInspector, accountBalanceRepository,
             settingsStore, anlasCostCalculator, anlasLedgerRepository = anlasLedgerRepository,
             credentialStore = credentialStore,
-            awaitStartup = ::awaitStartup,
+            awaitStartup = ::awaitStartup, backgroundTasks = backgroundTasks,
         )
     }
     val artistLabViewModel by lazy {

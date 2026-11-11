@@ -64,6 +64,12 @@
         </activity>
 
         <service
+            android:name=".data.task.GenerationForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="false" />
+
+        <service
             android:name=".data.artistlab.ArtistLabForegroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync"

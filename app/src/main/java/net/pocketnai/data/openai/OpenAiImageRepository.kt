@@ -32,7 +32,7 @@ class OpenAiImageRepository(
     // Bound simultaneous large responses; every submission still gets its own occupied slot first.
     private val concurrentRequests = Semaphore(3)
 
-    fun generate(draft: OpenAiImageDraft) = flow<GenerationEvent> {
+    fun generate(draft: OpenAiImageDraft, beforeSend: () -> Unit = {}) = flow<GenerationEvent> {
         val id = UUID.randomUUID().toString()
         val params = draft.params
         if (params.outputFormat == "gif" && !gifEnabled()) {
@@ -110,6 +110,7 @@ class OpenAiImageRepository(
                     emit(GenerationEvent.FatalError(id, error))
                     return@flow
                 }
+                beforeSend()
                 sent = true
                 requestStartedNanos = System.nanoTime()
                 val response = api.generate(secret, params, inputs)
@@ -152,8 +153,10 @@ class OpenAiImageRepository(
                 dao.updateStatus(id, if (saved.isEmpty()) GenerationStatus.FAILED.name else GenerationStatus.PARTIAL.name,
                     System.currentTimeMillis(), error.code.name, error.detail, null)
                 emit(GenerationEvent.FatalError(id, error))
-            } catch (_: Exception) {
-                val error = if (sent) AppError.of(ErrorCode.TIMEOUT_UNCERTAIN, detail = "图片处理未完成，请先核对画廊；本次请求不会重试")
+            } catch (failure: Exception) {
+                val error = if (failure is net.pocketnai.domain.task.BackgroundTaskUnavailable)
+                    AppError.of(ErrorCode.UNKNOWN, detail = net.pocketnai.domain.task.BackgroundTaskUnavailable.MESSAGE)
+                    else if (sent) AppError.of(ErrorCode.TIMEOUT_UNCERTAIN, detail = "图片处理未完成，请先核对画廊；本次请求不会重试")
                     else AppError.of(ErrorCode.REFERENCE_MISSING, detail = "参考图无法读取，图片请求未发送")
                 dao.updateStatus(id, if (saved.isEmpty()) GenerationStatus.FAILED.name else GenerationStatus.PARTIAL.name,
                     System.currentTimeMillis(), error.code.name, error.detail, null)

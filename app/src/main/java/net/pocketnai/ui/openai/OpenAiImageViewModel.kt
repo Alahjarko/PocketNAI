@@ -26,6 +26,7 @@ class OpenAiImageViewModel(
     private val nai: GenerateViewModel,
     private val draftStore: GenerationDraftStore,
     private val awaitStartup: suspend () -> Unit = {},
+    private val backgroundTasks: net.pocketnai.domain.task.BackgroundTasks,
 ) : ViewModel() {
     data class State(
         val draft: OpenAiImageDraft,
@@ -106,21 +107,34 @@ class OpenAiImageViewModel(
         if (!current.busy && !nai.reserveExternalGeneration()) { _state.update { it.copy(message = "另一个图片任务正在执行，请等待完成") }; return }
         val frozen = current.draft.copy(references = current.draft.references.toList())
         store.saveDraft(frozen)
+        val background = try {
+            backgroundTasks.begin(net.pocketnai.domain.task.BackgroundTasks.Kind.OPEN_AI_IMAGE) {
+                _state.update { it.copy(message = net.pocketnai.domain.task.BackgroundTaskUnavailable.MESSAGE) }
+            }
+        } catch (_: net.pocketnai.domain.task.BackgroundTaskUnavailable) {
+            if (!_state.value.busy) nai.releaseExternalGeneration()
+            _state.update { it.copy(message = net.pocketnai.domain.task.BackgroundTaskUnavailable.MESSAGE) }
+            return
+        }
         _state.update { it.copy(activeTasks = it.activeTasks + 1, submissionRevision = it.submissionRevision + 1, message = null) }
         viewModelScope.launch {
             try {
                 // Navigation and Activity recreation cannot cancel or repeat a potentially billable POST.
                 withContext(NonCancellable) {
+                    background.awaitReady()
                     awaitStartup()
-                    repository.generate(frozen).collect { event -> when (event) {
+                    repository.generate(frozen, beforeSend = background::ensureRunning).collect { event -> when (event) {
                         is GenerationEvent.Final -> _state.update { it.copy(completed = it.completed + 1) }
                         is GenerationEvent.FatalError -> _state.update { it.copy(message = event.error.detail ?: "OpenAI 生成未完成，未重试") }
                         is GenerationEvent.ItemError -> _state.update { it.copy(message = event.error.detail) }
                         else -> Unit
                     } }
                 }
-            } catch (_: Exception) { _state.update { it.copy(message = "生成未完成，请核对画廊；没有自动重试") } }
+            } catch (failure: Exception) { _state.update { it.copy(message =
+                if (failure is net.pocketnai.domain.task.BackgroundTaskUnavailable) failure.message
+                else "生成未完成，请核对画廊；没有自动重试") } }
             finally {
+                background.close()
                 _state.update { it.copy(activeTasks = (it.activeTasks - 1).coerceAtLeast(0)) }
                 if (!_state.value.busy) nai.releaseExternalGeneration()
             }
