@@ -268,7 +268,15 @@ class ArtistLabQueueStateTest {
                 it.service.className == net.pocketnai.data.task.GenerationForegroundService::class.java.name && it.foreground
             }
         fun awake() = shell("dumpsys power").contains("PocketNAI:Generation")
-        suspend fun waitFor(check: () -> Boolean) { withTimeout(15_000) { while (!check()) delay(30) } }
+        suspend fun waitFor(stage: String, check: () -> Boolean) {
+            try { withTimeout(15_000) { while (!check()) delay(30) } }
+            catch (failure: TimeoutCancellationException) {
+                val power = shell("dumpsys power").lineSequence().filter {
+                    "PocketNAI" in it || "Wake Locks" in it || "mWakefulness=" in it
+                }.joinToString("\n")
+                throw AssertionError("$stage: status=${host.status.value}, foreground=${foreground()}, power=$power", failure)
+            }
+        }
 
         // An actual resumed Activity starts protection; no borrowed background-start permission.
         val ordinary = Harness(execution = host)
@@ -281,14 +289,16 @@ class ArtistLabQueueStateTest {
             first.recreate()
             first.close() // A finished page must not cancel the process-owned image operation.
             shell("input keyevent 3"); shell("input keyevent 223")
-            waitFor { awake() }
+            waitFor("ordinary screen-off wake lock") { awake() }
             assertThat(instrumentation.targetContext.getSystemService(android.os.PowerManager::class.java).isInteractive).isFalse()
             ordinary.release.complete(Unit)
-            waitFor { !ordinary.generate.state.value.inFlight }
+            waitFor("ordinary completion") { !ordinary.generate.state.value.inFlight }
             assertThat(ordinary.payloads).hasSize(1)
             assertThat(ordinary.database.generationDao().allImages()).hasSize(1)
-            waitFor { host.session == null && !foreground() && !awake() }
+            waitFor("ordinary resource cleanup") { host.session == null && !foreground() && !awake() }
         } finally {
+            ordinary.release.complete(Unit)
+            waitFor("ordinary fixture cleanup") { !ordinary.generate.state.value.inFlight }
             shell("input keyevent 224"); first.close(); ordinary.close()
         }
 
@@ -344,7 +354,7 @@ class ArtistLabQueueStateTest {
                     .also { h.states.put("chat", it) }
             }
             val vm = chat!!; val oa = open!!
-            waitFor { vm.state.value.current != null }
+            waitFor("chat initial conversation") { vm.state.value.current != null }
             h.holdFirst = true
             h.main { vm.send("绘制一张安静的森林"); oa.generate() }
             withTimeout(10_000) { llmEntered.await(); openEntered.await() }
@@ -353,27 +363,27 @@ class ArtistLabQueueStateTest {
             activity.recreate(); activity.close()
             shell("input keyevent 3"); shell("input keyevent 223")
             openRelease.complete(Unit)
-            waitFor { !oa.state.value.busy }
+            waitFor("OpenAI completion") { !oa.state.value.busy }
             assertThat(openRequests).isEqualTo(1)
             assertThat(h.database.generationDao().allImages()).hasSize(1)
             assertThat(foreground()).isTrue() // Completing one owner cannot stop the other.
             llmRelease.complete(Unit)
-            waitFor { vm.state.value.pending != null && !host.status.value.needsCpu && !awake() }
+            waitFor("chat waiting for approval releases wake lock") { vm.state.value.pending != null && !host.status.value.needsCpu && !awake() }
             assertThat(h.payloads).isEmpty()
             h.main { vm.confirmImage(vm.state.value.pending!!.callId, true) }
             withTimeout(10_000) { h.entered.await() } // The image tool starts while the Activity is gone and screen is off.
-            waitFor { awake() }
+            waitFor("chat image reacquires wake lock") { awake() }
             assertThat(foreground()).isTrue()
             h.release.complete(Unit)
-            waitFor { !vm.state.value.busy }
+            waitFor("chat completion") { !vm.state.value.busy }
             assertThat(h.payloads).hasSize(1)
             assertThat(llmRequests).isEqualTo(2)
             assertThat(h.database.generationDao().allImages()).hasSize(2)
             assertThat(vm.state.value.current!!.entries.sumOf { it.images.size }).isEqualTo(1)
-            waitFor { host.session == null && !foreground() && !awake() }
+            waitFor("shared resource cleanup") { host.session == null && !foreground() && !awake() }
         } finally {
             h.main { chat?.stop(); openRelease.complete(Unit); llmRelease.complete(Unit); h.release.complete(Unit) }
-            waitFor { chat?.state?.value?.busy != true && open?.state?.value?.busy != true }
+            waitFor("shared fixture cleanup") { chat?.state?.value?.busy != true && open?.state?.value?.busy != true }
             shell("input keyevent 224"); activity.close(); h.close()
         }
 
