@@ -11,6 +11,9 @@ import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.put
 import net.pocketnai.core.*
 import net.pocketnai.data.artistlab.ArtistLabStore
 import net.pocketnai.data.files.GenerationFileStore
@@ -352,7 +355,18 @@ class ArtistLabQueueStateTest {
                         llmRequests++
                         if (llmRequests > 1) return net.pocketnai.domain.chat.wireMessage("assistant", "图片已保存")
                         llmEntered.complete(Unit); llmRelease.await()
-                        return kotlinx.serialization.json.Json.parseToJsonElement("""{"role":"assistant","content":"","tool_calls":[{"id":"background-image","type":"function","function":{"name":"generate_image","arguments":"{\"prompt\":\"sfw, quiet forest\"}"}}]}""") as kotlinx.serialization.json.JsonObject
+                        return buildJsonObject {
+                            put("role", "assistant"); put("content", "")
+                            put("tool_calls", buildJsonArray { add(buildJsonObject {
+                                put("id", "background-image"); put("type", "function")
+                                put("function", buildJsonObject {
+                                    put("name", "generate_image")
+                                    put("arguments", buildJsonObject {
+                                        put("prompt", "sfw, quiet forest"); put("negative_prompt", "lowres")
+                                    }.toString())
+                                })
+                            }) })
+                        }
                     }
                 }, net.pocketnai.data.chat.ChatStore(h.database.chatConversationDao()), net.pocketnai.data.chat.AgentFiles(h.context),
                     object : net.pocketnai.domain.chat.ChatImageGenerator {
@@ -379,7 +393,10 @@ class ArtistLabQueueStateTest {
             assertThat(h.database.generationDao().allImages()).hasSize(1)
             assertThat(foreground()).isTrue() // Completing one owner cannot stop the other.
             llmRelease.complete(Unit)
-            waitFor("chat waiting for approval releases wake lock") { vm.state.value.pending != null && !host.status.value.needsCpu && !awake() }
+            waitFor("chat waiting for approval releases wake lock") {
+                check(vm.state.value.busy) { "Offline tool did not reach confirmation: ${vm.state.value.error}" }
+                vm.state.value.pending != null && !host.status.value.needsCpu && !awake()
+            }
             assertThat(h.payloads).isEmpty()
             h.main { vm.confirmImage(vm.state.value.pending!!.callId, true) }
             withTimeout(10_000) { h.entered.await() } // The image tool starts while the Activity is gone and screen is off.
