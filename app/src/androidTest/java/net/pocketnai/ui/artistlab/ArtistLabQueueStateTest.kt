@@ -267,7 +267,12 @@ class ArtistLabQueueStateTest {
             .getRunningServices(100).any {
                 it.service.className == net.pocketnai.data.task.GenerationForegroundService::class.java.name && it.foreground
             }
-        fun awake() = shell("dumpsys power").contains("PocketNAI:Generation")
+        fun awake(): Boolean {
+            // dumpsys also retains ACQ/REL history; only the active list means a held lock.
+            val power = shell("dumpsys power")
+            check("Wake Locks: size=" in power)
+            return power.substringAfter("Wake Locks: size=").substringBefore("\n\n").contains("PocketNAI:Generation")
+        }
         suspend fun waitFor(stage: String, check: () -> Boolean) {
             try { withTimeout(15_000) { while (!check()) delay(30) } }
             catch (failure: TimeoutCancellationException) {
@@ -288,7 +293,13 @@ class ArtistLabQueueStateTest {
             assertThat(foreground()).isTrue()
             first.recreate()
             first.close() // A finished page must not cancel the process-owned image operation.
-            shell("input keyevent 3"); shell("input keyevent 223")
+            shell("input keyevent 3")
+            if (InstrumentationRegistry.getArguments().getString("background_evidence") == "true") {
+                shell("cmd statusbar expand-notifications"); delay(500)
+                shell("screencap -p /data/local/tmp/pocketnai-bg-notification.png")
+                shell("cmd statusbar collapse")
+            }
+            shell("input keyevent 223")
             waitFor("ordinary screen-off wake lock") { awake() }
             assertThat(instrumentation.targetContext.getSystemService(android.os.PowerManager::class.java).isInteractive).isFalse()
             ordinary.release.complete(Unit)
