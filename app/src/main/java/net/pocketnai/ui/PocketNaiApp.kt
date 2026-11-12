@@ -386,7 +386,12 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
             composable(Routes.CHAT) {
                 ImageMotionRoute(this, Routes.CHAT) {
                     PocketNaiPageFrame(navController, Routes.CHAT, chatEnabled, artistLabEnabled) {
-                        ChatScreen(chatViewModel, container.fileStore::resolve) { imageId -> imageMotion.open(Routes.CHAT, imageId); navController.navigate(Routes.detail(imageId)) }
+                        ChatScreen(chatViewModel, container.fileStore::resolve) { imageId, order ->
+                            imageMotion.open(Routes.CHAT, imageId)
+                            navController.navigate(Routes.detail(imageId))
+                            // Keep this source's order on its own route, independent of gallery filters.
+                            navController.currentBackStackEntry?.savedStateHandle?.set("detail-image-order", ArrayList(order))
+                        }
                     }
                 }
             }
@@ -414,6 +419,7 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                     PocketNaiPageFrame(navController, Routes.DETAIL, chatEnabled, artistLabEnabled) {
                         DetailScreen(
                             imageId = entry.arguments?.getString("imageId").orEmpty(),
+                            initialOrder = entry.savedStateHandle.get<ArrayList<String>>("detail-image-order"),
                             onBack = { detailMotion.returnToSource(); navController.popBackStack() },
                             onParamsReused = {
                                 navController.navigate(Routes.HOME) {

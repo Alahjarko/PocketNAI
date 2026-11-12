@@ -53,6 +53,9 @@ class ChatShortReplyTest {
         }
         var imeBottom by mutableIntStateOf(0)
         var systemIme by mutableStateOf(false)
+        var openedImage = ""
+        var openedOrder = emptyList<String>()
+        var selectedImage = ""
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         fun shell(command: String) = instrumentation.uiAutomation.executeShellCommand(command).use { descriptor ->
             android.os.ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { it.readBytes().toString(Charsets.UTF_8).trim() }
@@ -79,7 +82,7 @@ class ChatShortReplyTest {
                             CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(
                                 androidx.compose.ui.platform.LocalDensity.current.density, agentFontScale)) {
                                 if (agentSettings) ChatSettingsScreen(agent!!.viewModel) { agentSettings = false }
-                                else ChatScreen(agent!!.viewModel, { agent!!.image }, {})
+                                else ChatScreen(agent!!.viewModel, { agent!!.image }, { _, _ -> })
                             }
                             return@ImageMotionRoot
                         }
@@ -93,10 +96,14 @@ class ChatShortReplyTest {
                                         ChatPageLayout(header = { Text("对话", Modifier.height(64.dp).padding(16.dp)) }, messages = {
                                             list = rememberLazyListState()
                                             LazyColumn(state = list, modifier = Modifier.fillMaxSize()) {
-                                                item { ChatMessageBubble(ChatEntry("short", wireMessage("assistant", replyText)), { file }, {}, streaming = streaming) }
+                                                item { ChatMessageBubble(ChatEntry("short", wireMessage("assistant", replyText)), { file }, { _, _ -> }, streaming = streaming) }
                                                 item { ChatMessageBubble(ChatEntry("image", wireMessage("tool", ""), images = listOf(
-                                                    ChatImage("sample", file.path, 400, 1000))), { file }, {
-                                                    motion.open("chat", it); nav.navigate("detail")
+                                                    ChatImage("first", file.path, 400, 1000),
+                                                    ChatImage("removed", "${file.path}.missing", 400, 1000),
+                                                    ChatImage("sample", file.path, 400, 1000),
+                                                    ChatImage("last", file.path, 400, 1000))), { File(it) }, { id, order ->
+                                                    openedImage = id; openedOrder = order
+                                                    motion.open("chat", id); nav.navigate("detail")
                                                 }) }
                                             }
                                         }, floating = {
@@ -110,9 +117,20 @@ class ChatShortReplyTest {
                             }
                             composable("detail") {
                                 ImageMotionRoute(this, "chat") {
+                                    var selected by remember { mutableStateOf(openedImage) }
+                                    val pager = net.pocketnai.ui.detail.rememberDetailPager(openedImage, openedOrder,
+                                        openedOrder, selected) { selected = it; selectedImage = it }
                                     Column {
-                                        Text("返回", Modifier.clickable { motion.returnToSource(); nav.popBackStack() }.padding(24.dp))
-                                        AsyncImage(sharedImageRequest(file), "大图", modifier = Modifier.fillMaxWidth().aspectRatio(0.4f).sharedImage("sample"))
+                                        Text("返回", Modifier.clickable {
+                                            motion.prepareReturn(openedOrder[pager.currentPage])
+                                            motion.returnToSource(); nav.popBackStack()
+                                        }.padding(24.dp))
+                                        androidx.compose.foundation.pager.HorizontalPager(pager, key = { openedOrder[it] },
+                                            modifier = Modifier.fillMaxSize().testTag("chat-detail-pager")) { page ->
+                                            AsyncImage(sharedImageRequest(file), "大图-${openedOrder[page]}",
+                                                modifier = Modifier.fillMaxWidth().aspectRatio(0.4f)
+                                                    .then(if (page == pager.currentPage) Modifier.sharedImage(openedOrder[page]) else Modifier))
+                                        }
                                     }
                                 }
                             }
@@ -207,15 +225,32 @@ class ChatShortReplyTest {
             compose.runOnUiThread { replyText = text }
             compose.runOnIdle { kotlinx.coroutines.runBlocking { list.scrollToItem(1) } }
             compose.mainClock.advanceTimeBy(500)
+            compose.onNodeWithTag("chat-image-sample").performScrollTo()
+            compose.mainClock.advanceTimeBy(500)
             compose.waitUntil(5000) {
                 compose.mainClock.advanceTimeBy(32)
-                val imageBounds = compose.onNodeWithContentDescription("对话生成的图片").fetchSemanticsNode().boundsInRoot
+                val imageBounds = compose.onNodeWithTag("chat-image-sample").fetchSemanticsNode().boundsInRoot
                 val visible = compose.onRoot().captureToImage().asAndroidBitmap()
                 val pixel = visible.getPixel(imageBounds.center.x.toInt(), imageBounds.center.y.toInt())
                 android.graphics.Color.blue(pixel) - android.graphics.Color.red(pixel) > 200
             }
-            compose.onNodeWithContentDescription("对话生成的图片").performClick()
+            val returnIndex = list.firstVisibleItemIndex
+            val returnOffset = list.firstVisibleItemScrollOffset
+            compose.onNodeWithTag("chat-image-sample").performClick()
             compose.mainClock.advanceTimeBy(500)
+            assertThat(openedOrder).containsExactly("first", "sample", "last").inOrder()
+            assertThat(selectedImage).isEqualTo("sample")
+            compose.onNodeWithTag("chat-detail-pager").performTouchInput { swipeLeft() }
+            compose.mainClock.advanceTimeBy(800)
+            assertThat(selectedImage).isEqualTo("last")
+            compose.onNodeWithTag("chat-detail-pager").performTouchInput { swipeRight() }
+            compose.mainClock.advanceTimeBy(800)
+            assertThat(selectedImage).isEqualTo("sample")
+            compose.onNodeWithTag("chat-detail-pager").performTouchInput { swipeRight() }
+            compose.mainClock.advanceTimeBy(800)
+            assertThat(selectedImage).isEqualTo("first")
+            compose.onNodeWithTag("chat-detail-pager").performTouchInput { swipeLeft() }
+            compose.mainClock.advanceTimeBy(800)
             compose.onNodeWithText("返回").performClick()
             compose.mainClock.advanceTimeBy(280)
             val region = compose.onNodeWithTag("chat-composer-region").fetchSemanticsNode().boundsInRoot
@@ -233,6 +268,8 @@ class ChatShortReplyTest {
             }
             compose.mainClock.advanceTimeBy(400)
             assertThat(motion.returning).isNull()
+            assertThat(list.firstVisibleItemIndex).isEqualTo(returnIndex)
+            assertThat(list.firstVisibleItemScrollOffset).isEqualTo(returnOffset)
             compose.onNodeWithTag("composer").assertIsDisplayed()
             compose.onNodeWithTag("bottom-navigation").assertIsDisplayed()
             // A real Android IME window complements the deterministic animation-frame check.

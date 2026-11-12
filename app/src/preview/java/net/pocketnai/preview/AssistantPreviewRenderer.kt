@@ -63,7 +63,7 @@ object AssistantPreviewRenderer {
                             LazyColumn(state = rememberLazyListState(if (history) 92 else 0), modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 items(shown, key = { it.id }, contentType = { it.role }) {
-                                    ChatMessageBubble(it, { path -> File(path) }, {})
+                                    ChatMessageBubble(it, { path -> File(path) }, { _, _ -> })
                                 }
                             }
                         }, floating = { ChatJumpToLatest(name == "assistant-history", {}) }, composer = {

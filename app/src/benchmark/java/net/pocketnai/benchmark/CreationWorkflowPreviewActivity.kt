@@ -81,6 +81,20 @@ class CreationWorkflowPreviewActivity : ComponentActivity() {
                         promptEdit = PromptEdit(title = "柔化光线", prompt = "soft evening light"))
                     db.chatConversationDao().save(row.copy(entriesJson = Json.encodeToString(listOf(entry))))
                 }
+                if (intent.getBooleanExtra("chat-pager", false)) {
+                    // Explicit offline fixture in the separate benchmark package only.
+                    val row = checkNotNull(db.chatConversationDao().find("current-demo"))
+                    fun image(n: Int) = net.pocketnai.domain.chat.ChatImage("demo-image-$n", "generations/demo-0/${n % 4}.png", 160, 224)
+                    val entries = listOf(
+                        ChatEntry("pager-request", buildJsonObject { put("role", "user"); put("content", "离线多图浏览检查") }),
+                        ChatEntry("pager-batch", buildJsonObject { put("role", "tool"); put("content", "") },
+                            images = listOf(image(0), image(1), image(2), image(9).copy(relativePath = "generations/missing.png"))),
+                        ChatEntry("pager-next", buildJsonObject { put("role", "user"); put("content", "另一组图片") }),
+                        ChatEntry("pager-other-batch", buildJsonObject { put("role", "tool"); put("content", "") },
+                            images = listOf(image(4), image(5))),
+                    )
+                    db.chatConversationDao().save(row.copy(entriesJson = Json.encodeToString(entries)))
+                }
                 val start = System.nanoTime()
                 val page = container.generationRepository.observeGalleryWindow(GalleryFilter.None, 120).first()
                 val firstPageMs = (System.nanoTime() - start) / 1_000_000.0

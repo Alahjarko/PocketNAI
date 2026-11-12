@@ -103,7 +103,7 @@ import java.util.Locale
  *
  * 展示完整参数，并提供规划书 4.3 要求的四项操作：保存到相册、复制提示词、删除、复用参数。
  *
- * **左右滑动切换图片**：滑动顺序是进入详情页那一刻画廊列表的快照
+ * **左右滑动切换图片**：滑动顺序优先使用来源传入的快照，否则使用画廊列表的快照
  * （[net.pocketnai.ui.state.GalleryOrderSnapshot]），因此"下一张"就是用户在瀑布流里
  * 看到的下一张；快照只有一张时退化成旧行为（不能滑）。顶栏与操作按钮始终作用于
  * 当前页，超分产物会插到当前页后面。
@@ -116,6 +116,7 @@ fun DetailScreen(
     onParamsReused: () -> Unit,
     onInpaint: (String) -> Unit,
     onAskAssistant: ((String, String) -> Unit)? = null,
+    initialOrder: List<String>? = null,
 ) {
     val container = LocalAppContainer.current
     val viewModel: DetailViewModel = viewModel(
@@ -139,7 +140,10 @@ fun DetailScreen(
     val context = LocalContext.current
 
     // 顺序在打开时定死：详情页里新生成/删除不应让滑动顺序"自己跳走"。
-    val pagerIds = remember(imageId) { container.galleryOrderSnapshot.orderAround(imageId) }
+    val pagerIds = remember(imageId) {
+        initialOrder?.distinct()?.takeIf { imageId in it } ?: if (initialOrder != null) listOf(imageId)
+        else container.galleryOrderSnapshot.orderAround(imageId)
+    }
     LaunchedEffect(imageId) { viewModel.bind(imageId, pagerIds) }
 
     // 删除完成后立刻返回列表，避免停在已经不存在的记录上。

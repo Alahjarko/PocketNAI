@@ -67,7 +67,7 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenImage: (String) -> Unit) {
+fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenImage: (String, List<String>) -> Unit) {
     // Streaming chunks belong to their own lazy item, not the header/editor/history.
     val chrome = remember(viewModel) { viewModel.state.map { it.copy(partial = null) }.distinctUntilChanged() }
     val state by chrome.collectAsStateWithLifecycle(initialValue = viewModel.state.value.copy(partial = null))
@@ -287,7 +287,10 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
             contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(images, key = { it.imageId }) { image ->
                 net.pocketnai.ui.safety.SfwAsyncImage(resolveImage(image.relativePath), "聊天生成的图片", contentScale = ContentScale.Crop,
-                    modifier = Modifier.aspectRatio(0.85f).clip(RoundedCornerShape(18.dp)).clickable { imagesOpen = false; onOpenImage(image.imageId) })
+                    modifier = Modifier.aspectRatio(0.85f).clip(RoundedCornerShape(18.dp)).clickable {
+                        imagesOpen = false
+                        onOpenImage(image.imageId, availableChatImageOrder(images, resolveImage))
+                    })
             }
         }
         Spacer(Modifier.height(32.dp))
@@ -349,7 +352,7 @@ internal fun ChatPageLayout(
 
 @Composable
 private fun ChatTimelineEntry(entry: ChatEntry?, viewModel: ChatViewModel, resolveImage: (String) -> File,
-    onOpenImage: (String) -> Unit, onRead: (String, String) -> Unit, onOpenAttachment: (ChatAttachment) -> Unit) {
+    onOpenImage: (String, List<String>) -> Unit, onRead: (String, String) -> Unit, onOpenAttachment: (ChatAttachment) -> Unit) {
     val shown = if (entry != null) entry else {
         val partialFlow = remember(viewModel) { viewModel.state.map { state ->
             state.partial?.let { ChatEntry(state.streamId ?: "partial", it) }
@@ -367,7 +370,7 @@ private fun ChatTimelineEntry(entry: ChatEntry?, viewModel: ChatViewModel, resol
 }
 
 @Composable
-fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenImage: (String) -> Unit,
+fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenImage: (String, List<String>) -> Unit,
     streaming: Boolean = false, onRead: (String, String) -> Unit = { _, _ -> }, onOpenAttachment: (ChatAttachment) -> Unit = {}) {
     if (entry.content.isBlank() && entry.reasoning.isBlank() && entry.images.isEmpty() && entry.attachments.isEmpty() && entry.notice == null) return
     val imageMotion = LocalImageMotion.current
@@ -387,7 +390,10 @@ fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenIm
             val file = resolveImage(image.relativePath)
             if (file.isFile) net.pocketnai.ui.safety.SfwAsyncImage(file, "对话生成的图片", contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxWidth(0.78f).aspectRatio(image.width.toFloat() / image.height.coerceAtLeast(1))
-                    .sharedImage(image.imageId).clip(RoundedCornerShape(22.dp)).clickable { imageMotion?.preview = ImageOriginPreview(image.imageId, file, image.width.toFloat() / image.height.coerceAtLeast(1), "对话生成的图片"); onOpenImage(image.imageId) })
+                    .sharedImage(image.imageId).clip(RoundedCornerShape(22.dp)).testTag("chat-image-${image.imageId}").clickable {
+                        imageMotion?.preview = ImageOriginPreview(image.imageId, file, image.width.toFloat() / image.height.coerceAtLeast(1), "对话生成的图片")
+                        onOpenImage(image.imageId, availableChatImageOrder(entry.images, resolveImage))
+                    })
             else Text("图片已从图库移除", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (entry.role == "tool") {
@@ -417,6 +423,10 @@ fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenIm
         }
     }
 }
+
+/** Freeze the clicked group, in display order; deleted local files are not swipe destinations. */
+private fun availableChatImageOrder(images: List<ChatImage>, resolveImage: (String) -> File): List<String> =
+    images.filter { resolveImage(it.relativePath).isFile }.map { it.imageId }.distinct()
 
 @Composable
 private fun AttachmentParametersButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
