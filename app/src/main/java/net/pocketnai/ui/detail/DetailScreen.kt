@@ -42,6 +42,8 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Share
 import net.pocketnai.ui.common.ImageShareManager
 import net.pocketnai.ui.common.MotionButton as Button
@@ -553,18 +555,19 @@ internal fun LazyListScope.detailInfoItems(
             }
             onAskAssistant?.let { ask -> OutlinedButton(onClick = ask, modifier = Modifier.fillMaxWidth()) { Text("交给绘伴调整") } }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            net.pocketnai.ui.common.ActionPair(first = { actionModifier ->
                 val saved = isCurrentPage && savedToGallery
-                OutlinedButton(onClick = onSaveClick, enabled = !savingToGallery, modifier = Modifier.weight(1f)) {
-                    net.pocketnai.ui.common.ActionStatusIcon(savingToGallery, saved)
+                OutlinedButton(onClick = onSaveClick, enabled = !savingToGallery, modifier = actionModifier) {
+                    net.pocketnai.ui.common.ActionStatusIcon(savingToGallery, saved, Icons.Outlined.FileDownload)
                     Spacer(Modifier.width(4.dp))
                     Text(when {
                         savingToGallery -> "保存中"
-                        saved -> if (image.privateFilePath.endsWith(".svg", true)) "已存到下载目录" else "已存到相册"
+                        saved -> if (image.privateFilePath.endsWith(".svg", true)) "已存到下载" else "已存到相册"
                         image.privateFilePath.endsWith(".svg", true) -> "保存 SVG 文件"
-                        else -> stringResource(R.string.action_save_to_gallery)
+                        else -> "保存到相册"
                     })
                 }
+            }, second = { actionModifier ->
                 var copyRevision by remember(image.id) { mutableStateOf(0) }
                 var copied by remember(image.id) { mutableStateOf(false) }
                 LaunchedEffect(copyRevision) {
@@ -574,12 +577,12 @@ internal fun LazyListScope.detailInfoItems(
                         copied = false
                     }
                 }
-                OutlinedButton(onClick = { onCopyPrompt(); copyRevision++ }, modifier = Modifier.weight(1f)) {
-                    net.pocketnai.ui.common.ActionStatusIcon(false, copied)
+                OutlinedButton(onClick = { onCopyPrompt(); copyRevision++ }, modifier = actionModifier) {
+                    net.pocketnai.ui.common.ActionStatusIcon(false, copied, Icons.Outlined.ContentCopy)
                     Spacer(Modifier.width(4.dp))
-                    Text(if (copied) "已复制" else if (generation.openAi != null) "复制图片描述" else stringResource(R.string.action_copy_prompt))
+                    Text(if (copied) "已复制" else if (generation.openAi != null) "复制图片描述" else "复制正向词")
                 }
-            }
+            })
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // 局部重绘：官方文档说可以从"任意一张已生成的图片"进入，
