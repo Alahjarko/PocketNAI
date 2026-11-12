@@ -9,6 +9,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import net.pocketnai.ui.common.MotionButton as Button
+import net.pocketnai.ui.common.MotionOutlinedButton as OutlinedButton
+import net.pocketnai.ui.common.MotionTextButton as TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -140,18 +145,18 @@ fun OpenAiImageSheet(
                 Text("参考图（${state.draft.references.size}/16）", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
                 net.pocketnai.ui.common.InfoButton("添加参考图后按描述进行编辑。按实际用量扣除 OpenAI Platform 额度；质量、尺寸、张数和参考图都会影响费用。")
             }
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            LazyRow(Modifier.animateContentSize(tween(220)), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(state.draft.references, key = { it.id }) { ref ->
-                    Column(Modifier.width(96.dp)) {
+                    Column(Modifier.width(96.dp).animateItem(fadeInSpec = tween(180), fadeOutSpec = tween(100))) {
                         AsyncImage(model = container.fileStore.resolve(ref.relativePath), contentDescription = "参考图",
                             modifier = Modifier.size(96.dp))
                         TextButton(onClick = { viewModel.removeReference(ref.id) }, enabled = true) { Text("移除") }
                     }
                 }
             }
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyRow(Modifier.animateContentSize(tween(220)), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(state.draft.references.filter { it.sourceImageId != null }.distinctBy { it.sourceImageId }, key = { it.id }) { ref ->
-                    net.pocketnai.ui.generate.ReferenceOriginLink(ref, Modifier.width(208.dp))
+                    net.pocketnai.ui.generate.ReferenceOriginLink(ref, Modifier.width(208.dp).animateItem())
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

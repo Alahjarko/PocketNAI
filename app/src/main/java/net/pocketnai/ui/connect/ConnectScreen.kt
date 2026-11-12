@@ -27,7 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import net.pocketnai.ui.common.MotionOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import net.pocketnai.ui.common.MotionTextButton as TextButton
 import androidx.compose.runtime.Composable
 import android.content.Intent
 import androidx.compose.runtime.DisposableEffect

@@ -55,7 +55,7 @@ import androidx.compose.material3.Surface
 import net.pocketnai.ui.common.MotionOutlinedButton as OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import net.pocketnai.ui.common.MotionTextButton as TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable

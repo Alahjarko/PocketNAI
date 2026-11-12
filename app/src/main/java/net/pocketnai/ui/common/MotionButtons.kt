@@ -29,7 +29,7 @@ internal fun MotionButton(
 internal fun MotionOutlinedButton(
     onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true,
     shape: Shape = ButtonDefaults.outlinedShape, colors: ButtonColors = ButtonDefaults.outlinedButtonColors(),
-    elevation: ButtonElevation? = null, border: BorderStroke? = ButtonDefaults.outlinedButtonBorder,
+    elevation: ButtonElevation? = null, border: BorderStroke? = ButtonDefaults.outlinedButtonBorder(enabled),
     contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
     content: @Composable RowScope.() -> Unit,
 ) {
@@ -45,4 +45,14 @@ internal fun MotionIconButton(
 ) {
     val source = remember { MutableInteractionSource() }
     IconButton(onClick, modifier.pressFeedback(source, enabled), enabled, colors, source, content)
+}
+
+@Composable
+internal fun MotionTextButton(
+    onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true,
+    colors: ButtonColors = ButtonDefaults.textButtonColors(), content: @Composable RowScope.() -> Unit,
+) {
+    val source = remember { MutableInteractionSource() }
+    TextButton(onClick, modifier.pressFeedback(source, enabled), enabled = enabled,
+        colors = colors, interactionSource = source, content = content)
 }

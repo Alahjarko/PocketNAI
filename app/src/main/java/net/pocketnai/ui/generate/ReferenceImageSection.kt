@@ -33,7 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import net.pocketnai.ui.common.MotionOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import net.pocketnai.ui.common.MotionTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -137,58 +137,57 @@ fun Img2ImgPanel(
         }
         AnimatedReferenceList(listOfNotNull(source)) { displayedSource ->
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            ReferenceSummary(
-                source = displayedSource,
-                targetSizeLabel = state.referenceTargetSize?.label.orEmpty(),
-                mask = state.inpaintMask,
-                onRemove = viewModel::onRemoveReference,
-            )
-            ReferenceOriginLink(displayedSource)
-
-            // 局部重绘入口：底图就绪才出现。
-            if (!state.supportsInpaint) {
-                // 不支持的模型说清楚原因，而不是只把按钮藏起来。
-                // （当前四个模型都支持，这个分支留给将来可能出现的不支持模型。）
-                Text(
-                    text = stringResource(
-                        R.string.inpaint_needs_base,
-                        state.profile.displayName,
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+                ReferenceSummary(
+                    source = displayedSource,
+                    targetSizeLabel = state.referenceTargetSize?.label.orEmpty(),
+                    mask = state.inpaintMask,
+                    onRemove = viewModel::onRemoveReference,
                 )
-            } else {
-                val mask = state.inpaintMask
-                OutlinedButton(
-                    onClick = onOpenInpaintEditor,
-                    enabled = connected && !state.referenceBusy,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
+                ReferenceOriginLink(displayedSource)
+
+                // 局部重绘入口：底图就绪才出现。
+                if (!state.supportsInpaint) {
+                    // 不支持的模型说清楚原因，而不是只把按钮藏起来。
+                    // （当前四个模型都支持，这个分支留给将来可能出现的不支持模型。）
                     Text(
-                        if (mask == null) {
-                            stringResource(R.string.inpaint_open_editor)
-                        } else {
-                            stringResource(R.string.inpaint_masked)
-                        },
+                        text = stringResource(
+                            R.string.inpaint_needs_base,
+                            state.profile.displayName,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
                     )
-                }
-                if (mask != null) {
-                    TextButton(onClick = viewModel::onInpaintMaskCleared) {
-                        Text(stringResource(R.string.inpaint_clear))
+                } else {
+                    val mask = state.inpaintMask
+                    OutlinedButton(
+                        onClick = onOpenInpaintEditor,
+                        enabled = connected && !state.referenceBusy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            if (mask == null) {
+                                stringResource(R.string.inpaint_open_editor)
+                            } else {
+                                stringResource(R.string.inpaint_masked)
+                            },
+                        )
+                    }
+                    if (mask != null) {
+                        TextButton(onClick = viewModel::onInpaintMaskCleared) {
+                            Text(stringResource(R.string.inpaint_clear))
+                        }
                     }
                 }
+                val strengthRange = state.profile.img2imgStrengthRange
+                LabeledSlider(
+                    label = stringResource(R.string.generate_reference_strength),
+                    value = displayedSource.strength ?: state.profile.defaultImg2ImgStrength,
+                    onValueChange = viewModel::onImg2imgStrengthChange,
+                    valueRange = strengthRange.min..strengthRange.max,
+                    decimals = 2,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
-            val strengthRange = state.profile.img2imgStrengthRange
-            LabeledSlider(
-                label = stringResource(R.string.generate_reference_strength),
-                value = displayedSource.strength ?: state.profile.defaultImg2ImgStrength,
-                onValueChange = viewModel::onImg2imgStrengthChange,
-                valueRange = strengthRange.min..strengthRange.max,
-                decimals = 2,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-
         }
         if (state.referenceBusy) {
             Row(

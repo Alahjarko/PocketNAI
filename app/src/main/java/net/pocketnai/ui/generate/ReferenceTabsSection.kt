@@ -106,54 +106,54 @@ fun ReferenceTabsSection(
             val tabPosition = animateFloatAsState(tab.ordinal.toFloat(), spring(dampingRatio = 1f, stiffness = 700f), label = "reference-tab")
             val indicatorColor = MaterialTheme.colorScheme.onSurface
             Box(Modifier.fillMaxWidth()) {
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                ReferenceTab.entries.forEachIndexed { index, option ->
-                    val active = state.activeReferences.any { it.role == option.role }
-                    val background = if (active) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surface
-                    val foreground = if (active) MaterialTheme.colorScheme.onPrimaryContainer
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    val status = stringResource(if (active) R.string.generate_reference_active
-                        else R.string.generate_reference_inactive)
-                    SegmentedButton(
-                        selected = tab == option,
-                        onClick = { tab = option },
-                        shape = SegmentedButtonDefaults.itemShape(
-                            index = index,
-                            count = ReferenceTab.entries.size,
-                        ),
-                        // 查看哪个面板与启用了哪些功能是两个状态，底色只跟随后者。
-                        colors = SegmentedButtonDefaults.colors(
-                            activeContainerColor = background,
-                            inactiveContainerColor = background,
-                            activeContentColor = foreground,
-                            inactiveContentColor = foreground,
-                        ),
-                        modifier = Modifier.semantics { stateDescription = status },
-                        icon = {},
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text(
-                                text = option.label(state),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Box(Modifier.width(18.dp).height(2.dp).background(
-                                Color.Transparent,
-                                RoundedCornerShape(1.dp),
-                            ))
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    ReferenceTab.entries.forEachIndexed { index, option ->
+                        val active = state.activeReferences.any { it.role == option.role }
+                        val background = if (active) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surface
+                        val foreground = if (active) MaterialTheme.colorScheme.onPrimaryContainer
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        val status = stringResource(if (active) R.string.generate_reference_active
+                            else R.string.generate_reference_inactive)
+                        SegmentedButton(
+                            selected = tab == option,
+                            onClick = { tab = option },
+                            shape = SegmentedButtonDefaults.itemShape(
+                                index = index,
+                                count = ReferenceTab.entries.size,
+                            ),
+                            // 查看哪个面板与启用了哪些功能是两个状态，底色只跟随后者。
+                            colors = SegmentedButtonDefaults.colors(
+                                activeContainerColor = background,
+                                inactiveContainerColor = background,
+                                activeContentColor = foreground,
+                                inactiveContentColor = foreground,
+                            ),
+                            modifier = Modifier.semantics { stateDescription = status },
+                            icon = {},
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(
+                                    text = option.label(state),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Box(Modifier.width(18.dp).height(2.dp).background(
+                                    Color.Transparent,
+                                    RoundedCornerShape(1.dp),
+                                ))
+                            }
                         }
                     }
                 }
-            }
 
-            Canvas(Modifier.matchParentSize()) {
-                val x = size.width * (tabPosition.value + .5f) / ReferenceTab.entries.size
-                val y = size.height - 8.dp.toPx()
-                drawLine(indicatorColor, Offset(x - 9.dp.toPx(), y), Offset(x + 9.dp.toPx(), y),
-                    2.dp.toPx(), cap = StrokeCap.Round)
-            }
+                Canvas(Modifier.matchParentSize()) {
+                    val x = size.width * (tabPosition.value + .5f) / ReferenceTab.entries.size
+                    val y = size.height - 8.dp.toPx()
+                    drawLine(indicatorColor, Offset(x - 9.dp.toPx(), y), Offset(x + 9.dp.toPx(), y),
+                        2.dp.toPx(), cap = StrokeCap.Round)
+                }
             }
 
             AnimatedContent(targetState = tab, label = "reference-panel",
@@ -161,34 +161,34 @@ fun ReferenceTabsSection(
                     (fadeIn(tween(180)) togetherWith fadeOut(tween(90)))
                         .using(SizeTransform { _, _ -> tween(220) })
                 }) { shownTab ->
-            val panelModifier = if (shownTab == tab) Modifier else Modifier
-                .clearAndSetSemantics { }
-                .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial).changes.forEach { it.consume() } } }
-            Box(panelModifier) {
-            when (shownTab) {
-                ReferenceTab.IMG2IMG -> Img2ImgPanel(
-                    state = state,
-                    connected = connected,
-                    viewModel = viewModel,
-                    onOpenInpaintEditor = onOpenInpaintEditor,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                val panelModifier = if (shownTab == tab) Modifier else Modifier
+                    .clearAndSetSemantics { }
+                    .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial).changes.forEach { it.consume() } } }
+                Box(panelModifier) {
+                when (shownTab) {
+                    ReferenceTab.IMG2IMG -> Img2ImgPanel(
+                        state = state,
+                        connected = connected,
+                        viewModel = viewModel,
+                        onOpenInpaintEditor = onOpenInpaintEditor,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
 
-                ReferenceTab.PRECISE -> PreciseReferencePanel(
-                    state = state,
-                    connected = connected,
-                    viewModel = viewModel,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                    ReferenceTab.PRECISE -> PreciseReferencePanel(
+                        state = state,
+                        connected = connected,
+                        viewModel = viewModel,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
 
-                ReferenceTab.VIBE -> VibeTransferPanel(
-                    state = state,
-                    connected = connected,
-                    viewModel = viewModel,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            }
+                    ReferenceTab.VIBE -> VibeTransferPanel(
+                        state = state,
+                        connected = connected,
+                        viewModel = viewModel,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                }
             }
         }
     }
