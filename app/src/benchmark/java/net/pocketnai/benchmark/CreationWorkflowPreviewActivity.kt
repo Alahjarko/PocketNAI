@@ -93,7 +93,13 @@ class CreationWorkflowPreviewActivity : ComponentActivity() {
             }
             container.settingsStore.setChatEnabled(true)
             // Preview navigation without saving credentials or contacting a provider.
-            container.sessionState.update(true)
+            val previewWelcome = intent.getBooleanExtra("welcome", false)
+            if (previewWelcome) {
+                // Only the separate, network-disabled benchmark package can reset this flag.
+                getSharedPreferences("pocketnai_settings", MODE_PRIVATE).edit()
+                    .putBoolean("welcome_completed", false).apply()
+            }
+            container.sessionState.update(!previewWelcome)
             setContent { PocketNaiTheme { CompositionLocalProvider(LocalAppContainer provides container) { PocketNaiApp(checkUpdatesOnLaunch = false) } } }
         }
     }
