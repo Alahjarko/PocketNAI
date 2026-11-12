@@ -53,6 +53,7 @@ class DetailViewModel(
         val failedIds: Set<String> = emptySet(),
         val errorCode: ErrorCode? = null,
         val savedToGallery: Boolean = false,
+        val savingImageIds: Set<String> = emptySet(),
         val deleted: Boolean = false,
         /** 这一张是否已收藏。它来自 `favorite_images`，不是图片记录自己的字段。 */
         val favorite: Boolean = false,
@@ -137,20 +138,26 @@ class DetailViewModel(
         val state = _state.value
         val image = state.image ?: return
         val generation = state.generation ?: return
+        if (image.id in state.savingImageIds) return
+        _state.update { it.copy(savingImageIds = it.savingImageIds + image.id, savedToGallery = false, errorCode = null) }
         viewModelScope.launch {
-            val source = repository.fileOfRelativePath(image.privateFilePath)
-            val displayName = PromptTitle.exportFileName(
-                title = generation.title,
-                timestampMillis = generation.createdAt,
-                ordinal = image.ordinal,
-            )
-            when (val outcome = exporter.export(source, displayName)) {
-                is Outcome.Success -> {
-                    repository.markExported(image.id, outcome.value.toString())
-                    _state.update { it.copy(savedToGallery = true, errorCode = null) }
-                }
+            try {
+                val source = repository.fileOfRelativePath(image.privateFilePath)
+                val displayName = PromptTitle.exportFileName(
+                    title = generation.title,
+                    timestampMillis = generation.createdAt,
+                    ordinal = image.ordinal,
+                )
+                when (val outcome = exporter.export(source, displayName)) {
+                    is Outcome.Success -> {
+                        repository.markExported(image.id, outcome.value.toString())
+                        _state.update { if (it.currentId == image.id) it.copy(savedToGallery = true, errorCode = null) else it }
+                    }
 
-                is Outcome.Failure -> _state.update { it.copy(errorCode = outcome.error.code) }
+                    is Outcome.Failure -> _state.update { if (it.currentId == image.id) it.copy(errorCode = outcome.error.code) else it }
+                }
+            } finally {
+                _state.update { it.copy(savingImageIds = it.savingImageIds - image.id) }
             }
         }
     }

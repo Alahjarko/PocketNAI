@@ -1,10 +1,8 @@
 package net.pocketnai.ui.settings
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
+import net.pocketnai.ui.motion.pressFeedback
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -33,10 +31,7 @@ internal val LocalSettingsSheetDismiss = staticCompositionLocalOf<() -> Unit> { 
 @Composable
 internal fun Modifier.settingsClickable(enabled: Boolean = true, onClick: () -> Unit): Modifier {
     val source = remember { MutableInteractionSource() }
-    val pressed by source.collectIsPressedAsState()
-    val scale = animateFloatAsState(if (pressed && enabled) .985f else 1f,
-        spring(dampingRatio = 1f, stiffness = 850f), label = "settings-press")
-    return graphicsLayer { scaleX = scale.value; scaleY = scale.value; alpha = if (enabled) 1f else .6f }
+    return pressFeedback(source, enabled).graphicsLayer { alpha = if (enabled) 1f else .6f }
         .clickable(enabled = enabled, role = Role.Button, interactionSource = source,
             indication = ripple(), onClick = onClick)
 }

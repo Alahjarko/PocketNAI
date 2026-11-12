@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
@@ -15,14 +16,14 @@ import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.connect.AccountDisconnectConfirmation
 
 @Composable
-fun OpenAiImageSettingsRow() {
+fun OpenAiImageSettingsRow(initiallyOpen: Boolean = false) {
     val container = LocalAppContainer.current
     val settings = container.openAiImageSettings
     val provider by settings.provider.collectAsStateWithLifecycle()
     val hasKey by settings.hasKey.collectAsStateWithLifecycle()
     val generation by container.generateViewModel.state.collectAsStateWithLifecycle()
     val busy = generation.inFlight || generation.artistLabActive || generation.externalGenerationActive
-    var open by remember { mutableStateOf(false) }
+    var open by rememberSaveable { mutableStateOf(initiallyOpen) }
     Card(Modifier.fillMaxWidth().clickable { open = true }) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("生图服务", style = MaterialTheme.typography.titleMedium)

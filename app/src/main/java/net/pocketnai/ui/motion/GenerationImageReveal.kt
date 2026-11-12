@@ -16,7 +16,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 
 private class ImageRevealAnimation {
     val completion = Animatable(0f)
@@ -45,10 +46,13 @@ internal fun GenerationImageReveal(
         when {
             failed -> animation.indicatorAlpha.snapTo(0f)
             ready -> {
-                animation.completion.animateTo(1f, tween(180, easing = FastOutSlowInEasing))
-                delay(50)
-                animation.imageAlpha.animateTo(1f, tween(220, easing = FastOutSlowInEasing))
-                animation.indicatorAlpha.animateTo(0f, tween(100))
+                coroutineScope {
+                    launch { animation.imageAlpha.animateTo(1f, tween(240, easing = FastOutSlowInEasing)) }
+                    launch {
+                        animation.completion.animateTo(1f, tween(120, easing = FastOutSlowInEasing))
+                        animation.indicatorAlpha.animateTo(0f, tween(120))
+                    }
+                }
                 onFinished()
             }
         }

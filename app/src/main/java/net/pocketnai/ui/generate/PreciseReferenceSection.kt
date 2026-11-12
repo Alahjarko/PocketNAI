@@ -19,9 +19,9 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import net.pocketnai.ui.common.MotionIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import net.pocketnai.ui.common.MotionOutlinedButton as OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -86,7 +86,8 @@ fun PreciseReferencePanel(
         if (!state.supportsDirectorReference) {
             InactiveReferences(state.directorReferences, viewModel::onDirectorReferenceRemoved)
         } else {
-            state.directorReferences.forEach { reference ->
+            AnimatedReferenceList(state.directorReferences) { reference ->
+                Column {
                 DirectorEntry(
                     reference = reference,
                     profile = state.profile,
@@ -99,6 +100,7 @@ fun PreciseReferencePanel(
                     onRemove = { viewModel.onDirectorReferenceRemoved(reference.id) },
                 )
                 HorizontalDivider()
+                }
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

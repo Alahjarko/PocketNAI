@@ -259,8 +259,19 @@ class GalleryMotionTest {
             compose.runOnUiThread { jobs = listOf(GenerationSummary(job.copy(status = GenerationStatus.SUCCEEDED), 1)) }
             compose.mainClock.advanceTimeBy(300)
             compose.onNodeWithContentDescription("生成中").assertExists()
+            val pendingFrame = compose.onNodeWithTag("slot-new-1").captureToImage().asAndroidBitmap()
+            val pendingPixel = pendingFrame.getPixel(pendingFrame.width / 5, pendingFrame.height / 5)
             compose.runOnUiThread { images = listOf(image("new", now)) + images }
-            compose.waitUntil(5000) { compose.mainClock.advanceTimeBy(100); finished }
+            compose.waitUntil(5000) {
+                compose.mainClock.advanceTimeBy(16)
+                compose.onAllNodesWithContentDescription("图片已就绪").fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.mainClock.advanceTimeBy(80)
+            val earlyFrame = compose.onNodeWithTag("slot-new-1").captureToImage().asAndroidBitmap()
+            assertThat(earlyFrame.getPixel(earlyFrame.width / 5, earlyFrame.height / 5)).isNotEqualTo(pendingPixel)
+            screenshot("revealing-early")
+            compose.mainClock.advanceTimeBy(240)
+            compose.runOnIdle { assertThat(finished).isTrue() }
             assertThat(compose.onNodeWithTag("slot-new-1").fetchSemanticsNode().boundsInRoot).isEqualTo(pendingBounds)
             screenshot("revealed")
             val lowerBounds = compose.onNodeWithTag("slot-old-c-1").fetchSemanticsNode().boundsInRoot

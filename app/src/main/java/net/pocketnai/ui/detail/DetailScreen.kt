@@ -43,15 +43,15 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.Share
 import net.pocketnai.ui.common.ImageShareManager
-import androidx.compose.material3.Button
+import net.pocketnai.ui.common.MotionButton as Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import net.pocketnai.ui.common.MotionIconButton as IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.OutlinedButton
+import net.pocketnai.ui.common.MotionOutlinedButton as OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -144,7 +144,6 @@ fun DetailScreen(
         if (state.deleted) onBack()
     }
 
-    val savedMessage = stringResource(R.string.detail_saved_to_gallery)
     var pendingSave by remember { mutableStateOf(false) }
     var showUpscaleDialog by remember { mutableStateOf(false) }
     var fullscreen by remember { mutableStateOf(false) }
@@ -209,13 +208,13 @@ fun DetailScreen(
                     // 收藏放在顶栏：详情页是"这张图我喜不喜欢"的判断现场，
                     // 而收藏只是个开关，不值得在下面再占一整行按钮。
                     IconButton(onClick = viewModel::toggleFavorite) {
-                        Icon(
-                            imageVector = if (state.favorite) {
+                        net.pocketnai.ui.common.FeedbackIcon(
+                            icon = if (state.favorite) {
                                 Icons.Filled.Favorite
                             } else {
                                 Icons.Filled.FavoriteBorder
                             },
-                            contentDescription = stringResource(
+                            description = stringResource(
                                 if (state.favorite) {
                                     R.string.action_unfavorite
                                 } else {
@@ -254,7 +253,7 @@ fun DetailScreen(
                     animateMedia = pageId == state.currentId && !fullscreen,
                     errorCode = state.errorCode,
                     savedToGallery = state.savedToGallery,
-                    savedMessage = savedMessage,
+                    savingToGallery = pageId in state.savingImageIds,
                     revealed = revealedImageId == pageId,
                     onOpenFullscreen = {
                         val file = detail?.image?.let { container.fileStore.resolve(it.privateFilePath) }
@@ -359,7 +358,7 @@ private fun DetailPageContent(
     animateMedia: Boolean,
     errorCode: net.pocketnai.core.ErrorCode?,
     savedToGallery: Boolean,
-    savedMessage: String,
+    savingToGallery: Boolean,
     onOpenFullscreen: () -> Unit,
     onSaveClick: () -> Unit,
     onCopyPrompt: () -> Unit,
@@ -401,7 +400,7 @@ private fun DetailPageContent(
                         isCurrentPage = isCurrentPage,
                         errorCode = errorCode,
                         savedToGallery = savedToGallery,
-                        savedMessage = savedMessage,
+                        savingToGallery = savingToGallery,
                         onSaveClick = onSaveClick,
                         onCopyPrompt = onCopyPrompt,
                         onReuseParams = onReuseParams,
@@ -441,7 +440,7 @@ private fun DetailPageContent(
                     isCurrentPage = isCurrentPage,
                     errorCode = errorCode,
                     savedToGallery = savedToGallery,
-                    savedMessage = savedMessage,
+                        savingToGallery = savingToGallery,
                     onSaveClick = onSaveClick,
                     onCopyPrompt = onCopyPrompt,
                     onReuseParams = onReuseParams,
@@ -497,7 +496,7 @@ internal fun LazyListScope.detailInfoItems(
     isCurrentPage: Boolean,
     errorCode: net.pocketnai.core.ErrorCode?,
     savedToGallery: Boolean,
-    savedMessage: String,
+    savingToGallery: Boolean,
     onSaveClick: () -> Unit,
     onCopyPrompt: () -> Unit,
     onReuseParams: () -> Unit,
@@ -546,14 +545,6 @@ internal fun LazyListScope.detailInfoItems(
                 }
             }
 
-            if (isCurrentPage && savedToGallery) {
-                Text(
-                    text = if (image.privateFilePath.endsWith(".svg", ignoreCase = true)) "SVG 已保存到下载目录" else savedMessage,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-
             // 操作分级（2026-09-21 界面减负）：唯一主按钮是"复用参数"（继续创作最常用的动作），
             // 四个次要操作两两并排，删除降级为红色文字按钮放在最后。
             Button(onClick = onReuseParams, modifier = Modifier.fillMaxWidth()) {
@@ -562,11 +553,30 @@ internal fun LazyListScope.detailInfoItems(
             onAskAssistant?.let { ask -> OutlinedButton(onClick = ask, modifier = Modifier.fillMaxWidth()) { Text("交给绘伴调整") } }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onSaveClick, modifier = Modifier.weight(1f)) {
-                    Text(if (image.privateFilePath.endsWith(".svg", ignoreCase = true)) "保存 SVG 文件" else stringResource(R.string.action_save_to_gallery))
+                val saved = isCurrentPage && savedToGallery
+                OutlinedButton(onClick = onSaveClick, enabled = !savingToGallery, modifier = Modifier.weight(1f)) {
+                    net.pocketnai.ui.common.ActionStatusIcon(savingToGallery, saved)
+                    Spacer(Modifier.width(4.dp))
+                    Text(when {
+                        savingToGallery -> "保存中"
+                        saved -> if (image.privateFilePath.endsWith(".svg", true)) "已存到下载目录" else "已存到相册"
+                        image.privateFilePath.endsWith(".svg", true) -> "保存 SVG 文件"
+                        else -> stringResource(R.string.action_save_to_gallery)
+                    })
                 }
-                OutlinedButton(onClick = onCopyPrompt, modifier = Modifier.weight(1f)) {
-                    Text(if (generation.openAi != null) "复制图片描述" else stringResource(R.string.action_copy_prompt))
+                var copyRevision by remember(image.id) { mutableStateOf(0) }
+                var copied by remember(image.id) { mutableStateOf(false) }
+                LaunchedEffect(copyRevision) {
+                    if (copyRevision > 0) {
+                        copied = true
+                        kotlinx.coroutines.delay(1600)
+                        copied = false
+                    }
+                }
+                OutlinedButton(onClick = { onCopyPrompt(); copyRevision++ }, modifier = Modifier.weight(1f)) {
+                    net.pocketnai.ui.common.ActionStatusIcon(false, copied)
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (copied) "已复制" else if (generation.openAi != null) "复制图片描述" else stringResource(R.string.action_copy_prompt))
                 }
             }
 

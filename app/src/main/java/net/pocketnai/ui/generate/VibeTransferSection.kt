@@ -17,9 +17,9 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import net.pocketnai.ui.common.MotionIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import net.pocketnai.ui.common.MotionOutlinedButton as OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -82,7 +82,8 @@ fun VibeTransferPanel(
         if (!state.supportsVibeTransfer) {
             InactiveReferences(state.vibeReferences, viewModel::onVibeReferenceRemoved)
         } else {
-            state.vibeReferences.forEach { reference ->
+            AnimatedReferenceList(state.vibeReferences) { reference ->
+                Column {
                 VibeEntry(
                     reference = reference,
                     range = state.profile.img2imgStrengthRange.let { it.min..it.max },
@@ -93,6 +94,7 @@ fun VibeTransferPanel(
                     onRemove = { viewModel.onVibeReferenceRemoved(reference.id) },
                 )
                 HorizontalDivider()
+                }
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

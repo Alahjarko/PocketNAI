@@ -328,6 +328,9 @@ class GenerationSeedAndPayloadTest {
         testContext.getSharedPreferences("pocketnai_settings", android.content.Context.MODE_PRIVATE)
             .edit().putString("subscription_override", "OPUS").apply()
         val settings = net.pocketnai.data.settings.SettingsStore(testContext)
+        assertThat(settings.welcomeRequired).isFalse() // Existing preferences skip the new first-install screen.
+        settings.completeWelcome()
+        assertThat(net.pocketnai.data.settings.SettingsStore(testContext).welcomeRequired).isFalse()
         assertThat(settings.sfwMode.value).isFalse()
         settings.setSfwMode(true)
         assertThat(net.pocketnai.data.settings.SettingsStore(testContext).sfwMode.value).isTrue()

@@ -26,9 +26,9 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import net.pocketnai.ui.common.MotionIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import net.pocketnai.ui.common.MotionOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -126,14 +126,16 @@ fun Img2ImgPanel(
                     }
                 }
             }
-        } else {
+        }
+        AnimatedReferenceList(listOfNotNull(source)) { displayedSource ->
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ReferenceSummary(
-                source = source,
+                source = displayedSource,
                 targetSizeLabel = state.referenceTargetSize?.label.orEmpty(),
                 mask = state.inpaintMask,
                 onRemove = viewModel::onRemoveReference,
             )
-            ReferenceOriginLink(source)
+            ReferenceOriginLink(displayedSource)
 
             // 局部重绘入口：底图就绪才出现。
             if (!state.supportsInpaint) {
@@ -171,7 +173,7 @@ fun Img2ImgPanel(
             val strengthRange = state.profile.img2imgStrengthRange
             LabeledSlider(
                 label = stringResource(R.string.generate_reference_strength),
-                value = source.strength ?: state.profile.defaultImg2ImgStrength,
+                value = displayedSource.strength ?: state.profile.defaultImg2ImgStrength,
                 onValueChange = viewModel::onImg2imgStrengthChange,
                 valueRange = strengthRange.min..strengthRange.max,
                 decimals = 2,
@@ -179,6 +181,7 @@ fun Img2ImgPanel(
             )
         }
 
+        }
         if (state.referenceBusy) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

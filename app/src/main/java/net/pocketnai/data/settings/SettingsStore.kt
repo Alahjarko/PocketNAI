@@ -18,6 +18,23 @@ class SettingsStore(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    // Installed updates and restored preferences belong to returning users. Never put a
+    // welcome screen in front of their saved work, even if no service is connected.
+    init {
+        if (!prefs.contains(KEY_WELCOME_COMPLETED)) {
+            val returning = prefs.all.isNotEmpty() || runCatching {
+                @Suppress("DEPRECATION")
+                val info = context.packageManager.getPackageInfo(context.packageName, 0)
+                info.firstInstallTime != info.lastUpdateTime
+            }.getOrDefault(true)
+            prefs.edit().putBoolean(KEY_WELCOME_COMPLETED, returning).apply()
+        }
+    }
+
+    val welcomeRequired: Boolean get() = !prefs.getBoolean(KEY_WELCOME_COMPLETED, false)
+
+    fun completeWelcome() { prefs.edit().putBoolean(KEY_WELCOME_COMPLETED, true).apply() }
+
     private val _opusV5PresetEnabled = MutableStateFlow(prefs.getBoolean("opus_v5_preset_enabled", false))
     val opusV5PresetEnabled: StateFlow<Boolean> = _opusV5PresetEnabled.asStateFlow()
     fun setOpusV5PresetEnabled(enabled: Boolean) {
@@ -121,6 +138,7 @@ class SettingsStore(context: Context) {
 
     private companion object {
         const val PREFS_NAME = "pocketnai_settings"
+        const val KEY_WELCOME_COMPLETED = "welcome_completed"
         const val KEY_STREAMING_ENABLED = "streaming_preview_enabled"
         const val KEY_STREAMING_FAILURES = "streaming_consecutive_failures"
         const val KEY_THEME_MODE = "theme_mode"

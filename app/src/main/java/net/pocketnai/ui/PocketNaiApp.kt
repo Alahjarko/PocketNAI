@@ -98,6 +98,7 @@ import java.io.File
 
 /** 导航目的地。用常量而不是字符串字面量，避免路由名拼错只在运行时才发现。 */
 object Routes {
+    const val WELCOME = "welcome"
     const val CONNECT = "connect"
 
     /** 首页 = 画廊 + 生成悬浮层（两者已合并）。 */
@@ -142,6 +143,13 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
     val connected by container.sessionState.connected.collectAsStateWithLifecycle()
     val credentialType by container.sessionState.credentialType.collectAsStateWithLifecycle()
     val navController = rememberNavController()
+    val startDestination = remember {
+        if (container.settingsStore.welcomeRequired && !connected &&
+            !container.openAiImageSettings.hasKey.value && sharedImageUri == null) Routes.WELCOME else Routes.HOME
+    }
+    LaunchedEffect(startDestination) {
+        if (startDestination != Routes.WELCOME) container.settingsStore.completeWelcome()
+    }
 
     // 生成状态提升到这一层：底部固定栏和悬浮层必须操作同一个 ViewModel，
     // 否则按钮改了参数、悬浮层却看不到。
@@ -157,8 +165,11 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
     val artistLabViewModel = remember(container) { container.artistLabViewModel }
     LaunchedEffect(sharedImageUri, generateState.referenceBusy) {
         if (sharedImageUri != null && !generateState.referenceBusy) {
+            container.settingsStore.completeWelcome()
             navController.navigate(Routes.HOME) {
-                popUpTo(navController.graph.findStartDestination().id)
+                if (navController.currentDestination?.route == Routes.WELCOME) {
+                    popUpTo(Routes.WELCOME) { inclusive = true }
+                } else popUpTo(Routes.HOME)
                 launchSingleTop = true
             }
             if (openAiMode) openAiViewModel.addReference(ReferenceSource.PickedUri(sharedImageUri))
@@ -254,7 +265,7 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
         }) {
         NavHost(
             navController = navController,
-            startDestination = if (connected) Routes.HOME else Routes.CONNECT,
+            startDestination = startDestination,
             modifier = Modifier.fillMaxSize(),
             enterTransition = {
                 when (targetState.destination.route) {
@@ -281,6 +292,22 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                 else -> fadeOut(tween(100))
             } },
         ) {
+            composable(Routes.WELCOME) {
+                fun finishWelcome(provider: net.pocketnai.domain.openai.ImageProvider?) {
+                    container.settingsStore.completeWelcome()
+                    navController.navigate(Routes.HOME) { popUpTo(Routes.WELCOME) { inclusive = true } }
+                    if (provider != null) {
+                        container.openAiImageSettings.setProvider(provider)
+                        if (provider == net.pocketnai.domain.openai.ImageProvider.NOVEL_AI) {
+                            navController.navigate(Routes.CONNECT)
+                        } else {
+                            navController.navigate(Routes.SETTINGS)
+                            navController.currentBackStackEntry?.savedStateHandle?.set("open-image-service", true)
+                        }
+                    }
+                }
+                net.pocketnai.ui.connect.WelcomeScreen(onConnect = { finishWelcome(it) }, onExplore = { finishWelcome(null) })
+            }
             composable(Routes.CONNECT) {
                 ImageMotionRoute(this, Routes.CONNECT) {
                     PocketNaiPageFrame(navController, Routes.CONNECT, chatEnabled, artistLabEnabled) {
@@ -322,7 +349,7 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                     }
                 }
             }
-            composable(Routes.SETTINGS) {
+            composable(Routes.SETTINGS) { settingsEntry ->
                 ImageMotionRoute(this, Routes.SETTINGS) {
                     PocketNaiPageFrame(navController, Routes.SETTINGS, chatEnabled, artistLabEnabled) {
                         SettingsScreen(
@@ -330,6 +357,7 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                             onOpenStatistics = { navController.navigate(Routes.ANLAS_STATISTICS) { launchSingleTop = true } },
                             updateViewModel = updateViewModel,
                             onOpenChatSettings = { navController.navigate(Routes.CHAT_SETTINGS) { launchSingleTop = true } },
+                            openImageServiceOnEntry = settingsEntry.savedStateHandle.get<Boolean>("open-image-service") == true,
                         )
                     }
                 }
@@ -575,7 +603,7 @@ private fun tabSpecs(chatEnabled: Boolean, artistLabEnabled: Boolean) = buildLis
 /** 切换 Tab 时保留各 Tab 自己的状态，并且不在返回栈里堆积重复条目。 */
 private fun NavHostController.navigateToTab(route: String) {
     navigate(route) {
-        popUpTo(graph.findStartDestination().id) { saveState = true }
+        popUpTo(Routes.HOME) { saveState = true }
         launchSingleTop = true
         restoreState = true
     }

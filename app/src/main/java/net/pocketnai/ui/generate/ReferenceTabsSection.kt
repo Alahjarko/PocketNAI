@@ -1,5 +1,18 @@
 package net.pocketnai.ui.generate
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
@@ -90,6 +103,9 @@ fun ReferenceTabsSection(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            val tabPosition = animateFloatAsState(tab.ordinal.toFloat(), spring(dampingRatio = 1f, stiffness = 700f), label = "reference-tab")
+            val indicatorColor = MaterialTheme.colorScheme.onSurface
+            Box(Modifier.fillMaxWidth()) {
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 ReferenceTab.entries.forEachIndexed { index, option ->
                     val active = state.activeReferences.any { it.role == option.role }
@@ -124,7 +140,7 @@ fun ReferenceTabsSection(
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Box(Modifier.width(18.dp).height(2.dp).background(
-                                if (tab == option) foreground else Color.Transparent,
+                                Color.Transparent,
                                 RoundedCornerShape(1.dp),
                             ))
                         }
@@ -132,7 +148,24 @@ fun ReferenceTabsSection(
                 }
             }
 
-            when (tab) {
+            Canvas(Modifier.matchParentSize()) {
+                val x = size.width * (tabPosition.value + .5f) / ReferenceTab.entries.size
+                val y = size.height - 8.dp.toPx()
+                drawLine(indicatorColor, Offset(x - 9.dp.toPx(), y), Offset(x + 9.dp.toPx(), y),
+                    2.dp.toPx(), cap = StrokeCap.Round)
+            }
+            }
+
+            AnimatedContent(targetState = tab, label = "reference-panel",
+                transitionSpec = {
+                    (fadeIn(tween(180)) togetherWith fadeOut(tween(90)))
+                        .using(SizeTransform { _, _ -> tween(220) })
+                }) { shownTab ->
+            val panelModifier = if (shownTab == tab) Modifier else Modifier
+                .clearAndSetSemantics { }
+                .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } }
+            Box(panelModifier) {
+            when (shownTab) {
                 ReferenceTab.IMG2IMG -> Img2ImgPanel(
                     state = state,
                     connected = connected,
@@ -154,6 +187,8 @@ fun ReferenceTabsSection(
                     viewModel = viewModel,
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+            }
             }
         }
     }

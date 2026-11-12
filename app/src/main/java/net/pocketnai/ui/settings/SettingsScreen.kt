@@ -64,6 +64,7 @@ fun SettingsScreen(
     onOpenStatistics: () -> Unit,
     updateViewModel: UpdateViewModel,
     onOpenChatSettings: () -> Unit,
+    openImageServiceOnEntry: Boolean = false,
 ) {
     val container = LocalAppContainer.current
     val viewModel: SettingsViewModel = viewModel(
@@ -124,7 +125,7 @@ fun SettingsScreen(
             style = MaterialTheme.typography.headlineSmall,
         )
 
-        net.pocketnai.ui.openai.OpenAiImageSettingsRow()
+        net.pocketnai.ui.openai.OpenAiImageSettingsRow(initiallyOpen = openImageServiceOnEntry)
 
         Text("NovelAI 账户", style = MaterialTheme.typography.titleSmall)
         val activeAccount = remember(connected, accountSwitchDialogOpen) {

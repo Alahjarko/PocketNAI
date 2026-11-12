@@ -4,7 +4,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import net.pocketnai.ui.common.MotionIconButton as IconButton
 import androidx.compose.runtime.*
 
 /** Undo belongs to this field and revision, and expires once editing or replacement resumes. */
@@ -30,7 +30,8 @@ fun ClearPromptButton(
             cleared = original to resultingRevision
         }
     }) {
-        Icon(if (undo == null) Icons.Default.Close else Icons.AutoMirrored.Filled.Undo,
-            contentDescription = if (undo == null) "清空$label" else "撤销清空$label")
+        FeedbackIcon(if (undo == null) Icons.Default.Close else Icons.AutoMirrored.Filled.Undo,
+            description = if (undo == null) "清空$label" else "撤销清空$label",
+            tint = androidx.compose.material3.LocalContentColor.current)
     }
 }
