@@ -3,6 +3,8 @@ package net.pocketnai.ui.generate
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import net.pocketnai.ui.motion.pressFeedback
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -95,7 +97,11 @@ fun Img2ImgPanel(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         val source = state.referenceSource
-        if (source == null) {
+        val albumPress = remember { MutableInteractionSource() }
+        val historyPress = remember { MutableInteractionSource() }
+        androidx.compose.animation.AnimatedVisibility(visible = source == null,
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically()) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedCard(
                     onClick = {
@@ -106,7 +112,8 @@ fun Img2ImgPanel(
                         )
                     },
                     enabled = connected && !state.referenceBusy,
-                    modifier = Modifier.weight(1f),
+                    interactionSource = albumPress,
+                    modifier = Modifier.weight(1f).pressFeedback(albumPress, connected && !state.referenceBusy),
                 ) {
                     Column(Modifier.fillMaxWidth().padding(vertical = 20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -117,7 +124,8 @@ fun Img2ImgPanel(
                 OutlinedCard(
                     onClick = { historyPickerOpen = true },
                     enabled = connected && !state.referenceBusy,
-                    modifier = Modifier.weight(1f),
+                    interactionSource = historyPress,
+                    modifier = Modifier.weight(1f).pressFeedback(historyPress, connected && !state.referenceBusy),
                 ) {
                     Column(Modifier.fillMaxWidth().padding(vertical = 20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {

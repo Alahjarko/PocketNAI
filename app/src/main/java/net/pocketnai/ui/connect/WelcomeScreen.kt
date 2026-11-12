@@ -40,13 +40,14 @@ internal fun WelcomeScreen(onConnect: (ImageProvider) -> Unit, onExplore: () -> 
     }
     Surface(Modifier.fillMaxSize().testTag("welcome")) {
         BoxWithConstraints(Modifier.safeDrawingPadding()) {
+            val markSize = if (maxHeight < 560.dp) 148.dp else 208.dp
             Column(
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
                 Spacer(Modifier.height(24.dp))
-                WelcomeMark(progress, Modifier.size(if (maxHeight < 560.dp) 148.dp else 208.dp))
+                WelcomeMark(progress, Modifier.size(markSize))
                 Spacer(Modifier.height(24.dp))
                 Column(horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.graphicsLayer {

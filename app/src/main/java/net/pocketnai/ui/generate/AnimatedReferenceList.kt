@@ -32,7 +32,7 @@ internal fun AnimatedReferenceList(references: List<ReferenceImage>, content: @C
             if (visibility.isIdle && !visibility.currentState && current == null) retained.removeAll { it.id == old.id }
         }
         val modifier = if (current != null) Modifier else Modifier.clearAndSetSemantics { }
-            .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } }
+            .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial).changes.forEach { it.consume() } } }
         AnimatedVisibility(visibility, modifier,
             enter = fadeIn(tween(180)) + expandVertically(tween(220)),
             exit = fadeOut(tween(100)) + shrinkVertically(tween(200))) { content(current ?: old) }

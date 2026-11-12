@@ -31,7 +31,7 @@ internal val LocalSettingsSheetDismiss = staticCompositionLocalOf<() -> Unit> { 
 @Composable
 internal fun Modifier.settingsClickable(enabled: Boolean = true, onClick: () -> Unit): Modifier {
     val source = remember { MutableInteractionSource() }
-    return pressFeedback(source, enabled).graphicsLayer { alpha = if (enabled) 1f else .6f }
+    return pressFeedback(source, enabled, pressedScale = .985f).graphicsLayer { alpha = if (enabled) 1f else .6f }
         .clickable(enabled = enabled, role = Role.Button, interactionSource = source,
             indication = ripple(), onClick = onClick)
 }

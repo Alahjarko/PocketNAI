@@ -163,7 +163,7 @@ fun ReferenceTabsSection(
                 }) { shownTab ->
             val panelModifier = if (shownTab == tab) Modifier else Modifier
                 .clearAndSetSemantics { }
-                .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } }
+                .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial).changes.forEach { it.consume() } } }
             Box(panelModifier) {
             when (shownTab) {
                 ReferenceTab.IMG2IMG -> Img2ImgPanel(
