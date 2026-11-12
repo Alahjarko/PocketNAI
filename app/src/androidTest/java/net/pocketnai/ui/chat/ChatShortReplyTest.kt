@@ -225,7 +225,10 @@ class ChatShortReplyTest {
             compose.runOnUiThread { replyText = text }
             compose.runOnIdle { kotlinx.coroutines.runBlocking { list.scrollToItem(1) } }
             compose.mainClock.advanceTimeBy(500)
+            // ScrollTo awaits a frame while locating a child inside the tall multi-image item.
+            compose.mainClock.autoAdvance = true
             compose.onNodeWithTag("chat-image-sample").performScrollTo()
+            compose.mainClock.autoAdvance = false
             compose.mainClock.advanceTimeBy(500)
             compose.waitUntil(5000) {
                 compose.mainClock.advanceTimeBy(32)
