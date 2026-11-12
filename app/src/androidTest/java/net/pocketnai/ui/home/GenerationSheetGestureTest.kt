@@ -82,6 +82,11 @@ class GenerationSheetGestureTest {
         showSheet()
         compose.mainClock.advanceTimeBy(16)
         compose.onNodeWithText("连接绘画服务").assertIsEnabled()
+        // Both actions must fit inside the viewport, even before the introduction finishes.
+        val viewport = compose.onRoot().fetchSemanticsNode().boundsInRoot
+        val skip = compose.onNodeWithText("先看看").fetchSemanticsNode().boundsInRoot
+        assertThat(skip.bottom).isAtMost(viewport.bottom)
+        compose.onNodeWithText("先看看").assertIsDisplayed()
         screenshot("welcome-start")
         compose.onNodeWithText(ImageProvider.OPEN_AI.label).performClick()
         compose.onNodeWithText("连接绘画服务").performClick()

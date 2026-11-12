@@ -40,15 +40,16 @@ internal fun WelcomeScreen(onConnect: (ImageProvider) -> Unit, onExplore: () -> 
     }
     Surface(Modifier.fillMaxSize().testTag("welcome")) {
         BoxWithConstraints(Modifier.safeDrawingPadding()) {
-            val markSize = if (maxHeight < 560.dp) 148.dp else 208.dp
+            val markSize = if (maxHeight < 680.dp) 120.dp else 192.dp
             Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp),
+                Modifier.fillMaxSize().padding(horizontal = 28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
             ) {
-                Spacer(Modifier.height(24.dp))
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(vertical = 20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
                 WelcomeMark(progress, Modifier.size(markSize))
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(20.dp))
                 Column(horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.graphicsLayer {
                         alpha = .3f + .7f * progress.value
@@ -61,7 +62,8 @@ internal fun WelcomeScreen(onConnect: (ImageProvider) -> Unit, onExplore: () -> 
                     Text("从一句描述，或一张参考图开始", style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Spacer(Modifier.height(36.dp))
+                }
+                }
                 Column(Modifier.widthIn(max = 400.dp).fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -78,7 +80,7 @@ internal fun WelcomeScreen(onConnect: (ImageProvider) -> Unit, onExplore: () -> 
                     MotionOutlinedButton(onClick = onExplore,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("先看看") }
                 }
-                Spacer(Modifier.height(28.dp))
+                Spacer(Modifier.height(16.dp))
             }
         }
     }
