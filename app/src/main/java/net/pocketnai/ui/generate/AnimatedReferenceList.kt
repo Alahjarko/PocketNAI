@@ -24,7 +24,10 @@ internal fun AnimatedReferenceList(references: List<ReferenceImage>, content: @C
             if (index < 0) retained.add(next) else if (retained[index] != next) retained[index] = next
         }
     }
-    retained.toList().forEach { old -> key(old.id) {
+    // New items must participate in this frame's layout, before the empty picker starts
+    // shrinking. Waiting for the effect would briefly clamp the surrounding scroll range.
+    val departing = retained.filter { old -> references.none { it.id == old.id } }
+    (references + departing).forEach { old -> key(old.id) {
         val current = references.firstOrNull { it.id == old.id }
         val visibility = remember { MutableTransitionState(old.id in initialIds) }
         visibility.targetState = current != null

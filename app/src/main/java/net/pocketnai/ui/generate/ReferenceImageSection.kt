@@ -100,8 +100,10 @@ fun Img2ImgPanel(
         val albumPress = remember { MutableInteractionSource() }
         val historyPress = remember { MutableInteractionSource() }
         androidx.compose.animation.AnimatedVisibility(visible = source == null,
-            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
-            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically()) {
+            enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180)) +
+                androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(220)),
+            exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(100)) +
+                androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(200))) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedCard(
                     onClick = {
