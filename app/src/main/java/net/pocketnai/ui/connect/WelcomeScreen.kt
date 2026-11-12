@@ -71,7 +71,7 @@ internal fun WelcomeScreen(onConnect: (ImageProvider) -> Unit, onExplore: () -> 
                             SegmentedButton(selected = providerName == option.name,
                                 onClick = { providerName = option.name },
                                 shape = SegmentedButtonDefaults.itemShape(index, ImageProvider.entries.size)) {
-                                Text(option.label)
+                                Text(if (option == ImageProvider.OPEN_AI) "OpenAI" else option.label, maxLines = 1)
                             }
                         }
                     }

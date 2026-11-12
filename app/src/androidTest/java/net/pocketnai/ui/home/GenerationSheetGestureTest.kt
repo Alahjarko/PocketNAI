@@ -88,7 +88,7 @@ class GenerationSheetGestureTest {
         assertThat(skip.bottom).isAtMost(viewport.bottom)
         compose.onNodeWithText("先看看").assertIsDisplayed()
         screenshot("welcome-start")
-        compose.onNodeWithText(ImageProvider.OPEN_AI.label).performClick()
+        compose.onNodeWithText("OpenAI").performClick()
         compose.onNodeWithText("连接绘画服务").performClick()
         compose.runOnIdle { assertThat(chosenProvider).isEqualTo(ImageProvider.OPEN_AI) }
         compose.mainClock.advanceTimeBy(900)
