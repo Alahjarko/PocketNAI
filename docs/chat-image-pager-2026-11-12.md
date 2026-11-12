@@ -22,4 +22,4 @@
 
 候选与截图、测试记录保存在 `pocketnai/artifacts/chat-image-pager-2026-11-12/`：`validation-summary.json`、`validation-evidence.zip`、`native-result.json` 及 `PocketNAI-preview-unsigned.apk`。无签名候选 SHA-256 为 `43485aff090fd3f9d12d0cb5a1f30f6a3167d4edec80c01b9875080db23f977a`。后续发布使用此更新后的候选（包含上一轮动效改动），仍须沿用原公开证书；云端测试签名包不用于用户公开安装。
 
-本轮按用户要求只提交、保存候选与证据，不发布 APK。
+开发验收阶段按用户要求只提交、保存候选与证据；用户随后明确确认发布，已随 [0.1.38](release-0.1.38.md) 正式发布。
