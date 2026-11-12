@@ -52,6 +52,8 @@
 
 ## 参数记忆
 
+- 首次引导只在非秘密 `pocketnai_settings` 中保存 `welcome_completed`（2026-11-12），不改数据库。没有此键时，已有设置或安装更新时间不同于首次安装时间视为老用户；不能因为未连接 NovelAI 再显示欢迎。完成/跳过后首页作为返回锚点，分享入口直接进入原有选图处理。欢迎页不存凭据、不触发生成，也不能清理历史或草稿。
+
 - 首页排队使用既有`generations.status`的TEXT值`QUEUED`，没有新表或数据库迁移。入队先写冻结参数/Seed和参考图索引，执行沿用同一个生成ID；参考图编码后的缓存索引用UPDATE补齐，不能REPLACE父记录。进程启动只将旧QUEUED标为“未发送”，旧GENERATING仍按结果不确定处理，均不重新发请求；Activity重建不重复做恢复。见[任务调度记录](../generation-queue-2026-11-02.md)。
 
 - 生成页的编辑状态由 `GenerateViewModel` 自动持久化到 `GenerationDraftPreferences`，
