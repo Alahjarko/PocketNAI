@@ -70,10 +70,10 @@ class PocketMcpBackend(private val container: AppContainer) : McpImageBackend {
                 quality = string("quality") ?: base.quality, count = 1, outputFormat = "png")
             params.validate()?.let { throw McpToolFailure(it) }
             Plan(provider, prompt, "", "${params.modelLabel} · ${params.size} · ${params.quality} · PNG · 1 张",
-                openAiQuote(params), openai = params, account = McpJobStore.digest(key))
+                openAiQuote(), openai = params, account = McpJobStore.digest(key))
         } else throw McpToolFailure("请选择 novelai 或 openai")
     }
-    private fun openAiQuote(params: OpenAiImageParams) = "OpenAI 按实际用量计费（USD），生成前金额无法确定"
+    private fun openAiQuote() = "OpenAI 按实际用量计费（USD），生成前金额无法确定"
     override suspend fun quote(plan: McpImagePlan): String = withContext(Dispatchers.Main.immediate) {
         val p = plan as Plan
         rejectSecrets(p.prompt + p.negative)
@@ -84,7 +84,7 @@ class PocketMcpBackend(private val container: AppContainer) : McpImageBackend {
         } else {
             val key = container.openAiImageSettings.apiKey() ?: throw McpToolFailure("生图密钥已移除")
             if (McpJobStore.digest(key) != p.account) throw McpToolFailure("生图密钥已改变，请重新提交新任务")
-            openAiQuote(p.openai!!)
+            openAiQuote()
         }
     }
     override suspend fun generate(plan: McpImagePlan, protection: BackgroundTasks.Task,
@@ -98,6 +98,7 @@ class PocketMcpBackend(private val container: AppContainer) : McpImageBackend {
                 container.awaitStartup()
                 beforeSend()
                 container.openAiImageRepository.generate(OpenAiImageDraft(p.openai!!), beforeSend = {
+                    beforeSend()
                     protection.ensureRunning()
                     if (McpJobStore.digest(container.openAiImageSettings.apiKey().orEmpty()) != p.account) throw McpToolFailure("生图密钥已改变")
                 }).collect { event -> when (event) {

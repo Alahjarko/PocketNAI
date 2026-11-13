@@ -107,7 +107,8 @@ fun LocalMcpScreen(manager: LocalMcpManager, onBack: () -> Unit) {
 
                     }
                 }
-            }            item {
+            }
+            item {
                 SettingsSection("连接到 RikkaHub")
                 SettingsCard {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
