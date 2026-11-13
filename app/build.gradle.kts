@@ -115,6 +115,13 @@ if (providers.gradleProperty("galleryBenchmark").orNull == "true") {
     android.sourceSets.getByName("release").manifest.srcFile("src/benchmark/AndroidManifest.xml")
 }
 
+// Explicit offline interoperability fixture; never part of a normal delivery.
+if (providers.gradleProperty("localMcpBenchmark").orNull == "true") {
+    android.defaultConfig.applicationId = "net.pocketnai.mcpbench"
+    android.sourceSets.getByName("main").java.srcDir("src/mcpBenchmark/java")
+    android.sourceSets.getByName("release").manifest.srcFile("src/mcpBenchmark/AndroidManifest.xml")
+}
+
 kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
