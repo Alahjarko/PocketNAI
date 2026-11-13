@@ -98,7 +98,6 @@ class PocketMcpBackend(private val container: AppContainer) : McpImageBackend {
                 container.awaitStartup()
                 beforeSend()
                 container.openAiImageRepository.generate(OpenAiImageDraft(p.openai!!), beforeSend = {
-                    beforeSend()
                     protection.ensureRunning()
                     if (McpJobStore.digest(container.openAiImageSettings.apiKey().orEmpty()) != p.account) throw McpToolFailure("生图密钥已改变")
                 }).collect { event -> when (event) {
