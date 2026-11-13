@@ -24,7 +24,8 @@ interface McpImageBackend {
     suspend fun capabilities(): JsonObject
     suspend fun prepare(arguments: JsonObject): McpImagePlan
     suspend fun quote(plan: McpImagePlan): String
-    suspend fun generate(plan: McpImagePlan, protection: BackgroundTasks.Task, onImage: suspend (String) -> Unit)
+    suspend fun generate(plan: McpImagePlan, protection: BackgroundTasks.Task,
+        beforeSend: suspend () -> Unit, onImage: suspend (String) -> Unit)
     suspend fun image(imageId: String): JsonObject
 }
 class McpToolFailure(message: String) : IllegalStateException(message)
@@ -174,6 +175,7 @@ class LocalMcpManager(
     }
     private suspend fun approveNow(id: String, automatic: Boolean) {
         ready.await()
+        data class Approved(val plan: McpImagePlan, val quote: String)
         val work = mutex.withLock {
             val job = read(id)
             if (job.state != McpImageJob.PENDING || !_state.value.running || !attached) return
@@ -184,10 +186,11 @@ class LocalMcpManager(
                 val quote = backend.quote(plan)
                 if (quote != job.quote && !automatic) { save(job.copy(quote = quote, message = "报价已变化，请核对后再次确认")); return }
                 save(job.copy(state = McpImageJob.RUNNING, quote = quote, message = "正在生成；已发送后不会重试"))
+                Approved(plan, quote)
             } catch (_: Exception) { save(job.copy(state = McpImageJob.FAILED, message = "参数、账号或费用校验未通过，未自动重试")); plans.remove(id); return }
-            plan
         }
         val executionSerial = serial
+        var changedQuote: String? = null
         val protection = object : BackgroundTasks.Task {
             override suspend fun awaitReady() { ensureRunning() }
             override fun ensureRunning() { if (!attached || !_state.value.running || serial != executionSerial) throw McpToolFailure("连接已结束，未再发送请求") }
@@ -196,7 +199,14 @@ class LocalMcpManager(
         }
         try {
             withContext(NonCancellable) {
-                backend.generate(work, protection) { imageId -> mutex.withLock {
+                backend.generate(work.plan, protection, beforeSend = {
+                    val latestQuote = backend.quote(work.plan)
+                    if (!automatic && latestQuote != work.quote) {
+                        changedQuote = latestQuote
+                        throw McpToolFailure("报价已变化，未发送")
+                    }
+                    protection.ensureRunning()
+                }) { imageId -> mutex.withLock {
                     val latest = read(id); save(latest.copy(imageIds = (latest.imageIds + imageId).distinct()))
                 } }
                 mutex.withLock {
@@ -206,10 +216,14 @@ class LocalMcpManager(
                 }
             }
         } catch (_: Exception) {
-            mutex.withLock { val latest = read(id); save(latest.copy(state = McpImageJob.UNCERTAIN,
-                message = "任务未完成，请核对画廊与费用；没有重试")) }
+            mutex.withLock {
+                val latest = read(id)
+                save(if (changedQuote != null) latest.copy(state = McpImageJob.PENDING, quote = changedQuote!!,
+                    message = "发送前报价已变化，图片请求未发送；请重新核对确认")
+                else latest.copy(state = McpImageJob.UNCERTAIN, message = "任务未完成，请核对画廊与费用；没有重试"))
+            }
         } finally {
-            mutex.withLock { plans.remove(id) }
+            mutex.withLock { if (read(id).state != McpImageJob.PENDING) plans.remove(id) }
             if (_state.value.running && _state.value.directGeneration) {
                 _state.value.jobs.lastOrNull { it.state == McpImageJob.PENDING }?.let { scope.launch { approveNow(it.id, true) } }
             }

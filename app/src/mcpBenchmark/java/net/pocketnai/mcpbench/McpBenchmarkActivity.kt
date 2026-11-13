@@ -29,7 +29,9 @@ class McpBenchmarkApplication : Application(), LocalMcpOwner {
             override val quote = "离线验证 · 不产生费用"
         }
         override suspend fun quote(plan: McpImagePlan) = plan.quote
-        override suspend fun generate(plan: McpImagePlan, protection: BackgroundTasks.Task, onImage: suspend (String) -> Unit) {
+        override suspend fun generate(plan: McpImagePlan, protection: BackgroundTasks.Task,
+            beforeSend: suspend () -> Unit, onImage: suspend (String) -> Unit) {
+            beforeSend()
             protection.ensureRunning()
             val n = generated.incrementAndGet()
             File(filesDir, "fake-generation-count.txt").writeText(n.toString())

@@ -25,6 +25,8 @@ internal fun verifyLocalMcpTransport(base: Context) = runBlocking {
     val generated = AtomicInteger()
     val gate = CompletableDeferred<Unit>()
     val entered = CompletableDeferred<Unit>()
+    var quoteLabel = "offline, no charge"
+    var changeAtSend = false
     val backend = object : McpImageBackend {
         override suspend fun capabilities() = buildJsonObject { put("offline", true) }
         override suspend fun prepare(arguments: JsonObject) = object : McpImagePlan {
@@ -32,10 +34,13 @@ internal fun verifyLocalMcpTransport(base: Context) = runBlocking {
             override val prompt = arguments["prompt"]!!.jsonPrimitive.content
             override val negative = ""
             override val description = "offline image"
-            override val quote = "offline, no charge"
+            override val quote = quoteLabel
         }
-        override suspend fun quote(plan: McpImagePlan) = plan.quote
-        override suspend fun generate(plan: McpImagePlan, protection: BackgroundTasks.Task, onImage: suspend (String) -> Unit) {
+        override suspend fun quote(plan: McpImagePlan) = quoteLabel
+        override suspend fun generate(plan: McpImagePlan, protection: BackgroundTasks.Task,
+            beforeSend: suspend () -> Unit, onImage: suspend (String) -> Unit) {
+            if (changeAtSend) quoteLabel = "changed quote, needs confirmation"
+            beforeSend()
             protection.ensureRunning(); generated.incrementAndGet(); entered.complete(Unit)
             gate.await(); onImage("offline-image")
         }
@@ -106,6 +111,16 @@ internal fun verifyLocalMcpTransport(base: Context) = runBlocking {
         assertThat(generated.get()).isEqualTo(1)
         val store = McpJobStore(File(context.filesDir, "mcp-jobs"))
         assertThat(store.read(id)!!.imageIds).containsExactly("offline-image")
+        val priceJob = info(tool("submit_image_task", args("price-task-004")))["job_id"]!!.jsonPrimitive.content
+        changeAtSend = true
+        withContext(Dispatchers.Main) { manager.approve(priceJob) }
+        awaitState { manager.state.value.jobs.any { it.id == priceJob && it.message.contains("发送前报价已变化") } }
+        assertThat(generated.get()).isEqualTo(1)
+        assertThat(store.read(priceJob)!!.state).isEqualTo(McpImageJob.PENDING)
+        changeAtSend = false
+        withContext(Dispatchers.Main) { manager.approve(priceJob) }
+        awaitState { manager.state.value.jobs.any { it.id == priceJob && it.state == McpImageJob.SUCCEEDED } }
+        assertThat(generated.get()).isEqualTo(2)
         val pendingId = McpJobStore.digest("recovered-task-003")
         store.write(McpImageJob(pendingId, "fixture", 0, "fixture", "test", description = "fixture", quote = "none"))
         store.recover()

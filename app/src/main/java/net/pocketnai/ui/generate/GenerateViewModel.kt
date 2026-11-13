@@ -1762,7 +1762,7 @@ class GenerateViewModel(
                     }
                 }
             }
-        } finally { background?.close(); _state.update { it.copy(inFlight = false) } }
+        } finally { background?.close(); _state.update { it.copy(inFlight = it.homeOutstanding > 0) } }
         if (images.isEmpty()) throw net.pocketnai.domain.chat.ChatFailure("没有收到最终图片，未自动重试")
         return images
     }

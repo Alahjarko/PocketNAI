@@ -5,6 +5,8 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.*
 import net.pocketnai.di.AppContainer
 import net.pocketnai.domain.chat.ImageChatTools
@@ -17,6 +19,7 @@ import net.pocketnai.data.repo.GenerationEvent
 import java.io.ByteArrayOutputStream
 
 class PocketMcpBackend(private val container: AppContainer) : McpImageBackend {
+    private val previews = Semaphore(1)
     private data class Plan(
         override val provider: String, override val prompt: String, override val negative: String,
         override val description: String, override val quote: String,
@@ -84,14 +87,16 @@ class PocketMcpBackend(private val container: AppContainer) : McpImageBackend {
             openAiQuote(p.openai!!)
         }
     }
-    override suspend fun generate(plan: McpImagePlan, protection: BackgroundTasks.Task, onImage: suspend (String) -> Unit) = withContext(Dispatchers.Main.immediate) {
+    override suspend fun generate(plan: McpImagePlan, protection: BackgroundTasks.Task,
+        beforeSend: suspend () -> Unit, onImage: suspend (String) -> Unit) = withContext(Dispatchers.Main.immediate) {
         val p = plan as Plan
         if (p.nai != null) {
-            container.generateViewModel.generateForMcp(p.nai, p.account, protection, { quote(p); protection.ensureRunning() }) { onImage(it.imageId) }
+            container.generateViewModel.generateForMcp(p.nai, p.account, protection, beforeSend) { onImage(it.imageId) }
         } else {
             if (!container.generateViewModel.reserveExternalGeneration()) throw McpToolFailure("另一项图片任务正在执行，请等待完成")
             try {
                 container.awaitStartup()
+                beforeSend()
                 container.openAiImageRepository.generate(OpenAiImageDraft(p.openai!!), beforeSend = {
                     protection.ensureRunning()
                     if (McpJobStore.digest(container.openAiImageSettings.apiKey().orEmpty()) != p.account) throw McpToolFailure("生图密钥已改变")
@@ -104,14 +109,14 @@ class PocketMcpBackend(private val container: AppContainer) : McpImageBackend {
         }
         Unit
     }
-    override suspend fun image(imageId: String): JsonObject = withContext(Dispatchers.IO) {
+    override suspend fun image(imageId: String): JsonObject = previews.withPermit { withContext(Dispatchers.IO) {
         val detail = container.generationRepository.loadDetail(imageId) ?: throw McpToolFailure("图片已从画廊移除")
         if (container.settingsStore.sfwMode.value && SfwPolicy.isSensitive(detail.generation)) throw McpToolFailure("当前 SFW 模式下请在 PocketNAI 详情中查看此图")
         val file = container.fileStore.resolve(detail.image.privateFilePath)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.path, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw McpToolFailure("图片无法读取")
-        val options = BitmapFactory.Options().apply { inSampleSize = 1; while (maxOf(bounds.outWidth, bounds.outHeight) / inSampleSize > 3072) inSampleSize *= 2 }
+        val options = BitmapFactory.Options().apply { inSampleSize = 1; while (maxOf(bounds.outWidth, bounds.outHeight) / inSampleSize > 2048) inSampleSize *= 2 }
         val decoded = BitmapFactory.decodeFile(file.path, options) ?: throw McpToolFailure("图片无法读取")
         val factor = (1536f / maxOf(decoded.width, decoded.height)).coerceAtMost(1f)
         val preview = if (factor < 1f) Bitmap.createScaledBitmap(decoded, (decoded.width * factor).toInt().coerceAtLeast(1),
@@ -124,5 +129,5 @@ class PocketMcpBackend(private val container: AppContainer) : McpImageBackend {
                 add(buildJsonObject { put("type", "text"); put("text", "预览 ${preview.width} × ${preview.height}；原图已保存到 PocketNAI 画廊") })
             }); put("isError", false) }
         } finally { if (preview !== decoded) preview.recycle(); decoded.recycle() }
-    }
+    } }
 }

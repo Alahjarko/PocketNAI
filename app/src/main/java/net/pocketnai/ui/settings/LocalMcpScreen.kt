@@ -20,6 +20,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import net.pocketnai.data.mcp.*
@@ -68,7 +70,8 @@ fun LocalMcpScreen(manager: LocalMcpManager, onBack: () -> Unit) {
                                 Text("开启后，已配对的助手可直接生图并产生费用", style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Switch(direct, { direct = it }, enabled = !state.stopping || state.active > 0)
+                            Switch(direct, { direct = it }, enabled = !state.stopping || state.active > 0,
+                                modifier = Modifier.semantics { contentDescription = "本次连接直接生成" })
                         }
                     } else if (state.directGeneration) Text("本次连接已允许直接生成", Modifier.padding(horizontal = 16.dp),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
@@ -81,27 +84,6 @@ fun LocalMcpScreen(manager: LocalMcpManager, onBack: () -> Unit) {
                 }
             }
             state.message?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium) } }
-            item {
-                SettingsSection("连接到 RikkaHub")
-                SettingsCard {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("添加 Streamable HTTP 类型的 MCP 服务", style = MaterialTheme.typography.bodyMedium)
-                        Text(LocalMcpManager.URL, style = MaterialTheme.typography.bodyMedium)
-                        MotionOutlinedButton(onClick = { copy("服务地址", LocalMcpManager.URL) }, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.ContentCopy, null); Spacer(Modifier.width(8.dp)); Text(if (copied == "服务地址") "已复制地址" else "复制地址")
-                        }
-                        Text("请求头：Authorization", style = MaterialTheme.typography.bodyMedium)
-                        MotionOutlinedButton(onClick = { scope.launch { runCatching {
-                            copy("认证值", "Bearer ${manager.connectionToken()}", true)
-                        } } }, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.Key, null); Spacer(Modifier.width(8.dp)); Text(if (copied == "认证值") "已复制认证值" else "复制认证值（含 Bearer）")
-                        }
-                        Text("配置一次即可。服务在锁屏或闲置后关闭，下次使用重新开启。", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        TextButton(onClick = { reset = true }) { Text("重置连接令牌") }
-                    }
-                }
-            }
             if (state.jobs.isNotEmpty()) item { SettingsSection("连接任务") }
             items(state.jobs, key = { it.id }) { job ->
                 SettingsCard {
@@ -109,6 +91,11 @@ fun LocalMcpScreen(manager: LocalMcpManager, onBack: () -> Unit) {
                         Text(job.description, style = MaterialTheme.typography.titleSmall)
                         Text(job.quote, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                         Text(job.message, style = MaterialTheme.typography.bodySmall)
+                        if (job.state == McpImageJob.PENDING) {
+                            MotionButton(onClick = { manager.approve(job.id) }, enabled = state.running && state.active == 0,
+                                modifier = Modifier.fillMaxWidth().testTag("mcp-approve-${job.id}")) { Text("确认生成 1 张") }
+                            TextButton(onClick = { manager.reject(job.id) }, modifier = Modifier.fillMaxWidth()) { Text("取消此任务") }
+                        }
                         var expanded by rememberSaveable(job.id) { mutableStateOf(false) }
                         TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "收起提示词" else "查看提示词") }
                         net.pocketnai.ui.common.AnimatedDisclosure(expanded) {
@@ -117,14 +104,31 @@ fun LocalMcpScreen(manager: LocalMcpManager, onBack: () -> Unit) {
                                 if (job.negative.isNotBlank()) Text("排除词：${job.negative}", style = MaterialTheme.typography.bodySmall)
                             }
                         }
-                        if (job.state == McpImageJob.PENDING) {
-                            MotionButton(onClick = { manager.approve(job.id) }, enabled = state.running && state.active == 0,
-                                modifier = Modifier.fillMaxWidth().testTag("mcp-approve-${job.id}")) { Text("确认生成 1 张") }
-                            TextButton(onClick = { manager.reject(job.id) }, modifier = Modifier.fillMaxWidth()) { Text("取消此任务") }
+
+                    }
+                }
+            }            item {
+                SettingsSection("连接到 RikkaHub")
+                SettingsCard {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("添加 Streamable HTTP 类型的 MCP 服务", style = MaterialTheme.typography.bodyMedium)
+                        Text(LocalMcpManager.URL, style = MaterialTheme.typography.bodyMedium)
+                        MotionOutlinedButton(onClick = { copy("服务地址", LocalMcpManager.URL) }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.ContentCopy, null); Spacer(Modifier.width(8.dp)); Text(if (copied == "服务地址") "已复制地址" else "复制地址")
                         }
+                        Text("请求头：Authorization（认证值已包含 Bearer）", style = MaterialTheme.typography.bodyMedium)
+                        MotionOutlinedButton(onClick = { scope.launch { runCatching {
+                            copy("认证值", "Bearer ${manager.connectionToken()}", true)
+                        } } }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.Key, null); Spacer(Modifier.width(8.dp)); Text(if (copied == "认证值") "已复制认证值" else "复制认证值")
+                        }
+                        Text("配置一次即可。服务在锁屏或闲置后关闭，下次使用重新开启。", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton(onClick = { reset = true }) { Text("重置连接令牌") }
                     }
                 }
             }
+
         }
     }
     if (reset) AlertDialog(onDismissRequest = { reset = false }, title = { Text("重置连接令牌？") },
