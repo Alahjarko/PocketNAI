@@ -106,6 +106,7 @@ object Routes {
     const val ANLAS_STATISTICS = "anlas-statistics"
     const val CHAT = "chat"
     const val CHAT_SETTINGS = "chat-settings"
+    const val LOCAL_MCP = "local-mcp"
     const val ARTIST_LAB = "artist-lab"
     const val DETAIL = "detail/{imageId}"
     const val REFERENCE_DETAIL = "reference-detail/{imageId}"
@@ -128,20 +129,32 @@ private data class TabSpec(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Unit = {}, checkUpdatesOnLaunch: Boolean = true) {
+fun PocketNaiApp(sharedImageUri: String? = null, onSharedImageHandled: () -> Unit = {}, checkUpdatesOnLaunch: Boolean = true,
+    openLocalMcp: Boolean = false, onLocalMcpHandled: () -> Unit = {}) {
     net.pocketnai.ui.safety.SfwDisplayProvider {
-        ImageMotionRoot { PocketNaiAppContent(sharedImageUri, onSharedImageHandled, checkUpdatesOnLaunch) }
+        ImageMotionRoot { PocketNaiAppContent(sharedImageUri, onSharedImageHandled, checkUpdatesOnLaunch, openLocalMcp, onLocalMcpHandled) }
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: () -> Unit, checkUpdatesOnLaunch: Boolean) {
+private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: () -> Unit, checkUpdatesOnLaunch: Boolean,
+    openLocalMcp: Boolean, onLocalMcpHandled: () -> Unit) {
     val imageMotion = LocalImageMotion.current!!
     val container = LocalAppContainer.current
     val connected by container.sessionState.connected.collectAsStateWithLifecycle()
     val credentialType by container.sessionState.credentialType.collectAsStateWithLifecycle()
     val navController = rememberNavController()
+    LaunchedEffect(openLocalMcp) {
+        if (openLocalMcp) {
+            container.settingsStore.completeWelcome()
+            if (navController.currentDestination?.route == Routes.WELCOME) {
+                navController.navigate(Routes.HOME) { popUpTo(Routes.WELCOME) { inclusive = true } }
+            }
+            navController.navigate(Routes.LOCAL_MCP) { launchSingleTop = true }
+            onLocalMcpHandled()
+        }
+    }
     val startDestination = remember {
         if (container.settingsStore.welcomeRequired && !connected &&
             !container.openAiImageSettings.hasKey.value && sharedImageUri == null) Routes.WELCOME else Routes.HOME
@@ -357,6 +370,7 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                             updateViewModel = updateViewModel,
                             onOpenChatSettings = { navController.navigate(Routes.CHAT_SETTINGS) { launchSingleTop = true } },
                             openImageServiceOnEntry = settingsEntry.savedStateHandle.get<Boolean>("open-image-service") == true,
+                            onOpenLocalMcp = { navController.navigate(Routes.LOCAL_MCP) { launchSingleTop = true } },
                         )
                     }
                 }
@@ -382,6 +396,12 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                     slideOutHorizontally(tween(300)) { it / 5 } },
             ) {
                 net.pocketnai.ui.chat.ChatSettingsScreen(chatViewModel) { navController.popBackStack() }
+            }
+            composable(Routes.LOCAL_MCP,
+                enterTransition = { fadeIn(tween(220)) + slideInHorizontally(tween(300)) { it / 7 } },
+                popExitTransition = { fadeOut(tween(220)) + scaleOut(tween(300), targetScale = .96f) + slideOutHorizontally(tween(300)) { it / 5 } },
+            ) {
+                net.pocketnai.ui.settings.LocalMcpScreen(container.localMcpManager) { navController.popBackStack() }
             }
             composable(Routes.CHAT) {
                 ImageMotionRoute(this, Routes.CHAT) {

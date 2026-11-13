@@ -7,6 +7,7 @@ import org.junit.Test
 
 class ChatProtocolTest {
     @Test fun `误回显的认证值在正文思考和嵌套参数中全部移除`() {
+        verifyLocalMcpProtocol()
         val placeholder = "test-auth-placeholder"
         val wire = buildJsonObject { put("content", placeholder); put("reasoning_content", "prefix $placeholder")
             put("tool_calls", buildJsonArray { add(buildJsonObject { put("arguments", "{\"prompt\":\"$placeholder\"}"); put("n", 42) }) }) }

@@ -16,9 +16,12 @@ import net.pocketnai.ui.theme.PocketNaiTheme
 
 class MainActivity : ComponentActivity() {
     private var sharedImage by mutableStateOf<String?>(null)
+    private var openLocalMcp by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        openLocalMcp = savedInstanceState?.getBoolean("pending_local_mcp")
+            ?: intent.getBooleanExtra(net.pocketnai.data.mcp.LocalMcpService.OPEN, false)
         sharedImage = savedInstanceState?.getString("pending_shared_image")
             ?: if (savedInstanceState == null) sharedImageUri(intent)?.toString() else null
         val container = (application as PocketNaiApplication).container
@@ -33,7 +36,8 @@ class MainActivity : ComponentActivity() {
             val themeMode by container.settingsStore.themeMode.collectAsStateWithLifecycle()
             PocketNaiTheme(themeMode = themeMode) {
                 CompositionLocalProvider(LocalAppContainer provides container) {
-                    PocketNaiApp(sharedImage, onSharedImageHandled = { sharedImage = null })
+                    PocketNaiApp(sharedImage, onSharedImageHandled = { sharedImage = null },
+                        openLocalMcp = openLocalMcp, onLocalMcpHandled = { openLocalMcp = false })
                 }
             }
         }
@@ -42,12 +46,14 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (intent.getBooleanExtra(net.pocketnai.data.mcp.LocalMcpService.OPEN, false)) openLocalMcp = true
         // 桌面图标/通知的普通重入不能丢掉尚在等待参考图处理的分享。
         sharedImageUri(intent)?.let { sharedImage = it.toString() }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("pending_shared_image", sharedImage)
+        outState.putBoolean("pending_local_mcp", openLocalMcp)
         super.onSaveInstanceState(outState)
     }
 }

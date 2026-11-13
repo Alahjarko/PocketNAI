@@ -1688,18 +1688,29 @@ class GenerateViewModel(
         onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit,
         expectedAccountFingerprint: String?,
         beforeSend: suspend () -> Unit,
-    ): List<net.pocketnai.domain.chat.ChatImage> = generateIsolated(params, onImage, "对话生成",
+    ): List<net.pocketnai.domain.chat.ChatImage> = generateIsolated(params, { onImage(it) }, "对话生成",
         expectedAccountFingerprint = expectedAccountFingerprint, templatesResolved = true, verifySend = beforeSend)
+
+    /** The already-running local service owns this task's protection; do not start an FGS from background. */
+    suspend fun generateForMcp(
+        params: GenerationParams,
+        account: String?,
+        protection: net.pocketnai.domain.task.BackgroundTasks.Task,
+        beforeSend: suspend () -> Unit,
+        onImage: suspend (net.pocketnai.domain.chat.ChatImage) -> Unit,
+    ) = generateIsolated(params, onImage, "本机助手生成", expectedAccountFingerprint = account,
+        templatesResolved = true, verifySend = beforeSend, externalProtection = protection)
 
     private suspend fun generateIsolated(
         params: GenerationParams,
-        onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit,
+        onImage: suspend (net.pocketnai.domain.chat.ChatImage) -> Unit,
         description: String,
         onStarted: suspend (String) -> Unit = {},
         fromArtistLab: Boolean = false,
         expectedAccountFingerprint: String? = null,
         templatesResolved: Boolean = false,
         verifySend: suspend () -> Unit = {},
+        externalProtection: net.pocketnai.domain.task.BackgroundTasks.Task? = null,
     ): List<net.pocketnai.domain.chat.ChatImage> {
         if (_state.value.inFlight || _state.value.externalGenerationActive || _state.value.referenceBusy || (_state.value.artistLabActive && !fromArtistLab))
             throw net.pocketnai.domain.chat.ChatFailure("另一个图片任务正在执行，请等待完成")
@@ -1707,7 +1718,7 @@ class GenerateViewModel(
         val billing = before?.let { BillingSession(it, clock() - it.fetchedAtMillis,
             ObservedBalanceChange.DEFAULT_MAX_PRE_SNAPSHOT_AGE_MS, params.sampleCount) }
         val images = mutableListOf<net.pocketnai.domain.chat.ChatImage>()
-        val background = if (fromArtistLab) null else backgroundTasks.begin(
+        val background = externalProtection ?: if (fromArtistLab) null else backgroundTasks.begin(
             net.pocketnai.domain.task.BackgroundTasks.Kind.NOVEL_AI_IMAGE) { }
         _state.update { it.copy(inFlight = true, completedImages = 0, error = null) }
         try {

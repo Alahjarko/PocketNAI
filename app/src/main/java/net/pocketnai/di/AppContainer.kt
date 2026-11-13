@@ -61,7 +61,9 @@ import java.util.concurrent.TimeUnit
  * 所有成员都是懒加载：应用启动只初始化 [credentialStore] 与 [sessionState]，
  * 数据库和网络客户端要到真正使用时才创建。
  */
-class AppContainer(application: Application) {
+class AppContainer(application: Application, mcpBackendOverride: net.pocketnai.data.mcp.McpImageBackend? = null) {
+    val localMcpManager by lazy { net.pocketnai.data.mcp.LocalMcpManager(application,
+        mcpBackendOverride ?: net.pocketnai.data.mcp.PocketMcpBackend(this)) }
     val backgroundTasks by lazy { net.pocketnai.data.task.AndroidBackgroundTasks(application) }
     val chatViewModel: net.pocketnai.ui.chat.ChatViewModel by lazy {
         net.pocketnai.ui.chat.ChatViewModel(llmSettingsStore, chatClient, chatStore, agentFiles,

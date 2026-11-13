@@ -171,6 +171,7 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.okhttp)
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.coil.compose)

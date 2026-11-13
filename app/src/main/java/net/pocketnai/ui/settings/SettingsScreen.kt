@@ -65,6 +65,7 @@ fun SettingsScreen(
     updateViewModel: UpdateViewModel,
     onOpenChatSettings: () -> Unit,
     openImageServiceOnEntry: Boolean = false,
+    onOpenLocalMcp: () -> Unit = {},
 ) {
     val container = LocalAppContainer.current
     val viewModel: SettingsViewModel = viewModel(
@@ -190,6 +191,13 @@ fun SettingsScreen(
                     icon = Icons.Default.Hub,
                     subtitle = "模型服务、人格与工具",
                     onClick = onOpenChatSettings,
+                )
+                SettingsDivider()
+                SettingsRow(
+                    title = "本机助手连接",
+                    icon = Icons.Default.Devices,
+                    subtitle = "MCP · 供 RikkaHub 等本机助手调用",
+                    onClick = onOpenLocalMcp,
                 )
                 SettingsDivider()
                 SettingsRow(

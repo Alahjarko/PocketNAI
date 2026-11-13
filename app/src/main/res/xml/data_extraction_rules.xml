@@ -7,11 +7,15 @@
     <cloud-backup>
         <exclude domain="sharedpref" path="pocketnai_secure.xml" />
         <exclude domain="sharedpref" path="pocketnai_llm.xml" />
+        <exclude domain="sharedpref" path="pocketnai_mcp.xml" />
+        <exclude domain="file" path="mcp-jobs/" />
         <exclude domain="sharedpref" path="pocketnai_openai_images.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="pocketnai_secure.xml" />
         <exclude domain="sharedpref" path="pocketnai_llm.xml" />
+        <exclude domain="sharedpref" path="pocketnai_mcp.xml" />
+        <exclude domain="file" path="mcp-jobs/" />
         <exclude domain="sharedpref" path="pocketnai_openai_images.xml" />
     </device-transfer>
 </data-extraction-rules>

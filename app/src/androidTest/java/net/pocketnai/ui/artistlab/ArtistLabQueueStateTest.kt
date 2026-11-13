@@ -214,6 +214,7 @@ class ArtistLabQueueStateTest {
     }
 
     @Test fun backgroundStartupFailureNeverSendsOrLeavesGenerationReserved() = runBlocking<Unit> {
+        net.pocketnai.data.mcp.verifyLocalMcpTransport(instrumentation.targetContext)
         val background = FakeBackground().apply { fail = true }
         val h = Harness(background)
         try {
