@@ -7,9 +7,8 @@ import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 import net.pocketnai.domain.mcp.McpProtocol
 import net.pocketnai.domain.task.BackgroundTasks
-import okhttp3.*
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
+import java.net.Socket
+import java.net.InetSocketAddress
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
@@ -50,20 +49,31 @@ internal fun verifyLocalMcpTransport(base: Context) = runBlocking {
     }
     val launch = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val manager = LocalMcpManager(context, backend, serviceStart = { launch.launch { it.attach() } })
-    val client = OkHttpClient.Builder().retryOnConnectionFailure(false).callTimeout(5, java.util.concurrent.TimeUnit.SECONDS).build()
     var token = ""
     suspend fun awaitState(predicate: () -> Boolean) { withTimeout(6000) { while (!predicate()) delay(20) } }
     fun rpc(method: String, params: JsonObject = buildJsonObject {}) = buildJsonObject {
         put("jsonrpc", "2.0"); put("id", UUID.randomUUID().toString()); put("method", method); put("params", params)
     }.toString()
     fun http(body: String, origin: String? = null, authorized: Boolean = true, host: String? = null): Pair<Int, String> {
-        val b = Request.Builder().url(LocalMcpManager.URL).header("Accept", "application/json, text/event-stream")
-            .header("MCP-Protocol-Version", "2025-11-25")
-            .post(body.toRequestBody("application/json".toMediaType()))
-        if (authorized) b.header("Authorization", "Bearer $token")
-        if (origin != null) b.header("Origin", origin)
-        if (host != null) b.header("Host", host)
-        return client.newCall(b.build()).execute().use { it.code to it.body!!.string() }
+        // Server behavior is tested over a real socket; the app is not an HTTP client.
+        val payload = body.toByteArray(Charsets.UTF_8)
+        val headers = buildString {
+            append("POST /mcp HTTP/1.1\r\nHost: ${host ?: "127.0.0.1:${LocalMcpManager.PORT}"}\r\n")
+            append("Accept: application/json, text/event-stream\r\nMCP-Protocol-Version: 2025-11-25\r\n")
+            append("Content-Type: application/json\r\nContent-Length: ${payload.size}\r\nConnection: close\r\n")
+            if (authorized) append("Authorization: Bearer $token\r\n")
+            if (origin != null) append("Origin: $origin\r\n")
+            append("\r\n")
+        }
+        return Socket().use { socket ->
+            socket.connect(InetSocketAddress("127.0.0.1", LocalMcpManager.PORT), 5000)
+            socket.soTimeout = 5000
+            socket.getOutputStream().write(headers.toByteArray())
+            if (payload.size <= LocalMcpServer.MAX_BODY) socket.getOutputStream().write(payload)
+            socket.getOutputStream().flush()
+            val response = socket.getInputStream().readBytes().toString(Charsets.UTF_8)
+            response.substringBefore("\r\n").split(' ')[1].toInt() to response.substringAfter("\r\n\r\n")
+        }
     }
     fun tool(name: String, args: JsonObject): JsonObject {
         val (code, body) = http(rpc("tools/call", buildJsonObject { put("name", name); put("arguments", args) }))
@@ -131,7 +141,7 @@ internal fun verifyLocalMcpTransport(base: Context) = runBlocking {
         withContext(Dispatchers.Main) { manager.stop() }
         awaitState { !manager.state.value.running && manager.state.value.active == 0 }
         withContext(Dispatchers.Main) { manager.detached() }
-        launch.cancel(); client.dispatcher.executorService.shutdown(); client.connectionPool.evictAll()
+        launch.cancel()
         base.deleteSharedPreferences("${prefix}_pocketnai_mcp")
         context.filesDir.deleteRecursively()
     }

@@ -42,8 +42,8 @@ class LocalMcpManager(
     data class State(
         val running: Boolean = false, val starting: Boolean = false, val stopping: Boolean = false,
         val directGeneration: Boolean = false, val jobs: List<McpImageJob> = emptyList(),
-        val message: String? = null,
-    ) { val active get() = jobs.count { it.state == McpImageJob.RUNNING }
+        val message: String? = null, val executing: Boolean = false,
+    ) { val active get() = if (executing) 1 else 0
         val pending get() = jobs.count { it.state == McpImageJob.PENDING } }
     private val app = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, _ ->
@@ -186,6 +186,7 @@ class LocalMcpManager(
                 val quote = backend.quote(plan)
                 if (quote != job.quote && !automatic) { save(job.copy(quote = quote, message = "报价已变化，请核对后再次确认")); return }
                 save(job.copy(state = McpImageJob.RUNNING, quote = quote, message = "正在生成；已发送后不会重试"))
+                _state.update { it.copy(executing = true) }
                 Approved(plan, quote)
             } catch (_: Exception) { save(job.copy(state = McpImageJob.FAILED, message = "参数、账号或费用校验未通过，未自动重试")); plans.remove(id); return }
         }
@@ -223,6 +224,7 @@ class LocalMcpManager(
                 else latest.copy(state = McpImageJob.UNCERTAIN, message = "任务未完成，请核对画廊与费用；没有重试"))
             }
         } finally {
+            _state.update { it.copy(executing = false) }
             mutex.withLock { if (read(id).state != McpImageJob.PENDING) plans.remove(id) }
             if (_state.value.running && _state.value.directGeneration) {
                 _state.value.jobs.lastOrNull { it.state == McpImageJob.PENDING }?.let { scope.launch { approveNow(it.id, true) } }
