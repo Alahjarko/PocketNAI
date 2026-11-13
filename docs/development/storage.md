@@ -4,6 +4,10 @@
 
 启动恢复的文件扫描、详情映射及旧PNG角色读取由仓库切到IO线程，不能只依赖调用方启动一个主线程协程。启动缺失文件统计一次读取图片索引，避免按生成记录逐条查库；画廊和历史Flow映射在后台执行（2026-10-09）。
 
+## 本机 MCP 任务（2026-11-13）
+
+`files/mcp-jobs/<request_id的SHA-256>.json` 是独立 AtomicFile 记录，不修改 Room schema。包含冻结提示词、参数摘要、报价、状态及生成图片 ID，绝不含服务密钥；任务记录不自动截断，保留去重墓碑。重启仅把未发送项取消、执行项标为待核对，不恢复发送。配对令牌使用 `pocketnai_mcp` 加密首选项与专用 Keystore alias；任务目录和首选项均排除云备份及设备迁移。图片继续存入现有图库。细节见[本机 MCP](../local-mcp-2026-11-13.md)。
+
 ## 数据库
 
 - 当前 schema 版本 **15**。新增表（如 `prompt_favorites`、`reference_images`、`favorite_images`）用独立 `CREATE TABLE`，
