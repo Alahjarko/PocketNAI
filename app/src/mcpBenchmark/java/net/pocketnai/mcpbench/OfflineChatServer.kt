@@ -7,7 +7,7 @@ import java.io.File
 
 /** Deterministic local OpenAI-compatible fixture for testing RikkaHub's real MCP client. */
 class OfflineChatServer(private val files: File) : NanoHTTPD("127.0.0.1", 47762) {
-    override fun serve(session: IHTTPSession): Response = try {
+    override fun serve(session: IHTTPSession): Response { return try {
         if (session.uri.endsWith("/models")) return newFixedLengthResponse(Response.Status.OK, "application/json",
             """{"object":"list","data":[{"id":"gpt-4o-mini","object":"model","owned_by":"offline-fixture"}]}""")
         if (!session.uri.endsWith("/chat/completions")) return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "offline only")
@@ -69,4 +69,5 @@ class OfflineChatServer(private val files: File) : NanoHTTPD("127.0.0.1", 47762)
         newFixedLengthResponse(Response.Status.OK, "text/event-stream",
             "data: ${chunk(delta)}\n\ndata: ${chunk(buildJsonObject {}, if (name != null) "tool_calls" else "stop")}\n\ndata: [DONE]\n\n")
     } catch (_: Exception) { newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json", "{\"error\":\"Offline fixture request failed\"}") }
+    }
 }
