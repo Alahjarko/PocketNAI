@@ -97,11 +97,14 @@ fun LocalMcpScreen(manager: LocalMcpManager, onBack: () -> Unit) {
                             TextButton(onClick = { manager.reject(job.id) }, modifier = Modifier.fillMaxWidth()) { Text("取消此任务") }
                         }
                         var expanded by rememberSaveable(job.id) { mutableStateOf(false) }
-                        TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "收起提示词" else "查看提示词") }
+                        TextButton(onClick = { expanded = !expanded }) {
+                            Text(if (expanded) "收起提示词" else if (job.characterDetails.isNotBlank()) "查看提示词与角色" else "查看提示词")
+                        }
                         net.pocketnai.ui.common.AnimatedDisclosure(expanded) {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(job.prompt, style = MaterialTheme.typography.bodyMedium)
                                 if (job.negative.isNotBlank()) Text("排除词：${job.negative}", style = MaterialTheme.typography.bodySmall)
+                                if (job.characterDetails.isNotBlank()) Text(job.characterDetails, style = MaterialTheme.typography.bodyMedium)
                             }
                         }
 

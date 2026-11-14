@@ -66,7 +66,7 @@ class McpProtocol(private val tools: McpTools) {
         }
         val schema = buildJsonArray {
             add(tool("get_image_capabilities", "Read supported image providers, models and task workflow. No keys or draft prompts.", emptyList(), buildJsonObject {}))
-            add(tool("submit_image_task", "Submit ONE text-to-image task. May incur fees. Use a unique request_id for each deliberate user request; reuse the SAME request_id on retries. Returns immediately; the user may need to confirm in PocketNAI. Does not attach existing reference images.", listOf("request_id", "provider", "prompt"), buildJsonObject {
+            add(tool("submit_image_task", "Submit ONE text-to-image task. May incur fees. NovelAI supports independent characters with per-character positive/negative prompts and x/y positions; use characters, not a guessed pipe separator. Use a unique request_id for each deliberate user request; reuse the SAME request_id on retries. Returns immediately; the user may need to confirm in PocketNAI. Does not attach existing reference images.", listOf("request_id", "provider", "prompt"), buildJsonObject {
                 put("request_id", field("string", "Unique stable request identifier, 8–128 ASCII letters/digits/underscore/hyphen. Reuse only for retries of the same task."))
                 put("provider", buildJsonObject { put("type", "string"); put("enum", JsonArray(listOf("novelai", "openai").map(::JsonPrimitive))) })
                 put("prompt", field("string", "Complete image description / positive prompt."))
@@ -75,6 +75,23 @@ class McpProtocol(private val tools: McpTools) {
                 put("width", field("integer", "NovelAI canvas width; multiples of 64."))
                 put("height", field("integer", "NovelAI canvas height; multiples of 64."))
                 put("seed", field("integer", "Optional NovelAI fixed seed."))
+                put("use_coords", field("boolean", "NovelAI only: false lets AI arrange roles; true uses x/y. Defaults to true when any role supplies x/y, otherwise false."))
+                put("characters", buildJsonObject {
+                    put("type", "array"); put("maxItems", net.pocketnai.domain.model.CharacterPrompt.MAX_COUNT)
+                    put("description", "NovelAI only: ordered independent characters, V4.5 max 6, V5 max 32. Omit or [] to use none. Each role has its own positive/negative tags and normalized center. Prompt weights use NovelAI syntax within prompt, e.g. 1.2::blue hair::.")
+                    put("items", buildJsonObject {
+                        put("type", "object"); put("additionalProperties", false)
+                        put("required", buildJsonArray { add("prompt") })
+                        put("properties", buildJsonObject {
+                            put("prompt", field("string", "This character's positive tags, appearance, pose and emphasis weights. Required, nonblank, at most 8000 characters."))
+                            put("negative_prompt", field("string", "Only this character's negative tags; default empty, at most 8000 characters."))
+                            for (axis in listOf("x", "y")) put(axis, buildJsonObject {
+                                put("type", "number"); put("minimum", 0); put("maximum", 1)
+                                put("description", "Normalized center $axis, default 0.5. x: left=0, right=1; y: top=0, bottom=1. V4.5 snaps to its 5x5 grid; V5 keeps free coordinates.")
+                            })
+                        })
+                    })
+                })
                 put("size", field("string", "OpenAI size: 1024x1024, 1536x1024 or 1024x1536."))
                 put("quality", field("string", "OpenAI quality: low, medium, high or auto."))
             }, false))

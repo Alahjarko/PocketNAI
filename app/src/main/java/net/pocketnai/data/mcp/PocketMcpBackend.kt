@@ -8,8 +8,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.*
 import net.pocketnai.di.AppContainer
-import net.pocketnai.domain.chat.ImageChatTools
-import net.pocketnai.domain.chat.ToolCall
+import net.pocketnai.domain.chat.ChatFailure
+import net.pocketnai.domain.mcp.McpNovelAiParams
 import net.pocketnai.domain.model.*
 import net.pocketnai.domain.openai.*
 import net.pocketnai.domain.task.BackgroundTasks
@@ -22,11 +22,22 @@ class PocketMcpBackend(private val container: AppContainer) : McpImageBackend {
     private data class Plan(
         override val provider: String, override val prompt: String, override val negative: String,
         override val description: String, override val quote: String,
+        override val characterDetails: String,
         val nai: GenerationParams? = null, val openai: OpenAiImageParams? = null, val account: String,
     ) : McpImagePlan
     override suspend fun capabilities() = buildJsonObject {
         put("providers", buildJsonArray {
-            add(buildJsonObject { put("id", "novelai"); put("models", JsonArray(ImageModel.entries.map { JsonPrimitive(it.apiModelId) })) })
+            add(buildJsonObject {
+                put("id", "novelai"); put("models", JsonArray(ImageModel.entries.map { JsonPrimitive(it.apiModelId) }))
+                put("characters", buildJsonObject {
+                    put("max_by_model", buildJsonObject { ImageModel.entries.forEach { put(it.apiModelId, CharacterPrompt.limitFor(it)) } })
+                    put("fields", "characters: [{prompt, negative_prompt?, x?, y?}], use_coords: boolean")
+                    put("layout", "x/y are normalized canvas centers in 0..1. Explicit x/y enable coordinates unless use_coords=false; omitted axes default to 0.5. V4.5 uses a 5x5 grid; V5 preserves free coordinates. Array order is preserved.")
+                    put("weights", "Put NovelAI emphasis syntax inside each character prompt, e.g. 1.2::blue hair::. No separate weight field. A single | in the base prompt is not a structured character array.")
+                    put("negative_prompts", "V5 Medium uses fixed negatives. Switch to High in PocketNAI before requesting per-character negatives; unsupported negatives are rejected, never silently dropped.")
+                    put("defaults", "Omitted characters means no characters; never inherits the current draft's roles or references.")
+                })
+            })
             add(buildJsonObject { put("id", "openai"); put("models", JsonArray(OpenAiImageParams.MODELS.map(::JsonPrimitive)))
                 put("sizes", JsonArray(OpenAiImageParams.SIZE_PRESETS.filter { it != "auto" }.map(::JsonPrimitive)))
                 put("qualities", JsonArray(OpenAiImageParams.QUALITIES.map(::JsonPrimitive))) })
@@ -49,19 +60,22 @@ class PocketMcpBackend(private val container: AppContainer) : McpImageBackend {
             if (arguments.keys.any { it in setOf("size", "quality") }) throw McpToolFailure("NovelAI 请使用 width、height，质量沿用当前生图设置")
             val account = container.generateViewModel.artistLabAccount() ?: throw McpToolFailure("请先连接 NovelAI 账户")
             val base = container.generateViewModel.state.value.params
-            val payload = buildJsonObject {
-                arguments.filterKeys { it in setOf("prompt", "negative_prompt", "model", "width", "height", "seed") }.forEach { (k, v) -> put(k, v) }
-                if ("negative_prompt" !in arguments) put("negative_prompt", base.negativePrompt)
-            }
-            val parsed = try { ImageChatTools.parse(ToolCall("mcp", "generate_image", payload.toString()), base) }
-                catch (_: Exception) { throw McpToolFailure("NovelAI 参数不合法，请核对模型、尺寸和提示词") }
-            val params = net.pocketnai.domain.prompt.PromptTemplates.resolve(parsed, container.promptFavoriteRepository.snapshot(), kotlin.random.Random.Default)
-            rejectSecrets(params.prompt + params.negativePrompt)
+            val parsed = try { McpNovelAiParams.parse(arguments, base) }
+                catch (e: ChatFailure) { throw McpToolFailure(e.message ?: "NovelAI 参数不合法") }
+            val params = ModelCatalog.profileOf(parsed.model).normalize(net.pocketnai.domain.prompt.PromptTemplates.resolve(
+                parsed, container.promptFavoriteRepository.snapshot(), kotlin.random.Random.Default))
+            if (params.isMediumEffort && params.characters.any { it.negativePrompt.isNotBlank() })
+                throw McpToolFailure("V5 Medium 不支持角色排除词，请在 PocketNAI 生图面板切换 High 后提交")
+            rejectSecrets(naiTexts(params))
+            if (SfwPolicy.blocks(container.settingsStore.sfwMode.value, params)) throw McpToolFailure(SfwPolicy.BLOCK_MESSAGE)
             val quote = container.generateViewModel.quoteForChat(params).label
             Plan(provider, params.prompt, params.negativePrompt,
-                "${params.model.displayName} · ${params.size.width} × ${params.size.height} · ${params.steps} 步 · Guidance ${params.guidance} · Seed ${if (params.seedMode == SeedMode.FIXED) params.baseSeed.toString() else "随机"}", quote, nai = params, account = account)
+                "${params.model.displayName} · ${params.size.width} × ${params.size.height} · ${params.steps} 步 · Guidance ${params.guidance} · Seed ${if (params.seedMode == SeedMode.FIXED) params.baseSeed.toString() else "随机"}" +
+                    if (params.characters.isEmpty()) "" else " · ${params.characters.size} 个独立角色 · ${if (params.useCharacterCoordinates) "手动站位" else "AI 布局"}",
+                quote, McpNovelAiParams.characterDetails(params), nai = params, account = account)
         } else if (provider == "openai") {
-            if (arguments.keys.any { it in setOf("negative_prompt", "width", "height", "seed") }) throw McpToolFailure("OpenAI 请使用 size 和 quality，不支持排除词或 Seed")
+            if (arguments.keys.any { it in setOf("negative_prompt", "width", "height", "seed", "characters", "use_coords") })
+                throw McpToolFailure("OpenAI 请使用 size 和 quality；独立角色、排除词和 Seed 仅适用于 NovelAI")
             val key = container.openAiImageSettings.apiKey() ?: throw McpToolFailure("请先配置 OpenAI 生图密钥")
             val base = container.openAiImageViewModel.state.value.draft.params
             val params = base.copy(prompt = prompt, model = string("model") ?: base.model,
@@ -69,14 +83,17 @@ class PocketMcpBackend(private val container: AppContainer) : McpImageBackend {
                 quality = string("quality") ?: base.quality, count = 1, outputFormat = "png")
             params.validate()?.let { throw McpToolFailure(it) }
             Plan(provider, prompt, "", "${params.modelLabel} · ${params.size} · ${params.quality} · PNG · 1 张",
-                openAiQuote(), openai = params, account = McpJobStore.digest(key))
+                openAiQuote(), "", openai = params, account = McpJobStore.digest(key))
         } else throw McpToolFailure("请选择 novelai 或 openai")
     }
     private fun openAiQuote() = "OpenAI 按实际用量计费（USD），生成前金额无法确定"
+    private fun naiTexts(params: GenerationParams) = (listOf(params.prompt, params.negativePrompt) +
+        params.characters.flatMap { listOf(it.prompt, it.negativePrompt) }).joinToString("\n")
     override suspend fun quote(plan: McpImagePlan): String = withContext(Dispatchers.Main.immediate) {
         val p = plan as Plan
-        rejectSecrets(p.prompt + p.negative)
-        if (SfwPolicy.blocks(container.settingsStore.sfwMode.value, p.prompt)) throw McpToolFailure(SfwPolicy.BLOCK_MESSAGE)
+        rejectSecrets(p.nai?.let(::naiTexts) ?: p.prompt)
+        if (p.nai?.let { SfwPolicy.blocks(container.settingsStore.sfwMode.value, it) }
+                ?: SfwPolicy.blocks(container.settingsStore.sfwMode.value, p.prompt)) throw McpToolFailure(SfwPolicy.BLOCK_MESSAGE)
         if (p.nai != null) {
             if (container.generateViewModel.artistLabAccount() != p.account) throw McpToolFailure("账户已改变，请重新提交新任务")
             container.generateViewModel.quoteForChat(p.nai).label

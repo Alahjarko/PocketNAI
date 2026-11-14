@@ -47,6 +47,14 @@ class OfflineChatServer(private val files: File) : NanoHTTPD("127.0.0.1", 47762)
                 "submit_image_task" -> {
                     put("request_id", "rk_" + McpJobStore.digest(text(all.getOrNull(lastUser)?.get("content")) + lastUser).take(24))
                     put("provider", "novelai"); put("prompt", "sfw, blue geometric shape")
+                    if (text(all.getOrNull(lastUser)?.get("content")).contains("角色")) {
+                        val definition = body["tools"]!!.jsonArray.single { it.jsonObject["function"]!!.jsonObject["name"]!!.jsonPrimitive.content == name }
+                            .jsonObject["function"]!!.jsonObject["parameters"]!!.jsonObject["properties"]!!.jsonObject
+                        check("characters" in definition && "use_coords" in definition)
+                        File(files, "offline-character-schema.txt").writeText("characters,use_coords")
+                        put("model", "nai-diffusion-5-full"); put("use_coords", true)
+                        put("characters", Json.parseToJsonElement("""[{"prompt":"1.2::blue circle::","negative_prompt":"square","x":0.2,"y":0.3},{"prompt":"red square","negative_prompt":"circle","x":0.8,"y":0.7}]"""))
+                    }
                 }
                 "get_image_task" -> { put("job_id", id); put("wait_seconds", 12) }
                 "get_image_result" -> put("job_id", id)

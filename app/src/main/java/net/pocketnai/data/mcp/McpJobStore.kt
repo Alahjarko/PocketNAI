@@ -21,6 +21,7 @@ data class McpImageJob(
     val state: String = PENDING,
     val message: String = "请在 PocketNAI 确认生成",
     val imageIds: List<String> = emptyList(),
+    val characterDetails: String = "",
 ) {
     companion object {
         const val PENDING = "awaiting_confirmation"
@@ -47,10 +48,12 @@ class McpJobStore(private val directory: File) {
         return json.decodeFromString<McpImageJob>(bytes.toString(Charsets.UTF_8)).also { require(it.id == id) }
     }
     @Synchronized fun write(job: McpImageJob) {
+        val bytes = json.encodeToString(job).toByteArray()
+        if (bytes.size > 128 * 1024) throw McpToolFailure("展开后的提示词与角色参数过长，请精简后提交")
         directory.mkdirs()
         val atomic = AtomicFile(file(job.id))
         val out = atomic.startWrite()
-        try { out.write(json.encodeToString(job).toByteArray()); atomic.finishWrite(out) }
+        try { out.write(bytes); atomic.finishWrite(out) }
         catch (e: Exception) { atomic.failWrite(out); throw e }
     }
     @Synchronized fun recover(): List<McpImageJob> {

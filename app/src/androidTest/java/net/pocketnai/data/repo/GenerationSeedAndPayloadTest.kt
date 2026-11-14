@@ -858,5 +858,19 @@ class GenerationSeedAndPayloadTest {
             assertThat(center["x"]!!.jsonPrimitive.contentOrNull).isEqualTo("0.2")
             assertThat(center["y"]!!.jsonPrimitive.contentOrNull).isEqualTo("0.3")
         }
+        // The external MCP parser must reach the real repository, payload and history too.
+        val mcp = net.pocketnai.domain.mcp.McpNovelAiParams.parse(Json.parseToJsonElement(
+            """{"prompt":"two people","negative_prompt":"lowres","characters":[{"prompt":"1.2::blue hair::","negative_prompt":"hat","x":0.2,"y":0.3},{"prompt":"red hair","negative_prompt":"glasses","x":0.8,"y":0.7}],"use_coords":true}"""
+        ).jsonObject, GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V5_FULL)))
+        val mcpImage = repository.generate(GenerationRequest(params = mcp), mcp.prompt).toList()
+            .filterIsInstance<GenerationEvent.Final>().single().image
+        val mcpHistory = repository.loadDetail(mcpImage.id)!!.generation.params
+        assertThat(mcpHistory.characters).isEqualTo(mcp.characters)
+        assertThat(mcpHistory.useCharacterCoordinates).isTrue()
+        for ((key, words) in listOf("v4_prompt" to listOf("1.2::blue hair::", "red hair"), "v4_negative_prompt" to listOf("hat", "glasses"))) {
+            val captions = parametersOf(payloads.last())[key]!!.jsonObject["caption"]!!.jsonObject["char_captions"]!!.jsonArray
+            assertThat(captions.map { it.jsonObject["char_caption"]!!.jsonPrimitive.content }).containsExactlyElementsIn(words).inOrder()
+            assertThat(captions[1].jsonObject["centers"]!!.jsonArray[0].jsonObject["y"]!!.jsonPrimitive.double).isEqualTo(0.7)
+        }
     }
 }

@@ -20,6 +20,7 @@ interface McpImagePlan {
     val negative: String
     val description: String
     val quote: String
+    val characterDetails: String
 }
 interface McpImageBackend {
     suspend fun capabilities(): JsonObject
@@ -125,7 +126,7 @@ class LocalMcpManager(
         if (!_state.value.running) return McpProtocol.failure("本机服务已关闭，请先在 PocketNAI 开启")
         return try {
             val allowed = when (name) {
-                "submit_image_task" -> setOf("request_id", "provider", "prompt", "negative_prompt", "model", "width", "height", "seed", "size", "quality")
+                "submit_image_task" -> setOf("request_id", "provider", "prompt", "negative_prompt", "model", "width", "height", "seed", "size", "quality", "characters", "use_coords")
                 "get_image_task" -> setOf("job_id", "wait_seconds")
                 "get_image_result", "cancel_image_task" -> setOf("job_id")
                 else -> emptySet()
@@ -198,7 +199,7 @@ class LocalMcpManager(
             if (!_state.value.running) throw McpToolFailure("连接已结束，未发送")
             if (_state.value.pending + _state.value.active >= 4) throw McpToolFailure("待处理任务较多，请先完成或取消已有任务")
             McpImageJob(id, fingerprint, System.currentTimeMillis(), plan.provider, plan.prompt, plan.negative,
-                plan.description, plan.quote).also { save(it); plans[id] = plan }
+                plan.description, plan.quote, characterDetails = plan.characterDetails).also { save(it); plans[id] = plan }
         }
         if (_state.value.directGeneration) scope.launch { approveNow(id, true) }
         return job
@@ -281,6 +282,7 @@ class LocalMcpManager(
     private fun McpImageJob.publicInfo() = buildJsonObject {
         put("job_id", id); put("state", state); put("provider", provider); put("parameters", description)
         put("quote", quote); put("message", message); put("has_image", imageIds.isNotEmpty())
+        if (characterDetails.isNotBlank()) put("character_details", characterDetails)
     }
     companion object {
         const val PORT = 47761

@@ -44,6 +44,9 @@ internal fun verifyLocalMcpTransport(base: Context) = runBlocking {
             override val negative = ""
             override val description = "offline image"
             override val quote = quoteLabel
+            override val characterDetails = net.pocketnai.domain.mcp.McpNovelAiParams.characterDetails(
+                net.pocketnai.domain.mcp.McpNovelAiParams.parse(arguments,
+                    net.pocketnai.domain.model.GenerationParams.defaultsFor(net.pocketnai.domain.model.ModelCatalog.defaultProfile())))
         }
         override suspend fun quote(plan: McpImagePlan) = quoteLabel
         override suspend fun generate(plan: McpImagePlan, protection: BackgroundTasks.Task,
@@ -126,14 +129,23 @@ internal fun verifyLocalMcpTransport(base: Context) = runBlocking {
         assertThat(http(rpc("ping"), host = "untrusted.invalid").first).isEqualTo(403)
         assertThat(http("x".repeat(LocalMcpServer.MAX_BODY + 1)).first).isEqualTo(413)
         assertThat(http(rpc("initialize", buildJsonObject { put("protocolVersion", "2025-11-25") })).first).isEqualTo(200)
-        val cancelled = info(tool("submit_image_task", args("cancel-task-001")))
+        val characterArgs = JsonObject(args("cancel-task-001") + ("characters" to Json.parseToJsonElement(
+            """[{"prompt":"blue hair","negative_prompt":"hat","x":0.2,"y":0.3},{"prompt":"red hair","negative_prompt":"glasses","x":0.8,"y":0.7}]""")))
+        val cancelled = info(tool("submit_image_task", characterArgs))
         val cancelledId = cancelled["job_id"]!!.jsonPrimitive.content
-        val duplicate = info(tool("submit_image_task", args("cancel-task-001")))
+        assertThat(cancelled["character_details"]!!.jsonPrimitive.content).contains("角色 2")
+        val saved = McpJobStore(File(context.filesDir, "mcp-jobs")).read(cancelledId)!!
+        assertThat(saved.characterDetails).contains("排除词：glasses")
+        assertThat(runCatching { McpJobStore(File(context.filesDir, "mcp-jobs")).write(
+            saved.copy(characterDetails = "x".repeat(128 * 1024))) }.isFailure).isTrue()
+        assertThat(McpJobStore(File(context.filesDir, "mcp-jobs")).read(cancelledId)).isEqualTo(saved)
+        val duplicate = info(tool("submit_image_task", characterArgs))
         assertThat(duplicate["job_id"]).isEqualTo(cancelled["job_id"])
         assertThat(generated.get()).isEqualTo(0)
         assertThat(tool("submit_image_task", args("cancel-task-001", "different prompt"))["isError"]!!.jsonPrimitive.boolean).isTrue()
         tool("cancel_image_task", buildJsonObject { put("job_id", cancelledId) })
-        assertThat(info(tool("submit_image_task", args("cancel-task-001")))["state"]!!.jsonPrimitive.content).isEqualTo(McpImageJob.CANCELLED)
+        assertThat(tool("submit_image_task", args("cancel-task-001"))["isError"]!!.jsonPrimitive.boolean).isTrue()
+        assertThat(info(tool("submit_image_task", characterArgs))["state"]!!.jsonPrimitive.content).isEqualTo(McpImageJob.CANCELLED)
         val job = info(tool("submit_image_task", args("working-task-002")))
         val id = job["job_id"]!!.jsonPrimitive.content
         withContext(Dispatchers.Main) { manager.approve(id) }
