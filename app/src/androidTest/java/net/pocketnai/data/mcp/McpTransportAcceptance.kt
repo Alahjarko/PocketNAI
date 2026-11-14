@@ -84,13 +84,24 @@ internal fun verifyLocalMcpTransport(base: Context) = runBlocking {
             socket.getOutputStream().write(headers.toByteArray())
             if (payload.size <= LocalMcpServer.MAX_BODY) socket.getOutputStream().write(payload)
             socket.getOutputStream().flush()
-            val response = socket.getInputStream().readBytes()
-            val split = (0..response.size - 4).first { i -> response[i] == 13.toByte() && response[i + 1] == 10.toByte() &&
-                response[i + 2] == 13.toByte() && response[i + 3] == 10.toByte() }
-            val lines = response.copyOfRange(0, split).toString(Charsets.UTF_8).split("\r\n")
-            HttpImageReply(lines.first().split(' ')[1].toInt(), lines.drop(1).associate {
+            // Read the declared response, not until EOF: early rejection can reset an unread POST body.
+            val input = socket.getInputStream()
+            val header = ByteArrayOutputStream()
+            var ending = 0
+            while (ending != 0x0d0a0d0a) {
+                val byte = input.read(); check(byte >= 0 && header.size() < 65536)
+                header.write(byte); ending = (ending shl 8) or byte
+            }
+            val lines = header.toString("UTF-8").removeSuffix("\r\n\r\n").split("\r\n")
+            val responseHeaders = lines.drop(1).associate {
                 it.substringBefore(':').lowercase() to it.substringAfter(':').trim()
-            }, response.copyOfRange(split + 4, response.size))
+            }
+            val length = if (method == "HEAD") 0 else responseHeaders.getValue("content-length").toInt()
+            check(length in 0..8 * 1024 * 1024)
+            val bytes = ByteArray(length)
+            var offset = 0
+            while (offset < length) { val n = input.read(bytes, offset, length - offset); check(n > 0); offset += n }
+            HttpImageReply(lines.first().split(' ')[1].toInt(), responseHeaders, bytes)
         }
     }
     fun http(body: String, origin: String? = null, authorized: Boolean = true, host: String? = null): Pair<Int, String> {
