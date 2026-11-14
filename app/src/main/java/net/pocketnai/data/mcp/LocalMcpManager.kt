@@ -3,6 +3,7 @@ package net.pocketnai.data.mcp
 import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
+import android.util.Base64
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -26,7 +27,7 @@ interface McpImageBackend {
     suspend fun quote(plan: McpImagePlan): String
     suspend fun generate(plan: McpImagePlan, protection: BackgroundTasks.Task,
         beforeSend: suspend () -> Unit, onImage: suspend (String) -> Unit)
-    suspend fun image(imageId: String): JsonObject
+    suspend fun image(imageId: String): McpImageData
 }
 class McpToolFailure(message: String) : IllegalStateException(message)
 interface LocalMcpOwner { val localMcpManager: LocalMcpManager }
@@ -54,9 +55,10 @@ class LocalMcpManager(
     val state = _state.asStateFlow()
     private var server: LocalMcpServer? = null
     private var attached = false
-    private var serial = 0L
+    @Volatile private var serial = 0L
     @Volatile private var lastActivity = SystemClock.elapsedRealtime()
     private val plans = mutableMapOf<String, McpImagePlan>()
+    private val imageLinks = McpImageLinks()
     private val ready = scope.async {
         val recovered = withContext(Dispatchers.IO) { store.recover() }
         _state.update { it.copy(jobs = recovered) }
@@ -82,7 +84,7 @@ class LocalMcpManager(
         attached = true
         try {
             val listener = withContext(Dispatchers.IO) {
-                LocalMcpServer(PORT, access.token(), McpProtocol(this@LocalMcpManager)) {
+                LocalMcpServer(PORT, access.token(), McpProtocol(this@LocalMcpManager), readImage = ::sharedImage) {
                     lastActivity = SystemClock.elapsedRealtime()
                 }.also { it.start(5_000, true) }
             }
@@ -100,6 +102,7 @@ class LocalMcpManager(
     private suspend fun stopListening() = mutex.withLock {
         serial++
         _state.update { it.copy(running = false, starting = false, stopping = attached, directGeneration = false) }
+        imageLinks.clear()
         withContext(Dispatchers.IO) { server?.stop() }; server = null
         _state.value.jobs.filter { it.state == McpImageJob.PENDING }.forEach { job ->
             save(job.copy(state = McpImageJob.CANCELLED, message = "连接已结束，未发送")); plans.remove(job.id)
@@ -144,13 +147,40 @@ class LocalMcpManager(
                 "get_image_result" -> {
                     val job = read(jobId(arguments))
                     val imageId = job.imageIds.firstOrNull() ?: throw McpToolFailure("还没有可取回的图片，请查询任务状态，不要重复提交")
-                    backend.image(imageId)
+                    val session = serial
+                    val image = backend.image(imageId)
+                    mutex.withLock {
+                        if (!_state.value.running || session != serial) throw McpToolFailure("连接已结束，请重新开启后查询原任务")
+                        val url = BASE_URL + imageLinks.issue(imageId)
+                        buildJsonObject {
+                            put("content", buildJsonArray {
+                                add(buildJsonObject {
+                                    put("type", "image"); put("mimeType", image.mimeType)
+                                    put("data", Base64.encodeToString(image.bytes, Base64.NO_WRAP))
+                                })
+                                add(buildJsonObject { put("type", "text"); put("text", buildJsonObject {
+                                    put("image_url", url)
+                                    put("markdown", "![生成的图片]($url)")
+                                    put("display_instructions", "Copy markdown exactly into your final answer, outside code fences, to display the large image in the conversation. Do not only describe the image or refer to the small tool thumbnail. The URL is local to this phone; first loading requires PocketNAI's connection to remain on. If unavailable, query this same job again; never generate a replacement just to display it.")
+                                    put("width", image.width); put("height", image.height)
+                                    put("message", "正文图片预览；完整原图保存在 PocketNAI 画廊")
+                                }.toString()) })
+                            }); put("isError", false)
+                        }
+                    }
                 }
                 "cancel_image_task" -> McpProtocol.text(cancel(jobId(arguments)).publicInfo())
                 else -> McpProtocol.failure("未知工具")
             }
         } catch (e: McpToolFailure) { McpProtocol.failure(e.message ?: "任务未完成") }
         catch (_: Exception) { McpProtocol.failure("操作未完成，请核对任务状态；没有自动重试") }
+    }
+    private suspend fun sharedImage(path: String): McpImageData? {
+        val session = serial
+        if (!_state.value.running) return null
+        val id = imageLinks.resolve(path) ?: return null
+        val image = backend.image(id) // Rechecks existence and current SFW policy on every fresh fetch.
+        return image.takeIf { _state.value.running && session == serial && imageLinks.resolve(path) == id }
     }
     private suspend fun submit(args: JsonObject): McpImageJob {
         val requestId = (args["request_id"] as? JsonPrimitive)?.takeIf { it.isString }?.content
@@ -252,5 +282,9 @@ class LocalMcpManager(
         put("job_id", id); put("state", state); put("provider", provider); put("parameters", description)
         put("quote", quote); put("message", message); put("has_image", imageIds.isNotEmpty())
     }
-    companion object { const val PORT = 47761; const val URL = "http://127.0.0.1:47761/mcp" }
+    companion object {
+        const val PORT = 47761
+        const val BASE_URL = "http://127.0.0.1:47761"
+        const val URL = "$BASE_URL/mcp"
+    }
 }

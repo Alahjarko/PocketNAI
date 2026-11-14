@@ -2,6 +2,9 @@ package net.pocketnai.data.mcp
 
 import android.content.Context
 import android.content.ContextWrapper
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
@@ -10,8 +13,11 @@ import net.pocketnai.domain.task.BackgroundTasks
 import java.net.Socket
 import java.net.InetSocketAddress
 import java.io.File
+import java.io.ByteArrayOutputStream
+import java.net.URI
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Real loopback sockets with isolated credentials/files and an explicitly fake image backend. */
 internal fun verifyLocalMcpTransport(base: Context) = runBlocking {
@@ -26,6 +32,10 @@ internal fun verifyLocalMcpTransport(base: Context) = runBlocking {
     val entered = CompletableDeferred<Unit>()
     var quoteLabel = "offline, no charge"
     var changeAtSend = false
+    val blockImage = AtomicBoolean(false)
+    val bitmap = Bitmap.createBitmap(16, 24, Bitmap.Config.ARGB_8888).apply { eraseColor(0xff3e5c82.toInt()) }
+    val imageBytes = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+    bitmap.recycle()
     val backend = object : McpImageBackend {
         override suspend fun capabilities() = buildJsonObject { put("offline", true) }
         override suspend fun prepare(arguments: JsonObject) = object : McpImagePlan {
@@ -43,9 +53,10 @@ internal fun verifyLocalMcpTransport(base: Context) = runBlocking {
             protection.ensureRunning(); generated.incrementAndGet(); entered.complete(Unit)
             gate.await(); onImage("offline-image")
         }
-        override suspend fun image(imageId: String) = buildJsonObject { put("content", buildJsonArray {
-            add(buildJsonObject { put("type", "image"); put("mimeType", "image/png"); put("data", "offline-fixture") })
-        }) }
+        override suspend fun image(imageId: String): McpImageData {
+            if (blockImage.get()) throw McpToolFailure("offline policy blocks image")
+            return McpImageData(imageBytes, "image/png", 16, 24)
+        }
     }
     val launch = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val manager = LocalMcpManager(context, backend, serviceStart = { launch.launch { it.attach() } })
@@ -54,11 +65,13 @@ internal fun verifyLocalMcpTransport(base: Context) = runBlocking {
     fun rpc(method: String, params: JsonObject = buildJsonObject {}) = buildJsonObject {
         put("jsonrpc", "2.0"); put("id", UUID.randomUUID().toString()); put("method", method); put("params", params)
     }.toString()
-    fun http(body: String, origin: String? = null, authorized: Boolean = true, host: String? = null): Pair<Int, String> {
+    data class HttpImageReply(val status: Int, val headers: Map<String, String>, val bytes: ByteArray)
+    fun request(body: String = "", origin: String? = null, authorized: Boolean = false, host: String? = null,
+        path: String = "/mcp", method: String = "GET"): HttpImageReply {
         // Server behavior is tested over a real socket; the app is not an HTTP client.
         val payload = body.toByteArray(Charsets.UTF_8)
         val headers = buildString {
-            append("POST /mcp HTTP/1.1\r\nHost: ${host ?: "127.0.0.1:${LocalMcpManager.PORT}"}\r\n")
+            append("$method $path HTTP/1.1\r\nHost: ${host ?: "127.0.0.1:${LocalMcpManager.PORT}"}\r\n")
             append("Accept: application/json, text/event-stream\r\nMCP-Protocol-Version: 2025-11-25\r\n")
             append("Content-Type: application/json\r\nContent-Length: ${payload.size}\r\nConnection: close\r\n")
             if (authorized) append("Authorization: Bearer $token\r\n")
@@ -71,9 +84,18 @@ internal fun verifyLocalMcpTransport(base: Context) = runBlocking {
             socket.getOutputStream().write(headers.toByteArray())
             if (payload.size <= LocalMcpServer.MAX_BODY) socket.getOutputStream().write(payload)
             socket.getOutputStream().flush()
-            val response = socket.getInputStream().readBytes().toString(Charsets.UTF_8)
-            response.substringBefore("\r\n").split(' ')[1].toInt() to response.substringAfter("\r\n\r\n")
+            val response = socket.getInputStream().readBytes()
+            val split = (0..response.size - 4).first { i -> response[i] == 13.toByte() && response[i + 1] == 10.toByte() &&
+                response[i + 2] == 13.toByte() && response[i + 3] == 10.toByte() }
+            val lines = response.copyOfRange(0, split).toString(Charsets.UTF_8).split("\r\n")
+            HttpImageReply(lines.first().split(' ')[1].toInt(), lines.drop(1).associate {
+                it.substringBefore(':').lowercase() to it.substringAfter(':').trim()
+            }, response.copyOfRange(split + 4, response.size))
         }
+    }
+    fun http(body: String, origin: String? = null, authorized: Boolean = true, host: String? = null): Pair<Int, String> {
+        val reply = request(body, origin, authorized, host, method = "POST")
+        return reply.status to reply.bytes.toString(Charsets.UTF_8)
     }
     fun tool(name: String, args: JsonObject): JsonObject {
         val (code, body) = http(rpc("tools/call", buildJsonObject { put("name", name); put("arguments", args) }))
@@ -116,7 +138,46 @@ internal fun verifyLocalMcpTransport(base: Context) = runBlocking {
         assertThat(info(tool("get_image_task", buildJsonObject { put("job_id", id) }))["state"]!!.jsonPrimitive.content).isEqualTo(McpImageJob.RUNNING)
         gate.complete(Unit)
         awaitState { manager.state.value.jobs.any { it.id == id && it.state == McpImageJob.SUCCEEDED } }
-        assertThat(tool("get_image_result", buildJsonObject { put("job_id", id) })["content"]!!.jsonArray[0].jsonObject["type"]!!.jsonPrimitive.content).isEqualTo("image")
+        fun result() = tool("get_image_result", buildJsonObject { put("job_id", id) })
+        val content = result()["content"]!!.jsonArray
+        assertThat(content[0].jsonObject["type"]!!.jsonPrimitive.content).isEqualTo("image")
+        assertThat(Base64.decode(content[0].jsonObject["data"]!!.jsonPrimitive.content, Base64.DEFAULT)).isEqualTo(imageBytes)
+        val metadata = Json.parseToJsonElement(content[1].jsonObject["text"]!!.jsonPrimitive.content).jsonObject
+        val url = metadata["image_url"]!!.jsonPrimitive.content
+        assertThat(url).startsWith(LocalMcpManager.BASE_URL + "/mcp-image/")
+        assertThat(url).doesNotContain(token)
+        val markdown = metadata["markdown"]!!.jsonPrimitive.content
+        assertThat(Regex("!\\[[^]]*]\\((http://127\\.0\\.0\\.1:[0-9]+/mcp-image/[0-9a-f]{64})\\)").matchEntire(markdown)!!.groupValues[1]).isEqualTo(url)
+        val path = URI(url).rawPath
+        val imageReply = request(path = path)
+        assertThat(imageReply.status).isEqualTo(200)
+        assertThat(imageReply.headers["content-type"]).isEqualTo("image/png")
+        assertThat(imageReply.headers["cache-control"]).contains("private")
+        assertThat(imageReply.bytes).isEqualTo(imageBytes)
+        val decoded = BitmapFactory.decodeByteArray(imageReply.bytes, 0, imageReply.bytes.size)
+        assertThat(decoded.width).isEqualTo(16); assertThat(decoded.height).isEqualTo(24); decoded.recycle()
+        val head = request(path = path, method = "HEAD")
+        assertThat(head.status).isEqualTo(200); assertThat(head.bytes).isEmpty()
+        assertThat(head.headers["content-length"]).isEqualTo(imageBytes.size.toString())
+        assertThat(request(path = "/mcp-image/" + "0".repeat(64)).status).isEqualTo(404)
+        assertThat(request(path = path, origin = "https://untrusted.invalid").status).isEqualTo(403)
+        assertThat(request(path = path, host = "untrusted.invalid").status).isEqualTo(403)
+        assertThat(request(path = path + "?file=private").status).isEqualTo(404)
+        assertThat(request(path = path, method = "POST").status).isEqualTo(405)
+        assertThat(request(path = "/mcp").status).isEqualTo(401)
+        blockImage.set(true)
+        assertThat(request(path = path).status).isEqualTo(404)
+        blockImage.set(false)
+        withContext(Dispatchers.Main) { manager.stop() }
+        awaitState { !manager.state.value.running }
+        withContext(Dispatchers.Main) { manager.detached() }
+        awaitState { !manager.state.value.stopping }
+        withContext(Dispatchers.Main) { manager.start(false) }
+        awaitState { manager.state.value.running }
+        assertThat(request(path = path).status).isEqualTo(404)
+        val renewed = Json.parseToJsonElement(result()["content"]!!.jsonArray[1].jsonObject["text"]!!.jsonPrimitive.content).jsonObject["image_url"]!!.jsonPrimitive.content
+        assertThat(renewed).isNotEqualTo(url)
+        assertThat(request(path = URI(renewed).rawPath).bytes).isEqualTo(imageBytes)
         info(tool("submit_image_task", args("working-task-002")))
         assertThat(generated.get()).isEqualTo(1)
         val store = McpJobStore(File(context.filesDir, "mcp-jobs"))

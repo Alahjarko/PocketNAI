@@ -2,7 +2,6 @@ package net.pocketnai.data.mcp
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.util.Base64
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.sync.Semaphore
@@ -34,7 +33,7 @@ class PocketMcpBackend(private val container: AppContainer) : McpImageBackend {
         })
         put("mode", "single text-to-image; current draft references are never attached")
         put("workflow", "submit_image_task once -> get_image_task -> get_image_result; confirmation in PocketNAI unless explicitly allowed for this connection")
-        put("result", "MCP preview image up to 1536px; full original remains in PocketNAI gallery")
+        put("result", "MCP image plus image_url and markdown for a large picture in the final reply. Copy the returned markdown exactly. Preview up to 1536px; full original remains in PocketNAI gallery.")
     }
     private fun secrets() = listOfNotNull(container.credentialStore.load()?.token, container.openAiImageSettings.apiKey()).filter { it.isNotBlank() }
     private fun rejectSecrets(text: String) { if (secrets().any { text.contains(it) }) throw McpToolFailure("生成内容不能包含账户凭据") }
@@ -109,7 +108,7 @@ class PocketMcpBackend(private val container: AppContainer) : McpImageBackend {
         }
         Unit
     }
-    override suspend fun image(imageId: String): JsonObject = previews.withPermit { withContext(Dispatchers.IO) {
+    override suspend fun image(imageId: String): McpImageData = previews.withPermit { withContext(Dispatchers.IO) {
         val detail = container.generationRepository.loadDetail(imageId) ?: throw McpToolFailure("图片已从画廊移除")
         if (container.settingsStore.sfwMode.value && SfwPolicy.isSensitive(detail.generation)) throw McpToolFailure("当前 SFW 模式下请在 PocketNAI 详情中查看此图")
         val file = container.fileStore.resolve(detail.image.privateFilePath)
@@ -124,10 +123,7 @@ class PocketMcpBackend(private val container: AppContainer) : McpImageBackend {
         try {
             val bytes = ByteArrayOutputStream().also { preview.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
             if (bytes.size > 4 * 1024 * 1024) throw McpToolFailure("图片预览过大，请在 PocketNAI 画廊查看")
-            buildJsonObject { put("content", buildJsonArray {
-                add(buildJsonObject { put("type", "image"); put("mimeType", "image/jpeg"); put("data", Base64.encodeToString(bytes, Base64.NO_WRAP)) })
-                add(buildJsonObject { put("type", "text"); put("text", "预览 ${preview.width} × ${preview.height}；原图已保存到 PocketNAI 画廊") })
-            }); put("isError", false) }
+            McpImageData(bytes, "image/jpeg", preview.width, preview.height)
         } finally { if (preview !== decoded) preview.recycle(); decoded.recycle() }
     } }
 }

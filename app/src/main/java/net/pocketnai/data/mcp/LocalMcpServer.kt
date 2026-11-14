@@ -4,16 +4,18 @@ import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.runBlocking
 import net.pocketnai.domain.mcp.McpProtocol
 import java.security.MessageDigest
+import java.io.ByteArrayInputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
-/** IPv4 loopback only. No file serving, CORS, redirects, SSE stream or request-body logging. */
+/** IPv4 loopback only. Image GETs require a scoped grant; no arbitrary files or body/URL logging. */
 class LocalMcpServer(
     port: Int,
     private val token: String,
     private val protocol: McpProtocol,
+    private val readImage: suspend (String) -> McpImageData? = { null },
     private val onRequest: () -> Unit,
 ) : NanoHTTPD("127.0.0.1", port) {
     init { setAsyncRunner(BoundedRunner()) }
@@ -31,6 +33,23 @@ class LocalMcpServer(
         if (headers["host"] !in setOf("127.0.0.1:$listeningPort", "localhost:$listeningPort")) return response(403)
         val origin = headers["origin"]
         if (origin != null && origin !in setOf("http://127.0.0.1:$listeningPort", "http://localhost:$listeningPort")) return response(403)
+        if (session.uri.startsWith(McpImageLinks.PREFIX)) {
+            if (!session.queryParameterString.isNullOrEmpty()) return response(404)
+            if (session.method !in setOf(Method.GET, Method.HEAD)) return response(405).apply { addHeader("Allow", "GET, HEAD") }
+            return try {
+                val image = runBlocking { readImage(session.uri) } ?: return response(404)
+                onRequest()
+                newFixedLengthResponse(Response.Status.OK, image.mimeType,
+                    ByteArrayInputStream(image.bytes), image.bytes.size.toLong()).apply {
+                    setKeepAlive(false)
+                    // Images are immutable and already shared with this client. Allow its private history cache.
+                    addHeader("Cache-Control", "private, max-age=86400")
+                    addHeader("X-Content-Type-Options", "nosniff")
+                    addHeader("Referrer-Policy", "no-referrer")
+                    addHeader("Content-Disposition", "inline")
+                }
+            } catch (_: Exception) { response(404) }
+        }
         if (session.uri != "/mcp" || session.queryParameterString?.isNotEmpty() == true) return response(404)
         if (!MessageDigest.isEqual(headers["authorization"].orEmpty().toByteArray(), "Bearer $token".toByteArray())) return response(401)
         if (session.method != Method.POST) return response(405)

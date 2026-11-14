@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.*
 import net.pocketnai.domain.mcp.McpProtocol
+import net.pocketnai.data.mcp.McpImageLinks
 
 internal fun verifyLocalMcpProtocol() = runBlocking {
     var calls = 0
@@ -32,4 +33,21 @@ internal fun verifyLocalMcpProtocol() = runBlocking {
     assertThat(protocol.handle("broken JSON", null).body).doesNotContain("broken JSON")
     assertThat(protocol.handle("""{"jsonrpc":"2.0","id":1,"method":"ping"}""", "unsupported").status).isEqualTo(400)
     assertThat(request("not_a_method").body).contains("-32601")
+
+    var now = 0L
+    val links = McpImageLinks { now }
+    val path = links.issue("private-image-id")
+    assertThat(path).doesNotContain("private-image-id")
+    assertThat(links.resolve(path)).isEqualTo("private-image-id")
+    assertThat(links.issue("private-image-id")).isEqualTo(path)
+    assertThat(links.resolve(path + "/../another")).isNull()
+    now += McpImageLinks.TTL_MILLIS
+    assertThat(links.resolve(path)).isNull()
+    val renewed = links.issue("private-image-id")
+    assertThat(renewed).isNotEqualTo(path)
+    repeat(McpImageLinks.MAX_LINKS) { links.issue("other-$it") }
+    assertThat(links.resolve(renewed)).isNull()
+    val last = links.issue("last")
+    links.clear()
+    assertThat(links.resolve(last)).isNull()
 }

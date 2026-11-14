@@ -58,7 +58,13 @@ class OfflineChatServer(private val files: File) : NanoHTTPD("127.0.0.1", 47762)
             if (name != null) put("tool_calls", buildJsonArray { add(buildJsonObject {
                 put("index", 0); put("id", "offline-${System.nanoTime()}"); put("type", "function")
                 put("function", buildJsonObject { put("name", name); put("arguments", args.toString()) })
-            }) }) else put("content", if (lastCall?.endsWith("get_image_result") == true) "离线联调完成，图片已取回。" else "请先启用本机 MCP 工具。")
+            }) }) else put("content", if (lastCall?.endsWith("get_image_result") == true) {
+                val markdown = result?.get("markdown")?.jsonPrimitive?.content
+                if (markdown != null) {
+                    File(files, "offline-inline-results.txt").appendText(McpJobStore.digest(markdown) + "\n")
+                    "图片已放在正文：\n\n$markdown"
+                } else "Missing inline markdown in tool result"
+            } else "请先启用本机 MCP 工具。")
         }
         fun chunk(value: JsonObject, finish: String? = null) = buildJsonObject {
             put("id", "chatcmpl-offline"); put("object", "chat.completion.chunk"); put("created", System.currentTimeMillis() / 1000)

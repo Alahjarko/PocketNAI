@@ -25,7 +25,7 @@ class McpProtocol(private val tools: McpTools) {
                 put("protocolVersion", preferred?.takeIf { it in VERSIONS } ?: VERSIONS.last())
                 put("capabilities", buildJsonObject { put("tools", buildJsonObject { put("listChanged", false) }) })
                 put("serverInfo", buildJsonObject { put("name", "PocketNAI"); put("version", "1.0") })
-                put("instructions", "Local image tasks. Submit once with a unique request_id, then poll get_image_task. Never resubmit on a timeout. Confirmation may be required in PocketNAI. Retrieve finished images with get_image_result.")
+                put("instructions", "Local image tasks. Submit once with a unique request_id, then poll get_image_task. Never resubmit on a timeout. Confirmation may be required in PocketNAI. Retrieve finished images with get_image_result, then copy its markdown exactly into the final answer outside code fences so the picture appears large in the conversation. Do not regenerate an image just to change its display size.")
             }
             "ping" -> buildJsonObject {}
             "tools/list" -> buildJsonObject { put("tools", schema) }
@@ -81,7 +81,7 @@ class McpProtocol(private val tools: McpTools) {
             add(tool("get_image_task", "Query an existing task. Never submit again while awaiting confirmation or generation. Optional wait_seconds waits at most 20 seconds for a change.", listOf("job_id"), buildJsonObject {
                 put("job_id", field("string", "Task ID from submit_image_task.")); put("wait_seconds", field("integer", "Optional 0–20 seconds."))
             }))
-            add(tool("get_image_result", "Return the completed task image as MCP ImageContent for display. The original stays in PocketNAI gallery. No arbitrary gallery/file access.", listOf("job_id"), buildJsonObject { put("job_id", field("string", "Completed task ID.")) }))
+            add(tool("get_image_result", "Retrieve an existing task image as ImageContent plus image_url and ready-to-use markdown. IMPORTANT: copy markdown exactly into your final reply, outside code fences, for a large inline picture instead of only a tool thumbnail. URL loads locally while PocketNAI connection is on. Query again after reconnect; never regenerate for a display problem. Original stays in PocketNAI gallery.", listOf("job_id"), buildJsonObject { put("job_id", field("string", "Completed task ID.")) }))
             add(tool("cancel_image_task", "Cancel a task that has not been sent. An already sent image request cannot be cancelled or retried.", listOf("job_id"), buildJsonObject { put("job_id", field("string", "Task ID.")) }, false))
         }
     }
