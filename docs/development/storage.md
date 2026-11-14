@@ -8,6 +8,8 @@
 
 `files/mcp-jobs/<request_id的SHA-256>.json` 是独立 AtomicFile 记录，不修改 Room schema。包含冻结提示词、参数摘要、报价、状态及生成图片 ID，绝不含服务密钥；任务记录不自动截断，保留去重墓碑。重启仅把未发送项取消、执行项标为待核对，不恢复发送。配对令牌使用 `pocketnai_mcp` 加密首选项与专用 Keystore alias；任务目录和首选项均排除云备份及设备迁移。图片继续存入现有图库。细节见[本机 MCP](../local-mcp-2026-11-13.md)。
 
+2026-11-15：任务新增兼容旧记录的可选 `characterDetails`，保存独立角色确认摘要，缺失时为空；生成历史沿用现有完整角色快照。AtomicFile 写入前检查与读取一致的128 KiB上限，超大宏展开拒绝写入且保留原文件。见[角色记录](../mcp-characters-2026-11-15.md)。
+
 ## 数据库
 
 - 当前 schema 版本 **15**。新增表（如 `prompt_favorites`、`reference_images`、`favorite_images`）用独立 `CREATE TABLE`，

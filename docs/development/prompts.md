@@ -91,6 +91,8 @@
 
 ## 多角色提示词（Characters，2026-09-18）
 
+- 2026-11-15：本机 MCP 接通 `characters` / `use_coords`，复用绘伴解析器与相同请求/历史链路；独立角色正/负向、坐标和确认摘要不能只在 schema 声明而被后端过滤。具体边界见[独立角色记录](../mcp-characters-2026-11-15.md)。
+
 - 请求形态：`v4_prompt.caption.char_captions[]`，每项 `{char_caption, centers:[{x,y}]}`；
   `use_coords` 由显式布局模式决定；负向走 `v4_negative_prompt` 的同构数组，
   每角色的负向词取 `character.negativePrompt`（空则发空串）。
