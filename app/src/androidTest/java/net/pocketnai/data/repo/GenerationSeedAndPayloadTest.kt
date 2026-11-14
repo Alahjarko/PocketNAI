@@ -862,9 +862,10 @@ class GenerationSeedAndPayloadTest {
         val mcp = net.pocketnai.domain.mcp.McpNovelAiParams.parse(Json.parseToJsonElement(
             """{"prompt":"two people","negative_prompt":"lowres","characters":[{"prompt":"1.2::blue hair::","negative_prompt":"hat","x":0.2,"y":0.3},{"prompt":"red hair","negative_prompt":"glasses","x":0.8,"y":0.7}],"use_coords":true}"""
         ).jsonObject, GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V5_FULL)))
-        val mcpImage = repository.generate(GenerationRequest(params = mcp), mcp.prompt).toList()
+        val mcpRepository = repository(payloads, Random(2), GenerationFileStore(context), idGenerator = { "mcp-gen-test" })
+        val mcpImage = mcpRepository.generate(GenerationRequest(params = mcp), mcp.prompt).toList()
             .filterIsInstance<GenerationEvent.Final>().single().image
-        val mcpHistory = repository.loadDetail(mcpImage.id)!!.generation.params
+        val mcpHistory = mcpRepository.loadDetail(mcpImage.id)!!.generation.params
         assertThat(mcpHistory.characters).isEqualTo(mcp.characters)
         assertThat(mcpHistory.useCharacterCoordinates).isTrue()
         for ((key, words) in listOf("v4_prompt" to listOf("1.2::blue hair::", "red hair"), "v4_negative_prompt" to listOf("hat", "glasses"))) {
