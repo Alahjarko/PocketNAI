@@ -1,5 +1,7 @@
 # MCP 独立角色（2026-11-15）
 
+用户确认后已以原签名发布为 [0.1.40](release-0.1.40.md)。下文“待发布”描述的是此前开发验收阶段，正式源码、签名和公开下载核对见发布记录。
+
 ## 问题与用法
 
 PocketNAI 生成内核与绘伴已有独立角色，但本机 MCP 的工具 schema、参数白名单和后端投影缺少这些字段，导致外部助手只能把全部人物塞进一个 prompt。现在 `submit_image_task` 的 NovelAI 请求支持 `characters` 和 `use_coords`，复用已有 `ImageChatTools`、`GenerationParams`、请求构造与历史存储，不通过单管道猜测角色，也不改首页草稿。
