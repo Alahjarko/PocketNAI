@@ -1,6 +1,7 @@
 package net.pocketnai.ui.common
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -15,12 +16,14 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -36,6 +39,10 @@ import net.pocketnai.domain.prompt.PromptWeightSpan
 import net.pocketnai.domain.prompt.WeightDirection
 import net.pocketnai.ui.theme.LocalWeightHighlightColors
 
+private class TextLayoutHolder {
+    var result: TextLayoutResult? = null
+}
+
 /**
  * 带权重高亮的提示词输入框（技术决策记录第 22 节）。
  *
@@ -43,26 +50,17 @@ import net.pocketnai.ui.theme.LocalWeightHighlightColors
  * > 1 用红色，像荧光笔圈出来一样。改的是底色、不是文字颜色 —— 反色文字会让提示词
  * 本身变得难读，而提示词是用户要逐字检查的东西。
  *
- * ## 为什么是自己搭，而不是 OutlinedTextField
- * 底纹要画在文字**下面**，就必须拿到文字的排版结果，而 Material 的 `OutlinedTextField`
- * 既不暴露内部的 `TextLayoutResult`，也不允许替换内部的输入框。
+ * ## 零闪烁绘制期架构（消除逐字输入/退格的底纹闪断与二次重组）
+ * Compose 同一帧内固定按 **Composition → Layout → Draw** 顺序执行：
+ * 原先将 `TextLayoutResult` 存为组合态 `MutableState` 并在 Composition 里比较
+ * `layout.layoutInput.text.text == value.text` 来挂载 `Canvas`，会导致每次按键时
+ * Composition 先看到上一帧的旧 `layout`，把 `Canvas` 卸载一帧（所有底纹瞬间闪灭），
+ * 随后 `onTextLayout` 在 Layout 阶段写回状态又触发第二次重组。
  *
- * 试过 `BasicTextField` + `OutlinedTextFieldDefaults.DecorationBox`（官方为此留的入口），
- * 结果是**文字被画了两遍且边框消失**：那个 `container` 参数不是"输入框的内容"，
- * 而是边框图层，`DecorationBox` 自己会放置输入框。这条路依赖 Material 的内部约定，
- * 而它的参数表在版本之间已经改过，不值得继续赌。
- *
- * 因此这里自己搭：边框与标签都在本文件里画，底纹与输入框放进**同一个 `Box`**。
- * 这样两者严格同尺寸同原点，底纹的坐标直接来自输入框自己回调的排版结果，
- * 不需要知道任何内边距常量 —— Material 改版也不会错位。
- *
- * 代价是标签做成外部标签（在框上方），而不是 Material 的浮动标签。
- * 这与本应用已有的带标签控件一致（见 `DropdownSelector`：张数 / 质量标签 / 模型
- * 都是这样），对"总是有内容的提示词框"来说也更稳定。
- *
- * 已知限制：输入框内部滚动时底纹会错位。目前两个提示词框都是"随内容长高、
- * 由外层 `verticalScroll` 滚动"，没有内部滚动，因此不构成问题。
- * 若将来给它们加上固定高度与 `maxLines`，这里必须一并处理滚动偏移。
+ * 现改为将排版结果存入非组合态 [TextLayoutHolder]（由同一帧 Layout 阶段的 `onTextLayout`
+ * 同步写入，并仅推进仅在绘制期读取的计数），在外层 `Box` 的 [Modifier.drawBehind]
+ * （Draw 阶段，位于文字绘制之前）直接读取：同一帧内 Layout 已更新完毕再进入 Draw，
+ * 既彻底消除一帧闪断，又省去每次击键的额外重组。
  */
 @Composable
 fun WeightHighlightedTextField(
@@ -77,12 +75,11 @@ fun WeightHighlightedTextField(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
-    androidx.compose.runtime.LaunchedEffect(focused) { onFocusChanged(focused) }
+    LaunchedEffect(focused) { onFocusChanged(focused) }
     val spans = remember(value.text) { PromptWeightScanner.scan(value.text) }
-
-    // 排版结果由输入框回调过来。绝大多数提示词没有加权语法，那种情况下不保存它，
-    // 后续的重组也就不会被它带着走。
-    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val currentSpans by rememberUpdatedState(spans)
+    val layoutHolder = remember { TextLayoutHolder() }
+    val layoutVersion = remember { mutableIntStateOf(0) }
 
     val density = LocalDensity.current
     val horizontalPadding = with(density) { HIGHLIGHT_HORIZONTAL_PADDING.toPx() }
@@ -94,8 +91,7 @@ fun WeightHighlightedTextField(
 
     // 文字颜色必须显式跟随主题：裸 BasicTextField 不像 Material 组件那样解析颜色，
     // textStyle 里颜色未指定时底层按**黑色**渲染 —— 浅色主题下碰巧正确，
-    // 深色主题下就是"深色底上的黑字"。Material 的 OutlinedTextField 内部同样是把
-    // focused/unfocusedTextColor（默认 onSurface）merge 进 textStyle，这里照做。
+    // 深色主题下就是"深色底上的黑字"。
     val textColor = if (enabled) {
         MaterialTheme.colorScheme.onSurface
     } else {
@@ -112,11 +108,16 @@ fun WeightHighlightedTextField(
             )
         }
 
-        val borderColor = when {
+        val targetBorderColor = when {
             !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
             focused -> MaterialTheme.colorScheme.primary
             else -> MaterialTheme.colorScheme.outline
         }
+        val borderColor by animateColorAsState(
+            targetValue = targetBorderColor,
+            animationSpec = tween(140),
+            label = "prompt-border-color",
+        )
 
         Row(
             modifier = Modifier
@@ -127,28 +128,30 @@ fun WeightHighlightedTextField(
                     shape = TextFieldShape,
                 )
                 .padding(horizontal = 14.dp, vertical = 10.dp),
-            // 尾部按钮随内容垂直居中，与 Material 输入框的行为一致。
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(modifier = Modifier.weight(1f)) {
-                val current = layout?.takeIf { it.layoutInput.text.text == value.text }
-                if (current != null) {
-                    // 放在输入框之前 = 先画，于是底纹在文字**下面**。
-                    Canvas(modifier = Modifier.matchParentSize()) {
-                        drawWeightHighlights(
-                            layout = current,
-                            spans = spans,
-                            weakerColor = highlights.weaker,
-                            strongerColor = highlights.stronger,
-                            neutralColor = neutralHighlight,
-                            horizontalPadding = horizontalPadding,
-                            verticalInset = verticalInset,
-                            cornerRadius = cornerRadius,
-                            groupGap = groupGap,
-                        )
-                    }
-                }
-
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .drawBehind {
+                        layoutVersion.intValue
+                        val activeSpans = currentSpans
+                        val currentLayout = layoutHolder.result
+                        if (activeSpans.isNotEmpty() && currentLayout != null) {
+                            drawWeightHighlights(
+                                layout = currentLayout,
+                                spans = activeSpans,
+                                weakerColor = highlights.weaker,
+                                strongerColor = highlights.stronger,
+                                neutralColor = neutralHighlight,
+                                horizontalPadding = horizontalPadding,
+                                verticalInset = verticalInset,
+                                cornerRadius = cornerRadius,
+                                groupGap = groupGap,
+                            )
+                        }
+                    },
+            ) {
                 BasicTextField(
                     value = value,
                     onValueChange = onValueChange,
@@ -161,7 +164,12 @@ fun WeightHighlightedTextField(
                     minLines = minLines,
                     interactionSource = interactionSource,
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                    onTextLayout = { result -> layout = if (spans.isEmpty()) null else result },
+                    onTextLayout = { result ->
+                        if (layoutHolder.result != result) {
+                            layoutHolder.result = result
+                            layoutVersion.intValue++
+                        }
+                    },
                 )
             }
 
@@ -191,21 +199,28 @@ private fun DrawScope.drawWeightHighlights(
     cornerRadius: Float,
     groupGap: Float,
 ) {
+    val textLength = layout.layoutInput.text.length
+    if (textLength <= 0 || layout.lineCount <= 0) return
+
     spans.forEachIndexed { spanIndex, span ->
+        val safeStart = span.start.coerceIn(0, textLength)
+        val safeEnd = span.endExclusive.coerceIn(0, textLength)
+        if (safeStart >= safeEnd) return@forEachIndexed
+
         val color = when (span.direction) {
             WeightDirection.NEUTRAL -> neutralColor
             WeightDirection.WEAKER -> weakerColor
             WeightDirection.STRONGER -> strongerColor
         }
 
-        val firstLine = layout.getLineForOffset(span.start)
-        val lastLine = layout.getLineForOffset(span.endExclusive - 1)
+        val firstLine = layout.getLineForOffset(safeStart)
+        val lastLine = layout.getLineForOffset(safeEnd - 1)
 
         for (line in firstLine..lastLine) {
             // visibleEnd = true：不含行尾空白与换行符，底纹才不会在折行处拖出一条空隙。
             val lineEnd = layout.getLineEnd(line, visibleEnd = true)
-            val start = maxOf(span.start, layout.getLineStart(line))
-            val end = minOf(span.endExclusive, lineEnd)
+            val start = maxOf(safeStart, layout.getLineStart(line))
+            val end = minOf(safeEnd, lineEnd)
             if (start >= end) continue
 
             val left = layout.getHorizontalPosition(start, usePrimaryDirection = true)
@@ -216,17 +231,19 @@ private fun DrawScope.drawWeightHighlights(
             // 相邻组的外扩底纹不能相交；即使没有逗号或权重颜色相同，也留出可见分界。
             var highlightLeft = left - horizontalPadding
             var highlightRight = right + horizontalPadding
-            spans.getOrNull(spanIndex - 1)?.takeIf {
-                it.endExclusive <= start && layout.getLineForOffset(it.endExclusive - 1) == line
-            }?.let { previous ->
-                val previousRight = layout.getHorizontalPosition(previous.endExclusive, usePrimaryDirection = true)
-                highlightLeft = maxOf(highlightLeft, (previousRight + left) / 2f + groupGap / 2f)
+            spans.getOrNull(spanIndex - 1)?.let { prev ->
+                val prevEnd = prev.endExclusive.coerceIn(0, textLength)
+                if (prevEnd in 1..start && layout.getLineForOffset(prevEnd - 1) == line) {
+                    val previousRight = layout.getHorizontalPosition(prevEnd, usePrimaryDirection = true)
+                    highlightLeft = maxOf(highlightLeft, (previousRight + left) / 2f + groupGap / 2f)
+                }
             }
-            spans.getOrNull(spanIndex + 1)?.takeIf {
-                it.start >= end && layout.getLineForOffset(it.start) == line
-            }?.let { next ->
-                val nextLeft = layout.getHorizontalPosition(next.start, usePrimaryDirection = true)
-                highlightRight = minOf(highlightRight, (right + nextLeft) / 2f - groupGap / 2f)
+            spans.getOrNull(spanIndex + 1)?.let { next ->
+                val nextStart = next.start.coerceIn(0, textLength)
+                if (nextStart >= end && nextStart < textLength && layout.getLineForOffset(nextStart) == line) {
+                    val nextLeft = layout.getHorizontalPosition(nextStart, usePrimaryDirection = true)
+                    highlightRight = minOf(highlightRight, (right + nextLeft) / 2f - groupGap / 2f)
+                }
             }
             if (highlightRight <= highlightLeft) continue
 

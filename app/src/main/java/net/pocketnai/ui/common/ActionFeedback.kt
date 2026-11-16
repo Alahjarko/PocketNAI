@@ -6,6 +6,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -26,8 +28,10 @@ import androidx.compose.ui.unit.dp
 internal fun FeedbackIcon(icon: ImageVector, description: String, tint: Color) {
     Box(Modifier.size(24.dp).semantics { contentDescription = description }) {
         AnimatedContent(icon, label = "action-icon", transitionSpec = {
-            (fadeIn(tween(140)) + scaleIn(tween(180), initialScale = .8f)) togetherWith
-                (fadeOut(tween(90)) + scaleOut(tween(90), targetScale = .85f))
+            (fadeIn(tween(110)) + scaleIn(
+                spring(dampingRatio = 0.58f, stiffness = Spring.StiffnessMedium),
+                initialScale = .72f,
+            )) togetherWith (fadeOut(tween(90)) + scaleOut(tween(90), targetScale = .82f))
         }) { displayed -> Icon(displayed, null, tint = tint) }
     }
 }

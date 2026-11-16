@@ -57,10 +57,14 @@ fun GenerateButton(
     // 点击即收回输入法（2026-10-10 用户要求）：生成/去连接都是"离开编辑"的动作，
     // 键盘继续悬着只会挡住画廊与状态行。
     val keyboard = LocalSoftwareKeyboardController.current
+    val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
     Button(
         onClick = {
             keyboard?.hide()
-            if (!inFlight && enabled) onClick()
+            if (!inFlight && enabled) {
+                haptics.confirm()
+                onClick()
+            }
         },
         enabled = enabled || inFlight,
         shape = RoundedCornerShape(16.dp),

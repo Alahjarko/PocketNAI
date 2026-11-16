@@ -93,5 +93,13 @@ class NovelAiRequestBuilderInpaintTest {
         assertThat(medium["action"]!!.jsonPrimitive.content).isEqualTo("infill")
         assertThat(medium["model"]!!.jsonPrimitive.content).isEqualTo("nai-diffusion-5-full-medium-inpainting")
         assertThat(medium["parameters"]!!.jsonObject["steps"]!!.jsonPrimitive.content).isEqualTo("14")
+
+        val zoomed = net.pocketnai.domain.inpaint.MaskGeometry.zoomedFit(1000, 1000, 500f, 500f, 2f, 0f, 0f)
+        val centerBitmap = zoomed.toBitmap(250f, 250f, 1000, 1000)
+        assertThat(centerBitmap.x).isWithin(0.01f).of(500f)
+        assertThat(centerBitmap.y).isWithin(0.01f).of(500f)
+        val (clampedX, clampedY) = net.pocketnai.domain.inpaint.MaskGeometry.clampPan(1000, 1000, 500f, 500f, 2f, 9999f, -9999f)
+        assertThat(clampedX).isWithin(0.01f).of(250f)
+        assertThat(clampedY).isWithin(0.01f).of(-250f)
     }
 }

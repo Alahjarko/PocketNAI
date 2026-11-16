@@ -119,6 +119,25 @@ class GalleryViewModel(
         }
     }
 
+    /** 连续滑动涂选：以起按锚点决定本次拖拽是“批量勾选”还是“批量取消”，回滑时自动还原区间外状态。 */
+    fun applyDragSelection(
+        anchorIndex: Int,
+        currentIndex: Int,
+        orderedIds: List<String>,
+        baseSelection: Set<String>,
+        selectTarget: Boolean,
+    ) {
+        if (orderedIds.isEmpty()) return
+        val from = minOf(anchorIndex, currentIndex).coerceIn(0, orderedIds.lastIndex)
+        val to = maxOf(anchorIndex, currentIndex).coerceIn(0, orderedIds.lastIndex)
+        val rangeSet = orderedIds.subList(from, to + 1).toSet()
+        _selectedImageIds.value = if (selectTarget) {
+            baseSelection + rangeSet
+        } else {
+            baseSelection - rangeSet
+        }
+    }
+
     fun selectAll(imageIds: Collection<String>) {
         _selectedImageIds.value = imageIds.toSet()
     }

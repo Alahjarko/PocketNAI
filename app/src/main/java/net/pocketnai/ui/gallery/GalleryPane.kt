@@ -226,11 +226,13 @@ fun GalleryPane(
         if (index >= 0) { gridState.scrollToItem(index + 1); requestedTask = null }
     }
     Column(modifier = modifier.fillMaxSize()) {
+        val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
         if (isSelectionMode) {
             GallerySelectionTopBar(
                 selectedCount = selectedImageIds.size,
                 allSelected = items.isNotEmpty() && selectedImageIds.size == items.size,
                 onSelectAllToggle = {
+                    haptics.tick()
                     if (selectedImageIds.size == items.size) {
                         viewModel.deselectAll()
                     } else {
@@ -247,7 +249,10 @@ fun GalleryPane(
                 onModeChange = viewModel::onModeChange,
                 onFavoritesOnlyChange = viewModel::onFavoritesOnlyChange,
                 onClearAll = viewModel::clearFilter,
-                onEnterSelectionMode = { viewModel.enterSelectionMode() },
+                onEnterSelectionMode = {
+                    haptics.tick()
+                    viewModel.enterSelectionMode()
+                },
                 taskAction = { GenerationTasksButton(generations) { id -> viewModel.clearFilter(); requestedTask = id } },
             )
         }
@@ -270,8 +275,10 @@ fun GalleryPane(
                     isSelectionMode = isSelectionMode,
                     selectedIds = selectedImageIds,
                     onClick = { item ->
-                        if (isSelectionMode) viewModel.toggleSelect(item.imageId)
-                        else {
+                        if (isSelectionMode) {
+                            haptics.tick()
+                            viewModel.toggleSelect(item.imageId)
+                        } else {
                             if (!openingImage) {
                                 openingImage = true
                                 scope.launch {
@@ -286,10 +293,12 @@ fun GalleryPane(
                         }
                     },
                     onLongClick = { item ->
+                        haptics.longPress()
                         if (isSelectionMode) viewModel.toggleSelect(item.imageId) else actionTarget = item
                     },
                     onRevealed = { viewModel.motionSlots.finish(it); motionRevision++ },
                     onDismissFailure = { viewModel.motionSlots.dismiss(it); motionRevision++ },
+                    onDragSelect = viewModel::applyDragSelection,
                 )
             }
 

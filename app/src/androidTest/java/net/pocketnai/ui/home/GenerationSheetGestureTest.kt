@@ -98,8 +98,21 @@ class GenerationSheetGestureTest {
         screenshot("welcome-dark")
         compose.onNodeWithText("先看看").performClick()
         compose.runOnIdle { dark = false }
+        compose.mainClock.advanceTimeBy(100)
+        val collapsedHeaderTop = compose.onNodeWithTag("header").fetchSemanticsNode().boundsInRoot.top
+        compose.onNodeWithTag("header").performTouchInput {
+            down(center)
+            moveBy(androidx.compose.ui.geometry.Offset(0f, -180f))
+        }
+        compose.mainClock.advanceTimeBy(32)
+        val midDragHeaderTop = compose.onNodeWithTag("header").fetchSemanticsNode().boundsInRoot.top
+        assertThat(midDragHeaderTop).isLessThan(collapsedHeaderTop - 100f)
+        compose.onNodeWithTag("header").performTouchInput {
+            moveBy(androidx.compose.ui.geometry.Offset(0f, -220f))
+            up()
+        }
         compose.mainClock.autoAdvance = true
-        compose.onNodeWithContentDescription("展开生成设置").performClick()
+        compose.onNodeWithContentDescription("收起生成设置").assertIsDisplayed()
         // 表单顶部向下滚是最容易误收起的场景。
         repeat(2) { compose.onNodeWithTag("form").performTouchInput { swipeDown() } }
         compose.onNodeWithContentDescription("收起生成设置").assertIsDisplayed()

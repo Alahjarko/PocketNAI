@@ -9,9 +9,19 @@ import android.graphics.Path
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.PorterDuffXfermode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas as ComposeCanvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,13 +31,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Redo
-import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,25 +52,36 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color as ComposeColor
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import java.io.File
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import net.pocketnai.R
@@ -73,25 +96,13 @@ import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.common.CenteredHint
 import net.pocketnai.ui.common.messageRes
 import net.pocketnai.ui.generate.GenerateViewModel
-import java.io.File
+import net.pocketnai.ui.motion.rememberPocketHaptics
 
 /**
  * 局部重绘的蒙版编辑器（全屏）。
  *
- * ## 为什么是全屏
- * 涂改需要精度，而生成悬浮层展开后也只有半屏。官方把它做成一个独立 Canvas 也是同样的理由。
- *
- * ## 编辑器显示的就是提交图
- * 底图在进入重绘时已经被裁切到输出尺寸，因此"手指涂的坐标"与"提交的蒙版像素"一一对应。
- * 代价是重绘模式下不能改 Resolution（改了就要重新裁底图，蒙版会整体错位）。
- *
- * ## 撤销按笔画重放，不存位图快照
- * 1216×832 的位图每张约 4 MB（ARGB_8888），二十步就是几十 MB。笔画数据只有几十个点，
- * 撤销时从头重放一遍即可。扩张滑块能实时预览，也正是因为"重放"足够便宜。
- *
- * ## 离开即保存
- * 「完成」与返回都会渲染并保存蒙版 —— 否则用户涂了半天、随手一返就白涂了。
- * 要丢弃必须显式点「清空」。
+ * 支持单指精准涂抹/擦除与双指捏合缩放平移（第二根手指在触控容差内按下时自动取消单指误触墨点），
+ * 并在拖动笔刷或扩张滑块时在画布中央实时显示等比例笔刷预览圈。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -103,16 +114,41 @@ fun InpaintEditorScreen(
     val container = LocalAppContainer.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val haptics = rememberPocketHaptics()
 
     val strokes = remember { mutableStateListOf<MaskStroke>() }
     val redoStack = remember { mutableStateListOf<MaskStroke>() }
     var isErase by remember { mutableStateOf(false) }
-    var brushRadius by remember { mutableStateOf(24f) }
-    var dilation by remember { mutableStateOf(viewModel.inpaintDilation.value) }
+    var brushRadius by remember { mutableFloatStateOf(24f) }
+    var dilation by remember { mutableFloatStateOf(viewModel.inpaintDilation.value) }
     var currentStroke by remember { mutableStateOf<MaskStroke?>(null) }
     var viewSize by remember { mutableStateOf(IntSize.Zero) }
+    var viewZoom by remember { mutableFloatStateOf(1f) }
+    var viewPan by remember { mutableStateOf(Offset.Zero) }
     var clearConfirm by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
+
+    val brushInteraction = remember { MutableInteractionSource() }
+    val dilationInteraction = remember { MutableInteractionSource() }
+    val brushDragging by brushInteraction.collectIsDraggedAsState()
+    val brushPressed by brushInteraction.collectIsPressedAsState()
+    val dilationDragging by dilationInteraction.collectIsDraggedAsState()
+    val dilationPressed by dilationInteraction.collectIsPressedAsState()
+    var previewHold by remember { mutableStateOf(false) }
+    val sliderActive = brushDragging || brushPressed || dilationDragging || dilationPressed
+    LaunchedEffect(sliderActive) {
+        if (sliderActive) {
+            previewHold = true
+        } else {
+            delay(320)
+            previewHold = false
+        }
+    }
+    val previewAlpha by animateFloatAsState(
+        targetValue = if (previewHold) 1f else 0f,
+        animationSpec = tween(if (previewHold) 80 else 180),
+        label = "brush-preview-alpha",
+    )
 
     // 同一进程内来回导航时恢复上次的笔画。
     LaunchedEffect(Unit) {
@@ -124,18 +160,28 @@ fun InpaintEditorScreen(
         baseBitmap?.width ?: base.width,
         baseBitmap?.height ?: base.height,
     )
-    val transform = MaskGeometry.fit(
+    val transform = MaskGeometry.zoomedFit(
         bitmapWidth = maskSize.width,
         bitmapHeight = maskSize.height,
         viewWidth = viewSize.width.toFloat(),
         viewHeight = viewSize.height.toFloat(),
+        zoom = viewZoom,
+        panX = viewPan.x,
+        panY = viewPan.y,
     )
 
+    val currentTransform by rememberUpdatedState(transform)
+    val currentIsErase by rememberUpdatedState(isErase)
+    val currentBrushRadius by rememberUpdatedState(brushRadius)
+    val currentViewSize by rememberUpdatedState(viewSize)
+    val currentZoom by rememberUpdatedState(viewZoom)
+    val currentPan by rememberUpdatedState(viewPan)
+
     // 已完成路径缓存为不可变快照；松手、撤销和扩张都直接参与当前帧绘制。
-    // 不在 LaunchedEffect 中改写同一张 Bitmap，避免像素已变但 Canvas 未失效。
     val committedPaths = remember(strokes.toList()) {
         strokes.map { it to it.toBitmapPath() }
     }
+    val bitmapPaint = remember { Paint(Paint.FILTER_BITMAP_FLAG) }
     val inkPaint = remember {
         Paint().apply {
             isAntiAlias = false
@@ -145,8 +191,14 @@ fun InpaintEditorScreen(
             color = Color.BLACK
         }
     }
-
-    val overlayColor = MaterialTheme.colorScheme.primary.toArgb()
+    val primaryComposeColor = MaterialTheme.colorScheme.primary
+    val overlayColor = primaryComposeColor.toArgb()
+    val overlayPaint = remember(overlayColor) {
+        Paint().apply {
+            alpha = (255 * OVERLAY_ALPHA).toInt()
+            colorFilter = PorterDuffColorFilter(overlayColor, PorterDuff.Mode.SRC_IN)
+        }
+    }
 
     val save: () -> Unit = save@{
         if (saving) return@save
@@ -174,7 +226,6 @@ fun InpaintEditorScreen(
                     ),
                 )
             }
-            // 失败不在这里打断：错误会在生成页的参考图错误区显示出来。
             onDone()
         }
     }
@@ -209,6 +260,7 @@ fun InpaintEditorScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .clipToBounds()
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .onSizeChanged { viewSize = it },
             ) {
@@ -218,39 +270,84 @@ fun InpaintEditorScreen(
                     ComposeCanvas(
                         modifier = Modifier
                             .fillMaxSize()
-                            .pointerInput(transform, isErase, brushRadius) {
-                                detectDragGestures(
-                                    onDragStart = { offset ->
-                                        currentStroke = MaskStroke(
-                                            isErase = isErase,
-                                            radius = MaskGeometry.bitmapRadius(brushRadius, transform),
-                                            points = listOf(
-                                                transform.toBitmap(
-                                                    offset.x, offset.y,
-                                                    maskSize.width, maskSize.height,
-                                                ),
-                                            ),
-                                        )
-                                    },
-                                    onDrag = { change, _ ->
-                                        currentStroke = currentStroke?.let { stroke ->
-                                            stroke.copy(
-                                                points = stroke.points + transform.toBitmap(
-                                                    change.position.x, change.position.y,
-                                                    maskSize.width, maskSize.height,
-                                                ),
+                            .pointerInput(maskSize) {
+                                val touchSlop = viewConfiguration.touchSlop
+                                awaitEachGesture {
+                                    val firstDown = awaitFirstDown(requireUnconsumed = false)
+                                    val startTransform = currentTransform
+                                    val startPoint = startTransform.toBitmap(
+                                        firstDown.position.x,
+                                        firstDown.position.y,
+                                        maskSize.width,
+                                        maskSize.height,
+                                    )
+                                    currentStroke = MaskStroke(
+                                        isErase = currentIsErase,
+                                        radius = MaskGeometry.bitmapRadius(currentBrushRadius, startTransform),
+                                        points = listOf(startPoint),
+                                    )
+                                    var multiTouch = false
+                                    var paintPastSlop = false
+
+                                    do {
+                                        val event = awaitPointerEvent()
+                                        val pressed = event.changes.filter { it.pressed }
+                                        if (pressed.size >= 2) {
+                                            if (!multiTouch) {
+                                                multiTouch = true
+                                                if (paintPastSlop) {
+                                                    // 单指已画出有效长笔道后再落第二指：先保存已画笔道，再切换缩放。
+                                                    currentStroke?.takeIf { it.isDrawable }?.let { committed ->
+                                                        strokes.add(committed)
+                                                        redoStack.clear()
+                                                    }
+                                                }
+                                                // 若尚未跨过触控容差即落下第二指，直接丢弃起始墨点，杜绝双指缩放误留圆点。
+                                                currentStroke = null
+                                            }
+                                            val zoomDelta = event.calculateZoom()
+                                            val panDelta = event.calculatePan()
+                                            val nextZoom = (currentZoom * zoomDelta).coerceIn(1f, MaskGeometry.MAX_VIEW_ZOOM)
+                                            val vsize = currentViewSize
+                                            val (clampedX, clampedY) = MaskGeometry.clampPan(
+                                                bitmapWidth = maskSize.width,
+                                                bitmapHeight = maskSize.height,
+                                                viewWidth = vsize.width.toFloat(),
+                                                viewHeight = vsize.height.toFloat(),
+                                                zoom = nextZoom,
+                                                panX = currentPan.x + panDelta.x,
+                                                panY = currentPan.y + panDelta.y,
                                             )
+                                            viewZoom = nextZoom
+                                            viewPan = Offset(clampedX, clampedY)
+                                            event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                        } else if (pressed.size == 1 && !multiTouch) {
+                                            val pointer = pressed.first()
+                                            if (!paintPastSlop && (pointer.position - firstDown.position).getDistance() > touchSlop) {
+                                                paintPastSlop = true
+                                            }
+                                            if (pointer.positionChanged()) {
+                                                val tf = currentTransform
+                                                val pt = tf.toBitmap(
+                                                    pointer.position.x,
+                                                    pointer.position.y,
+                                                    maskSize.width,
+                                                    maskSize.height,
+                                                )
+                                                currentStroke = currentStroke?.let { s -> s.copy(points = s.points + pt) }
+                                                pointer.consume()
+                                            }
                                         }
-                                    },
-                                    onDragEnd = {
+                                    } while (event.changes.any { it.pressed })
+
+                                    if (!multiTouch) {
                                         currentStroke?.takeIf { it.isDrawable }?.let { stroke ->
                                             strokes.add(stroke)
                                             redoStack.clear()
                                         }
-                                        currentStroke = null
-                                    },
-                                    onDragCancel = { currentStroke = null },
-                                )
+                                    }
+                                    currentStroke = null
+                                }
                             },
                     ) {
                         drawIntoCanvas { canvas ->
@@ -261,35 +358,67 @@ fun InpaintEditorScreen(
                                 transform.offsetX + maskSize.width * transform.scale,
                                 transform.offsetY + maskSize.height * transform.scale,
                             )
-                            native.drawBitmap(
-                                baseBitmap,
-                                null,
-                                destination,
-                                Paint(Paint.FILTER_BITMAP_FLAG),
-                            )
+                            native.drawBitmap(baseBitmap, null, destination, bitmapPaint)
 
-                            // 墨迹染色成主题色后半透明叠加：既看得清涂在哪儿，又看得见底图。
-                            val overlay = Paint().apply {
-                                alpha = (255 * OVERLAY_ALPHA).toInt()
-                                colorFilter = PorterDuffColorFilter(
-                                    overlayColor,
-                                    PorterDuff.Mode.SRC_IN,
-                                )
+                            // 仅在可见视口交集上分配离屏合成图层：即使放大到 5x，离屏纹理也不会超过屏幕尺寸。
+                            val layerBounds = android.graphics.RectF(destination)
+                            if (layerBounds.intersect(0f, 0f, size.width, size.height)) {
+                                val layer = native.saveLayer(layerBounds, overlayPaint)
+                                native.clipRect(layerBounds)
+                                native.translate(transform.offsetX, transform.offsetY)
+                                native.scale(transform.scale, transform.scale)
+                                committedPaths.forEach { (stroke, path) ->
+                                    native.drawInk(stroke, path, dilation, inkPaint)
+                                }
+                                currentStroke?.let { stroke ->
+                                    native.drawInk(stroke, stroke.toBitmapPath(), dilation, inkPaint)
+                                }
+                                native.restoreToCount(layer)
                             }
-                            // 已提交笔画与当前笔画先合成同一墨迹层，再统一染色与透明度。
-                            // 橡皮只清除该层；底图不受影响，松手前后笔宽和重叠区也一致。
-                            val layer = native.saveLayer(destination, overlay)
-                            native.clipRect(destination)
-                            native.translate(transform.offsetX, transform.offsetY)
-                            native.scale(transform.scale, transform.scale)
-                            committedPaths.forEach { (stroke, path) ->
-                                native.drawInk(stroke, path, dilation, inkPaint)
-                            }
-                            currentStroke?.let { stroke ->
-                                native.drawInk(stroke, stroke.toBitmapPath(), dilation, inkPaint)
-                            }
-                            native.restoreToCount(layer)
                         }
+
+                        // 滑块调参时的实时等比例笔刷预览圈。
+                        if (previewAlpha > 0.01f) {
+                            val bmpRadius = MaskGeometry.bitmapRadius(brushRadius, transform)
+                            val effectiveBmpRadius = if (isErase) bmpRadius else bmpRadius + dilation.coerceAtLeast(0f)
+                            val screenRadius = (effectiveBmpRadius * transform.scale).coerceAtLeast(2f)
+                            val center = Offset(size.width / 2f, size.height / 2f)
+                            val fillTint = if (isErase) {
+                                ComposeColor.White.copy(alpha = 0.25f * previewAlpha)
+                            } else {
+                                primaryComposeColor.copy(alpha = OVERLAY_ALPHA * previewAlpha)
+                            }
+                            drawCircle(color = fillTint, radius = screenRadius, center = center)
+                            drawCircle(
+                                color = ComposeColor.Black.copy(alpha = 0.45f * previewAlpha),
+                                radius = screenRadius + 1.dp.toPx(),
+                                center = center,
+                                style = Stroke(width = 1.5.dp.toPx()),
+                            )
+                            drawCircle(
+                                color = ComposeColor.White.copy(alpha = 0.9f * previewAlpha),
+                                radius = screenRadius,
+                                center = center,
+                                style = Stroke(width = 1.5.dp.toPx()),
+                            )
+                        }
+                    }
+
+                    if (viewZoom > 1.02f) {
+                        AssistChip(
+                            onClick = {
+                                haptics.tick()
+                                viewZoom = 1f
+                                viewPan = Offset.Zero
+                            },
+                            label = { Text("${(viewZoom * 100).roundToInt()}% · 重置视图") },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+                            ),
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(12.dp),
+                        )
                     }
                 }
             }
@@ -306,26 +435,42 @@ fun InpaintEditorScreen(
                 ) {
                     FilterChip(
                         selected = !isErase,
-                        onClick = { isErase = false },
+                        onClick = {
+                            if (isErase) haptics.tick()
+                            isErase = false
+                        },
                         label = { Text(stringResource(R.string.inpaint_brush)) },
                         leadingIcon = { Icon(Icons.Default.Brush, contentDescription = null) },
                     )
                     FilterChip(
                         selected = isErase,
-                        onClick = { isErase = true },
+                        onClick = {
+                            if (!isErase) haptics.tick()
+                            isErase = true
+                        },
                         label = { Text(stringResource(R.string.inpaint_eraser)) },
                     )
                     IconButton(
-                        onClick = { if (strokes.isNotEmpty()) redoStack.add(strokes.removeAt(strokes.lastIndex)) },
+                        onClick = {
+                            if (strokes.isNotEmpty()) {
+                                haptics.tick()
+                                redoStack.add(strokes.removeAt(strokes.lastIndex))
+                            }
+                        },
                         enabled = strokes.isNotEmpty(),
                     ) {
-                        Icon(Icons.Default.Undo, contentDescription = stringResource(R.string.inpaint_undo))
+                        Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = stringResource(R.string.inpaint_undo))
                     }
                     IconButton(
-                        onClick = { if (redoStack.isNotEmpty()) strokes.add(redoStack.removeAt(redoStack.lastIndex)) },
+                        onClick = {
+                            if (redoStack.isNotEmpty()) {
+                                haptics.tick()
+                                strokes.add(redoStack.removeAt(redoStack.lastIndex))
+                            }
+                        },
                         enabled = redoStack.isNotEmpty(),
                     ) {
-                        Icon(Icons.Default.Redo, contentDescription = stringResource(R.string.inpaint_redo))
+                        Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = stringResource(R.string.inpaint_redo))
                     }
                     IconButton(onClick = { clearConfirm = true }, enabled = strokes.isNotEmpty()) {
                         Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.inpaint_clear))
@@ -339,12 +484,14 @@ fun InpaintEditorScreen(
                     ),
                     value = brushRadius,
                     range = MaskImageProcessor.BRUSH_RANGE,
+                    interactionSource = brushInteraction,
                     onChange = { brushRadius = it },
                 )
                 LabeledSliderRow(
                     label = stringResource(R.string.inpaint_dilation, dilation.toInt()),
                     value = dilation,
                     range = MaskImageProcessor.DILATION_RANGE,
+                    interactionSource = dilationInteraction,
                     onChange = { dilation = it },
                 )
 
@@ -369,6 +516,7 @@ fun InpaintEditorScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
+                        haptics.tick()
                         strokes.clear()
                         redoStack.clear()
                         clearConfirm = false
@@ -386,12 +534,6 @@ fun InpaintEditorScreen(
     }
 }
 
-/**
- * 底图还在导入中。
- *
- * 进入编辑器是一次异步导入（解码 + 裁切 + 落盘），在低端设备上可能几百毫秒，
- * 因此必须有这个中间态 —— 否则用户会看到一闪而过的空白编辑器。
- */
 @Composable
 fun InpaintPreparing(onCancel: () -> Unit) {
     Column(
@@ -411,7 +553,6 @@ fun InpaintPreparing(onCancel: () -> Unit) {
     }
 }
 
-/** 底图导入失败：说明原因并让用户返回，而不是留一个空画布。 */
 @Composable
 fun InpaintUnavailable(messageRes: net.pocketnai.core.ErrorCode, onBack: () -> Unit) {
     Column(
@@ -432,8 +573,6 @@ fun InpaintUnavailable(messageRes: net.pocketnai.core.ErrorCode, onBack: () -> U
 }
 
 private const val OVERLAY_ALPHA = 0.45f
-
-/** 画笔宽度是半径，`strokeWidth` 要的是直径。 */
 private const val SCALE = 2f
 
 private fun decode(relativePath: String, resolve: (String) -> File): Bitmap? = runCatching {
@@ -442,7 +581,6 @@ private fun decode(relativePath: String, resolve: (String) -> File): Bitmap? = r
     BitmapFactory.decodeFile(file.absolutePath)
 }.getOrNull()
 
-/** 在独立墨迹层中绘制，所有坐标和笔宽均为原图像素。 */
 private fun Canvas.drawInk(stroke: MaskStroke, path: Path, dilation: Float, paint: Paint) {
     if (!stroke.isDrawable) return
     paint.strokeWidth = MaskGeometry.effectiveRadius(stroke, dilation) * SCALE
@@ -454,7 +592,6 @@ private fun MaskStroke.toBitmapPath(): Path = Path().apply {
     if (points.isEmpty()) return@apply
     moveTo(points.first().x, points.first().y)
     if (points.size == 1) {
-        // 单点：用一段极短的线配合圆头端点画出圆点。
         lineTo(points.first().x + 0.01f, points.first().y)
     } else {
         points.drop(1).forEach { lineTo(it.x, it.y) }
@@ -466,14 +603,29 @@ private fun LabeledSliderRow(
     label: String,
     value: Float,
     range: ClosedFloatingPointRange<Float>,
+    interactionSource: MutableInteractionSource,
     onChange: (Float) -> Unit,
 ) {
+    val haptics = rememberPocketHaptics()
+    var lastInt by remember { mutableIntStateOf((value / 2f).roundToInt()) }
     Column {
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Slider(value = value, onValueChange = onChange, valueRange = range)
+        Slider(
+            value = value,
+            onValueChange = { next ->
+                val bucket = (next / 2f).roundToInt()
+                if (bucket != lastInt) {
+                    lastInt = bucket
+                    haptics.frequentTick()
+                }
+                onChange(next)
+            },
+            valueRange = range,
+            interactionSource = interactionSource,
+        )
     }
 }

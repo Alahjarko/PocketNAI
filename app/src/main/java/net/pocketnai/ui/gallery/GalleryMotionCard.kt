@@ -58,12 +58,15 @@ internal fun GalleryMotionCard(
     Card(
         border = if (isSelectionMode && isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
         modifier = modifier.fillMaxWidth().aspectRatio(slot.aspectRatio)
-            .then(if (item != null) Modifier.combinedClickable(onClick = {
-                if (!isSelectionMode && imageFile != null) {
-                    imageMotion?.preview = ImageOriginPreview(item.imageId, imageFile, item.aspectRatio, item.title, sensitive)
-                }
-                onClick()
-            }, onLongClick = onLongClick) else Modifier),
+            .then(if (item != null) Modifier.combinedClickable(
+                onClick = {
+                    if (!isSelectionMode && imageFile != null) {
+                        imageMotion?.preview = ImageOriginPreview(item.imageId, imageFile, item.aspectRatio, item.title, sensitive)
+                    }
+                    onClick()
+                },
+                onLongClick = if (isSelectionMode) null else onLongClick,
+            ) else Modifier),
     ) {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant)) {
             GenerationImageReveal(
@@ -81,7 +84,15 @@ internal fun GalleryMotionCard(
                     // Historical thumbnails are already opaque; a cache hit must not trigger
                     // a second composition of the entire card just to set an unused flag.
                     onSuccess = { if (slot.reveal) decoded = true }, onError = { decodeFailed = true },
-                    modifier = Modifier.fillMaxSize().sharedImage(item.imageId, sensitive).graphicsLayer { alpha = revealAlpha.value },
+                    modifier = Modifier.fillMaxSize().sharedImage(item.imageId, sensitive).graphicsLayer {
+                        val a = revealAlpha.value
+                        alpha = a
+                        if (a < 1f) {
+                            val s = 0.97f + 0.03f * a
+                            scaleX = s
+                            scaleY = s
+                        }
+                    },
                 )
             }
             if (failed) Column(Modifier.align(Alignment.Center).padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {

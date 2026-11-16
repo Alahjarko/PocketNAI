@@ -102,6 +102,8 @@ fun LabeledSlider(
     steps: Int = 0,
     decimals: Int = 1,
 ) {
+    val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
+    var lastBucket by remember { androidx.compose.runtime.mutableIntStateOf(quantizeBucket(value, valueRange, steps, decimals)) }
     Column(modifier = modifier) {
         Text(
             text = "$label  ${formatValue(value, decimals)}",
@@ -110,11 +112,34 @@ fun LabeledSlider(
         )
         Slider(
             value = value.toFloat(),
-            onValueChange = { onValueChange(it.toDouble()) },
+            onValueChange = { raw ->
+                val next = raw.toDouble()
+                val bucket = quantizeBucket(next, valueRange, steps, decimals)
+                if (bucket != lastBucket) {
+                    lastBucket = bucket
+                    haptics.frequentTick()
+                }
+                onValueChange(next)
+            },
             valueRange = valueRange.start.toFloat()..valueRange.endInclusive.toFloat(),
             steps = steps,
         )
     }
+}
+
+private fun quantizeBucket(
+    value: Double,
+    range: ClosedFloatingPointRange<Double>,
+    steps: Int,
+    decimals: Int,
+): Int {
+    if (steps > 0) {
+        val span = (range.endInclusive - range.start).takeIf { it > 0.0 } ?: return 0
+        return (((value - range.start) / span) * (steps + 1)).roundToInt()
+    }
+    var factor = 1.0
+    repeat(decimals.coerceIn(0, 2)) { factor *= 10.0 }
+    return (value * factor).roundToInt()
 }
 
 private fun formatValue(value: Double, decimals: Int): String {

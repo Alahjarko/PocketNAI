@@ -130,13 +130,20 @@ fun ArtistLabScreen(vm: ArtistLabViewModel, currentParams: GenerationParams, res
         } else LazyVerticalGrid(columns = GridCells.Adaptive(156.dp), modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(shown, key = { it.draw.id }, contentType = { "draw" }) { card ->
+                val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
                 Card(border = if (card.favorite) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null) {
                     Row(Modifier.padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("#${card.draw.ordinal + 1}", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
                         IconButton(onClick = { focused = card }) { Icon(Icons.Default.Info, "查看画师串") }
-                        IconButton(onClick = { vm.favorite(card) }, enabled = card.image != null && !cleanupOpen) {
-                            Icon(if (card.favorite) Icons.Default.Star else Icons.Default.StarBorder, if (card.favorite) "取消图片收藏" else "收藏图片和画师串",
-                                tint = if (card.favorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        IconButton(onClick = {
+                            if (!card.favorite) haptics.confirm() else haptics.tick()
+                            vm.favorite(card)
+                        }, enabled = card.image != null && !cleanupOpen) {
+                            net.pocketnai.ui.common.FeedbackIcon(
+                                icon = if (card.favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                description = if (card.favorite) "取消图片收藏" else "收藏图片和画师串",
+                                tint = if (card.favorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                     ArtistLabResultImage(

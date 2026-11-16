@@ -47,7 +47,15 @@ internal fun ArtistLabResultImage(
             contentScale = ContentScale.Crop,
             onSuccess = { decoded = true }, onError = { decodeFailed = true },
             modifier = Modifier.fillMaxSize().sharedImage(image.imageId, image.sensitivePrompt)
-                .graphicsLayer { this.alpha = alpha.value }
+                .graphicsLayer {
+                    val a = alpha.value
+                    this.alpha = a
+                    if (a < 1f) {
+                        val s = 0.97f + 0.03f * a
+                        scaleX = s
+                        scaleY = s
+                    }
+                }
                 .clickable(enabled = decoded && (!watched || revealed)) {
                     motion?.preview = ImageOriginPreview(image.imageId, file!!, image.aspectRatio, "抽卡结果", image.sensitivePrompt)
                     onOpen(image.imageId)

@@ -214,7 +214,11 @@ fun DetailScreen(
                     }
                     // 收藏放在顶栏：详情页是"这张图我喜不喜欢"的判断现场，
                     // 而收藏只是个开关，不值得在下面再占一整行按钮。
-                    IconButton(onClick = viewModel::toggleFavorite) {
+                    val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
+                    IconButton(onClick = {
+                        if (!state.favorite) haptics.confirm() else haptics.tick()
+                        viewModel.toggleFavorite()
+                    }) {
                         net.pocketnai.ui.common.FeedbackIcon(
                             icon = if (state.favorite) {
                                 Icons.Filled.Favorite
@@ -239,6 +243,7 @@ fun DetailScreen(
             )
         },
     ) { padding ->
+        val pageHaptics = net.pocketnai.ui.motion.rememberPocketHaptics()
         HorizontalPager(
             state = pagerState,
             beyondViewportPageCount = 0,
@@ -281,7 +286,12 @@ fun DetailScreen(
                             permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                         }
                     },
-                    onCopyPrompt = { detail?.let { copyToClipboard(context, it.generation.params.prompt) } },
+                    onCopyPrompt = {
+                        detail?.let {
+                            pageHaptics.tick()
+                            copyToClipboard(context, it.generation.params.prompt)
+                        }
+                    },
                     onReuseParams = {
                         detail?.generation?.let { generation ->
                             container.openAiImageSettings.setProvider(if (generation.openAi != null)

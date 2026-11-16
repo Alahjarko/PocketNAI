@@ -85,7 +85,7 @@ fun ArtistMixFavoritesDialog(
     }
     removing?.let { mix ->
         AlertDialog(onDismissRequest = { removing = null }, title = { Text("移除画师串收藏？") },
-            text = { Text("原图和图片星标会保留。") },
+            text = { Text("原图和图片收藏会保留。") },
             confirmButton = { TextButton(onClick = { vm.removeMix(mix); removing = null }) { Text("移除") } },
             dismissButton = { TextButton(onClick = { removing = null }) { Text("取消") } })
     }

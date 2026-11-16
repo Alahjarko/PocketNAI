@@ -11,9 +11,11 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.text.TextRange
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
@@ -33,9 +35,12 @@ class FeedbackEditorTest {
         var updated = CharacterPrompt(id = "one", prompt = "blu1.1::honkai: star rail,official art::", negativePrompt = "hat")
         compose.setContent {
             var character by remember { mutableStateOf(updated) }
+            var useCoords by remember { mutableStateOf(false) }
             var state by remember { mutableStateOf(GenerateViewModel.UiState(GenerationParams.defaultsFor(ModelCatalog.defaultProfile()))) }
             MaterialTheme {
                 MultiCharacterSection(listOf(character), {}, {}, { _, next -> character = next; updated = next },
+                    useCoordinates = useCoords,
+                    onCoordinateModeChange = { useCoords = it },
                     macros = listOf(net.pocketnai.domain.model.PromptFavorite("light", net.pocketnai.domain.model.PromptFavoriteKind.TAG,
                         "光照", "soft lighting", "", net.pocketnai.domain.model.PromptTarget.POSITIVE, 0, 0, 0)),
                     suggestionState = state,
@@ -70,5 +75,22 @@ class FeedbackEditorTest {
         compose.onAllNodes(hasSetTextAction())[0].performTextReplacement("new prompt")
         compose.onAllNodes(hasSetTextAction())[0].performTextReplacement("")
         compose.onNodeWithContentDescription("撤销清空角色 1 提示词").assertDoesNotExist()
+        compose.onNodeWithText("手动位置").performClick()
+        compose.onNodeWithText("在画布上设置角色位置").performClick()
+        compose.onNodeWithText("角色位置").assertIsDisplayed()
+        compose.runOnIdle {
+            assertThat(updated.centerX).isWithin(0.01).of(0.5)
+            assertThat(updated.centerY).isWithin(0.01).of(0.5)
+        }
+        compose.onNodeWithTag("character-position-canvas").performTouchInput {
+            down(center)
+            moveBy(androidx.compose.ui.geometry.Offset(width * 0.25f, -height * 0.2f))
+            up()
+        }
+        compose.runOnIdle {
+            assertThat(updated.centerX).isGreaterThan(0.65)
+            assertThat(updated.centerY).isLessThan(0.35)
+        }
+        compose.onNodeWithText("完成位置设置").performClick()
     }
 }

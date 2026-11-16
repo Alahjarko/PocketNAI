@@ -71,6 +71,52 @@ object MaskGeometry {
         )
     }
 
+    /** 约束缩放后的画布平移量，防止底图被完全拖出编辑视口。 */
+    fun clampPan(
+        bitmapWidth: Int,
+        bitmapHeight: Int,
+        viewWidth: Float,
+        viewHeight: Float,
+        zoom: Float,
+        panX: Float,
+        panY: Float,
+    ): Pair<Float, Float> {
+        if (bitmapWidth <= 0 || bitmapHeight <= 0 || viewWidth <= 0f || viewHeight <= 0f) {
+            return 0f to 0f
+        }
+        val baseScale = minOf(viewWidth / bitmapWidth, viewHeight / bitmapHeight)
+        val clampedZoom = zoom.coerceIn(1f, MAX_VIEW_ZOOM)
+        val scaledWidth = bitmapWidth * baseScale * clampedZoom
+        val scaledHeight = bitmapHeight * baseScale * clampedZoom
+        val maxX = ((scaledWidth - viewWidth) / 2f).coerceAtLeast(0f)
+        val maxY = ((scaledHeight - viewHeight) / 2f).coerceAtLeast(0f)
+        return panX.coerceIn(-maxX, maxX) to panY.coerceIn(-maxY, maxY)
+    }
+
+    /** 在基础 `Fit` 之上叠加双指缩放与受约束的平移，保持屏幕触点到位图像素的精确映射。 */
+    fun zoomedFit(
+        bitmapWidth: Int,
+        bitmapHeight: Int,
+        viewWidth: Float,
+        viewHeight: Float,
+        zoom: Float,
+        panX: Float,
+        panY: Float,
+    ): FitTransform {
+        val base = fit(bitmapWidth, bitmapHeight, viewWidth, viewHeight)
+        if (bitmapWidth <= 0 || bitmapHeight <= 0 || viewWidth <= 0f || viewHeight <= 0f) return base
+        val clampedZoom = zoom.coerceIn(1f, MAX_VIEW_ZOOM)
+        val (cx, cy) = clampPan(bitmapWidth, bitmapHeight, viewWidth, viewHeight, clampedZoom, panX, panY)
+        val effectiveScale = base.scale * clampedZoom
+        return FitTransform(
+            scale = effectiveScale,
+            offsetX = (viewWidth - bitmapWidth * effectiveScale) / 2f + cx,
+            offsetY = (viewHeight - bitmapHeight * effectiveScale) / 2f + cy,
+        )
+    }
+
+    const val MAX_VIEW_ZOOM = 5f
+
     /**
      * 笔刷半径的滑块取值 → 位图像素半径。
      *
