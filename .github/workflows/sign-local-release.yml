@@ -178,7 +178,7 @@ jobs:
           test "$(gh release view "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
           gh release upload "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" "$RUNNER_TEMP/signed-apk/PocketNAI.apk" --clobber
 
-      - name: Replace only the explicitly selected existing public APK
+      - name: Publish verified APK to target public release
         if: inputs.publish_sha256 != ''
         run: |
           set -euo pipefail
@@ -187,7 +187,10 @@ jobs:
           import json, os, pathlib
           release = json.loads((pathlib.Path(os.environ['RUNNER_TEMP']) / 'public-release.json').read_text())
           assert not release['draft'] and not release['prerelease']
-          asset = next(a for a in release['assets'] if a['name'] == 'PocketNAI.apk')
-          assert asset['digest'] == 'sha256:' + os.environ['PREVIOUS_SHA256'], 'Public APK changed; refusing to overwrite'
+          assets = [a for a in release['assets'] if a['name'] == 'PocketNAI.apk']
+          if os.environ['REFERENCE_VERSION_CODE'] != os.environ['VERSION_CODE']:
+              assert not assets, 'New public release already has PocketNAI.apk; refusing to overwrite'
+          else:
+              assert len(assets) == 1 and assets[0]['digest'] == 'sha256:' + os.environ['PREVIOUS_SHA256'], 'Public APK changed; refusing to overwrite'
           PY
           gh release upload "build-$VERSION_CODE" --repo "$GITHUB_REPOSITORY" "$RUNNER_TEMP/signed-apk/PocketNAI.apk" --clobber
