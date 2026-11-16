@@ -4,7 +4,7 @@
 
 ## 检查更新与发布（GitHub Release）
 
-- 2026-11-10用户指定：后续编译、测试和APK打包默认使用已有Instabox工作区，GitHub完整构建仅保留手动备用。`verify-android.yml`已取消开发分支自动触发，避免一次开发反复消耗CI资源。原公开签名密钥未存于沙箱时，沿用下述`sign-local-release.yml`仅签名路径，GitHub不再重跑编译；正式Release仍须核对源码、版本、原证书及公开附件摘要。已开始的0.1.35完整构建按用户要求正常完成，见[发布记录](../release-0.1.35.md)。
+- 2026-11-10用户指定：后续编译、测试和APK打包默认使用已有Instabox工作区，GitHub完整构建仅保留手动备用。`verify-android.yml`已取消开发分支自动触发，避免一次开发反复消耗CI资源。2026-11-16用户已将原公开签名密钥分发至Instabox持久盘 `/data/home/.android/pocketnai-release.keystore`（`chmod 600`），与沙箱日常测试覆盖安装所用的默认 `/data/home/.android/debug.keystore` 严格隔离（禁止覆盖默认 `debug.keystore`，否则破坏沙箱内既有账号与历史的 `adb install -r`）；正式打包与签名均在Instabox内通过 `PNAI_KEYSTORE_PATH` 或 `apksigner` 完成，再经 `sign-local-release.yml` 的 `publish_sha256` 模式校验原证书一致性与非签名载荷后直接挂载至正式Release，GitHub不跑编译亦不动用云端签名密钥。已开始的0.1.35完整构建按用户要求正常完成，见[发布记录](../release-0.1.35.md)。
 
 - 本地云机没有原签名密钥时，不能使用自动创建的debug keystore。可本地注入目标版本构建优化Release无签名包，再通过`sign-local-release.yml`仅签名，不重新编译或导出密钥。输入通过独立临时Git分支传递，并核对本地SHA-256；签名后先与目标旧版证书比较，结果存于匹配的临时草稿Release。下载核对包内版本和所有编译内容一致后，第二次以`publish_sha256`指定已验证包的摘要，才允许覆盖公开附件；同时核对`previous_sha256`，避免覆盖别人刚更新的包。覆盖既有版本/附件/标签须有用户明确授权；完成后清理自己创建的临时分支和草稿。不要调用默认加号发布脚本来执行同版本覆盖。
 

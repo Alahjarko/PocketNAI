@@ -140,8 +140,12 @@ jobs:
         if: inputs.publish_sha256 != ''
         run: |
           set -euo pipefail
-          gh release download "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" \
-            --pattern PocketNAI.apk --dir "$RUNNER_TEMP/signed-apk"
+          if [[ "$UNSIGNED_FROM_RELEASE" != "true" && -f local-input/PocketNAI.apk ]]; then
+            cp local-input/PocketNAI.apk "$RUNNER_TEMP/signed-apk/"
+          else
+            gh release download "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" \
+              --pattern PocketNAI.apk --dir "$RUNNER_TEMP/signed-apk"
+          fi
           printf '%s  %s\n' "$PUBLISH_SHA256" "$RUNNER_TEMP/signed-apk/PocketNAI.apk" | sha256sum -c -
 
       - name: Verify signature, version and locally compiled payload

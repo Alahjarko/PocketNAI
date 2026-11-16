@@ -13,15 +13,16 @@
 
 - **轻量触觉层 `PocketHaptics`**（`ui/motion/Haptics.kt`）：直接封装系统 `View.performHapticFeedback`，零额外权限（不申请 `VIBRATE`）、零后台协程，且遵循系统「触感反馈」总开关（不传 `IGNORE_VIEW_SETTING`）。
   - 关键提交/完成使用 `CONFIRM`（API 30+，低版本回退 `KEYBOARD_TAP`）；轻量切换使用 `CLOCK_TICK`；面板与视图手势收尾使用 `GESTURE_END`；滑块分档与连续涂选使用内置 **28ms 最小间隔节流**的 `frequentTick()`（API 34+ `SEGMENT_FREQUENT_TICK`），避免快速滑动触发密集 Binder 调用。
-  - 已接入：`GenerateButton`、详情/抽卡收藏切换、`LabeledSlider` 量化步进档位、画廊长按进入多选与连续拖选、角色站位点拾取、局部重绘橡皮切换/清空/缩放归位。
+  - 已接入：底部导航栏 / 侧栏四个主入口按钮（`PocketNaiBottomBar` / `PocketNaiNavRail`）、`GenerateButton`、详情/抽卡收藏切换、`LabeledSlider` 量化步进档位、画廊长按进入多选与连续拖选、角色站位点拾取、局部重绘橡皮切换/清空/缩放归位、创作抽屉大幅下拉跨过收起阈值时的段落提示。
 - **收藏图标与文案统一**：`ArtistLabScreen` 结果卡片右上角收藏按钮由 `Star` / `StarBorder` 统一为与详情页、画廊角标一致的爱心 `Favorite` / `FavoriteBorder`，并接入弹簧缩放 `FeedbackIcon`；`ArtistMixFavoritesDialog` 中“图片星标”同步更新为“图片收藏”。
 
-### 2. 连续手势物理与无超调弹簧收敛
+### 2. 连续手势物理、无停顿触顶与顶部大幅下拉收起
 
-- **首页生成悬浮层 `GenerationSheetScaffold` 1:1 头部跟手**：
-  - 保持内容滚动与面板切换严格隔离（表单内部滚动及越界阻尼绝不带动面板收起）。
-  - 顶部把手与 `SheetHeader` 改用 `awaitEachGesture` + `awaitVerticalTouchSlopOrCancellation` + `verticalDrag`，通过 `LayoutCoordinates.localToRoot` 在屏幕根坐标系计算位移并同步维护 `trackedProgress`，补回跨越 `touchSlop` 首帧的 `overSlop`，消除高回报率批量触摸事件下的异步滞后。
-  - 松手结合 `VelocityTracker` 速度与 `48dp` 净位移判定目标，将手势末速度注入临界阻尼弹簧（`DampingRatioNoBouncy`、`StiffnessMediumLow`）平滑收敛；右侧箭头在 `graphicsLayer` 按展开进度连续旋转 `0° ↔ 180°`，画廊上方叠加仅在绘制期读取进度的 `drawBehind` 遮罩（透明度 `0..0.28`，收起时零绘制、不拦截点击）；预测性返回手势（`PredictiveBackHandler`）取消后亦按弹簧回弹保留表单状态。
+- **首页生成悬浮层 `GenerationSheetScaffold` 1:1 头部跟手与触顶停顿根治**：
+  - 顶部把手与 `SheetHeader` 采用 `awaitEachGesture` + `awaitVerticalTouchSlopOrCancellation` + `verticalDrag`，通过 `LayoutCoordinates.localToRoot` 在屏幕根坐标系计算位移并采用 `CoroutineStart.UNDISPATCHED` 同步更新进度，补回跨越 `touchSlop` 首帧的 `overSlop`。
+  - **真机反馈「触顶前顿一下」根因与修复**：`0.1.42` 初版使用默认 `Animatable(visibilityThreshold = 0.01f)`（在约 `2000px` 行程上相当于距顶约 `20px`）配合偏软的 `400f` 刚度弹簧，且在 `progress >= 0.99f` 处翻转 `contentExpanded` 触发 1,173 行 `GenerateSheet` 主线程重组，导致面板在距顶十余像素处先渐近减速+重组停顿、再单帧跳上顶端。现将 `visibilityThreshold` 降至亚像素级 `0.0003f`、弹簧刚度提至 `750f`（临界阻尼零超调）并单向钳制松手初速度，同时改为离开底部静止位（`>0.002f`）即保持内部表单启用，使展开全程至触顶零布尔翻转、零大表单重组。
+  - **表单处于最顶部时支持大阈值下拉收起抽屉（`collapseSheetOnTopPullDown`）**：仅当按下瞬间表单原本就停在最顶部（`scrollState.value == 0`）且未发生子组件（如长提示词框）内部滚动时，才接管向下未消费拖拽；前 `16dp` 施加 `0.4x` 微阻尼防抖，且必须拉过大幅收起阈值（慢拉 `max(148dp, 24% 行程)` 并在跨过阈值时给出 `tick` 触感提示，或快速挥动 `>=108dp` 且速度 `>=880dp/s`）才收起，从中下部滚回顶部或短距离下滑一律回弹不误触。
+  - 右侧箭头在 `graphicsLayer` 按展开进度连续旋转 `0° ↔ 180°`，画廊上方叠加仅在绘制期读取进度的 `drawBehind` 遮罩（透明度 `0..0.28`，收起时零绘制、不拦截点击）；预测性返回手势（`PredictiveBackHandler`）取消后亦按弹簧回弹保留表单状态。
 - **全屏看图器 `FullscreenImageViewer` 相册级手势**：
   - 双击围绕实际点按坐标在 `1f ↔ 2.5f` 之间平滑弹簧缩放，替代原先瞬间跳变；
   - 放大态单指平移松手后按 `splineBasedDecay` 物理惯性滑行，并动态施加图像显示边界（`updateBounds`）；

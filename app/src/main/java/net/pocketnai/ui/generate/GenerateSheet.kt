@@ -93,6 +93,7 @@ import net.pocketnai.ui.common.ResolutionSelector
 import net.pocketnai.ui.common.SectionHeader
 import net.pocketnai.ui.common.WeightHighlightedTextField
 import net.pocketnai.ui.common.messageRes
+import net.pocketnai.ui.home.collapseSheetOnTopPullDown
 
 /**
  * 生成设置悬浮层的内容。
@@ -177,6 +178,7 @@ fun GenerateSheet(
                 // 于是 peek 下缘那一小条永远是空白 —— 收起态不会露出被截断的一行。
                 // 内边距若留在滚动里面，收起时露出的就是"滚动到一半"的内容（2026-09-16）。
                 .padding(top = 16.dp)
+                .collapseSheetOnTopPullDown(scrollState)
                 .verticalScroll(scrollState, enabled = expanded)
                 .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

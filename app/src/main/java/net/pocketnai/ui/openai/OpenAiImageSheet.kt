@@ -28,6 +28,7 @@ import net.pocketnai.domain.openai.OpenAiImageParams
 import net.pocketnai.domain.openai.OpenAiImagePricing
 import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.generate.HistoryImagePickerDialog
+import net.pocketnai.ui.home.collapseSheetOnTopPullDown
 
 @Composable
 fun OpenAiImageSheet(
@@ -78,8 +79,15 @@ fun OpenAiImageSheet(
             }
         }
         HorizontalDivider()
-        Column(Modifier.fillMaxWidth().padding(top = 16.dp).verticalScroll(scroll, enabled = expanded)
-            .padding(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp)
+                .collapseSheetOnTopPullDown(scroll)
+                .verticalScroll(scroll, enabled = expanded)
+                .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
             state.message?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
             OutlinedTextField(value = params.prompt, onValueChange = { viewModel.update(params.copy(prompt = it)) },
                 label = { Text("描述你想要的图片") }, placeholder = { Text("可以用中文描述主体、构图、文字、光线和风格") },

@@ -583,12 +583,16 @@ private fun PocketNaiBottomBar(
     artistLabEnabled: Boolean,
 ) {
     val specs = tabSpecs(chatEnabled, artistLabEnabled)
+    val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
 
     NavigationBar(modifier = Modifier.testTag("bottom-navigation")) {
         specs.forEach { spec ->
             NavigationBarItem(
                 selected = currentRoute == spec.route,
-                onClick = { navController.navigateToTab(spec.route) },
+                onClick = {
+                    haptics.tick()
+                    navController.navigateToTab(spec.route)
+                },
                 icon = { Icon(spec.icon, contentDescription = null) },
                 label = { Text(stringResource(spec.labelRes)) },
             )
@@ -605,12 +609,16 @@ private fun PocketNaiNavRail(
     artistLabEnabled: Boolean,
 ) {
     val specs = tabSpecs(chatEnabled, artistLabEnabled)
+    val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
 
     NavigationRail(modifier = Modifier.imageMotionChrome(zIndex = 3f)) {
         specs.forEach { spec ->
             NavigationRailItem(
                 selected = currentRoute == spec.route,
-                onClick = { navController.navigateToTab(spec.route) },
+                onClick = {
+                    haptics.tick()
+                    navController.navigateToTab(spec.route)
+                },
                 icon = { Icon(spec.icon, contentDescription = null) },
                 label = { Text(stringResource(spec.labelRes)) },
             )
