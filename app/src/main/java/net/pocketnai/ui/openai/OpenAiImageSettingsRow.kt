@@ -11,9 +11,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import net.pocketnai.domain.openai.ImageProvider
 import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.connect.AccountDisconnectConfirmation
+import net.pocketnai.ui.motion.rememberPocketHaptics
+import net.pocketnai.ui.settings.SettingsCard
+import net.pocketnai.ui.settings.SettingsNavigationRow
 
 @Composable
 fun OpenAiImageSettingsRow(initiallyOpen: Boolean = false) {
@@ -23,14 +28,22 @@ fun OpenAiImageSettingsRow(initiallyOpen: Boolean = false) {
     val hasKey by settings.hasKey.collectAsStateWithLifecycle()
     val generation by container.generateViewModel.state.collectAsStateWithLifecycle()
     val busy = generation.inFlight || generation.artistLabActive || generation.externalGenerationActive
+    val haptics = rememberPocketHaptics()
     var open by rememberSaveable { mutableStateOf(initiallyOpen) }
-    Card(Modifier.fillMaxWidth().clickable { open = true }) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("生图服务", style = MaterialTheme.typography.titleMedium)
-            Text(provider.label + if (provider == ImageProvider.OPEN_AI) {
-                if (hasKey) " · 已保存 API 密钥" else " · 未配置 API 密钥"
-            } else "", style = MaterialTheme.typography.bodyMedium)
-        }
+    val subtitle = provider.label + if (provider == ImageProvider.OPEN_AI) {
+        if (hasKey) " · 已保存 API 密钥" else " · 未配置 API 密钥"
+    } else ""
+    SettingsCard {
+        SettingsNavigationRow(
+            title = "生图服务",
+            subtitle = subtitle,
+            icon = Icons.Default.AutoAwesome,
+            active = provider == ImageProvider.OPEN_AI,
+            onClick = {
+                haptics.tick()
+                open = true
+            },
+        )
     }
     if (open) {
         var choice by remember { mutableStateOf(provider) }

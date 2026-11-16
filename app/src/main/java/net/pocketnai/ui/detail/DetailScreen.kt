@@ -610,14 +610,18 @@ internal fun LazyListScope.detailInfoItems(
                 }
             }
 
+            val detailHaptics = net.pocketnai.ui.motion.rememberPocketHaptics()
             var parametersExpanded by rememberSaveable(generation.id) { mutableStateOf(false) }
             TextButton(
-                onClick = { parametersExpanded = !parametersExpanded },
+                onClick = {
+                    detailHaptics.tick()
+                    parametersExpanded = !parametersExpanded
+                },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("完整生成参数", modifier = Modifier.weight(1f))
-                Icon(
-                    imageVector = if (parametersExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                net.pocketnai.ui.common.ExpandingChevron(
+                    expanded = parametersExpanded,
                     contentDescription = if (parametersExpanded) "收起参数" else "展开参数",
                 )
             }

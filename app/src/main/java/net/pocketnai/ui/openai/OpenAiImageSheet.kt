@@ -59,8 +59,9 @@ fun OpenAiImageSheet(
         viewModel.addReferences(uris.map { ReferenceSource.PickedUri(it.toString()) })
     }
     val container = LocalAppContainer.current
+    val headerScrolled by remember { derivedStateOf { scroll.value > 4 } }
     Column {
-        Row(Modifier.fillMaxWidth().then(headerDragModifier).padding(horizontal = 16.dp, vertical = 4.dp),
+        Row(Modifier.fillMaxWidth().then(headerDragModifier).padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f)) {
                 Text("OpenAI 生图", style = MaterialTheme.typography.titleMedium)
@@ -78,14 +79,17 @@ fun OpenAiImageSheet(
                 Text(if (!hasKey) "配置密钥" else "生成")
             }
         }
-        HorizontalDivider()
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.outlineVariant.copy(
+                alpha = if (headerScrolled) 0.9f else 0.35f,
+            ),
+        )
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(top = 16.dp)
                 .collapseSheetOnTopPullDown(scroll)
                 .verticalScroll(scroll, enabled = expanded)
-                .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                .padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             state.message?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }

@@ -38,19 +38,19 @@ import net.pocketnai.ui.theme.LocalThemeReveal
 
 @Composable
 internal fun ColorModeCard(mode: ThemeMode, onSelect: (ThemeMode) -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
+    SettingsCard {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("颜色模式", style = MaterialTheme.typography.titleMedium)
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val largeText = LocalDensity.current.fontScale >= 1.3f && maxWidth < 400.dp
-                Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (largeText) {
                         ModeChoice(ThemeMode.SYSTEM, mode, onSelect, Modifier.fillMaxWidth())
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             ModeChoice(ThemeMode.LIGHT, mode, onSelect, Modifier.weight(1f))
                             ModeChoice(ThemeMode.DARK, mode, onSelect, Modifier.weight(1f))
                         }
-                    } else Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    } else Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         ThemeMode.entries.forEach { option ->
                             ModeChoice(option, mode, onSelect, Modifier.weight(if (option == ThemeMode.SYSTEM) 1.4f else 1f))
                         }
@@ -71,6 +71,7 @@ private fun ModeChoice(option: ThemeMode, current: ThemeMode, onSelect: (ThemeMo
     }
     val selected = current == option
     val reveal = LocalThemeReveal.current
+    val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
     val progress = remember { Animatable(if (selected) 1f else 0f) }
     LaunchedEffect(selected) {
         val target = if (selected) 1f else 0f
@@ -81,7 +82,7 @@ private fun ModeChoice(option: ThemeMode, current: ThemeMode, onSelect: (ThemeMo
     val pressScale = animateFloatAsState(if (pressed) 0.975f else 1f,
         spring(dampingRatio = 1f, stiffness = 900f), label = "mode-press")
     val colors = MaterialTheme.colorScheme
-    val restFill = colors.surfaceContainerHigh
+    val restFill = colors.surfaceContainerHighest
     val activeFill = colors.primary
     val restInk = colors.onSurfaceVariant
     val activeInk = colors.onPrimary
@@ -99,6 +100,7 @@ private fun ModeChoice(option: ThemeMode, current: ThemeMode, onSelect: (ThemeMo
         .selectable(selected = selected, role = Role.RadioButton, interactionSource = interactions,
             indication = ripple(), onClick = {
                 if (!selected || reveal?.hasPendingChange() == true) {
+                    haptics.tick()
                     if (reveal == null) onSelect(option)
                     else reveal.select(option) { onSelect(option) }
                 }

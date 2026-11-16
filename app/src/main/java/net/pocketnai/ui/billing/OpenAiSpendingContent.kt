@@ -1,5 +1,8 @@
 package net.pocketnai.ui.billing
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,6 +26,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import net.pocketnai.domain.billing.*
 import net.pocketnai.domain.openai.OpenAiImageParams
+import net.pocketnai.ui.motion.rememberPocketHaptics
+import net.pocketnai.ui.settings.SettingsCard
+import net.pocketnai.ui.settings.settingsClickable
 import java.text.NumberFormat
 import java.time.Instant
 import java.time.ZoneId
@@ -36,7 +42,13 @@ internal fun spendingUsd(amount: Double): String = NumberFormat.getCurrencyInsta
 
 @Composable
 internal fun SpendingOverviewCard(provider: String, amount: String, detail: String, onClick: () -> Unit) {
-    Card(onClick = onClick) {
+    val haptics = rememberPocketHaptics()
+    SettingsCard(
+        modifier = Modifier.settingsClickable {
+            haptics.tick()
+            onClick()
+        },
+    ) {
         Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(provider, style = MaterialTheme.typography.titleMedium)
@@ -51,7 +63,10 @@ internal fun SpendingOverviewCard(provider: String, amount: String, detail: Stri
 @OptIn(ExperimentalFoundationApi::class)
 internal fun LazyListScope.openAiSpendingItems(stats: OpenAiSpendingStatistics) {
     item(key = "openai-summary") {
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        ) {
             Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("用量折算", style = MaterialTheme.typography.labelLarge)
                 Text(if (stats.knownCount > 0) spendingUsd(stats.totalUsageUsd) else "—",
@@ -83,7 +98,7 @@ internal fun LazyListScope.openAiSpendingItems(stats: OpenAiSpendingStatistics) 
 private fun OpenAiTransaction(entry: OpenAiSpendingEntry) {
     val time = Instant.ofEpochMilli(entry.createdAt).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm:ss"))
     val snapshot = entry.snapshot
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+    SettingsCard {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(OpenAiImageParams.labelOf(entry.model), style = MaterialTheme.typography.titleSmall)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -114,12 +129,13 @@ private fun OpenAiTransaction(entry: OpenAiSpendingEntry) {
 @Composable
 private fun OpenAiTrend(stats: OpenAiSpendingStatistics) {
     val scroll = rememberScrollState()
+    val haptics = rememberPocketHaptics()
     var selected by rememberSaveable(stats.range) { mutableStateOf<String?>(null) }
     val chosen = stats.trend.firstOrNull { it.date.toString() == selected }
     val maximum = stats.trend.maxOfOrNull { it.usageUsd }?.coerceAtLeast(0.000001) ?: 0.000001
     val formatter = remember(stats.range) { DateTimeFormatter.ofPattern(if (stats.range == AnlasStatsRange.ALL) "yyyy/M" else "M/d") }
     LaunchedEffect(stats.range, scroll.maxValue) { scroll.scrollTo(scroll.maxValue) }
-    Card {
+    SettingsCard {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("用量折算趋势", style = MaterialTheme.typography.titleMedium)
             chosen?.let { Text("${it.date.format(formatter)} · ${spendingUsd(it.usageUsd)}", style = MaterialTheme.typography.bodySmall) }
@@ -127,11 +143,22 @@ private fun OpenAiTrend(stats: OpenAiSpendingStatistics) {
                 val width = (maxWidth / stats.trend.size.coerceAtLeast(1)).coerceAtLeast(8.dp)
                 Row(Modifier.horizontalScroll(scroll), verticalAlignment = Alignment.Bottom) {
                     stats.trend.forEach { point ->
+                        val fraction by animateFloatAsState(
+                            targetValue = (point.usageUsd / maximum).toFloat(),
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow,
+                            ),
+                            label = "OpenAI趋势柱形",
+                        )
                         Column(Modifier.width(width).height(124.dp).clip(RoundedCornerShape(6.dp))
-                            .clickable { selected = point.date.toString() }
+                            .clickable {
+                                haptics.tick()
+                                selected = point.date.toString()
+                            }
                             .semantics { contentDescription = "${point.date.format(formatter)}，用量折算 ${spendingUsd(point.usageUsd)}" }
                             .padding(horizontal = if (width < 16.dp) 1.dp else 3.dp), verticalArrangement = Arrangement.Bottom) {
-                            Box(Modifier.fillMaxWidth().height(if (point.usageUsd == 0.0) 2.dp else (120.dp * (point.usageUsd / maximum).toFloat()).coerceAtLeast(3.dp))
+                            Box(Modifier.fillMaxWidth().height(if (point.usageUsd == 0.0) 2.dp else (120.dp * fraction).coerceAtLeast(3.dp))
                                 .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
                                 .background(if (point.usageUsd == 0.0) MaterialTheme.colorScheme.outlineVariant else if (chosen == point)
                                     MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary))

@@ -1,8 +1,12 @@
 package net.pocketnai.ui.billing
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import net.pocketnai.ui.motion.rememberPocketHaptics
+import net.pocketnai.ui.settings.SettingsCard
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -126,19 +130,30 @@ internal fun AnlasStatisticsContent(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     item(key = "provider") {
+                        val haptics = rememberPocketHaptics()
                         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                             SpendingTab.entries.forEachIndexed { index, tab ->
-                                SegmentedButton(selected = selectedTab == tab, onClick = { onTabChange(tab) },
-                                    shape = SegmentedButtonDefaults.itemShape(index, SpendingTab.entries.size)) { Text(tab.label) }
+                                SegmentedButton(
+                                    selected = selectedTab == tab,
+                                    onClick = {
+                                        if (selectedTab != tab) haptics.tick()
+                                        onTabChange(tab)
+                                    },
+                                    shape = SegmentedButtonDefaults.itemShape(index, SpendingTab.entries.size),
+                                ) { Text(tab.label) }
                             }
                         }
                     }
                     item(key = "range") {
+                        val haptics = rememberPocketHaptics()
                         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                             AnlasStatsRange.entries.forEachIndexed { index, range ->
                                 SegmentedButton(
                                     selected = statistics.range == range,
-                                    onClick = { onRangeChange(range) },
+                                    onClick = {
+                                        if (statistics.range != range) haptics.tick()
+                                        onRangeChange(range)
+                                    },
                                     shape = SegmentedButtonDefaults.itemShape(index, AnlasStatsRange.entries.size),
                                 ) { Text(range.label) }
                             }
@@ -199,7 +214,10 @@ internal fun AnlasStatisticsContent(
 @Composable
 private fun StatisticsSummary(stats: AnlasStatistics) {
     Column {
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        ) {
             Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("记录消耗", style = MaterialTheme.typography.labelLarge)
                 AnimatedContent(targetState = stats.totalSpent, label = "统计金额") { amount ->
@@ -220,7 +238,7 @@ private fun StatisticsSummary(stats: AnlasStatistics) {
 
 @Composable
 private fun MetricCard(title: String, value: String, subtitle: String, modifier: Modifier) {
-    Card(modifier.fillMaxHeight()) {
+    SettingsCard(modifier.fillMaxHeight()) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(value, style = MaterialTheme.typography.headlineSmall.merge(TabularNumbers), fontWeight = FontWeight.SemiBold)
@@ -232,11 +250,12 @@ private fun MetricCard(title: String, value: String, subtitle: String, modifier:
 @Composable
 private fun SpendingTrend(stats: AnlasStatistics) {
     val chartScroll = rememberScrollState()
+    val haptics = rememberPocketHaptics()
     LaunchedEffect(stats.range, stats.trend.size, chartScroll.maxValue) { chartScroll.scrollTo(chartScroll.maxValue) }
     var selected by rememberSaveable(stats.range) { mutableStateOf<String?>(null) }
     val point = stats.trend.find { it.date.toString() == selected }
     val maximum = stats.trend.maxOfOrNull { it.spent }?.coerceAtLeast(1L) ?: 1L
-    Card {
+    SettingsCard {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("消耗趋势", style = MaterialTheme.typography.titleMedium)
             Text(point?.let { "${trendLabel(it.date, stats.range)} · ${formatAnlas(it.spent)} Anlas" }
@@ -248,11 +267,21 @@ private fun SpendingTrend(stats: AnlasStatistics) {
                 val barWidth = (maxWidth / stats.trend.size.coerceAtLeast(1)).coerceAtLeast(8.dp)
                 Row(Modifier.fillMaxWidth().horizontalScroll(chartScroll), verticalAlignment = Alignment.Bottom) {
                     stats.trend.forEach { item ->
-                        val fraction by animateFloatAsState(item.spent.toFloat() / maximum, tween(300), label = "趋势柱形")
+                        val fraction by animateFloatAsState(
+                            targetValue = item.spent.toFloat() / maximum,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow,
+                            ),
+                            label = "趋势柱形",
+                        )
                         val active = point?.date == item.date
                         Column(
                             Modifier.width(barWidth).height(124.dp).clip(RoundedCornerShape(6.dp))
-                                .clickable { selected = item.date.toString() }
+                                .clickable {
+                                    haptics.tick()
+                                    selected = item.date.toString()
+                                }
                                 .semantics { contentDescription = "${trendLabel(item.date, stats.range)}，消耗 ${item.spent} Anlas" }
                                 .padding(horizontal = if (barWidth < 16.dp) 1.dp else 3.dp),
                             verticalArrangement = Arrangement.Bottom,
@@ -281,7 +310,7 @@ private fun SpendingTrend(stats: AnlasStatistics) {
 
 @Composable
 private fun ActionBreakdown(stats: AnlasStatistics) {
-    Card {
+    SettingsCard {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("按操作类型", style = MaterialTheme.typography.titleMedium)
             stats.actions.forEach { action ->
@@ -310,7 +339,7 @@ private fun TransactionCard(entry: AnlasLedgerEntry) {
     val time = remember(entry.createdAt, zone) {
         Instant.ofEpochMilli(entry.createdAt).atZone(zone).format(DateTimeFormatter.ofPattern("HH:mm:ss"))
     }
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+    SettingsCard {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {

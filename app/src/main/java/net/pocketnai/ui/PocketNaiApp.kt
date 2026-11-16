@@ -16,6 +16,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
@@ -275,34 +276,53 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
             navController.navigate(Routes.referenceDetail(preview.imageId))
             navController.currentBackStackEntry?.id?.let { referencePreviews[it] = preview }
         }) {
+        val detailRoutes = remember { setOf(Routes.DETAIL, Routes.REFERENCE_DETAIL) }
+        val secondaryRoutes = remember {
+            setOf(Routes.ANLAS_STATISTICS, Routes.CHAT_SETTINGS, Routes.LOCAL_MCP, Routes.INPAINT, Routes.CONNECT)
+        }
         NavHost(
             navController = navController,
             startDestination = startDestination,
             modifier = Modifier.fillMaxSize(),
             enterTransition = {
-                when (targetState.destination.route) {
-                    Routes.DETAIL, Routes.REFERENCE_DETAIL -> imagePageEnter()
-                    Routes.INPAINT -> fadeIn(tween(260)) + slideInHorizontally(tween(260)) { it / 5 }
-                    else -> if (initialState.destination.route in listOf(Routes.DETAIL, Routes.REFERENCE_DETAIL)) imagePageEnter() else fadeIn(tween(160))
+                val from = initialState.destination.route
+                val to = targetState.destination.route
+                when {
+                    to in detailRoutes || from in detailRoutes -> imagePageEnter()
+                    to in secondaryRoutes -> fadeIn(tween(240, easing = FastOutSlowInEasing)) +
+                        slideInHorizontally(tween(260, easing = FastOutSlowInEasing)) { it / 6 }
+                    else -> fadeIn(tween(180, easing = FastOutSlowInEasing)) +
+                        scaleIn(tween(200, easing = FastOutSlowInEasing), initialScale = 0.985f)
                 }
             },
             exitTransition = {
-                if (targetState.destination.route in listOf(Routes.DETAIL, Routes.REFERENCE_DETAIL) ||
-                    initialState.destination.route in listOf(Routes.DETAIL, Routes.REFERENCE_DETAIL))
-                    imagePageExit() else fadeOut(tween(100))
+                val from = initialState.destination.route
+                val to = targetState.destination.route
+                when {
+                    to in detailRoutes || from in detailRoutes -> imagePageExit()
+                    to in secondaryRoutes -> fadeOut(tween(220, easing = FastOutSlowInEasing)) +
+                        scaleOut(tween(260, easing = FastOutSlowInEasing), targetScale = 0.965f)
+                    else -> fadeOut(tween(140, easing = FastOutSlowInEasing))
+                }
             },
             popEnterTransition = {
                 when (initialState.destination.route) {
-                    Routes.DETAIL, Routes.REFERENCE_DETAIL -> imagePageEnter()
-                    Routes.ANLAS_STATISTICS, Routes.CHAT_SETTINGS, Routes.INPAINT -> fadeIn(tween(260)) + scaleIn(tween(260), initialScale = 0.96f)
-                    else -> fadeIn(tween(160))
+                    in detailRoutes -> imagePageEnter()
+                    in secondaryRoutes -> fadeIn(tween(240, easing = FastOutSlowInEasing)) +
+                        scaleIn(tween(260, easing = FastOutSlowInEasing), initialScale = 0.965f)
+                    else -> fadeIn(tween(180, easing = FastOutSlowInEasing)) +
+                        scaleIn(tween(200, easing = FastOutSlowInEasing), initialScale = 0.985f)
                 }
             },
-            popExitTransition = { when (initialState.destination.route) {
-                Routes.DETAIL, Routes.REFERENCE_DETAIL -> imagePageExit()
-                Routes.INPAINT -> fadeOut(tween(260)) + scaleOut(tween(260), targetScale = 0.94f) + slideOutHorizontally(tween(260)) { it / 4 }
-                else -> fadeOut(tween(100))
-            } },
+            popExitTransition = {
+                when (initialState.destination.route) {
+                    in detailRoutes -> imagePageExit()
+                    in secondaryRoutes -> fadeOut(tween(220, easing = FastOutSlowInEasing)) +
+                        scaleOut(tween(260, easing = FastOutSlowInEasing), targetScale = 0.95f) +
+                        slideOutHorizontally(tween(260, easing = FastOutSlowInEasing)) { it / 5 }
+                    else -> fadeOut(tween(140, easing = FastOutSlowInEasing))
+                }
+            },
         ) {
             composable(Routes.WELCOME) {
                 fun finishWelcome(provider: net.pocketnai.domain.openai.ImageProvider?) {

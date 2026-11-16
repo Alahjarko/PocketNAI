@@ -280,8 +280,10 @@ internal fun GenerationSheetScaffold(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val haptics = rememberPocketHaptics()
-    val peekDp = 112.dp
-    val peekPx = with(density) { peekDp.toPx() }
+    val handleDp = 48.dp
+    val handlePx = with(density) { handleDp.toPx() }
+    val fallbackPeekDp = 112.dp
+    val fallbackPeekPx = with(density) { fallbackPeekDp.toPx() }
     val thresholdPx = with(density) { 48.dp.toPx() }
     val flingVelocityPx = with(density) { 420.dp.toPx() }
     val bodyMinCollapsePx = with(density) { 148.dp.toPx() }
@@ -301,6 +303,7 @@ internal fun GenerationSheetScaffold(
     val backProgress = remember { Animatable(0f, visibilityThreshold = 0.0005f) }
     var scaffoldHeight by remember { mutableFloatStateOf(0f) }
     var sheetHeight by remember { mutableFloatStateOf(0f) }
+    var measuredHeaderPx by remember { mutableFloatStateOf(0f) }
 
     val sheetSpring = remember {
         spring<Float>(
@@ -309,13 +312,16 @@ internal fun GenerationSheetScaffold(
         )
     }
 
+    fun effectivePeekPx(): Float =
+        if (measuredHeaderPx > 0f) handlePx + measuredHeaderPx else fallbackPeekPx
+
     fun expandedOffset(): Float =
         if (scaffoldHeight <= 0f || sheetHeight <= 0f) 0f
         else (scaffoldHeight - sheetHeight).coerceAtLeast(0f)
 
     fun collapsedOffset(): Float =
         if (scaffoldHeight <= 0f) 0f
-        else (scaffoldHeight - peekPx).coerceAtLeast(expandedOffset())
+        else (scaffoldHeight - effectivePeekPx()).coerceAtLeast(expandedOffset())
 
     fun sheetRange(): Float = (collapsedOffset() - expandedOffset()).coerceAtLeast(1f)
 
@@ -458,6 +464,7 @@ internal fun GenerationSheetScaffold(
 
     val handleDrag = rememberHeaderDragModifier()
     val contentHeaderDrag = rememberHeaderDragModifier()
+        .onSizeChanged { measuredHeaderPx = it.height.toFloat() }
 
     LaunchedEffect(inFlight, submissionRevision) {
         if (inFlight) {
@@ -468,6 +475,11 @@ internal fun GenerationSheetScaffold(
 
     val sheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     val surfaceColor = MaterialTheme.colorScheme.surfaceContainerLow
+    val effectivePeekDp = if (measuredHeaderPx > 0f) {
+        handleDp + with(density) { measuredHeaderPx.toDp() }
+    } else {
+        fallbackPeekDp
+    }
 
     Box(
         modifier = Modifier
@@ -475,7 +487,7 @@ internal fun GenerationSheetScaffold(
             .clipToBounds()
             .onSizeChanged { scaffoldHeight = it.height.toFloat() },
     ) {
-        content(PaddingValues(bottom = peekDp))
+        content(PaddingValues(bottom = effectivePeekDp))
 
         // 绘制期背景遮罩：随面板展开连续压暗画廊背景，零重组开销且收起时不绘制、不拦截点击。
         Box(

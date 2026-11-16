@@ -1,5 +1,15 @@
 package net.pocketnai.ui.gallery
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -55,9 +65,27 @@ internal fun GalleryMotionCard(
     var decoded by remember(imageFile) { mutableStateOf(false) }
     var decodeFailed by remember(imageFile) { mutableStateOf(false) }
     val failed = slot.failed || decodeFailed
+    // 仅在多选模式下组合缩放弹簧，日常浏览（isSelectionMode == false）保持零额外状态与图层分配。
+    val selectionScaleModifier = if (isSelectionMode && item != null) {
+        val selectionScale by animateFloatAsState(
+            targetValue = if (isSelected) 0.945f else 1f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = 750f,
+            ),
+            label = "gallery-card-select",
+        )
+        Modifier.graphicsLayer {
+            scaleX = selectionScale
+            scaleY = selectionScale
+        }
+    } else {
+        Modifier
+    }
     Card(
-        border = if (isSelectionMode && isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        border = if (isSelectionMode && isSelected) BorderStroke(2.5.dp, MaterialTheme.colorScheme.primary) else null,
         modifier = modifier.fillMaxWidth().aspectRatio(slot.aspectRatio)
+            .then(selectionScaleModifier)
             .then(if (item != null) Modifier.combinedClickable(
                 onClick = {
                     if (!isSelectionMode && imageFile != null) {
@@ -114,10 +142,33 @@ internal fun GalleryMotionCard(
                 .padding(6.dp).background(Color.Black.copy(alpha = 0.35f), CircleShape).padding(4.dp)) {
                 Icon(Icons.Default.Favorite, "收藏", tint = Color.White, modifier = Modifier.size(12.dp))
             }
-            if (item != null && isSelectionMode) Box(Modifier.align(Alignment.TopEnd).padding(6.dp)
-                .background(Color.Black.copy(alpha = 0.35f), CircleShape).padding(2.dp)) {
-                Icon(if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                    null, tint = if (isSelected) MaterialTheme.colorScheme.primary else Color.White, modifier = Modifier.size(20.dp))
+            if (item != null && isSelectionMode) Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .background(
+                        if (isSelected) MaterialTheme.colorScheme.surface else Color.Black.copy(alpha = 0.38f),
+                        CircleShape,
+                    )
+                    .padding(2.dp),
+            ) {
+                AnimatedContent(
+                    targetState = isSelected,
+                    label = "gallery-select-badge",
+                    transitionSpec = {
+                        (fadeIn(tween(100)) + scaleIn(
+                            spring(dampingRatio = 0.65f, stiffness = Spring.StiffnessMedium),
+                            initialScale = 0.7f,
+                        )) togetherWith (fadeOut(tween(80)) + scaleOut(tween(80), targetScale = 0.8f))
+                    },
+                ) { selected ->
+                    Icon(
+                        if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                        null,
+                        tint = if (selected) MaterialTheme.colorScheme.primary else Color.White,
+                        modifier = Modifier.size(21.dp),
+                    )
+                }
             }
         }
     }

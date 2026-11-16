@@ -9,6 +9,16 @@ import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -16,25 +26,35 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
@@ -44,12 +64,17 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -57,8 +82,20 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import java.io.File
 import net.pocketnai.ui.common.ImageShareManager
+import net.pocketnai.ui.common.MotionIconButton
+import net.pocketnai.ui.safety.SfwAsyncImage
+import net.pocketnai.ui.settings.SettingsCard
+import net.pocketnai.ui.settings.SettingsIcon
+import net.pocketnai.ui.settings.settingsClickable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -227,34 +264,47 @@ fun GalleryPane(
     }
     Column(modifier = modifier.fillMaxSize()) {
         val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
-        if (isSelectionMode) {
-            GallerySelectionTopBar(
-                selectedCount = selectedImageIds.size,
-                allSelected = items.isNotEmpty() && selectedImageIds.size == items.size,
-                onSelectAllToggle = {
-                    haptics.tick()
-                    if (selectedImageIds.size == items.size) {
-                        viewModel.deselectAll()
-                    } else {
-                        viewModel.selectAllMatching()
-                    }
-                },
-                onExit = viewModel::exitSelectionMode,
-            )
-        } else {
-            GalleryFilterBar(
-                filter = filter,
-                onQueryChange = viewModel::onQueryChange,
-                onModelsChange = viewModel::onModelsChange,
-                onModeChange = viewModel::onModeChange,
-                onFavoritesOnlyChange = viewModel::onFavoritesOnlyChange,
-                onClearAll = viewModel::clearFilter,
-                onEnterSelectionMode = {
-                    haptics.tick()
-                    viewModel.enterSelectionMode()
-                },
-                taskAction = { GenerationTasksButton(generations) { id -> viewModel.clearFilter(); requestedTask = id } },
-            )
+        AnimatedContent(
+            targetState = isSelectionMode,
+            label = "gallery-top-bar",
+            transitionSpec = {
+                (fadeIn(tween(150)) + slideInVertically(
+                    spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 750f),
+                ) { if (targetState) -it / 4 else it / 4 }) togetherWith fadeOut(tween(100))
+            },
+        ) { selectionActive ->
+            if (selectionActive) {
+                GallerySelectionTopBar(
+                    selectedCount = selectedImageIds.size,
+                    allSelected = items.isNotEmpty() && selectedImageIds.size == items.size,
+                    onSelectAllToggle = {
+                        haptics.tick()
+                        if (selectedImageIds.size == items.size) {
+                            viewModel.deselectAll()
+                        } else {
+                            viewModel.selectAllMatching()
+                        }
+                    },
+                    onExit = {
+                        haptics.tick()
+                        viewModel.exitSelectionMode()
+                    },
+                )
+            } else {
+                GalleryFilterBar(
+                    filter = filter,
+                    onQueryChange = viewModel::onQueryChange,
+                    onModelsChange = viewModel::onModelsChange,
+                    onModeChange = viewModel::onModeChange,
+                    onFavoritesOnlyChange = viewModel::onFavoritesOnlyChange,
+                    onClearAll = viewModel::clearFilter,
+                    onEnterSelectionMode = {
+                        haptics.tick()
+                        viewModel.enterSelectionMode()
+                    },
+                    taskAction = { GenerationTasksButton(generations) { id -> viewModel.clearFilter(); requestedTask = id } },
+                )
+            }
         }
 
         Box(modifier = Modifier.fillMaxSize()) {
@@ -306,10 +356,18 @@ fun GalleryPane(
                 GalleryScrollToTop(gridState, Modifier.align(Alignment.BottomEnd).padding(16.dp))
             }
 
-            if (isSelectionMode) {
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isSelectionMode,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                enter = slideInVertically(
+                    spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 620f),
+                ) { it } + fadeIn(tween(140)),
+                exit = slideOutVertically(tween(120)) { it } + fadeOut(tween(100)),
+            ) {
                 GallerySelectionBottomBar(
                     selectedCount = selectedImageIds.size,
                     onSave = {
+                        haptics.tick()
                         val selectedItems = items.filter { it.imageId in selectedImageIds }
                         if (selectedItems.isNotEmpty()) {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
@@ -333,9 +391,11 @@ fun GalleryPane(
                         }
                     },
                     onFavorite = {
+                        haptics.confirm()
                         viewModel.batchToggleFavorite(items)
                     },
                     onShare = {
+                        haptics.tick()
                         val selectedItems = items.filter { it.imageId in selectedImageIds }
                         val files = selectedItems.map { container.generationRepository.fileOf(it) }
                         ImageShareManager.shareMultiple(
@@ -345,9 +405,9 @@ fun GalleryPane(
                         )
                     },
                     onDelete = {
+                        haptics.tick()
                         confirmBatchDelete = true
                     },
-                    modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }
 
@@ -361,113 +421,49 @@ fun GalleryPane(
     }
 
     actionTarget?.let { target ->
-        AlertDialog(
-            onDismissRequest = { actionTarget = null },
-            title = { Text(target.title) },
-            text = {
-                Column {
-                    TextButton(
-                        onClick = {
-                            actionTarget = null
-                            viewModel.toggleFavorite(target)
-                        },
-                    ) {
-                        Text(
-                            stringResource(
-                                if (target.favorite) {
-                                    R.string.action_unfavorite
-                                } else {
-                                    R.string.action_favorite
-                                },
-                            ),
-                        )
-                    }
-
-                    TextButton(
-                        onClick = {
-                            actionTarget = null
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
-                                ContextCompat.checkSelfPermission(
-                                    context,
-                                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                                ) == PackageManager.PERMISSION_GRANTED
-                            ) {
-                                saveToSystemGallery(
-                                    scope = scope,
-                                    context = context,
-                                    repository = container.generationRepository,
-                                    exporter = container.mediaStoreExporter,
-                                    snackbarHostState = snackbarHostState,
-                                    item = target,
-                                )
-                            } else {
-                                pendingSave = target
-                                permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                            }
-                        },
-                    ) {
-                        Text(if (target.relativePath.endsWith(".svg", ignoreCase = true)) "保存 SVG 文件" else stringResource(R.string.action_save_to_gallery))
-                    }
-
-                    TextButton(
-                        onClick = {
-                            actionTarget = null
-                            val file = container.generationRepository.fileOf(target)
-                            ImageShareManager.shareSingle(
-                                context = context,
-                                file = file,
-                                title = target.title,
-                            )
-                        },
-                    ) {
-                        Text(stringResource(R.string.action_share_image))
-                    }
-
-                    TextButton(
-                        onClick = {
-                            actionTarget = null
-                            // 只复制用户看到的正向提示词，绝不复制 Token 或隐藏请求字段（规划书第 10 节）。
-                            copyToClipboard(context, target.prompt)
-                            scope.launch { snackbarHostState.showSnackbar("已复制提示词") }
-                        },
-                    ) {
-                        Text(stringResource(R.string.action_copy_prompt))
-                    }
-
-                    if (!target.relativePath.endsWith(".svg", ignoreCase = true)) TextButton(
-                        onClick = {
-                            actionTarget = null
-                            onInpaintImage(target)
-                        },
-                    ) {
-                        Text(if (target.relativePath.endsWith(".gif", ignoreCase = true)) "编辑首帧" else stringResource(R.string.action_inpaint))
-                    }
-
-                    TextButton(
-                        onClick = {
-                            actionTarget = null
-                            viewModel.deleteGeneration(target.generationId)
-                        },
-                    ) {
-                        Text(stringResource(R.string.action_delete))
-                    }
-
-                    TextButton(
-                        onClick = {
-                            val id = target.imageId
-                            actionTarget = null
-                            viewModel.enterSelectionMode(id)
-                        },
-                    ) {
-                        Text(stringResource(R.string.action_batch_mode))
-                    }
+        GalleryItemActionSheet(
+            target = target,
+            imageFile = container.generationRepository.fileOf(target),
+            onDismiss = { actionTarget = null },
+            onToggleFavorite = { viewModel.toggleFavorite(target) },
+            onSave = {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                    ) == PackageManager.PERMISSION_GRANTED
+                ) {
+                    saveToSystemGallery(
+                        scope = scope,
+                        context = context,
+                        repository = container.generationRepository,
+                        exporter = container.mediaStoreExporter,
+                        snackbarHostState = snackbarHostState,
+                        item = target,
+                    )
+                } else {
+                    pendingSave = target
+                    permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                 }
             },
-            confirmButton = {
-                TextButton(onClick = { actionTarget = null }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
+            onShare = {
+                val file = container.generationRepository.fileOf(target)
+                ImageShareManager.shareSingle(
+                    context = context,
+                    file = file,
+                    title = target.title,
+                )
             },
+            onCopyPrompt = {
+                // 只复制用户看到的正向提示词，绝不复制 Token 或隐藏请求字段（规划书第 10 节）。
+                copyToClipboard(context, target.prompt)
+                scope.launch { snackbarHostState.showSnackbar("已复制提示词") }
+            },
+            onInpaint = if (!target.relativePath.endsWith(".svg", ignoreCase = true)) {
+                { onInpaintImage(target) }
+            } else null,
+            onEnterBatchMode = { viewModel.enterSelectionMode(target.imageId) },
+            onDelete = { viewModel.deleteGeneration(target.generationId) },
         )
     }
 
@@ -787,24 +783,35 @@ private fun GallerySelectionTopBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = 64.dp)
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onExit) {
+                MotionIconButton(onClick = onExit) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = stringResource(R.string.action_exit_selection),
                     )
                 }
-                Text(
-                    text = stringResource(R.string.batch_selected_count, selectedCount),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(start = 8.dp),
-                )
+                AnimatedContent(
+                    targetState = selectedCount,
+                    label = "gallery-selected-count",
+                    transitionSpec = {
+                        val up = targetState > initialState
+                        (fadeIn(tween(120)) + slideInVertically(tween(140)) { if (up) it / 3 else -it / 3 }) togetherWith
+                            (fadeOut(tween(90)) + slideOutVertically(tween(110)) { if (up) -it / 3 else it / 3 })
+                    },
+                ) { count ->
+                    Text(
+                        text = stringResource(R.string.batch_selected_count, count),
+                        style = MaterialTheme.typography.titleMedium.merge(TextStyle(fontFeatureSettings = "tnum")),
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
             }
-            TextButton(onClick = onSelectAllToggle) {
+            net.pocketnai.ui.common.MotionTextButton(onClick = onSelectAllToggle) {
                 Text(
                     stringResource(
                         if (allSelected) R.string.action_deselect_all else R.string.action_select_all
@@ -825,7 +832,8 @@ private fun GallerySelectionBottomBar(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 6.dp,
         shadowElevation = 8.dp,
         modifier = modifier
@@ -835,14 +843,14 @@ private fun GallerySelectionBottomBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 4.dp, horizontal = 12.dp),
+                .padding(vertical = 6.dp, horizontal = 12.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val enabled = selectedCount > 0
 
             // 保存到相册
-            IconButton(onClick = onSave, enabled = enabled) {
+            MotionIconButton(onClick = onSave, enabled = enabled) {
                 Icon(
                     imageVector = Icons.Default.Download,
                     contentDescription = stringResource(R.string.batch_action_save),
@@ -850,7 +858,7 @@ private fun GallerySelectionBottomBar(
             }
 
             // 收藏
-            IconButton(onClick = onFavorite, enabled = enabled) {
+            MotionIconButton(onClick = onFavorite, enabled = enabled) {
                 Icon(
                     imageVector = Icons.Default.Favorite,
                     contentDescription = stringResource(R.string.batch_action_favorite),
@@ -858,7 +866,7 @@ private fun GallerySelectionBottomBar(
             }
 
             // 分享
-            IconButton(onClick = onShare, enabled = enabled) {
+            MotionIconButton(onClick = onShare, enabled = enabled) {
                 Icon(
                     imageVector = Icons.Default.Share,
                     contentDescription = stringResource(R.string.batch_action_share),
@@ -866,7 +874,7 @@ private fun GallerySelectionBottomBar(
             }
 
             // 删除
-            IconButton(
+            MotionIconButton(
                 onClick = onDelete,
                 enabled = enabled,
             ) {
@@ -878,6 +886,307 @@ private fun GallerySelectionBottomBar(
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GalleryItemActionSheet(
+    target: GalleryItem,
+    imageFile: File,
+    onDismiss: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onSave: () -> Unit,
+    onShare: () -> Unit,
+    onCopyPrompt: () -> Unit,
+    onInpaint: (() -> Unit)?,
+    onEnterBatchMode: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
+    var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var closing by remember { mutableStateOf(false) }
+
+    fun dismissWith(action: () -> Unit, immediate: Boolean = false) {
+        if (closing) return
+        closing = true
+        if (immediate) {
+            action()
+        } else {
+            pendingAction = action
+        }
+        scope.launch {
+            try {
+                sheet.hide()
+            } finally {
+                closing = false
+            }
+            if (!sheet.isVisible) {
+                onDismiss()
+                pendingAction?.invoke()
+                pendingAction = null
+            }
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = {
+            onDismiss()
+            pendingAction?.invoke()
+            pendingAction = null
+        },
+        sheetState = sheet,
+        sheetMaxWidth = 560.dp,
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = { WindowInsets.safeDrawing },
+        dragHandle = {
+            Box(Modifier.fillMaxWidth().height(20.dp), contentAlignment = Alignment.Center) {
+                Surface(
+                    Modifier.size(32.dp, 4.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                ) {}
+            }
+        },
+    ) {
+        val cleanTitle = remember(target.title) {
+            target.title.trimEnd(',', ' ', '，', '、', ';').ifBlank { "生成图片" }
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(start = 16.dp, end = 16.dp, bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            // 预览头部：缩略图 + 干净标题 + 模型与尺寸摘要
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                SfwAsyncImage(
+                    file = imageFile,
+                    contentDescription = cleanTitle,
+                    sensitive = target.sensitivePrompt,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                )
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = cleanTitle,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "${GalleryModels.labelOf(target.modelApiId)} · ${target.width} × ${target.height}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
+            // 顶排高频胶囊：收藏 / 保存相册 / 分享
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                QuickActionTile(
+                    icon = if (target.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    label = stringResource(if (target.favorite) R.string.action_unfavorite else R.string.action_favorite),
+                    highlighted = target.favorite,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        if (!target.favorite) haptics.confirm() else haptics.tick()
+                        dismissWith(onToggleFavorite, immediate = true)
+                    },
+                )
+                QuickActionTile(
+                    icon = Icons.Default.Download,
+                    label = if (target.relativePath.endsWith(".svg", ignoreCase = true)) {
+                        "保存 SVG"
+                    } else {
+                        stringResource(R.string.batch_action_save)
+                    },
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        haptics.tick()
+                        dismissWith(onSave, immediate = true)
+                    },
+                )
+                QuickActionTile(
+                    icon = Icons.Default.Share,
+                    label = stringResource(R.string.action_share_image),
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        haptics.tick()
+                        dismissWith(onShare)
+                    },
+                )
+            }
+
+            // 分组操作列表
+            SettingsCard {
+                SheetActionRow(
+                    icon = Icons.Default.ContentCopy,
+                    label = stringResource(R.string.action_copy_prompt),
+                    onClick = {
+                        haptics.tick()
+                        dismissWith(onCopyPrompt, immediate = true)
+                    },
+                )
+                if (onInpaint != null) {
+                    SheetActionDivider()
+                    SheetActionRow(
+                        icon = Icons.Default.Brush,
+                        label = if (target.relativePath.endsWith(".gif", ignoreCase = true)) {
+                            "编辑首帧"
+                        } else {
+                            stringResource(R.string.action_inpaint)
+                        },
+                        onClick = {
+                            haptics.tick()
+                            dismissWith(onInpaint)
+                        },
+                    )
+                }
+                SheetActionDivider()
+                SheetActionRow(
+                    icon = Icons.Default.Checklist,
+                    label = stringResource(R.string.action_batch_mode),
+                    onClick = {
+                        haptics.tick()
+                        dismissWith(onEnterBatchMode, immediate = true)
+                    },
+                )
+                SheetActionDivider()
+                SheetActionRow(
+                    icon = Icons.Default.DeleteOutline,
+                    label = stringResource(R.string.action_delete),
+                    destructive = true,
+                    onClick = {
+                        haptics.tick()
+                        dismissWith(onDelete)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickActionTile(
+    icon: ImageVector,
+    label: String,
+    modifier: Modifier = Modifier,
+    highlighted: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = if (highlighted) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        },
+        modifier = modifier.settingsClickable(onClick = onClick),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (highlighted) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
+                modifier = Modifier.size(22.dp),
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+                color = if (highlighted) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SheetActionRow(
+    icon: ImageVector,
+    label: String,
+    destructive: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val contentColor = if (destructive) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    ListItem(
+        headlineContent = {
+            Text(
+                text = label,
+                color = contentColor,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        leadingContent = {
+            Surface(
+                shape = CircleShape,
+                color = if (destructive) {
+                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHighest
+                },
+            ) {
+                Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = if (destructive) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        modifier = Modifier.settingsClickable(onClick = onClick),
+    )
+}
+
+@Composable
+private fun SheetActionDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 70.dp, end = 16.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+    )
 }
 
 private fun saveMultipleToSystemGallery(

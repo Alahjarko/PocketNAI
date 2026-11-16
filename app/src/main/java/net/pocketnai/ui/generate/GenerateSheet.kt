@@ -158,6 +158,7 @@ fun GenerateSheet(
         state.params.model.family == net.pocketnai.domain.model.GenerationFamily.V5 && state.customResolution == null &&
         profile.tierOf(state.params.size) == ResolutionTier.NORMAL
 
+    val headerScrolled by remember { androidx.compose.runtime.derivedStateOf { scrollState.value > 4 } }
     Column(modifier = modifier.fillMaxWidth()) {
         SheetHeader(
             state = state,
@@ -170,17 +171,20 @@ fun GenerateSheet(
             onOpenBalance = { balanceDialogOpen = true },
             modifier = headerDragModifier,
         )
-        HorizontalDivider()
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.outlineVariant.copy(
+                alpha = if (headerScrolled) 0.9f else 0.35f,
+            ),
+        )
 
         Column(
             modifier = Modifier
-                // 顶部内边距放在滚动**外面**（其余三边留在里面）：它不随内容滚走，
-                // 于是 peek 下缘那一小条永远是空白 —— 收起态不会露出被截断的一行。
-                // 内边距若留在滚动里面，收起时露出的就是"滚动到一半"的内容（2026-09-16）。
-                .padding(top = 16.dp)
+                // 收起态高度已由 GenerationSheetScaffold 精确贴合「把手 + SheetHeader」，
+                // 表单区在收起时完全处于视口裁剪线之下，因此顶部内边距回到滚动容器内部，
+                // 彻底消除向下滚动时表单控件在分割线下方 16dp 处悬空被切的现象。
                 .collapseSheetOnTopPullDown(scrollState)
                 .verticalScroll(scrollState, enabled = expanded)
-                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                .padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (!connected) {
@@ -478,15 +482,12 @@ fun GenerateSheet(
 
             // ---- 高级参数 ----
             var advancedExpanded by remember { mutableStateOf(false) }
-            TextButton(onClick = { advancedExpanded = !advancedExpanded }) {
-                Icon(
-                    imageVector = if (advancedExpanded) {
-                        Icons.Default.ExpandLess
-                    } else {
-                        Icons.Default.ExpandMore
-                    },
-                    contentDescription = null,
-                )
+            val sheetHaptics = net.pocketnai.ui.motion.rememberPocketHaptics()
+            net.pocketnai.ui.common.MotionTextButton(onClick = {
+                sheetHaptics.tick()
+                advancedExpanded = !advancedExpanded
+            }) {
+                net.pocketnai.ui.common.ExpandingChevron(expanded = advancedExpanded)
                 Text(
                     text = stringResource(R.string.generate_advanced),
                     modifier = Modifier.padding(start = 4.dp),
@@ -798,7 +799,7 @@ private fun SheetHeader(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+            .padding(start = 16.dp, end = 12.dp, top = 4.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {

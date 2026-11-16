@@ -1,8 +1,10 @@
 package net.pocketnai.ui.detail
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.splineBasedDecay
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -12,6 +14,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +36,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.io.File
 import kotlin.math.abs
+import kotlin.math.sign
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import net.pocketnai.ui.motion.rememberPocketHaptics
@@ -54,24 +58,49 @@ fun FullscreenImageViewer(
     onDismiss: () -> Unit,
     revealed: Boolean = false,
 ) {
+    val scope = rememberCoroutineScope()
+    val visibilityAnim = remember { Animatable(0f) }
+    var closing by remember { mutableStateOf(false) }
+    var containerSize by remember { mutableStateOf(Size.Zero) }
+    val dismissYAnim = remember { Animatable(0f) }
+
+    LaunchedEffect(Unit) {
+        visibilityAnim.animateTo(1f, tween(180, easing = FastOutSlowInEasing))
+    }
+
+    fun requestClose(flingVy: Float = 0f) {
+        if (closing) return
+        closing = true
+        scope.launch {
+            coroutineScope {
+                if (abs(dismissYAnim.value) > 4f || abs(flingVy) > 200f) {
+                    val dir = if (abs(dismissYAnim.value) > 4f) sign(dismissYAnim.value) else sign(flingVy)
+                    val targetY = dir * (containerSize.height * 0.46f).coerceAtLeast(180f)
+                    launch { dismissYAnim.animateTo(targetY, tween(150, easing = FastOutSlowInEasing)) }
+                    launch { visibilityAnim.animateTo(0f, tween(140)) }
+                } else {
+                    launch { visibilityAnim.animateTo(0f, tween(140, easing = FastOutSlowInEasing)) }
+                }
+            }
+            onDismiss()
+        }
+    }
+
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { requestClose() },
         properties = DialogProperties(
             // 铺满全屏（含系统栏区域），图片查看器不该在系统栏前留白。
             usePlatformDefaultWidth = false,
             decorFitsSystemWindows = false,
         ),
     ) {
-        val scope = rememberCoroutineScope()
         val density = LocalDensity.current
         val decay = remember(density) { splineBasedDecay<Float>(density) }
         val haptics = rememberPocketHaptics()
 
-        var containerSize by remember { mutableStateOf(Size.Zero) }
         val scaleAnim = remember { Animatable(MIN_SCALE) }
         val offsetXAnim = remember { Animatable(0f) }
         val offsetYAnim = remember { Animatable(0f) }
-        val dismissYAnim = remember { Animatable(0f) }
 
         val imageAspect = if (imageHeight > 0) imageWidth.toFloat() / imageHeight else 1f
         val zoomSpring = remember {
@@ -110,12 +139,14 @@ fun FullscreenImageViewer(
                 .drawBehind {
                     val maxDismiss = (size.height * 0.42f).coerceAtLeast(1f)
                     val dismissFraction = (abs(dismissYAnim.value) / maxDismiss).coerceIn(0f, 1f)
-                    val alpha = (1f - dismissFraction * 0.85f).coerceIn(0.15f, 1f)
-                    drawRect(Color.Black.copy(alpha = alpha))
+                    val alpha = ((1f - dismissFraction * 0.85f).coerceIn(0.15f, 1f)) * visibilityAnim.value
+                    if (alpha > 0.002f) {
+                        drawRect(Color.Black.copy(alpha = alpha))
+                    }
                 }
                 .pointerInput(Unit) {
                     detectTapGestures(
-                        onTap = { onDismiss() },
+                        onTap = { requestClose() },
                         onDoubleTap = { tap ->
                             haptics.tick()
                             offsetXAnim.updateBounds(null, null)
@@ -257,7 +288,7 @@ fun FullscreenImageViewer(
                                 val threshold = containerSize.height * 0.18f
                                 if (abs(dismissYAnim.value) > threshold || abs(vy) > 1100f) {
                                     haptics.gestureEnd()
-                                    onDismiss()
+                                    requestClose(vy)
                                 } else {
                                     scope.launch {
                                         dismissYAnim.animateTo(
@@ -285,12 +316,15 @@ fun FullscreenImageViewer(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
+                        val vis = visibilityAnim.value
                         val maxDismiss = (size.height * 0.42f).coerceAtLeast(1f)
                         val dismissFraction = (abs(dismissYAnim.value) / maxDismiss).coerceIn(0f, 1f)
                         val dismissScale = 1f - dismissFraction * 0.22f
-                        val s = scaleAnim.value * dismissScale
+                        val enterExitScale = 0.94f + 0.06f * vis
+                        val s = scaleAnim.value * dismissScale * enterExitScale
                         scaleX = s
                         scaleY = s
+                        alpha = vis
                         translationX = offsetXAnim.value
                         translationY = offsetYAnim.value + dismissYAnim.value
                     },

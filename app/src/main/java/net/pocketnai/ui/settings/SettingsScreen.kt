@@ -114,11 +114,12 @@ fun SettingsScreen(
         }
     }
 
+    val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
@@ -128,7 +129,7 @@ fun SettingsScreen(
 
         net.pocketnai.ui.openai.OpenAiImageSettingsRow(initiallyOpen = openImageServiceOnEntry)
 
-        Text("NovelAI 账户", style = MaterialTheme.typography.titleSmall)
+        SettingsSection("NovelAI 账户")
         val activeAccount = remember(connected, accountSwitchDialogOpen) {
             container.credentialStore.listAccounts().firstOrNull { it.isActive }
         }
@@ -143,86 +144,131 @@ fun SettingsScreen(
             onDisconnect = viewModel::disconnect,
             onRefresh = refreshBalance,
         )
+
+        SettingsSection("外观与显示")
         ColorModeCard(themeMode, viewModel::setThemeMode)
         val sfwMode by container.settingsStore.sfwMode.collectAsStateWithLifecycle()
         SfwModeCard(sfwMode, container.settingsStore::setSfwMode)
 
         // ---- 设置项分组列表 ----
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column {
-                SettingsRow(
-                    title = stringResource(R.string.settings_balance_ledger),
-                    icon = Icons.Default.QueryStats,
-                    subtitle = stringResource(R.string.settings_ledger_subtitle),
-                    onClick = onOpenStatistics,
-                )
-                SettingsDivider()
-                SettingsRow(
-                    title = stringResource(R.string.proxy_section_title),
-                    icon = Icons.Default.Language,
-                    subtitle = proxySummaryLabel(
-                        enabled = proxySettings.enabled,
-                        mode = proxySettings.mode,
-                        host = proxySettings.host,
-                        port = proxySettings.port,
-                        usedBytesToday = proxyUsedBytes,
-                    ),
-                    onClick = { proxyDialogOpen = true },
-                    trailing = {
-                        Switch(
-                            checked = proxySettings.enabled,
-                            onCheckedChange = {
-                                container.proxyStore.update(proxySettings.copy(enabled = it))
-                            },
-                        )
-                    },
-                )
-                SettingsDivider()
-                SettingsRow(
-                    title = "实验性对话",
-                    icon = Icons.Default.ChatBubbleOutline,
-                    subtitle = if (chatEnabled) "已在导航栏显示对话" else "开启后在导航栏显示对话",
-                    onClick = { container.settingsStore.setChatEnabled(!chatEnabled) },
-                    trailing = { Switch(chatEnabled, container.settingsStore::setChatEnabled) },
-                )
-                SettingsDivider()
-                SettingsRow(
-                    title = "连接与人格",
-                    icon = Icons.Default.Hub,
-                    subtitle = "模型服务、人格与工具",
-                    onClick = onOpenChatSettings,
-                )
-                SettingsDivider()
-                SettingsRow(
-                    title = "本机助手连接",
-                    icon = Icons.Default.Devices,
-                    subtitle = "MCP · 供 RikkaHub 等本机助手调用",
-                    onClick = onOpenLocalMcp,
-                )
-                SettingsDivider()
-                SettingsRow(
-                    title = "抽卡实验室（实验）",
-                    icon = Icons.Default.Palette,
-                    subtitle = "随机画师串 · 固定种子 · 收藏与批次清理",
-                    onClick = { container.settingsStore.setArtistLabEnabled(!artistLabEnabled) },
-                    trailing = { Switch(artistLabEnabled, container.settingsStore::setArtistLabEnabled) },
-                )
-                SettingsDivider()
-                SettingsRow(
-                    title = stringResource(R.string.settings_storage),
-                    icon = Icons.Default.Storage,
-                    subtitle = "私有历史占用 ${formatBytes(state.usedBytes)}",
-                    onClick = { storageDialogOpen = true },
-                )
-                SettingsDivider()
-                SettingsRow(
-                    title = stringResource(R.string.update_section_title),
-                    icon = Icons.Default.SystemUpdate,
-                    subtitle = "${stringResource(R.string.settings_version)} " +
-                        "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})",
-                    onClick = { updateDialogOpen = true },
-                )
-            }
+        SettingsSection("功能与数据")
+        SettingsCard {
+            SettingsRow(
+                title = stringResource(R.string.settings_balance_ledger),
+                icon = Icons.Default.QueryStats,
+                subtitle = stringResource(R.string.settings_ledger_subtitle),
+                onClick = {
+                    haptics.tick()
+                    onOpenStatistics()
+                },
+            )
+            SettingsDivider()
+            SettingsRow(
+                title = stringResource(R.string.proxy_section_title),
+                icon = Icons.Default.Language,
+                active = proxySettings.enabled,
+                subtitle = proxySummaryLabel(
+                    enabled = proxySettings.enabled,
+                    mode = proxySettings.mode,
+                    host = proxySettings.host,
+                    port = proxySettings.port,
+                    usedBytesToday = proxyUsedBytes,
+                ),
+                onClick = {
+                    haptics.tick()
+                    proxyDialogOpen = true
+                },
+                trailing = {
+                    Switch(
+                        checked = proxySettings.enabled,
+                        onCheckedChange = {
+                            haptics.tick()
+                            container.proxyStore.update(proxySettings.copy(enabled = it))
+                        },
+                    )
+                },
+            )
+            SettingsDivider()
+            SettingsRow(
+                title = "实验性对话",
+                icon = Icons.Default.ChatBubbleOutline,
+                active = chatEnabled,
+                subtitle = if (chatEnabled) "已在导航栏显示对话" else "开启后在导航栏显示对话",
+                onClick = {
+                    haptics.tick()
+                    container.settingsStore.setChatEnabled(!chatEnabled)
+                },
+                trailing = {
+                    Switch(
+                        checked = chatEnabled,
+                        onCheckedChange = {
+                            haptics.tick()
+                            container.settingsStore.setChatEnabled(it)
+                        },
+                    )
+                },
+            )
+            SettingsDivider()
+            SettingsRow(
+                title = "连接与人格",
+                icon = Icons.Default.Hub,
+                subtitle = "模型服务、人格与工具",
+                onClick = {
+                    haptics.tick()
+                    onOpenChatSettings()
+                },
+            )
+            SettingsDivider()
+            SettingsRow(
+                title = "本机助手连接",
+                icon = Icons.Default.Devices,
+                subtitle = "MCP · 供 RikkaHub 等本机助手调用",
+                onClick = {
+                    haptics.tick()
+                    onOpenLocalMcp()
+                },
+            )
+            SettingsDivider()
+            SettingsRow(
+                title = "抽卡实验室（实验）",
+                icon = Icons.Default.Palette,
+                active = artistLabEnabled,
+                subtitle = "随机画师串 · 固定种子 · 收藏与批次清理",
+                onClick = {
+                    haptics.tick()
+                    container.settingsStore.setArtistLabEnabled(!artistLabEnabled)
+                },
+                trailing = {
+                    Switch(
+                        checked = artistLabEnabled,
+                        onCheckedChange = {
+                            haptics.tick()
+                            container.settingsStore.setArtistLabEnabled(it)
+                        },
+                    )
+                },
+            )
+            SettingsDivider()
+            SettingsRow(
+                title = stringResource(R.string.settings_storage),
+                icon = Icons.Default.Storage,
+                subtitle = "私有历史占用 ${formatBytes(state.usedBytes)}",
+                onClick = {
+                    haptics.tick()
+                    storageDialogOpen = true
+                },
+            )
+            SettingsDivider()
+            SettingsRow(
+                title = stringResource(R.string.update_section_title),
+                icon = Icons.Default.SystemUpdate,
+                subtitle = "${stringResource(R.string.settings_version)} " +
+                    "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})",
+                onClick = {
+                    haptics.tick()
+                    updateDialogOpen = true
+                },
+            )
         }
 
         state.maintenanceMessage?.let { message ->
@@ -366,15 +412,18 @@ private fun SettingsRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    active: Boolean = false,
     trailing: (@Composable () -> Unit)? = null,
 ) {
-    SettingsNavigationRow(title, subtitle, icon, onClick, modifier, enabled, trailing = trailing)
-
+    SettingsNavigationRow(title, subtitle, icon, onClick, modifier, enabled, active = active, trailing = trailing)
 }
 
 @Composable
 private fun SettingsDivider() {
-    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 72.dp, end = 16.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+    )
 }
 
 @Composable
