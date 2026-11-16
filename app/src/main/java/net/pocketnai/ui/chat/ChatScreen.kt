@@ -163,6 +163,14 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
             }
         }
     }
+    val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
+    val chatHaptics = net.pocketnai.ui.motion.rememberPocketHaptics()
+    val openAttachment: (ChatAttachment) -> Unit = { attachment ->
+        if (sfw.masks(resolveImage(attachment.relativePath), attachment.hasSensitivePrompt)) {
+            chatHaptics.tick()
+        }
+        viewingAttachment = attachment
+    }
     fun submit() {
         if (!hasKey || config.model.isBlank()) { modelsOpen = true; return }
         if (state.busy || state.importingAttachment || (input.text.isBlank() && state.draftAttachments.isEmpty())) return
@@ -212,11 +220,11 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
             }
             items(entries, key = { it.id }, contentType = { it.role }) { entry ->
                 ChatTimelineEntry(entry, viewModel, resolveImage, onOpenImage,
-                    { title, text -> reading = title to text }, { viewingAttachment = it })
+                    { title, text -> reading = title to text }, openAttachment)
             }
             state.streamId?.let { responseId -> item(key = responseId, contentType = "assistant") {
                 ChatTimelineEntry(null, viewModel, resolveImage, onOpenImage,
-                    { title, text -> reading = title to text }, { viewingAttachment = it })
+                    { title, text -> reading = title to text }, openAttachment)
             } }
             state.pending?.let { pending -> item {
                 ChatImagePlanCard(pending.plan, { viewModel.confirmImage(pending.callId, true) },
@@ -244,8 +252,8 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                 items(state.draftAttachments, key = { it.id }) { attachment ->
                     Box(Modifier.size(80.dp)) {
                         net.pocketnai.ui.safety.SfwAsyncImage(resolveImage(attachment.relativePath), if (attachment.promptContext != null) "待发送图片，已附生成参数" else "待发送图片", sensitive = attachment.hasSensitivePrompt, contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).clickable { viewingAttachment = attachment })
-                        if (attachment.promptContext != null) AttachmentParametersButton(Modifier.align(Alignment.BottomStart).padding(3.dp)) { viewingAttachment = attachment }
+                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).clickable { openAttachment(attachment) })
+                        if (attachment.promptContext != null) AttachmentParametersButton(Modifier.align(Alignment.BottomStart).padding(3.dp)) { openAttachment(attachment) }
                         IconButton(onClick = { viewModel.removeAttachment(attachment.id) }, enabled = !state.busy && !state.importingAttachment,
                             modifier = Modifier.align(Alignment.TopEnd).size(32.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape).testTag("chat-remove-attachment")) {
                             Icon(Icons.Default.Close, "移除图片", modifier = Modifier.size(18.dp))
@@ -286,8 +294,10 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
         LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
             contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(images, key = { it.imageId }) { image ->
-                net.pocketnai.ui.safety.SfwAsyncImage(resolveImage(image.relativePath), "聊天生成的图片", contentScale = ContentScale.Crop,
+                val file = resolveImage(image.relativePath)
+                net.pocketnai.ui.safety.SfwAsyncImage(file, "聊天生成的图片", contentScale = ContentScale.Crop,
                     modifier = Modifier.aspectRatio(0.85f).clip(RoundedCornerShape(18.dp)).clickable {
+                        if (sfw.masks(file)) chatHaptics.tick()
                         imagesOpen = false
                         onOpenImage(image.imageId, availableChatImageOrder(images, resolveImage))
                     })
@@ -374,6 +384,8 @@ fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenIm
     streaming: Boolean = false, onRead: (String, String) -> Unit = { _, _ -> }, onOpenAttachment: (ChatAttachment) -> Unit = {}) {
     if (entry.content.isBlank() && entry.reasoning.isBlank() && entry.images.isEmpty() && entry.attachments.isEmpty() && entry.notice == null) return
     val imageMotion = LocalImageMotion.current
+    val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
+    val bubbleHaptics = net.pocketnai.ui.motion.rememberPocketHaptics()
     val user = entry.role == "user"
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (user) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -391,6 +403,7 @@ fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenIm
             if (file.isFile) net.pocketnai.ui.safety.SfwAsyncImage(file, "对话生成的图片", contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxWidth(0.78f).aspectRatio(image.width.toFloat() / image.height.coerceAtLeast(1))
                     .sharedImage(image.imageId).clip(RoundedCornerShape(22.dp)).testTag("chat-image-${image.imageId}").clickable {
+                        if (sfw.masks(file)) bubbleHaptics.tick()
                         imageMotion?.preview = ImageOriginPreview(image.imageId, file, image.width.toFloat() / image.height.coerceAtLeast(1), "对话生成的图片")
                         onOpenImage(image.imageId, availableChatImageOrder(entry.images, resolveImage))
                     })

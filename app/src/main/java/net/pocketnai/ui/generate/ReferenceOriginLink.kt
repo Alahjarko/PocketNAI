@@ -31,6 +31,8 @@ internal fun ReferenceOriginLink(reference: ReferenceImage, modifier: Modifier =
     val id = reference.sourceImageId ?: return
     val container = LocalAppContainer.current
     val opener = LocalReferenceOriginOpener.current
+    val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
+    val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
     val source = remember(container, id) {
         container.database.generationDao().observeGalleryOrigin(id).map { image ->
             true to image?.takeIf { container.fileStore.resolve(it.relativePath).isFile }
@@ -41,7 +43,9 @@ internal fun ReferenceOriginLink(reference: ReferenceImage, modifier: Modifier =
     val image = state.second
     ReferenceOriginContent(available = image != null, modifier = modifier, onOpen = {
         image?.let {
-            opener?.invoke(ImageOriginPreview(it.id, container.fileStore.resolve(it.relativePath),
+            val file = container.fileStore.resolve(it.relativePath)
+            if (sfw.masks(file)) haptics.tick()
+            opener?.invoke(ImageOriginPreview(it.id, file,
                 it.width.toFloat() / it.height.coerceAtLeast(1), "参考图来源"))
         }
     }, thumbnail = {

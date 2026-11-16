@@ -29,6 +29,8 @@ internal fun ArtistLabResultImage(
     modifier: Modifier = Modifier,
 ) {
     val motion = LocalImageMotion.current
+    val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
+    val haptics = rememberPocketHaptics()
     var watched by rememberSaveable(drawId) { mutableStateOf(status == "RUNNING" && image == null) }
     var revealed by rememberSaveable(drawId) { mutableStateOf(false) }
     val startedAt = rememberSaveable(drawId) { System.currentTimeMillis() }
@@ -57,6 +59,7 @@ internal fun ArtistLabResultImage(
                     }
                 }
                 .clickable(enabled = decoded && (!watched || revealed)) {
+                    if (sfw.masks(file, image.sensitivePrompt)) haptics.tick()
                     motion?.preview = ImageOriginPreview(image.imageId, file!!, image.aspectRatio, "抽卡结果", image.sensitivePrompt)
                     onOpen(image.imageId)
                 },

@@ -95,10 +95,17 @@ fun ArtistMixFavoritesDialog(
 private fun FavoriteMixCard(mix: FavoriteArtistMix, resolve: (String) -> File,
                             onFocus: () -> Unit, onCopy: () -> Unit, onRemove: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
+    val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
+    val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
+    val cover = mix.images.firstOrNull()
+    val coverFile = cover?.let { resolve(it.relativePath) }
+    val openMix = {
+        if (sfw.masks(coverFile)) haptics.tick()
+        onFocus()
+    }
     Card {
-        Box(Modifier.fillMaxWidth().aspectRatio(0.8f).clickable(onClick = onFocus), contentAlignment = Alignment.Center) {
-            val cover = mix.images.firstOrNull()
-            if (cover != null) net.pocketnai.ui.safety.SfwAsyncImage(resolve(cover.relativePath), "画师串生成图",
+        Box(Modifier.fillMaxWidth().aspectRatio(0.8f).clickable(onClick = openMix), contentAlignment = Alignment.Center) {
+            if (coverFile != null) net.pocketnai.ui.safety.SfwAsyncImage(coverFile, "画师串生成图",
                 Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
             else Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(Icons.Default.ImageNotSupported, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -110,7 +117,7 @@ private fun FavoriteMixCard(mix: FavoriteArtistMix, resolve: (String) -> File,
                     style = MaterialTheme.typography.labelMedium)
             }
         }
-        Text(mix.artists.joinToString(" · "), Modifier.fillMaxWidth().clickable(onClick = onFocus)
+        Text(mix.artists.joinToString(" · "), Modifier.fillMaxWidth().clickable(onClick = openMix)
             .padding(start = 10.dp, end = 10.dp, top = 10.dp),
             style = MaterialTheme.typography.bodyMedium, maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
         Row(Modifier.fillMaxWidth().padding(start = 2.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -121,7 +128,7 @@ private fun FavoriteMixCard(mix: FavoriteArtistMix, resolve: (String) -> File,
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "画师串操作") }
                 DropdownMenu(menu, { menu = false }) {
-                    DropdownMenuItem(text = { Text("查看图片与权重") }, onClick = { menu = false; onFocus() })
+                    DropdownMenuItem(text = { Text("查看图片与权重") }, onClick = { menu = false; openMix() })
                     DropdownMenuItem(text = { Text("移除画师串收藏") }, onClick = { menu = false; onRemove() })
                 }
             }
@@ -135,6 +142,8 @@ private fun FavoriteMixDetail(mix: FavoriteArtistMix, resolve: (String) -> File,
                               snackbar: SnackbarHostState) {
     var selectedId by rememberSaveable(mix.prompt) { mutableStateOf(mix.images.firstOrNull()?.imageId) }
     val image = mix.images.firstOrNull { it.imageId == selectedId } ?: mix.images.firstOrNull()
+    val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
+    val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxWidth().fillMaxHeight(0.92f).padding(horizontal = 12.dp), shape = MaterialTheme.shapes.extraLarge) {
             Box {
@@ -163,7 +172,12 @@ private fun FavoriteMixDetail(mix: FavoriteArtistMix, resolve: (String) -> File,
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onCopy, modifier = Modifier.weight(1f)) { Text("复制画师串") }
-                    OutlinedButton(onClick = { image?.let { onOpen(it.imageId) } }, enabled = image != null,
+                    OutlinedButton(onClick = {
+                        image?.let {
+                            if (sfw.masks(resolve(it.relativePath))) haptics.tick()
+                            onOpen(it.imageId)
+                        }
+                    }, enabled = image != null,
                         modifier = Modifier.weight(1f)) { Text("图片详情") }
                 }
               }

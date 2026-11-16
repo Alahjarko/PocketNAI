@@ -44,6 +44,8 @@ internal fun HistoryImagePickerDialog(onPick: (String) -> Unit, onDismiss: () ->
     val items = remember(all) { all.filterNot { it.relativePath.endsWith(".svg", true) } }
     val grid = rememberLazyGridState()
     var query by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(filter.query)) }
+    val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
+    val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
     var selected by remember { mutableStateOf<GalleryItem?>(null) }
     var preview by remember { mutableStateOf<GalleryItem?>(null) }
     var confirmed by remember { mutableStateOf(false) }
@@ -69,14 +71,21 @@ internal fun HistoryImagePickerDialog(onPick: (String) -> Unit, onDismiss: () ->
             modifier = Modifier.weight(1f).fillMaxWidth().testTag("history-image-picker"),
             horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(items, key = { it.imageId }) { item ->
+                val file = container.fileStore.resolve(item.relativePath)
                 Box(Modifier.aspectRatio(item.width.toFloat() / item.height.coerceAtLeast(1)).clip(RoundedCornerShape(14.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainer).testTag("history-image-${item.imageId}")
-                    .clickable { selected = item }) {
-                    SfwAsyncImage(container.fileStore.resolve(item.relativePath), "选择图片", sensitive = item.sensitivePrompt,
+                    .clickable {
+                        if (sfw.masks(file, item.sensitivePrompt)) haptics.tick()
+                        selected = item
+                    }) {
+                    SfwAsyncImage(file, "选择图片", sensitive = item.sensitivePrompt,
                         contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                     if (selected?.imageId == item.imageId) Icon(Icons.Default.CheckCircle, "已选中", tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(50)))
-                    FilledTonalIconButton(onClick = { preview = item }, modifier = Modifier.align(Alignment.BottomEnd).padding(2.dp).size(36.dp)) {
+                    FilledTonalIconButton(onClick = {
+                        if (sfw.masks(file, item.sensitivePrompt)) haptics.tick()
+                        preview = item
+                    }, modifier = Modifier.align(Alignment.BottomEnd).padding(2.dp).size(36.dp)) {
                         Icon(Icons.Default.OpenInFull, "预览图片", Modifier.size(18.dp))
                     }
                 }

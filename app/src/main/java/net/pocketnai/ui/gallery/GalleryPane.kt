@@ -264,6 +264,7 @@ fun GalleryPane(
     }
     Column(modifier = modifier.fillMaxSize()) {
         val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
+        val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
         AnimatedContent(
             targetState = isSelectionMode,
             label = "gallery-top-bar",
@@ -330,6 +331,9 @@ fun GalleryPane(
                             viewModel.toggleSelect(item.imageId)
                         } else {
                             if (!openingImage) {
+                                if (sfw.masks(container.generationRepository.fileOf(item), item.sensitivePrompt)) {
+                                    haptics.tick()
+                                }
                                 openingImage = true
                                 scope.launch {
                                     try {

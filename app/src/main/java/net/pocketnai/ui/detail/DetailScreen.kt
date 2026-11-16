@@ -14,6 +14,10 @@ import net.pocketnai.ui.motion.sharedImageRequest
 import net.pocketnai.ui.motion.imageRouteIsMoving
 import net.pocketnai.ui.motion.ImageOriginPreview
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -270,8 +274,12 @@ fun DetailScreen(
                     onOpenFullscreen = {
                         val file = detail?.image?.let { container.fileStore.resolve(it.privateFilePath) }
                         val sensitive = detail?.generation?.let(net.pocketnai.domain.safety.SfwPolicy::isSensitive)
-                        if (sfw.masks(file, sensitive, revealedImageId == pageId)) revealedImageId = pageId
-                        else fullscreen = true
+                        if (sfw.masks(file, sensitive, revealedImageId == pageId)) {
+                            pageHaptics.confirm()
+                            revealedImageId = pageId
+                        } else {
+                            fullscreen = true
+                        }
                     },
                     onSaveClick = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
@@ -494,9 +502,18 @@ private fun DetailImagePane(
             animate = animateMedia,
             contentDescription = generation?.title ?: preview?.title, contentScale = ContentScale.Fit,
             modifier = Modifier.fillMaxSize().sharedImage(imageId, sensitive))
-        if (masked) Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.align(Alignment.Center)) {
-            Text("SFW · 点击图片查看", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(12.dp))
+        AnimatedVisibility(
+            visible = masked,
+            modifier = Modifier.align(Alignment.Center),
+            enter = fadeIn(tween(120)),
+            exit = fadeOut(tween(140)) + scaleOut(tween(140), targetScale = 0.92f),
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Text("SFW · 点击图片查看", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(12.dp))
+            }
         }
     }
 }
