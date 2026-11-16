@@ -1,5 +1,12 @@
 package net.pocketnai.ui.generate
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -80,8 +87,15 @@ internal fun HistoryImagePickerDialog(onPick: (String) -> Unit, onDismiss: () ->
                     }) {
                     SfwAsyncImage(file, "选择图片", sensitive = item.sensitivePrompt,
                         contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                    if (selected?.imageId == item.imageId) Icon(Icons.Default.CheckCircle, "已选中", tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(50)))
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = selected?.imageId == item.imageId,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(6.dp),
+                        enter = fadeIn(tween(100)) + scaleIn(spring(dampingRatio = 0.65f, stiffness = Spring.StiffnessMedium), initialScale = 0.7f),
+                        exit = fadeOut(tween(80)) + scaleOut(tween(80), targetScale = 0.8f),
+                    ) {
+                        Icon(Icons.Default.CheckCircle, "已选中", tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surface, RoundedCornerShape(50)))
+                    }
                     FilledTonalIconButton(onClick = {
                         if (sfw.masks(file, item.sensitivePrompt)) haptics.tick()
                         preview = item

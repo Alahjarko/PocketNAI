@@ -37,9 +37,11 @@ internal fun ChatPromptEditCard(id: String, edit: PromptEdit, vm: ChatViewModel)
                 Button(onClick = { if (vm.applyPromptEdit(id, edit)) applied = true else editing = true }, enabled = !state.second && state.first != id) { Text("应用到生成面板") }
                 TextButton(onClick = { editing = true }, enabled = !state.second) { Text("编辑") }
             }
-            if (state.first == id) Row {
-                Text("已应用", Modifier.weight(1f), color = MaterialTheme.colorScheme.primary)
-                TextButton(onClick = { vm.undoPromptEdit(); applied = false }) { Text("撤销应用") }
+            net.pocketnai.ui.common.AnimatedDisclosure(state.first == id) {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text("已应用", Modifier.weight(1f), color = MaterialTheme.colorScheme.primary)
+                    TextButton(onClick = { vm.undoPromptEdit(); applied = false }) { Text("撤销应用") }
+                }
             }
         }
     }

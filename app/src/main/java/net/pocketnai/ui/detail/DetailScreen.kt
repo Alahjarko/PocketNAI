@@ -499,7 +499,7 @@ private fun DetailImagePane(
     val masked = net.pocketnai.ui.safety.LocalSfwDisplay.current.masks(file, sensitive, revealed)
     Box(modifier.clip(RoundedCornerShape(12.dp)).clickable(enabled = image != null, onClick = onOpenFullscreen)) {
         net.pocketnai.ui.safety.SfwAsyncImage(file = file, sensitive = sensitive, revealed = revealed,
-            animate = animateMedia,
+            animate = animateMedia, revealTransition = true,
             contentDescription = generation?.title ?: preview?.title, contentScale = ContentScale.Fit,
             modifier = Modifier.fillMaxSize().sharedImage(imageId, sensitive))
         AnimatedVisibility(

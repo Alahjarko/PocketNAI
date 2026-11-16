@@ -177,8 +177,10 @@ fun OpenAiImageSheet(
                 OutlinedButton(onClick = { history = true }, enabled = !state.importing && state.draft.references.size < 16,
                     modifier = Modifier.weight(1f)) { Text("从历史选择") }
             }
-            if (state.importing) LinearProgressIndicator(Modifier.fillMaxWidth())
-            validation?.takeIf { params.prompt.isNotBlank() }?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            net.pocketnai.ui.common.AnimatedDisclosure(state.importing) { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+            net.pocketnai.ui.common.AnimatedNote(validation?.takeIf { params.prompt.isNotBlank() }) {
+                Text(it, color = MaterialTheme.colorScheme.error)
+            }
         }
     }
     if (history) HistoryImagePickerDialog(onPick = { path ->

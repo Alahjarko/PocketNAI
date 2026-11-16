@@ -76,8 +76,10 @@ fun OpenAiImageSettingsRow(initiallyOpen: Boolean = false) {
                         modifier = Modifier.fillMaxWidth())
                     if (hasKey) TextButton(onClick = { removeKeyRevision = settings.keyRevision.value }, enabled = !busy) { Text("移除已保存密钥") }
                 }
-                if (busy) Text("图片任务完成后可切换服务", style = MaterialTheme.typography.bodySmall)
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                net.pocketnai.ui.common.AnimatedDisclosure(busy) {
+                    Text("图片任务完成后可切换服务", style = MaterialTheme.typography.bodySmall)
+                }
+                net.pocketnai.ui.common.AnimatedNote(error) { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         }, confirmButton = {
             TextButton(enabled = !busy, onClick = {

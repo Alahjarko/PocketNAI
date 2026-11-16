@@ -47,11 +47,16 @@ internal fun OpenAiResolutionSelector(size: String, custom: Boolean, enabled: Bo
             OpenAiDimensionSlider("高度", height, enabled) { onSizeChange("${width}x$it") }
         }
         val error = OpenAiImageParams.sizeError(size)
-        if (error != null) Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-        else if (size != "auto") {
-            val (w, h) = size.split('x').map(String::toInt)
-            if (w.toLong() * h > 2560L * 1440) Text("实验性高分辨率 · 尺寸越大，用量和等待时间可能越高。",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val note = when {
+            error != null -> error to true
+            size == "auto" -> null
+            else -> size.split('x').mapNotNull(String::toIntOrNull).takeIf { it.size == 2 }
+                ?.takeIf { (w, h) -> w.toLong() * h > 2560L * 1440 }
+                ?.let { "实验性高分辨率 · 尺寸越大，用量和等待时间可能越高。" to false }
+        }
+        net.pocketnai.ui.common.AnimatedNote(note) { (text, isError) ->
+            Text(text, style = MaterialTheme.typography.bodySmall,
+                color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

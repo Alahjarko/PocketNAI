@@ -1,6 +1,7 @@
 package net.pocketnai.ui.gallery
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -138,10 +139,7 @@ internal fun GalleryMotionCard(
                     .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
                     .padding(horizontal = 5.dp, vertical = 2.dp)
                     .semantics { contentDescription = "查看动图" })
-            if (item?.favorite == true) Box(Modifier.align(if (isSelectionMode) Alignment.BottomStart else Alignment.TopEnd)
-                .padding(6.dp).background(Color.Black.copy(alpha = 0.35f), CircleShape).padding(4.dp)) {
-                Icon(Icons.Default.Favorite, "收藏", tint = Color.White, modifier = Modifier.size(12.dp))
-            }
+            if (item?.favorite == true) GalleryFavoriteBadge(isSelectionMode)
             if (item != null && isSelectionMode) Box(
                 Modifier
                     .align(Alignment.TopEnd)
@@ -171,5 +169,35 @@ internal fun GalleryMotionCard(
                 }
             }
         }
+    }
+}
+
+/**
+ * 收藏角标在多选切换时从右上移到左下（给选择圈让位）：仅在模式切换那一刻于新位置淡入，
+ * 日常浏览与滚动入屏直接绘制，不创建动画对象或协程。
+ */
+@Composable
+private fun BoxScope.GalleryFavoriteBadge(isSelectionMode: Boolean) {
+    val lastMode = remember { booleanArrayOf(isSelectionMode) }
+    var fading by remember { mutableStateOf(false) }
+    if (lastMode[0] != isSelectionMode) {
+        lastMode[0] = isSelectionMode
+        fading = true
+    }
+    val base = Modifier.align(if (isSelectionMode) Alignment.BottomStart else Alignment.TopEnd).padding(6.dp)
+    if (fading) key(isSelectionMode) {
+        val alpha = remember { Animatable(0f) }
+        LaunchedEffect(Unit) {
+            alpha.animateTo(1f, tween(180))
+            fading = false
+        }
+        FavoriteBadgeBody(base.graphicsLayer { this.alpha = alpha.value })
+    } else FavoriteBadgeBody(base)
+}
+
+@Composable
+private fun FavoriteBadgeBody(modifier: Modifier) {
+    Box(modifier.background(Color.Black.copy(alpha = 0.35f), CircleShape).padding(4.dp)) {
+        Icon(Icons.Default.Favorite, "收藏", tint = Color.White, modifier = Modifier.size(12.dp))
     }
 }

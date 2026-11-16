@@ -80,8 +80,13 @@ fun SfwAsyncImage(
     contentScale: ContentScale = ContentScale.Fit, sensitive: Boolean? = null, revealed: Boolean = false,
     onSuccess: (AsyncImagePainter.State.Success) -> Unit = {}, onError: (AsyncImagePainter.State.Error) -> Unit = {},
     animate: Boolean = false,
+    revealTransition: Boolean = false,
 ) {
     val masked = LocalSfwDisplay.current.masks(file, sensitive, revealed)
+    if (revealTransition && file != null && !file.extension.equals("gif", ignoreCase = true)) {
+        SfwRevealImage(file, contentDescription, modifier, contentScale, sensitive, revealed, masked, onSuccess, onError)
+        return
+    }
     if (animate && !masked && file?.extension.equals("gif", ignoreCase = true)) {
         val lifecycle = LocalLifecycleOwner.current.lifecycle
         var resumed by remember(lifecycle) { mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }

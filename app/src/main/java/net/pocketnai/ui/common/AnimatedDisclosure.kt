@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -33,6 +34,20 @@ internal fun AnimatedDisclosure(visible: Boolean, modifier: Modifier = Modifier,
         exit = shrinkVertically(sizeSpring, shrinkTowards = Alignment.Top) + fadeOut(tween(90)),
     ) {
         Column(content = content)
+    }
+}
+
+/**
+ * 可空提示文字（错误、警告）的有界展开：出现/消失时高度平滑过渡，不把下方控件一帧推开；
+ * 收起期间继续显示最后一条内容，避免文字先消失再塌缩。为空时不组合任何节点。
+ */
+@Composable
+internal fun <T : Any> AnimatedNote(value: T?, modifier: Modifier = Modifier, content: @Composable (T) -> Unit) {
+    val last = remember { arrayOfNulls<Any>(1) }
+    if (value != null) last[0] = value
+    AnimatedDisclosure(value != null, modifier) {
+        @Suppress("UNCHECKED_CAST")
+        (last[0] as T?)?.let { content(it) }
     }
 }
 
