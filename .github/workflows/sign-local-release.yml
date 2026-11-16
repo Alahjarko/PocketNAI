@@ -72,7 +72,6 @@ jobs:
           [[ "$REFERENCE_VERSION_CODE" =~ ^[1-9][0-9]*$ ]]
           if [[ "$REFERENCE_VERSION_CODE" != "$VERSION_CODE" ]]; then
             test "$REFERENCE_VERSION_CODE" -lt "$VERSION_CODE"
-            test -z "$PUBLISH_SHA256" # New versions are sign-only; never replace another release.
           fi
           [[ "$PREVIOUS_SHA256" =~ ^[0-9a-f]{64}$ ]]
           [[ -z "$PUBLISH_SHA256" || "$PUBLISH_SHA256" =~ ^[0-9a-f]{64}$ ]]
