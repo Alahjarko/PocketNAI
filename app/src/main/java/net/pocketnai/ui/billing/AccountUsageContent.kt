@@ -16,6 +16,7 @@ import net.pocketnai.domain.billing.SubscriptionTier
 import net.pocketnai.ui.motion.WavyQuotaBar
 
 /** 设置账户卡和生成面板共用同一份真实权益与余额展示。 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun AccountUsageContent(
     state: BalanceState,
@@ -26,6 +27,7 @@ internal fun AccountUsageContent(
 ) {
     val balance = state.knownBalance
     val allowance = balance?.v5AllowanceFor(status)
+    val expiry = if (connected && balance != null) rememberSubscriptionExpiry(balance.expiresAtEpochSeconds) else null
     val digits = TextStyle(fontFeatureSettings = "tnum")
     Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
@@ -49,6 +51,25 @@ internal fun AccountUsageContent(
             }
             IconButton(onClick = onRefresh, enabled = connected && state !is BalanceState.Loading,
                 modifier = Modifier.size(48.dp)) { Icon(Icons.Outlined.Refresh, "刷新账户用量") }
+        }
+        if (expiry != null) {
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = expiry.expiresAt?.let { "到期 $it" } ?: "订阅到期",
+                    style = MaterialTheme.typography.labelMedium.merge(digits),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(end = 8.dp),
+                )
+                Text(
+                    text = expiry.summary,
+                    style = MaterialTheme.typography.labelMedium.merge(digits),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("V5 限额", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

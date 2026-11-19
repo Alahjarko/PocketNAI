@@ -136,5 +136,18 @@ class AnlasCostCalculatorTest {
         assertThat(balance.v5UsageLimit!!.rawPercent).isEqualTo(99)
         assertThat(calculator.estimate(context(profile = v5, tier = expired.tier,
             subscribed = expired.subscribed, usage = balance.v5UsageLimit)).total()).isEqualTo(26L)
+        val utc = java.time.ZoneOffset.UTC
+        val activeExpiry = net.pocketnai.ui.billing.formatSubscriptionExpiry(now + 90_000L, now * 1000L, utc)
+        assertThat(activeExpiry.pending).isTrue()
+        assertThat(activeExpiry.summary).isEqualTo("剩余 1 天 1 小时")
+        assertThat(activeExpiry.expiresAt).isEqualTo("2027-01-16 09:00")
+        val endedExpiry = net.pocketnai.ui.billing.formatSubscriptionExpiry(now, now * 1000L, utc)
+        assertThat(endedExpiry.pending).isFalse()
+        assertThat(endedExpiry.summary).isEqualTo("已到期")
+        assertThat(endedExpiry.expiresAt).isEqualTo("2027-01-15 08:00")
+        val unknownExpiry = net.pocketnai.ui.billing.formatSubscriptionExpiry(0L, now * 1000L, utc)
+        assertThat(unknownExpiry.pending).isFalse()
+        assertThat(unknownExpiry.summary).isEqualTo("到期时间未知")
+        assertThat(unknownExpiry.expiresAt).isNull()
     }
 }
