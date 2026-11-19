@@ -41,13 +41,6 @@ jobs:
           echo "PNAI_VERSION_NAME=0.1.$(( ${LATEST:-0} + 1 ))-dev" >> "$GITHUB_ENV"
       - name: JVM regression tests
         run: ./gradlew :app:testDebugUnitTest --stacktrace
-      - name: Render production UI on host JVM
-        run: ./gradlew :app:renderStatsPreview -PrenderStatsPreview=true --stacktrace
-      - uses: actions/upload-artifact@v4
-        with:
-          name: pocketnai-ui-previews
-          path: app/build/reports/paparazzi/
-          retention-days: 14
       - name: Build APKs and compile device tests (no device execution)
         env:
           PNAI_KEYSTORE_PATH: ${{ runner.temp }}/pocketnai.keystore
@@ -84,7 +77,6 @@ jobs:
             app/build/outputs/apk/
             app/build/reports/tests/
             app/build/test-results/
-            app/build/reports/paparazzi/
             app/build/reports/packaged-manifest.xml
             app/schemas/
           retention-days: 14

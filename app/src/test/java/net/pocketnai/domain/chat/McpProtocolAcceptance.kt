@@ -8,6 +8,13 @@ import net.pocketnai.data.mcp.McpImageLinks
 import net.pocketnai.domain.mcp.McpNovelAiParams
 import net.pocketnai.domain.model.*
 import net.pocketnai.data.network.NovelAiRequestBuilder
+import org.junit.Test
+
+class McpProtocolTest {
+    @Test fun `本机MCP协议握手参数校验与单图链接限权`() {
+        verifyLocalMcpProtocol()
+    }
+}
 
 internal fun verifyLocalMcpProtocol() = runBlocking {
     var calls = 0

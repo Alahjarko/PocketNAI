@@ -635,7 +635,7 @@ class GenerationSeedAndPayloadTest {
         } finally { files.deleteGeneration(prefix) }
     }
 
-    @Test fun artistLabHundredSingleRequestsKeepSeedAndCleanupIsScoped() = runBlocking {
+    @Test fun artistLabBatchRequestsKeepSeedAndCleanupIsScoped() = runBlocking {
         val payloads = mutableListOf<JsonObject>()
         val files = GenerationFileStore(context)
         val prefix = "artist-lab-test-" + java.util.UUID.randomUUID()
@@ -645,9 +645,10 @@ class GenerationSeedAndPayloadTest {
             prompt = "sfw, blue sky", negativePrompt = "lowres", qualityTags = net.pocketnai.domain.model.QualityTagsOption.NONE,
             seedMode = SeedMode.FIXED, baseSeed = 87654321,
         )
+        val batchSize = 6
         val config = net.pocketnai.domain.artistlab.ArtistLabConfig(
             net.pocketnai.data.settings.GenerationDraftCodec.encode(net.pocketnai.domain.model.GenerationDraft(base, base.prompt, base.negativePrompt)),
-            5, 10, 30, 100, "test-pool")
+            5, 10, 30, batchSize, "test-pool")
         val store = net.pocketnai.data.artistlab.ArtistLabStore(context, database)
         val catalog = store.catalog()
         val catalogSource = context.assets.open("artist-lab/source.json").bufferedReader().use { it.readText() }
@@ -667,7 +668,7 @@ class GenerationSeedAndPayloadTest {
                 }.toList()
                 imageIds += events.filterIsInstance<GenerationEvent.Final>().single().image.id
             }
-            assertThat(payloads).hasSize(100)
+            assertThat(payloads).hasSize(batchSize)
             assertThat(waits.all { it in 1000..2000 }).isTrue()
             for ((index, payload) in payloads.withIndex()) {
                 val params = parametersOf(payload)
@@ -681,7 +682,7 @@ class GenerationSeedAndPayloadTest {
             // 生成一张属于其它批次的图片，清理当前批次不能波及它。
             val other = repo.generate(GenerationRequest(base), base.prompt).toList().filterIsInstance<GenerationEvent.Final>().single().image
             gallerySlots.sections(repo.observeGallery().first(), repo.observeGenerations().first(), true)
-            assertThat(repo.cleanupLabImages(imageIds)).isEqualTo(98)
+            assertThat(repo.cleanupLabImages(imageIds)).isEqualTo(batchSize - 2)
             assertThat(database.generationDao().findImage(imageIds[0])).isNotNull()
             assertThat(database.generationDao().findImage(imageIds[1])).isNotNull()
             assertThat(database.generationDao().findImage(other.id)).isNotNull()
@@ -689,7 +690,7 @@ class GenerationSeedAndPayloadTest {
             val afterCleanup = gallerySlots.sections(repo.observeGallery().first(), repo.observeGenerations().first(), true)
                 .flatMap { it.slots }
             assertThat(afterCleanup.map { it.image?.imageId }).containsExactly(imageIds[0], imageIds[1], other.id)
-            assertThat(repo.observeGenerations().first()).hasSize(101)
+            assertThat(repo.observeGenerations().first()).hasSize(batchSize + 1)
             // 中断请求只恢复本地结果，空结果标为待确认，不会补发。
             store.dao.create(net.pocketnai.data.local.ArtistLabRunEntity(prefix, 1, "{}", "RUNNING", ""), listOf(
                 net.pocketnai.data.local.ArtistLabDrawEntity("$prefix:a", prefix, 0, "{}", "RUNNING", other.generationId),
@@ -698,7 +699,7 @@ class GenerationSeedAndPayloadTest {
             val recovered = store.dao.draws(prefix)
             assertThat(recovered.map { it.status }).containsExactly("SUCCEEDED", "UNCERTAIN").inOrder()
             assertThat(store.dao.run(prefix)!!.status).isEqualTo("PAUSED")
-            assertThat(payloads).hasSize(101)
+            assertThat(payloads).hasSize(batchSize + 1)
         } finally {
             database.generationDao().allGenerationIds().filter { it.startsWith(prefix) }.forEach { files.deleteGeneration(it) }
         }

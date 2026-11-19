@@ -196,10 +196,6 @@ class ChatShortReplyTest {
             val boldLayouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
             compose.onNodeWithText("这是加粗文本。").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(boldLayouts) }
             assertThat(boldLayouts.single().layoutInput.text.spanStyles.any { it.item.fontWeight == androidx.compose.ui.text.font.FontWeight.Bold }).isTrue()
-            InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()?.let { bitmap ->
-                File(compose.activity.cacheDir, "chat-native-markdown.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                bitmap.recycle()
-            }
             // Replay real Compose layout/draw work locally; no provider or user history is used.
             val durations = java.util.Collections.synchronizedList(mutableListOf<Double>())
             val metricsThread = android.os.HandlerThread("markdown-frame-metrics").also { it.start() }
@@ -218,8 +214,6 @@ class ChatShortReplyTest {
             compose.mainClock.advanceTimeBy(100)
             val frames = synchronized(durations) { durations.sorted() }
             assertThat(frames.size).isGreaterThan(10)
-            File(compose.activity.cacheDir, "chat-markdown-replay.json").writeText(
-                "{\"updates\":40,\"sourceChars\":${replyText.length},\"frames\":${frames.size},\"p95Ms\":${frames[(frames.size * 0.95).toInt().coerceAtMost(frames.lastIndex)]},\"over32Ms\":${frames.count { it > 32 }}}")
             compose.onNodeWithTag("chat-read-full").assertExists()
             // Return to the image case in this same local conversation, without changing user data.
             compose.runOnUiThread { replyText = text }
@@ -265,10 +259,6 @@ class ChatShortReplyTest {
                 }
             }
             assertThat(imageAboveComposer).isFalse()
-            InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()?.let { bitmap ->
-                File(compose.activity.cacheDir, "chat-return-composer.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                bitmap.recycle()
-            }
             compose.mainClock.advanceTimeBy(400)
             assertThat(motion.returning).isNull()
             assertThat(list.firstVisibleItemIndex).isEqualTo(returnIndex)
@@ -344,10 +334,6 @@ class ChatShortReplyTest {
             compose.onNodeWithText("应用到生成面板").performScrollTo().performClick()
             assertThat(fixture.editedPrompt).isEqualTo("soft evening light")
             assertThat(fixture.generated).isEqualTo(0)
-            InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()?.let { bitmap ->
-                File(compose.activity.getExternalFilesDir(null), "creation-prompt-card.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                bitmap.recycle()
-            }
             compose.onNodeWithText("撤销应用").performScrollTo().performClick()
             assertThat(fixture.editedPrompt).isNull()
             compose.runOnUiThread { fixture.proposeOnly = false; fixture.viewModel.newConversation() }
@@ -363,30 +349,23 @@ class ChatShortReplyTest {
             compose.onNodeWithText("手动添加").performScrollTo().performClick()
             compose.onNodeWithText("模型 ID").performTextInput("offline-agent")
             compose.onNodeWithText("确定").assertIsDisplayed()
-            compose.waitForIdle(); instrumentation.waitForIdleSync()
-            shell("screencap -p /data/local/tmp/pocketnai-model-editor-keyboard.png")
             compose.onNodeWithText("确定").performClick()
             compose.onNodeWithText("保存").assertIsDisplayed()
             compose.onNodeWithText("保存").performClick()
             assertThat(fixture.viewModel.providers.value.providers).hasSize(2)
             assertThat(fixture.viewModel.providers.value.activeProviderId).isEqualTo(originalProviderId)
-            compose.waitForIdle(); instrumentation.waitForIdleSync(); android.os.SystemClock.sleep(350)
-            shell("screencap -p /data/local/tmp/pocketnai-provider-settings.png")
             compose.onNodeWithContentDescription("返回设置").performClick()
             compose.onNodeWithTag("chat-model-picker").performClick()
             compose.onAllNodesWithText("offline-agent").onLast().performClick()
             assertThat(fixture.viewModel.providers.value.activeProviderId).isNotEqualTo(originalProviderId)
             assertThat(fixture.savedPermission()).isEqualTo(net.pocketnai.domain.chat.ChatToolPermission.SINGLE_IMAGE)
             compose.onNodeWithTag("chat-model-picker").performClick()
-            compose.waitForIdle(); instrumentation.waitForIdleSync(); android.os.SystemClock.sleep(350)
-            shell("screencap -p /data/local/tmp/pocketnai-model-picker.png")
             compose.onAllNodesWithText("offline-agent").onFirst().performClick()
             assertThat(fixture.viewModel.providers.value.activeProviderId).isEqualTo(originalProviderId)
             compose.runOnUiThread { agentSettings = true }
             compose.onNodeWithText("联网搜索").performScrollTo().performClick()
             compose.onAllNodesWithText("DeepSeek", useUnmergedTree = true).onLast().performClick()
             compose.onNodeWithText("https://api.deepseek.com/v1").assertIsDisplayed()
-            shell("screencap -p /data/local/tmp/pocketnai-agent-search.png")
             shell("input keyevent 4")
             compose.waitForIdle()
             compose.onNodeWithContentDescription("返回设置").performClick()
@@ -408,8 +387,6 @@ class ChatShortReplyTest {
             assertThat(lastPlanRow.bottom).isAtMost(confirm.top)
             assertThat(lastPlanRow.height).isGreaterThan(100f)
             compose.onNodeWithText("本次 3 张 · 合计预计 6 Anlas").assertIsDisplayed()
-            compose.mainClock.advanceTimeBy(400); compose.waitForIdle(); android.os.SystemClock.sleep(150)
-            shell("screencap -p /data/local/tmp/pocketnai-agent-plan-fixed.png")
             compose.onNodeWithTag("chat-confirm-image").performClick()
             compose.waitUntil(15_000) { !fixture.viewModel.state.value.busy }
             assertThat(fixture.generated).isEqualTo(3)
@@ -437,8 +414,6 @@ class ChatShortReplyTest {
             compose.runOnUiThread { agentSettings = true }
             compose.onNodeWithText("人格与工具权限").performScrollTo().performClick()
             compose.onNodeWithText("完全允许").performScrollTo().performClick()
-            compose.mainClock.advanceTimeBy(400); compose.waitForIdle(); android.os.SystemClock.sleep(150)
-            shell("screencap -p /data/local/tmp/pocketnai-agent-full-permission.png")
             compose.onNodeWithText("保存").performClick()
             assertThat(fixture.savedPermission()).isEqualTo(net.pocketnai.domain.chat.ChatToolPermission.FULL)
             compose.onNodeWithContentDescription("返回设置").performClick()
@@ -463,8 +438,6 @@ class ChatShortReplyTest {
             compose.onNodeWithTag("chat-confirm-image").performScrollTo().assertIsDisplayed()
             assertThat(compose.onNodeWithTag("chat-plan-image-12").fetchSemanticsNode().boundsInRoot.bottom)
                 .isAtMost(compose.onNodeWithTag("chat-confirm-image").fetchSemanticsNode().boundsInRoot.top)
-            compose.mainClock.advanceTimeBy(400); compose.waitForIdle(); android.os.SystemClock.sleep(150)
-            shell("screencap -p /data/local/tmp/pocketnai-agent-plan-twelve-large.png")
             compose.runOnUiThread { fixture.viewModel.stop() }
             compose.waitUntil(5000) { !fixture.viewModel.state.value.busy }
             assertThat(fixture.generated).isEqualTo(9)

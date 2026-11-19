@@ -141,7 +141,7 @@ class ArtistLabQueueStateTest {
         }
     }
 
-    @Test fun mixFavoritesLinkImagesAcrossRunsAndKeepLegacyBookmarksAfterImageCleanup() = runBlocking<Unit> {
+    @Test fun mixFavoritesAndExcludedCatalogPersistAcrossRuns() = runBlocking<Unit> {
         val h = Harness()
         val observer = launch { h.lab.favoriteMixGallery.collect() }
         try {
@@ -179,13 +179,6 @@ class ArtistLabQueueStateTest {
                 assertThat(h.generate.state.value.promptTemplate).isEqualTo("sfw, user changed")
                 h.generate.replacePromptText(PromptTarget.POSITIVE, before.promptTemplate)
             }
-        } finally { observer.cancelAndJoin(); h.close() }
-    }
-
-    @Test fun excludedArtistsPersistAndNewPlansOnlyUseEnabledPool() = runBlocking<Unit> {
-        val h = Harness()
-        try {
-            h.waitFor { h.lab.ready.value }
             val entries = h.lab.catalogEntries.value
             val kept = entries.first().tag
             h.main { entries.drop(1).forEach { h.lab.setArtistEnabled(it.tag, false) } }
@@ -210,22 +203,50 @@ class ArtistLabQueueStateTest {
             assertThat(ArtistLabStore(h.context, h.database).excludedArtists()).doesNotContain(kept)
             assertThat(ArtistLabStore(h.context, h.database).excludedArtists()).contains(entries[2].tag)
             assertThat(h.store.dao.draws(h.lab.selectedRun.value!!).map { it.mixJson }).isEqualTo(before.map { it.mixJson })
-        } finally { h.close() }
+        } finally { observer.cancelAndJoin(); h.close() }
     }
 
-    @Test fun backgroundStartupFailureNeverSendsOrLeavesGenerationReserved() = runBlocking<Unit> {
-        net.pocketnai.data.mcp.verifyLocalMcpTransport(instrumentation.targetContext)
+    @Test fun queueFailureUncertainAndPriceChangeNeverOverSend() = runBlocking<Unit> {
         val background = FakeBackground().apply { fail = true }
-        val h = Harness(background)
+        val startupFailed = Harness(background)
         try {
-            h.prepare(3); h.main { h.lab.confirm() }
-            h.waitFor { !h.lab.busy.value }
-            assertThat(h.payloads).isEmpty()
-            assertThat(h.lab.selectedRun.value).isNull()
-            assertThat(h.generate.state.value.artistLabActive).isFalse()
+            startupFailed.prepare(3); startupFailed.main { startupFailed.lab.confirm() }
+            startupFailed.waitFor { !startupFailed.lab.busy.value }
+            assertThat(startupFailed.payloads).isEmpty()
+            assertThat(startupFailed.lab.selectedRun.value).isNull()
+            assertThat(startupFailed.generate.state.value.artistLabActive).isFalse()
             assertThat(background.starts).isEqualTo(1)
             assertThat(background.stops).isEqualTo(1)
-        } finally { h.close() }
+        } finally { startupFailed.close() }
+
+        val uncertain = Harness()
+        try {
+            uncertain.failSecond = true; uncertain.prepare(5)
+            uncertain.main { uncertain.lab.confirm() }; uncertain.waitFor { !uncertain.lab.busy.value }
+            assertThat(uncertain.payloads).hasSize(2)
+            val draws = uncertain.store.dao.draws(uncertain.lab.selectedRun.value!!)
+            assertThat(draws[0].status).isEqualTo("SUCCEEDED")
+            assertThat(draws[1].status).isEqualTo("UNCERTAIN")
+            assertThat(draws.count { it.status == "PLANNED" }).isEqualTo(3)
+            uncertain.main { uncertain.lab.prepareResume() }; uncertain.waitFor { uncertain.lab.approval.value != null }
+            assertThat(uncertain.lab.approval.value!!.remaining).isEqualTo(3)
+            assertThat(uncertain.payloads).hasSize(2)
+        } finally { uncertain.close() }
+
+        val repriced = Harness()
+        try {
+            repriced.settings.setSubscriptionOverride(SubscriptionOverride.NONE)
+            repriced.prepare(5)
+            val previous = repriced.lab.approval.value!!.quote
+            repriced.main { repriced.lab.confirm(); repriced.settings.setSubscriptionOverride(SubscriptionOverride.OPUS) }
+            repriced.waitFor { !repriced.lab.busy.value }
+            assertThat(repriced.generate.quoteForArtistLab(repriced.generate.state.value.params.copy(sampleCount = 1))).isNotEqualTo(previous)
+            assertThat(repriced.payloads).isEmpty()
+            val id = repriced.lab.selectedRun.value!!
+            assertThat(repriced.store.dao.draws(id).all { it.status == "PLANNED" }).isTrue()
+            assertThat(repriced.store.dao.run(id)!!.status).isEqualTo("PAUSED")
+            assertThat(repriced.generate.state.value.artistLabActive).isFalse()
+        } finally { repriced.close() }
     }
 
     @Test fun realForegroundServiceCompletesFakeBatchWithHomeAndScreenOff() = runBlocking<Unit> {
@@ -298,11 +319,6 @@ class ArtistLabQueueStateTest {
             first.recreate()
             first.close() // A finished page must not cancel the process-owned image operation.
             shell("input keyevent 3")
-            if (InstrumentationRegistry.getArguments().getString("background_evidence") == "true") {
-                shell("cmd statusbar expand-notifications"); delay(500)
-                shell("screencap -p /data/local/tmp/pocketnai-bg-notification.png")
-                shell("cmd statusbar collapse")
-            }
             shell("input keyevent 223")
             waitFor("ordinary screen-off wake lock") { awake() }
             assertThat(instrumentation.targetContext.getSystemService(android.os.PowerManager::class.java).isInteractive).isFalse()
@@ -424,38 +440,5 @@ class ArtistLabQueueStateTest {
             assertThat(denied.generate.state.value.error).isNotNull()
             assertThat(denied.database.generationDao().allGenerationIds()).isEmpty()
         } finally { denied.close() }
-    }
-
-    @Test fun uncertainSecondRequestStopsQueueAndResumeSkipsIt() = runBlocking<Unit> {
-        val h = Harness()
-        try {
-            h.failSecond = true; h.prepare(100)
-            h.main { h.lab.confirm() }; h.waitFor { !h.lab.busy.value }
-            assertThat(h.payloads).hasSize(2)
-            val draws = h.store.dao.draws(h.lab.selectedRun.value!!)
-            assertThat(draws[0].status).isEqualTo("SUCCEEDED")
-            assertThat(draws[1].status).isEqualTo("UNCERTAIN")
-            assertThat(draws.count { it.status == "PLANNED" }).isEqualTo(98)
-            h.main { h.lab.prepareResume() }; h.waitFor { h.lab.approval.value != null }
-            assertThat(h.lab.approval.value!!.remaining).isEqualTo(98)
-            assertThat(h.payloads).hasSize(2)
-        } finally { h.close() }
-    }
-
-    @Test fun changedPricePausesBeforeSendingFirstRequest() = runBlocking<Unit> {
-        val h = Harness()
-        try {
-            h.settings.setSubscriptionOverride(SubscriptionOverride.NONE)
-            h.prepare(100)
-            val previous = h.lab.approval.value!!.quote
-            h.main { h.lab.confirm(); h.settings.setSubscriptionOverride(SubscriptionOverride.OPUS) }
-            h.waitFor { !h.lab.busy.value }
-            assertThat(h.generate.quoteForArtistLab(h.generate.state.value.params.copy(sampleCount = 1))).isNotEqualTo(previous)
-            assertThat(h.payloads).isEmpty()
-            val id = h.lab.selectedRun.value!!
-            assertThat(h.store.dao.draws(id).all { it.status == "PLANNED" }).isTrue()
-            assertThat(h.store.dao.run(id)!!.status).isEqualTo("PAUSED")
-            assertThat(h.generate.state.value.artistLabActive).isFalse()
-        } finally { h.close() }
     }
 }

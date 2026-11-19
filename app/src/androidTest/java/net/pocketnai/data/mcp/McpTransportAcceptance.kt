@@ -18,6 +18,17 @@ import java.net.URI
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicBoolean
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class McpTransportTest {
+    @Test fun localMcpTransportEnforcesLoopbackAuthSfwAndInlineImages() {
+        verifyLocalMcpTransport(InstrumentationRegistry.getInstrumentation().targetContext)
+    }
+}
 
 /** Real loopback sockets with isolated credentials/files and an explicitly fake image backend. */
 internal fun verifyLocalMcpTransport(base: Context) = runBlocking {

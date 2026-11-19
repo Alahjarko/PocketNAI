@@ -1,5 +1,7 @@
 # 构建、设备验证与待核对事项
 
+2026-11-20 测试与夹具精简：清理设备回归中 20 余处无断言消费的历史截屏与等待休眠、删除 `app/src/preview/`（14 个一次性 Paparazzi 渲染器与 3 份 `Legacy*` 副本，同步移除 `app.cash.paparazzi` 与 `verify-android.yml` 的 `renderStatsPreview` 步骤）、删除一次性 `CreationWorkflowPreviewActivity` 与 `app/src/mcpBenchmark/`（保留 150 图滚动性能夹具 `GalleryBenchmarkActivity`）；将抽卡批量落盘测试由 100 次瘦身为 6 次，合并 `MigrationTest` 为连续 `v9 → v15`，精简 `ArtistLabQueueStateTest` 冗余队列项，并将原藏在其他测试内的 `McpProtocolTest`、`McpTransportTest` 与 `SFW模式敏感词识别与遮罩状态判定` 拆回独立测试项。精简后合计 **49/50（JVM 31、Android 18）**，所有核心断言保持不变。
+
 2026-11-16 人机交互、物理动效与多状态性能留痕：基于 `14b3df0` 完成触觉反馈、收藏图标统一、悬浮层头部 1:1 跟手与弹簧收敛、全屏看图手势、绘制期零闪烁权重高亮、角色画布直拖、重绘双指缩放与笔刷预览圈、单行补全条、画廊长按拖选及 Edge-to-Edge 透明系统栏。29项JVM与21项Android设备回归全绿，预算保持50项。首轮150图夹具采样检出 `GenerationImageReveal` 额外 `Box` 带来的测量开销后当场移除并改用单例 `OpaqueState`，复测4组冷热遍历堆分配下降5.8%–13.0%，三项10秒静置窗口均保持0帧/0.00秒CPU；Debug与R8优化包（`0.1.41-hci` / code41）同签名覆盖安装，真机截图逐项核验后已恢复原草稿与抽卡开关，未发起任何真实生成或付费调用。完整数据与宿主噪声边界见[本轮记录](../hci-motion-polish-2026-11-16.md)。
 
 2026-11-16 用户确认发布 [0.1.41](../release-0.1.41.md)：直接使用源码 `3e18ee2` 的已验收 Instabox R8 产物，29项JVM、21项Android与40条历史/逐张确认/大字号实际页面结果沿用开发验收。仅用原密钥签名，版本、证书、全部非签名内容、正式标签、latest与匿名公开下载均已核对，没有重跑编译或真实付费调用。

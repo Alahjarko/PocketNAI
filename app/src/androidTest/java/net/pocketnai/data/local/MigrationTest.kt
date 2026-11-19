@@ -22,20 +22,31 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class MigrationTest {
 
-    @Test fun migrate10To15KeepsHistoryReferencesDraftsAndUnknownDuration() {
-        helper.createDatabase("prompt-migration-test", 10).use { db ->
+    @Test fun migrate9To15KeepsHistoryFavoritesLabReferencesAndDrafts() {
+        val name = "full-migration-test"
+        helper.createDatabase(name, 9).use { db ->
             db.execSQL("""INSERT INTO generations (id,createdAt,updatedAt,status,title,promptTemplate,mode,prompt,negativePrompt,modelApiId,width,height,sampleCount,steps,guidance,cfgRescale,sampler,noiseSchedule,seedMode,baseSeed,qualityTags,qualityTagsEnabled,ucPresetIndex,modelConfigVersion,requestSnapshotVersion,charactersJson)
                 VALUES ('old',1,1,'SUCCEEDED','old title','sfw','TXT2IMG','sfw','','nai-diffusion-4-5-curated',832,1216,1,23,7.0,0.0,'k_euler_ancestral','karras','FIXED',42,'NONE',0,0,'v1',3,'[]')""")
             db.execSQL("""INSERT INTO generated_images (id,generationId,ordinal,seed,relativePath,width,height,byteSize,sha256,metadataJson,createdAt,exportedUri)
                 VALUES ('old-image','old',1,42,'generations/old/0001.png',832,1216,1024,'sha',NULL,1,NULL)""")
+            db.execSQL("INSERT INTO favorite_images VALUES ('old-image', 1)")
+            db.execSQL("INSERT INTO chat_conversations VALUES ('old-chat','original',2,'[]')")
             db.execSQL("INSERT INTO reference_images (id,generationId,role,ordinal,relativePath,width,height,byteSize,sha256,createdAt) VALUES ('ref','old','IMG2IMG',0,'references/old.png',832,1216,100,'ref-sha',1)")
         }
-        helper.runMigrationsAndValidate("prompt-migration-test", 13, true,
+        helper.runMigrationsAndValidate(name, 10, true, PocketNaiDatabase.MIGRATION_9_10).use { db ->
+            for (table in listOf("generations", "generated_images", "favorite_images", "chat_conversations")) {
+                db.query("SELECT COUNT(*) FROM $table").use { assertThat(it.moveToFirst()).isTrue(); assertThat(it.getInt(0)).isEqualTo(1) }
+            }
+            db.execSQL("INSERT INTO artist_lab_runs VALUES ('run',3,'{}','PAUSED','')")
+            db.execSQL("INSERT INTO artist_lab_draws VALUES ('draw','run',0,'{}','SUCCEEDED','old','old-image','')")
+            db.execSQL("INSERT INTO artist_lab_mix_favorites VALUES ('1.0::artist: test::',3)")
+        }
+        helper.runMigrationsAndValidate(name, 13, true,
             PocketNaiDatabase.MIGRATION_10_11, PocketNaiDatabase.MIGRATION_11_12, PocketNaiDatabase.MIGRATION_12_13).use { db ->
             db.execSQL("UPDATE generations SET openAiParamsJson=?,modelApiId='gpt-image-2.6-flare' WHERE id='old'",
                 arrayOf("""{"params":{"prompt":"fixture","model":"gpt-image-2.6-flare"},"usage":{"textInput":10,"imageInput":0,"imageOutput":100}}"""))
         }
-        helper.runMigrationsAndValidate("prompt-migration-test", 15, true, PocketNaiDatabase.MIGRATION_13_14, PocketNaiDatabase.MIGRATION_14_15).use { db ->
+        helper.runMigrationsAndValidate(name, 15, true, PocketNaiDatabase.MIGRATION_13_14, PocketNaiDatabase.MIGRATION_14_15).use { db ->
             db.query("SELECT searchPrompt FROM generations WHERE id='old'").use {
                 assertThat(it.moveToFirst()).isTrue(); assertThat(it.getString(0)).isEqualTo("sfw")
             }
@@ -64,8 +75,6 @@ class MigrationTest {
             db.query("SELECT generationDurationMillis FROM generations WHERE id='old'").use {
                 assertThat(it.moveToFirst()).isTrue(); assertThat(it.getLong(0)).isEqualTo(12345)
             }
-            db.execSQL("INSERT INTO chat_conversations (id,title,updatedAt,entriesJson) VALUES ('chat','title',2,'[]')")
-            db.query("SELECT entriesJson FROM chat_conversations").use { assertThat(it.moveToFirst()).isTrue(); assertThat(it.getString(0)).isEqualTo("[]") }
             db.query("SELECT snapshotJson FROM openai_spending WHERE generationId='old'").use {
                 assertThat(it.moveToFirst()).isTrue(); assertThat(it.getString(0)).contains("imageOutput")
             }
@@ -75,38 +84,15 @@ class MigrationTest {
             val all = net.pocketnai.domain.model.GalleryFilter(modelApiIds = setOf("gpt-image-2.6-flare", "gpt-image-2.5-sunburst"))
             db.query(GalleryQueries.build(all, 120)).use { assertThat(it.count).isEqualTo(120) }
             db.query(GalleryQueries.build(all, Int.MAX_VALUE, idsOnly = true)).use { assertThat(it.count).isEqualTo(481) }
-            db.execSQL("INSERT INTO favorite_images VALUES ('old-image',1)")
             db.query(GalleryQueries.build(all.copy(favoritesOnly = true), 120)).use { assertThat(it.count).isEqualTo(1) }
             db.execSQL("PRAGMA foreign_keys=ON")
+            db.execSQL("DELETE FROM generated_images WHERE id = 'old-image'")
+            db.query("SELECT imageId FROM artist_lab_draws").use { assertThat(it.moveToFirst()).isTrue(); assertThat(it.isNull(0)).isTrue() }
+            db.query("SELECT COUNT(*) FROM artist_lab_mix_favorites").use { assertThat(it.moveToFirst()).isTrue(); assertThat(it.getInt(0)).isEqualTo(1) }
             db.execSQL("DELETE FROM generations WHERE id='old'")
             db.query("SELECT COUNT(*) FROM openai_spending WHERE generationId='old'").use {
                 assertThat(it.moveToFirst()).isTrue(); assertThat(it.getInt(0)).isEqualTo(1)
             }
-        }
-    }
-
-    @Test fun migrate9To10KeepsHistoryFavoritesChatAndAddsLab() {
-        val name = "artist-lab-migration-test"
-        helper.createDatabase(name, 9).use { db ->
-            db.execSQL("""INSERT INTO generations (id,createdAt,updatedAt,status,title,promptTemplate,mode,prompt,negativePrompt,modelApiId,width,height,sampleCount,steps,guidance,cfgRescale,sampler,noiseSchedule,seedMode,baseSeed,qualityTags,qualityTagsEnabled,ucPresetIndex,modelConfigVersion,requestSnapshotVersion,charactersJson)
-                VALUES ('old',1,1,'SUCCEEDED','old title','sfw','TXT2IMG','sfw','','nai-diffusion-4-5-curated',832,1216,1,23,7.0,0.0,'k_euler_ancestral','karras','FIXED',42,'NONE',0,0,'v1',3,'[]')""")
-            db.execSQL("""INSERT INTO generated_images (id,generationId,ordinal,seed,relativePath,width,height,byteSize,sha256,metadataJson,createdAt,exportedUri)
-                VALUES ('old-image','old',1,42,'generations/old/0001.png',832,1216,1024,'sha',NULL,1,NULL)""")
-            db.execSQL("INSERT INTO favorite_images VALUES ('old-image', 1)")
-            db.execSQL("INSERT INTO chat_conversations VALUES ('old-chat','original',2,'[]')")
-        }
-        helper.runMigrationsAndValidate(name, 10, true, PocketNaiDatabase.MIGRATION_9_10).use { db ->
-            db.execSQL("PRAGMA foreign_keys = ON")
-            for (table in listOf("generations", "generated_images", "favorite_images", "chat_conversations")) {
-                db.query("SELECT COUNT(*) FROM $table").use { assertThat(it.moveToFirst()).isTrue(); assertThat(it.getInt(0)).isEqualTo(1) }
-            }
-            db.execSQL("INSERT INTO artist_lab_runs VALUES ('run',3,'{}','PAUSED','')")
-            db.execSQL("INSERT INTO artist_lab_draws VALUES ('draw','run',0,'{}','SUCCEEDED','old','old-image','')")
-            db.execSQL("INSERT INTO artist_lab_mix_favorites VALUES ('1.0::artist: test::',3)")
-            db.execSQL("DELETE FROM generated_images WHERE id = 'old-image'")
-            db.query("SELECT imageId FROM artist_lab_draws").use { assertThat(it.moveToFirst()).isTrue(); assertThat(it.isNull(0)).isTrue() }
-            db.query("SELECT COUNT(*) FROM artist_lab_mix_favorites").use { assertThat(it.moveToFirst()).isTrue(); assertThat(it.getInt(0)).isEqualTo(1) }
-            db.query("SELECT COUNT(*) FROM generations").use { assertThat(it.moveToFirst()).isTrue(); assertThat(it.getInt(0)).isEqualTo(1) }
         }
     }
 
@@ -115,18 +101,4 @@ class MigrationTest {
         InstrumentationRegistry.getInstrumentation(),
         PocketNaiDatabase::class.java,
     )
-
-    /**
-     * v5 → v6：新增收藏图片表。
-     *
-     * 这个迁移只 `CREATE TABLE`，风险比 v4→v5 小得多，但仍然要在这里证明三件事：
-     * 1. 既有历史与图片原样还在（新表没碰到它们）；
-     * 2. 新表结构能被 Room 的校验接受（外键的 `onDelete` 写错就会在这里抛出来）；
-     * 3. `ON DELETE CASCADE` 真的生效 —— 图片被删时收藏行必须跟着走，
-     *    否则会留下一批指向不存在图片的收藏，界面上表现为"收藏里有几张打不开"。
-     */
-
-    private companion object {
-        const val TEST_DB = "migration-test.db"
-    }
 }

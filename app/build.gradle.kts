@@ -115,13 +115,6 @@ if (providers.gradleProperty("galleryBenchmark").orNull == "true") {
     android.sourceSets.getByName("release").manifest.srcFile("src/benchmark/AndroidManifest.xml")
 }
 
-// Explicit offline interoperability fixture; never part of a normal delivery.
-if (providers.gradleProperty("localMcpBenchmark").orNull == "true") {
-    android.defaultConfig.applicationId = "net.pocketnai.mcpbench"
-    android.sourceSets.getByName("main").java.srcDir("src/mcpBenchmark/java")
-    android.sourceSets.getByName("release").manifest.srcFile("src/mcpBenchmark/AndroidManifest.xml")
-}
-
 kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
@@ -207,31 +200,4 @@ dependencies {
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.truth)
-}
-
-// Optional Layoutlib rendering: runs on the host JVM, without adb or an Android emulator.
-// Preview authoring is separate from the 50 registered JVM/device regression tests.
-if (providers.gradleProperty("renderStatsPreview").orNull == "true") {
-    apply(plugin = "app.cash.paparazzi")
-    android.sourceSets.getByName("test").java.srcDir("src/preview/java")
-    tasks.register<JavaExec>("renderStatsPreview") {
-        group = "verification"
-        description = "Render the production statistics UI with Layoutlib (no emulator)"
-        dependsOn("compileDebugUnitTestSources", "processDebugUnitTestJavaRes", "preparePaparazziDebugResources")
-        mainClass.set("net.pocketnai.preview.StatisticsPreviewRenderer")
-        val unitTest = tasks.named<Test>("testDebugUnitTest")
-        classpath = files(unitTest.map { it.classpath }, unitTest.map { it.testClassesDirs })
-        maxHeapSize = "2g"
-        doFirst {
-            systemProperties(unitTest.get().systemProperties)
-            fun layoutlibDirectory(name: String) = configurations.getByName(name).incoming.artifactView {
-                attributes.attribute(org.gradle.api.artifacts.type.ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE,
-                    org.gradle.api.artifacts.type.ArtifactTypeDefinition.DIRECTORY_TYPE)
-            }.files.singleFile.absolutePath
-            systemProperty("paparazzi.layoutlib.runtime.root", layoutlibDirectory("layoutlibRuntime"))
-            systemProperty("paparazzi.layoutlib.resources.root", layoutlibDirectory("layoutlibResources"))
-            systemProperty("paparazzi.test.record", "false")
-            systemProperty("paparazzi.test.verify", "false")
-        }
-    }
 }

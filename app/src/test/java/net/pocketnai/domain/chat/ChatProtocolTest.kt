@@ -7,7 +7,6 @@ import org.junit.Test
 
 class ChatProtocolTest {
     @Test fun `误回显的认证值在正文思考和嵌套参数中全部移除`() {
-        verifyLocalMcpProtocol()
         val placeholder = "test-auth-placeholder"
         val wire = buildJsonObject { put("content", placeholder); put("reasoning_content", "prefix $placeholder")
             put("tool_calls", buildJsonArray { add(buildJsonObject { put("arguments", "{\"prompt\":\"$placeholder\"}"); put("n", 42) }) }) }
@@ -16,8 +15,12 @@ class ChatProtocolTest {
         assertThat((cleaned["tool_calls"] as JsonArray).first().jsonObject["n"]!!.jsonPrimitive.int).isEqualTo(42)
         assertThat(wire.toString()).contains(placeholder)
     }
-    @Test fun `DeepSeek与Moonshot思考默认启用且图片工具不预设内容立场`() {
+
+    @Test fun `SFW模式敏感词识别与遮罩状态判定`() {
         checkOptionalSfwMode()
+    }
+
+    @Test fun `DeepSeek与Moonshot思考默认启用且图片工具不预设内容立场`() {
         val proposal = PromptEdit.parse(ToolCall("edit", "propose_prompt_edit", """{"title":"柔和光线","prompt":"soft evening light"}"""),
             PromptEdit(beforePrompt = "morning light", beforeNegative = "lowres"))
         assertThat(proposal.prompt).isEqualTo("soft evening light")

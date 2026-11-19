@@ -254,7 +254,6 @@ class GalleryMotionTest {
             assertThat(displaced.x).isGreaterThan(oldPosition.x)
             assertThat(displaced.y).isWithin(1f).of(oldPosition.y)
             val pendingBounds = compose.onNodeWithTag("slot-new-1").fetchSemanticsNode().boundsInRoot
-            screenshot("pending")
             // Status arrives before the independently observed image list: keep the exact slot.
             compose.runOnUiThread { jobs = listOf(GenerationSummary(job.copy(status = GenerationStatus.SUCCEEDED), 1)) }
             compose.mainClock.advanceTimeBy(300)
@@ -269,11 +268,9 @@ class GalleryMotionTest {
             compose.mainClock.advanceTimeBy(80)
             val earlyFrame = compose.onNodeWithTag("slot-new-1").captureToImage().asAndroidBitmap()
             assertThat(earlyFrame.getPixel(earlyFrame.width / 5, earlyFrame.height / 5)).isNotEqualTo(pendingPixel)
-            screenshot("revealing-early")
             compose.mainClock.advanceTimeBy(240)
             compose.runOnIdle { assertThat(finished).isTrue() }
             assertThat(compose.onNodeWithTag("slot-new-1").fetchSemanticsNode().boundsInRoot).isEqualTo(pendingBounds)
-            screenshot("revealed")
             val lowerBounds = compose.onNodeWithTag("slot-old-c-1").fetchSemanticsNode().boundsInRoot
             compose.onNodeWithTag("slot-old-c-1").performClick()
             compose.mainClock.advanceTimeBy(160)
@@ -281,13 +278,11 @@ class GalleryMotionTest {
             // Only the selected picture participates, even though the pager preloads its neighbours.
             compose.onAllNodesWithTag("shared-image:home:old-b", useUnmergedTree = true).assertCountEquals(0)
             compose.onAllNodesWithTag("shared-image:home:deep-0", useUnmergedTree = true).assertCountEquals(0)
-            screenshot("expanding")
             compose.mainClock.advanceTimeBy(400)
             compose.onNodeWithText("返回").performClick()
             compose.mainClock.advanceTimeBy(160)
             assertThat(motion.currentImageId).isEqualTo("old-c")
             compose.onAllNodesWithTag("shared-image:home:old-b", useUnmergedTree = true).assertCountEquals(0)
-            screenshot("return-lower-row")
             // The moving sheet must not paint through the navigation bar while both are fading.
             val bar = compose.onNodeWithTag("bottom-navigation", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
             val frame = compose.onRoot().captureToImage().asAndroidBitmap()
@@ -336,7 +331,6 @@ class GalleryMotionTest {
             compose.runOnUiThread { jobs = jobs.map { it.copy(imageCount = 0) } }
             compose.mainClock.advanceTimeBy(400)
             compose.onNodeWithTag("slot-new-1").assertDoesNotExist()
-            screenshot("cleaned")
             // An uncertain result ends the indicator without a success check or a retry action.
             compose.runOnUiThread { jobs = jobs + GenerationSummary(job.copy(id = "failed", createdAt = now + 1000), 0) }
             compose.mainClock.advanceTimeBy(400)
@@ -345,14 +339,12 @@ class GalleryMotionTest {
             compose.mainClock.advanceTimeBy(400)
             compose.onNodeWithText("结果待确认").assertExists()
             compose.onAllNodesWithContentDescription("生成中").assertCountEquals(0)
-            screenshot("uncertain")
             // The lab uses the same reveal mechanism. Keep its planned bounds across decoding,
             // terminate uncertain results, and do not replay the reveal for historical cards.
             compose.runOnUiThread { showLab = true }
             compose.mainClock.advanceTimeBy(1000)
             compose.onNodeWithContentDescription("生成中").assertExists()
             val labBounds = compose.onNodeWithTag("lab-image").fetchSemanticsNode().boundsInRoot
-            screenshot("lab-pending")
             compose.runOnUiThread { labStatus = "SUCCEEDED"; labImage = image("lab-result", now) }
             compose.waitUntil(5000) {
                 compose.mainClock.advanceTimeBy(100)
@@ -362,7 +354,6 @@ class GalleryMotionTest {
             assertThat(compose.onNodeWithTag("lab-image").fetchSemanticsNode().boundsInRoot).isEqualTo(labBounds)
             compose.onNodeWithContentDescription("第 1 张").performClick()
             assertThat(labOpened).isTrue()
-            screenshot("lab-revealed")
             compose.runOnUiThread { labId = "lab-uncertain"; labImage = null; labStatus = "RUNNING" }
             compose.mainClock.advanceTimeBy(300)
             compose.onNodeWithContentDescription("生成中").assertExists()
@@ -396,16 +387,7 @@ class GalleryMotionTest {
                     assertThat(screenBounds("gallery-model-anchor")).isEqualTo(anchor)
                     assertThat(screenBounds("gallery-mode-anchor")).isEqualTo(modeAnchor)
                     assertThat(screenBounds("gallery-model-menu")).isEqualTo(menu)
-                    if (filter.modelApiIds == setOf(sunburst)) {
-                        compose.mainClock.advanceTimeBy(400)
-                        compose.waitForIdle()
-                        android.os.SystemClock.sleep(150)
-                        val command = "screencap -p /data/local/tmp/pocketnai-filter-${if (fontScale == 1f) "normal" else "large"}.png"
-                        android.os.ParcelFileDescriptor.AutoCloseInputStream(
-                            InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)).use { it.readBytes() }
-                    }
                 }
-                println("FILTER_STABLE textScale=$fontScale dialog=$dialog anchor=$anchor menu=$menu")
                 compose.onAllNodesWithText("全部模型").onLast().performClick()
                 compose.mainClock.advanceTimeBy(300)
                 compose.runOnUiThread { showFilters = false }
@@ -430,23 +412,12 @@ class GalleryMotionTest {
                 android.os.SystemClock.sleep(80)
                 val color = centerColor("gif-playing")
                 if (color == android.graphics.Color.RED || color == android.graphics.Color.BLUE) {
-                    if (colors.add(color)) screenshot("gif-frame-${colors.size}")
+                    colors.add(color)
                 }
                 assertThat(centerColor("gif-gallery")).isEqualTo(android.graphics.Color.RED)
                 assertThat(centerColor("gif-masked")).isEqualTo(maskedColor)
             }
             assertThat(colors).containsExactly(android.graphics.Color.RED, android.graphics.Color.BLUE)
         } finally { dir.deleteRecursively() }
-    }
-
-    private fun screenshot(name: String) {
-        compose.waitForIdle()
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        instrumentation.waitForIdleSync()
-        android.os.SystemClock.sleep(100) // SurfaceFlinger must present the manually advanced frame.
-        val output = File(instrumentation.targetContext.cacheDir, "motion-$name.png")
-        instrumentation.uiAutomation.takeScreenshot()?.let { bitmap ->
-            output.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
-        }
     }
 }

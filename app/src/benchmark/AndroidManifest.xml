@@ -10,6 +10,5 @@
             </intent-filter>
         </activity>
         <profileable android:shell="true" />
-        <activity android:name="net.pocketnai.benchmark.CreationWorkflowPreviewActivity" android:exported="true" />
     </application>
 </manifest>
