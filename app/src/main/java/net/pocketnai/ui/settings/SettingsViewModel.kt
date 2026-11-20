@@ -84,6 +84,7 @@ class SettingsViewModel(
     val streamingPreviewEnabled: StateFlow<Boolean> = settingsStore.streamingPreviewEnabled
 
     val themeMode: StateFlow<ThemeMode> = settingsStore.themeMode
+    val themeAccent: StateFlow<net.pocketnai.domain.model.ThemeAccent> = settingsStore.themeAccent
 
     /**
      * 有效订阅状态：只读取服务器权益。
@@ -109,6 +110,10 @@ class SettingsViewModel(
 
     fun setThemeMode(mode: ThemeMode) {
         settingsStore.setThemeMode(mode)
+    }
+
+    fun setThemeAccent(accent: net.pocketnai.domain.model.ThemeAccent) {
+        settingsStore.setThemeAccent(accent)
     }
 
     val connected: StateFlow<Boolean> = sessionState.connected

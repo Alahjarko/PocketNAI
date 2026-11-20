@@ -1,24 +1,30 @@
 package net.pocketnai.ui.common
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.style.TextOverflow
+import net.pocketnai.ui.motion.pressFeedback
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +57,8 @@ fun <T> DropdownSelector(
     enabled: Boolean = true,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
 
     Column(modifier = modifier) {
         if (label != null) {
@@ -58,20 +66,37 @@ fun <T> DropdownSelector(
                 text = label,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 2.dp, bottom = 4.dp),
             )
         }
         Box {
-            OutlinedButton(
-                onClick = { expanded = true },
+            FilledTonalButton(
+                onClick = {
+                    haptics.tick()
+                    expanded = true
+                },
                 enabled = enabled,
-                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ),
+                contentPadding = PaddingValues(start = 14.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
+                interactionSource = interactionSource,
+                modifier = Modifier.fillMaxWidth().pressFeedback(interactionSource, enabled),
             ) {
                 Text(
                     text = selectedText,
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                Icon(
+                    Icons.Default.ArrowDropDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             DropdownMenu(
                 expanded = expanded,
@@ -81,6 +106,7 @@ fun <T> DropdownSelector(
                     DropdownMenuItem(
                         text = { Text(optionLabel(option)) },
                         onClick = {
+                            haptics.tick()
                             expanded = false
                             onSelect(option)
                         },

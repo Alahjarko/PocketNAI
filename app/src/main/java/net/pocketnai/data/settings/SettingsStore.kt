@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import net.pocketnai.domain.billing.SubscriptionOverride
+import net.pocketnai.domain.model.ThemeAccent
 import net.pocketnai.domain.model.ThemeMode
 
 /**
@@ -85,6 +86,18 @@ class SettingsStore(context: Context) {
         _themeMode.value = mode
     }
 
+    private val _themeAccent = MutableStateFlow(
+        ThemeAccent.fromNameOrDefault(prefs.getString(KEY_THEME_ACCENT, null)),
+    )
+
+    /** 主题配色，默认跟随系统壁纸动态取色（Android 12+）。 */
+    val themeAccent: StateFlow<ThemeAccent> = _themeAccent.asStateFlow()
+
+    fun setThemeAccent(accent: ThemeAccent) {
+        prefs.edit().putString(KEY_THEME_ACCENT, accent.name).apply()
+        _themeAccent.value = accent
+    }
+
     // 2026-11-02：会员等级统一读取服务器，旧的手动等级不能继续影响报价。
     init { prefs.edit().remove(KEY_SUBSCRIPTION_OVERRIDE).apply() }
     private val _subscriptionOverride = MutableStateFlow(SubscriptionOverride.AUTO)
@@ -142,6 +155,7 @@ class SettingsStore(context: Context) {
         const val KEY_STREAMING_ENABLED = "streaming_preview_enabled"
         const val KEY_STREAMING_FAILURES = "streaming_consecutive_failures"
         const val KEY_THEME_MODE = "theme_mode"
+        const val KEY_THEME_ACCENT = "theme_accent"
         const val KEY_SUBSCRIPTION_OVERRIDE = "subscription_override"
         const val KEY_UPDATE_DISMISSED = "update_dismissed_version_code"
 

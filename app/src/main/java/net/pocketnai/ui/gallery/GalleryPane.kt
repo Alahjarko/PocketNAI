@@ -661,6 +661,7 @@ internal fun GalleryFilterDialog(
     AlertDialog(
         modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth(0.9f).testTag("gallery-filter-dialog"),
         properties = DialogProperties(usePlatformDefaultWidth = false),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.gallery_filter_title)) },
         text = {
@@ -680,6 +681,12 @@ internal fun GalleryFilterDialog(
                         onClick = { onFavoritesOnlyChange(!filter.favoritesOnly) },
                         label = { Text(stringResource(R.string.gallery_filter_favorites)) },
                         leadingIcon = { Icon(Icons.Default.Favorite, null, Modifier.size(FilterChipDefaults.IconSize)) },
+                        shape = RoundedCornerShape(14.dp),
+                        border = null,
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        ),
                     )
                     TextButton(onClick = onEnterSelectionMode) {
                         Icon(Icons.Default.Checklist, contentDescription = null)
@@ -702,8 +709,18 @@ internal fun GalleryModelFilterChip(modelApiIds: Set<String>, onSelect: (Set<Str
     var expanded by remember { mutableStateOf(false) }
     val all = stringResource(R.string.gallery_filter_all_models)
     Box(Modifier.fillMaxWidth().testTag("gallery-model-anchor")) {
-        FilterChip(selected = modelApiIds.isNotEmpty(), onClick = { expanded = true }, modifier = Modifier.fillMaxWidth(),
-            label = { FilterValue(when (modelApiIds.size) { 0 -> all; 1 -> GalleryModels.labelOf(modelApiIds.single()); else -> "${modelApiIds.size} 个模型" }) })
+        FilterChip(
+            selected = modelApiIds.isNotEmpty(),
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            border = null,
+            colors = FilterChipDefaults.filterChipColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+            ),
+            label = { FilterValue(when (modelApiIds.size) { 0 -> all; 1 -> GalleryModels.labelOf(modelApiIds.single()); else -> "${modelApiIds.size} 个模型" }) },
+        )
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.testTag("gallery-model-menu")) {
             GalleryModelOptions(modelApiIds, onSelect, onDone = { expanded = false })
         }
@@ -748,6 +765,12 @@ private fun <T> FilterMenuChip(
             modifier = Modifier.fillMaxWidth(),
             selected = selectedLabel != null,
             onClick = { expanded = true },
+            shape = RoundedCornerShape(14.dp),
+            border = null,
+            colors = FilterChipDefaults.filterChipColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+            ),
             label = { FilterValue(selectedLabel ?: allLabel) },
         )
         DropdownMenu(

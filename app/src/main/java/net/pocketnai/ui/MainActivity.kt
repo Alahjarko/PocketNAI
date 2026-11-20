@@ -44,7 +44,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val themeMode by container.settingsStore.themeMode.collectAsStateWithLifecycle()
-            PocketNaiTheme(themeMode = themeMode) {
+            val themeAccent by container.settingsStore.themeAccent.collectAsStateWithLifecycle()
+            PocketNaiTheme(themeMode = themeMode, themeAccent = themeAccent) {
                 CompositionLocalProvider(LocalAppContainer provides container) {
                     PocketNaiApp(sharedImage, onSharedImageHandled = { sharedImage = null },
                         openLocalMcp = openLocalMcp, onLocalMcpHandled = { openLocalMcp = false })

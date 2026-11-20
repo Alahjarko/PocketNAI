@@ -2,6 +2,7 @@ package net.pocketnai.ui.common
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -109,25 +110,35 @@ fun WeightHighlightedTextField(
         }
 
         val targetBorderColor = when {
-            !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-            focused -> MaterialTheme.colorScheme.primary
-            else -> MaterialTheme.colorScheme.outline
+            !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+            focused -> MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+            else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
         }
         val borderColor by animateColorAsState(
             targetValue = targetBorderColor,
             animationSpec = tween(140),
             label = "prompt-border-color",
         )
+        val containerColor by animateColorAsState(
+            targetValue = when {
+                !enabled -> MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.6f)
+                focused -> MaterialTheme.colorScheme.surfaceContainerLowest
+                else -> MaterialTheme.colorScheme.surfaceContainerLow
+            },
+            animationSpec = tween(140),
+            label = "prompt-bg-color",
+        )
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(containerColor, TextFieldShape)
                 .border(
-                    width = if (focused) 2.dp else 1.dp,
+                    width = if (focused) 1.5.dp else 1.dp,
                     color = borderColor,
                     shape = TextFieldShape,
                 )
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -266,8 +277,8 @@ private fun DrawScope.drawWeightHighlights(
     }
 }
 
-/** 与 Material 输入框一致的圆角。 */
-private val TextFieldShape = RoundedCornerShape(4.dp)
+/** 与现代 Material 3 柔和卡片一致的大圆角。 */
+private val TextFieldShape = RoundedCornerShape(16.dp)
 
 /** 左右比文字稍微外扩一点，才像"圈住"而不是"贴着"。 */
 private val HIGHLIGHT_HORIZONTAL_PADDING = 3.dp

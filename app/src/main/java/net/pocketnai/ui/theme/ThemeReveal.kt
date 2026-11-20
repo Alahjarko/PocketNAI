@@ -50,7 +50,7 @@ internal class ThemeRevealState(private val scope: CoroutineScope) {
     private class Overlay(val image: ImageBitmap, val origin: Offset, val size: IntSize,
         val oldStatus: Boolean, val oldNavigation: Boolean)
 
-    private val origins = mutableMapOf<ThemeMode, Offset>()
+    private val origins = mutableMapOf<Any, Offset>()
     private var capture by mutableStateOf<Capture?>(null)
     private var overlay by mutableStateOf<Overlay?>(null)
     private val progress = Animatable(0f)
@@ -61,18 +61,19 @@ internal class ThemeRevealState(private val scope: CoroutineScope) {
     private var rootOffset = Offset.Zero
     private var dark = false
     private var systemDark = false
+    private var paletteId: Any = false
     private var lightBars = true
     private var statusLight = true
     private var navigationLight = true
-    private var targetDark: Boolean? = null
+    private var targetPalette: Any? = null
     private var paletteReady: CompletableDeferred<Unit>? = null
     private var clearLayer = false
     var applyBars: ((Boolean, Boolean) -> Unit)? = null
     var statusProbe = Offset.Zero
     var navigationProbe = Offset.Zero
 
-    fun register(mode: ThemeMode, centerInRoot: Offset) { origins[mode] = centerInRoot }
-    fun center(mode: ThemeMode): Offset? = origins[mode]?.minus(rootOffset)
+    fun register(key: Any, centerInRoot: Offset) { origins[key] = centerInRoot }
+    fun center(key: Any): Offset? = origins[key]?.minus(rootOffset)
     fun hasPendingChange(): Boolean = capture != null
 
     fun viewport(size: IntSize, offset: Offset) {
@@ -81,12 +82,13 @@ internal class ThemeRevealState(private val scope: CoroutineScope) {
         rootOffset = offset
     }
 
-    fun palette(dark: Boolean, systemDark: Boolean, lightBars: Boolean) {
-        if (targetDark != null && paletteReady?.isCompleted == true && targetDark != dark) cancelVisual()
+    fun palette(dark: Boolean, systemDark: Boolean, lightBars: Boolean, id: Any = dark) {
+        if (targetPalette != null && paletteReady?.isCompleted == true && targetPalette != id) cancelVisual()
         this.dark = dark
         this.systemDark = systemDark
+        this.paletteId = id
         this.lightBars = lightBars
-        if (targetDark == dark) paletteReady?.complete(Unit)
+        if (targetPalette == id) paletteReady?.complete(Unit)
         if (overlay == null) setBars(lightBars, lightBars)
     }
 
@@ -96,13 +98,19 @@ internal class ThemeRevealState(private val scope: CoroutineScope) {
             ThemeMode.LIGHT -> false
             ThemeMode.DARK -> true
         }
-        if (nextDark == dark) {
+        val currentAccent = (paletteId as? Pair<*, *>)?.second
+        val nextId: Any = if (currentAccent != null) nextDark to currentAccent else nextDark
+        selectPalette(mode, nextId, commit)
+    }
+
+    fun selectPalette(originKey: Any, nextPaletteId: Any, commit: () -> Unit) {
+        if (nextPaletteId == paletteId) {
             // During capture a reversal supersedes the uncommitted preference too.
             if (capture != null) cancelVisual(commitPending = false)
             commit()
             return
         }
-        val center = center(mode)
+        val center = center(originKey)
         if (center == null || viewport == IntSize.Zero ||
             scope.coroutineContext[MotionDurationScale]?.scaleFactor == 0f) {
             cancelVisual(commitPending = false)
@@ -126,7 +134,7 @@ internal class ThemeRevealState(private val scope: CoroutineScope) {
                 progress.snapTo(0f)
                 capture = null
                 clearLayer = true
-                targetDark = nextDark
+                targetPalette = nextPaletteId
                 val ready = CompletableDeferred<Unit>()
                 paletteReady = ready
                 request.commitOnce()
@@ -163,7 +171,7 @@ internal class ThemeRevealState(private val scope: CoroutineScope) {
         job = null
         capture = null
         overlay = null
-        targetDark = null
+        targetPalette = null
         paletteReady = null
         clearLayer = true
         setBars(lightBars, lightBars)

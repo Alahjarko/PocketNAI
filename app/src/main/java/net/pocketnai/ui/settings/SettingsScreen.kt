@@ -85,6 +85,7 @@ fun SettingsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val addAccountUi by viewModel.addAccountUi.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val themeAccent by viewModel.themeAccent.collectAsStateWithLifecycle()
     val connected by viewModel.connected.collectAsStateWithLifecycle()
     val subscriptionStatus by viewModel.subscriptionStatus.collectAsStateWithLifecycle()
 
@@ -146,7 +147,12 @@ fun SettingsScreen(
         )
 
         SettingsSection("外观与显示")
-        ColorModeCard(themeMode, viewModel::setThemeMode)
+        ColorModeCard(
+            mode = themeMode,
+            onSelect = viewModel::setThemeMode,
+            accent = themeAccent,
+            onSelectAccent = viewModel::setThemeAccent,
+        )
         val sfwMode by container.settingsStore.sfwMode.collectAsStateWithLifecycle()
         SfwModeCard(sfwMode, container.settingsStore::setSfwMode)
 

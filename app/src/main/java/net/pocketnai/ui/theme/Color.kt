@@ -1,93 +1,376 @@
 package net.pocketnai.ui.theme
 
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
+import net.pocketnai.domain.model.ThemeAccent
 
 /**
- * 一套低饱和的靛蓝 / 紫罗兰配色。
+ * 克制、低饱和的 Material 3 完整色阶预设（含五档 `surfaceContainer*`）。
  *
- * 生成类应用的界面会长时间被图片占据，因此界面颜色刻意偏中性、对比度克制，
- * 让用户的作品而不是应用本身的主题成为视觉主体。
+ * 生成类应用的界面会长时间被图片占据，因此各套主题色刻意控制彩度，
+ * 通过柔和的 tonal 表面层次拉开组件层级，让用户作品而不是应用皮肤成为视觉主体。
  */
 
-private val IndigoPrimary = Color(0xFF4A4E8F)
-private val IndigoOnPrimary = Color(0xFFFFFFFF)
-private val IndigoContainer = Color(0xFFE0E0FF)
-private val IndigoOnContainer = Color(0xFF040A4C)
-
-private val VioletSecondary = Color(0xFF5C5D72)
-private val VioletContainer = Color(0xFFE1E0F9)
-private val VioletOnContainer = Color(0xFF191A2C)
-
-private val NeutralSurfaceLight = Color(0xFFFBF8FF)
-private val NeutralSurfaceVariantLight = Color(0xFFE3E1EC)
-private val NeutralOnSurfaceLight = Color(0xFF1B1B21)
-private val NeutralOnSurfaceVariantLight = Color(0xFF46464F)
-private val OutlineLight = Color(0xFF777680)
-
-private val IndigoPrimaryDark = Color(0xFFBFC2FF)
-private val IndigoOnPrimaryDark = Color(0xFF1B2064)
-private val IndigoContainerDark = Color(0xFF32367A)
-private val IndigoOnContainerDark = Color(0xFFE0E0FF)
-
-private val VioletPrimaryDark = Color(0xFFC5C4DD)
-private val VioletContainerDark = Color(0xFF444559)
-
-private val NeutralSurfaceDark = Color(0xFF131318)
-private val NeutralSurfaceVariantDark = Color(0xFF46464F)
-private val NeutralOnSurfaceDark = Color(0xFFE4E1E9)
-private val NeutralOnSurfaceVariantDark = Color(0xFFC7C5D0)
-private val OutlineDark = Color(0xFF918F9A)
-
-/**
- * 提示词权重高亮的底纹色（技术决策记录第 22 节）。
- *
- * 用半透明而不是实色：底纹垫在提示词文字**后面**，实色会把字盖掉。
- * 浅色主题用深一点的绿/红，深色主题用浅一点的 —— 两套的明度方向相反，
- * 但都是"底色与文字拉开、文字仍清晰"这一条。
- */
 val WeightWeakerHighlightLight = Color(0x332E7D32)
 val WeightStrongerHighlightLight = Color(0x33C62828)
 val WeightWeakerHighlightDark = Color(0x3D66BB6A)
 val WeightStrongerHighlightDark = Color(0x3DE57373)
 
-val PocketNaiLightColors = lightColorScheme(
-    primary = IndigoPrimary,
-    onPrimary = IndigoOnPrimary,
-    primaryContainer = IndigoContainer,
-    onPrimaryContainer = IndigoOnContainer,
-    secondary = VioletSecondary,
-    secondaryContainer = VioletContainer,
-    onSecondaryContainer = VioletOnContainer,
-    background = NeutralSurfaceLight,
-    onBackground = NeutralOnSurfaceLight,
-    surface = NeutralSurfaceLight,
-    onSurface = NeutralOnSurfaceLight,
-    surfaceVariant = NeutralSurfaceVariantLight,
-    onSurfaceVariant = NeutralOnSurfaceVariantLight,
-    outline = OutlineLight,
-    error = Color(0xFFBA1A1A),
-    errorContainer = Color(0xFFFFDAD6),
-    onErrorContainer = Color(0xFF410002),
+private data class AccentTokens(
+    val light: ColorScheme,
+    val dark: ColorScheme,
+    val swatchPrimary: Color,
+    val swatchContainer: Color,
 )
 
-val PocketNaiDarkColors = darkColorScheme(
-    primary = IndigoPrimaryDark,
-    onPrimary = IndigoOnPrimaryDark,
-    primaryContainer = IndigoContainerDark,
-    onPrimaryContainer = IndigoOnContainerDark,
-    secondary = VioletPrimaryDark,
-    secondaryContainer = VioletContainerDark,
-    onSecondaryContainer = Color(0xFFE1E0F9),
-    background = NeutralSurfaceDark,
-    onBackground = NeutralOnSurfaceDark,
-    surface = NeutralSurfaceDark,
-    onSurface = NeutralOnSurfaceDark,
-    surfaceVariant = NeutralSurfaceVariantDark,
-    onSurfaceVariant = NeutralOnSurfaceVariantDark,
-    outline = OutlineDark,
-    error = Color(0xFFFFB4AB),
-    errorContainer = Color(0xFF93000A),
-    onErrorContainer = Color(0xFFFFDAD6),
+private fun buildAccentPalette(
+    swatchPrimary: Color,
+    swatchContainer: Color,
+    lightPrimary: Color,
+    lightOnPrimary: Color,
+    lightPrimaryContainer: Color,
+    lightOnPrimaryContainer: Color,
+    lightSecondary: Color,
+    lightSecondaryContainer: Color,
+    lightOnSecondaryContainer: Color,
+    lightBg: Color,
+    lightLowest: Color,
+    lightLow: Color,
+    lightContainer: Color,
+    lightHigh: Color,
+    lightHighest: Color,
+    lightOnSurface: Color,
+    lightOnSurfaceVariant: Color,
+    lightOutline: Color,
+    lightOutlineVariant: Color,
+    darkPrimary: Color,
+    darkOnPrimary: Color,
+    darkPrimaryContainer: Color,
+    darkOnPrimaryContainer: Color,
+    darkSecondary: Color,
+    darkSecondaryContainer: Color,
+    darkOnSecondaryContainer: Color,
+    darkBg: Color,
+    darkLowest: Color,
+    darkLow: Color,
+    darkContainer: Color,
+    darkHigh: Color,
+    darkHighest: Color,
+    darkOnSurface: Color,
+    darkOnSurfaceVariant: Color,
+    darkOutline: Color,
+    darkOutlineVariant: Color,
+): AccentTokens = AccentTokens(
+    swatchPrimary = swatchPrimary,
+    swatchContainer = swatchContainer,
+    light = lightColorScheme(
+        primary = lightPrimary,
+        onPrimary = lightOnPrimary,
+        primaryContainer = lightPrimaryContainer,
+        onPrimaryContainer = lightOnPrimaryContainer,
+        secondary = lightSecondary,
+        onSecondary = Color.White,
+        secondaryContainer = lightSecondaryContainer,
+        onSecondaryContainer = lightOnSecondaryContainer,
+        background = lightBg,
+        onBackground = lightOnSurface,
+        surface = lightBg,
+        onSurface = lightOnSurface,
+        surfaceVariant = lightHighest,
+        onSurfaceVariant = lightOnSurfaceVariant,
+        surfaceContainerLowest = lightLowest,
+        surfaceContainerLow = lightLow,
+        surfaceContainer = lightContainer,
+        surfaceContainerHigh = lightHigh,
+        surfaceContainerHighest = lightHighest,
+        outline = lightOutline,
+        outlineVariant = lightOutlineVariant,
+        error = Color(0xFFBA1A1A),
+        errorContainer = Color(0xFFFFDAD6),
+        onErrorContainer = Color(0xFF410002),
+    ),
+    dark = darkColorScheme(
+        primary = darkPrimary,
+        onPrimary = darkOnPrimary,
+        primaryContainer = darkPrimaryContainer,
+        onPrimaryContainer = darkOnPrimaryContainer,
+        secondary = darkSecondary,
+        onSecondary = Color(0xFF1F1F24),
+        secondaryContainer = darkSecondaryContainer,
+        onSecondaryContainer = darkOnSecondaryContainer,
+        background = darkBg,
+        onBackground = darkOnSurface,
+        surface = darkBg,
+        onSurface = darkOnSurface,
+        surfaceVariant = darkHighest,
+        onSurfaceVariant = darkOnSurfaceVariant,
+        surfaceContainerLowest = darkLowest,
+        surfaceContainerLow = darkLow,
+        surfaceContainer = darkContainer,
+        surfaceContainerHigh = darkHigh,
+        surfaceContainerHighest = darkHighest,
+        outline = darkOutline,
+        outlineVariant = darkOutlineVariant,
+        error = Color(0xFFFFB4AB),
+        errorContainer = Color(0xFF93000A),
+        onErrorContainer = Color(0xFFFFDAD6),
+    ),
 )
+
+private val IndigoTokens = buildAccentPalette(
+    swatchPrimary = Color(0xFF4A4E8F),
+    swatchContainer = Color(0xFFDDE0FF),
+    lightPrimary = Color(0xFF4A4E8F),
+    lightOnPrimary = Color(0xFFFFFFFF),
+    lightPrimaryContainer = Color(0xFFE0E0FF),
+    lightOnPrimaryContainer = Color(0xFF040A4C),
+    lightSecondary = Color(0xFF5C5D72),
+    lightSecondaryContainer = Color(0xFFE1E0F9),
+    lightOnSecondaryContainer = Color(0xFF191A2C),
+    lightBg = Color(0xFFFBF8FF),
+    lightLowest = Color(0xFFFFFFFF),
+    lightLow = Color(0xFFF5F2FA),
+    lightContainer = Color(0xFFEFECF4),
+    lightHigh = Color(0xFFE9E6EF),
+    lightHighest = Color(0xFFE3E1EC),
+    lightOnSurface = Color(0xFF1B1B21),
+    lightOnSurfaceVariant = Color(0xFF46464F),
+    lightOutline = Color(0xFF777680),
+    lightOutlineVariant = Color(0xFFC7C5D0),
+    darkPrimary = Color(0xFFBFC2FF),
+    darkOnPrimary = Color(0xFF1B2064),
+    darkPrimaryContainer = Color(0xFF32367A),
+    darkOnPrimaryContainer = Color(0xFFE0E0FF),
+    darkSecondary = Color(0xFFC5C4DD),
+    darkSecondaryContainer = Color(0xFF444559),
+    darkOnSecondaryContainer = Color(0xFFE1E0F9),
+    darkBg = Color(0xFF131318),
+    darkLowest = Color(0xFF0E0E13),
+    darkLow = Color(0xFF1B1B21),
+    darkContainer = Color(0xFF1F1F25),
+    darkHigh = Color(0xFF2A2930),
+    darkHighest = Color(0xFF35343B),
+    darkOnSurface = Color(0xFFE4E1E9),
+    darkOnSurfaceVariant = Color(0xFFC7C5D0),
+    darkOutline = Color(0xFF918F9A),
+    darkOutlineVariant = Color(0xFF46464F),
+)
+
+private val RoseTokens = buildAccentPalette(
+    swatchPrimary = Color(0xFF9A4461),
+    swatchContainer = Color(0xFFFFD9E3),
+    lightPrimary = Color(0xFF8F435D),
+    lightOnPrimary = Color(0xFFFFFFFF),
+    lightPrimaryContainer = Color(0xFFFFD9E3),
+    lightOnPrimaryContainer = Color(0xFF3B071B),
+    lightSecondary = Color(0xFF74565F),
+    lightSecondaryContainer = Color(0xFFFFD9E3),
+    lightOnSecondaryContainer = Color(0xFF2B151C),
+    lightBg = Color(0xFFFFF8F8),
+    lightLowest = Color(0xFFFFFFFF),
+    lightLow = Color(0xFFFDF0F2),
+    lightContainer = Color(0xFFF7EAEC),
+    lightHigh = Color(0xFFF1E4E7),
+    lightHighest = Color(0xFFEBDDE0),
+    lightOnSurface = Color(0xFF22191C),
+    lightOnSurfaceVariant = Color(0xFF514347),
+    lightOutline = Color(0xFF837377),
+    lightOutlineVariant = Color(0xFFD5C2C6),
+    darkPrimary = Color(0xFFFFB0C9),
+    darkOnPrimary = Color(0xFF561830),
+    darkPrimaryContainer = Color(0xFF722C46),
+    darkOnPrimaryContainer = Color(0xFFFFD9E3),
+    darkSecondary = Color(0xFFE3BDC7),
+    darkSecondaryContainer = Color(0xFF5A3F48),
+    darkOnSecondaryContainer = Color(0xFFFFD9E3),
+    darkBg = Color(0xFF191114),
+    darkLowest = Color(0xFF140C0E),
+    darkLow = Color(0xFF22191C),
+    darkContainer = Color(0xFF261D20),
+    darkHigh = Color(0xFF31282A),
+    darkHighest = Color(0xFF3C3235),
+    darkOnSurface = Color(0xFFEFDFE2),
+    darkOnSurfaceVariant = Color(0xFFD5C2C6),
+    darkOutline = Color(0xFF9E8C90),
+    darkOutlineVariant = Color(0xFF514347),
+)
+
+private val SageTokens = buildAccentPalette(
+    swatchPrimary = Color(0xFF3E684E),
+    swatchContainer = Color(0xFFC8EBD1),
+    lightPrimary = Color(0xFF3B664C),
+    lightOnPrimary = Color(0xFFFFFFFF),
+    lightPrimaryContainer = Color(0xFFC2ECD0),
+    lightOnPrimaryContainer = Color(0xFF00210F),
+    lightSecondary = Color(0xFF506354),
+    lightSecondaryContainer = Color(0xFFD2E8D6),
+    lightOnSecondaryContainer = Color(0xFF0E1F14),
+    lightBg = Color(0xFFF6FBF6),
+    lightLowest = Color(0xFFFFFFFF),
+    lightLow = Color(0xFFF0F5F0),
+    lightContainer = Color(0xFFEAEFEA),
+    lightHigh = Color(0xFFE4EAE4),
+    lightHighest = Color(0xFFDFE4DF),
+    lightOnSurface = Color(0xFF181D19),
+    lightOnSurfaceVariant = Color(0xFF414942),
+    lightOutline = Color(0xFF717972),
+    lightOutlineVariant = Color(0xFFC0C9C0),
+    darkPrimary = Color(0xFFA6D0B4),
+    darkOnPrimary = Color(0xFF0E3822),
+    darkPrimaryContainer = Color(0xFF244F36),
+    darkOnPrimaryContainer = Color(0xFFC2ECD0),
+    darkSecondary = Color(0xFFB6CCBA),
+    darkSecondaryContainer = Color(0xFF394B3E),
+    darkOnSecondaryContainer = Color(0xFFD2E8D6),
+    darkBg = Color(0xFF101511),
+    darkLowest = Color(0xFF0B0F0C),
+    darkLow = Color(0xFF181D19),
+    darkContainer = Color(0xFF1C211D),
+    darkHigh = Color(0xFF262B27),
+    darkHighest = Color(0xFF313632),
+    darkOnSurface = Color(0xFFE0E4DF),
+    darkOnSurfaceVariant = Color(0xFFC0C9C0),
+    darkOutline = Color(0xFF8A938B),
+    darkOutlineVariant = Color(0xFF414942),
+)
+
+private val AmberTokens = buildAccentPalette(
+    swatchPrimary = Color(0xFF8C5B27),
+    swatchContainer = Color(0xFFFFDFC0),
+    lightPrimary = Color(0xFF855422),
+    lightOnPrimary = Color(0xFFFFFFFF),
+    lightPrimaryContainer = Color(0xFFFFDCBE),
+    lightOnPrimaryContainer = Color(0xFF2D1600),
+    lightSecondary = Color(0xFF725A43),
+    lightSecondaryContainer = Color(0xFFFEDDC0),
+    lightOnSecondaryContainer = Color(0xFF281806),
+    lightBg = Color(0xFFFFF8F4),
+    lightLowest = Color(0xFFFFFFFF),
+    lightLow = Color(0xFFFBF2EA),
+    lightContainer = Color(0xFFF5ECE4),
+    lightHigh = Color(0xFFEFE6DF),
+    lightHighest = Color(0xFFE9E0D9),
+    lightOnSurface = Color(0xFF211A14),
+    lightOnSurfaceVariant = Color(0xFF50453B),
+    lightOutline = Color(0xFF827569),
+    lightOutlineVariant = Color(0xFFD4C4B6),
+    darkPrimary = Color(0xFFFCB97F),
+    darkOnPrimary = Color(0xFF4B2800),
+    darkPrimaryContainer = Color(0xFF693D0C),
+    darkOnPrimaryContainer = Color(0xFFFFDCBE),
+    darkSecondary = Color(0xFFE0C1A5),
+    darkSecondaryContainer = Color(0xFF58432D),
+    darkOnSecondaryContainer = Color(0xFFFEDDC0),
+    darkBg = Color(0xFF18120D),
+    darkLowest = Color(0xFF130D08),
+    darkLow = Color(0xFF211A14),
+    darkContainer = Color(0xFF251E18),
+    darkHigh = Color(0xFF302922),
+    darkHighest = Color(0xFF3B332C),
+    darkOnSurface = Color(0xFFEEE0D5),
+    darkOnSurfaceVariant = Color(0xFFD4C4B6),
+    darkOutline = Color(0xFF9D8E82),
+    darkOutlineVariant = Color(0xFF50453B),
+)
+
+private val OceanTokens = buildAccentPalette(
+    swatchPrimary = Color(0xFF2F6383),
+    swatchContainer = Color(0xFFCDE5FF),
+    lightPrimary = Color(0xFF2B6080),
+    lightOnPrimary = Color(0xFFFFFFFF),
+    lightPrimaryContainer = Color(0xFFCBE6FF),
+    lightOnPrimaryContainer = Color(0xFF001E30),
+    lightSecondary = Color(0xFF4F606E),
+    lightSecondaryContainer = Color(0xFFD3E5F5),
+    lightOnSecondaryContainer = Color(0xFF0B1D29),
+    lightBg = Color(0xFFF7FAFE),
+    lightLowest = Color(0xFFFFFFFF),
+    lightLow = Color(0xFFF1F4F9),
+    lightContainer = Color(0xFFEBEFF4),
+    lightHigh = Color(0xFFE5E9EE),
+    lightHighest = Color(0xFFDFE3E9),
+    lightOnSurface = Color(0xFF181C20),
+    lightOnSurfaceVariant = Color(0xFF41474D),
+    lightOutline = Color(0xFF72787E),
+    lightOutlineVariant = Color(0xFFC1C7CE),
+    darkPrimary = Color(0xFF97CCF0),
+    darkOnPrimary = Color(0xFF00344E),
+    darkPrimaryContainer = Color(0xFF0B4967),
+    darkOnPrimaryContainer = Color(0xFFCBE6FF),
+    darkSecondary = Color(0xFFB7C9D9),
+    darkSecondaryContainer = Color(0xFF384956),
+    darkOnSecondaryContainer = Color(0xFFD3E5F5),
+    darkBg = Color(0xFF101417),
+    darkLowest = Color(0xFF0B0F12),
+    darkLow = Color(0xFF181C20),
+    darkContainer = Color(0xFF1C2024),
+    darkHigh = Color(0xFF262A2E),
+    darkHighest = Color(0xFF313539),
+    darkOnSurface = Color(0xFFE0E3E8),
+    darkOnSurfaceVariant = Color(0xFFC1C7CE),
+    darkOutline = Color(0xFF8B9198),
+    darkOutlineVariant = Color(0xFF41474D),
+)
+
+private val GraphiteTokens = buildAccentPalette(
+    swatchPrimary = Color(0xFF4E5157),
+    swatchContainer = Color(0xFFE1E2E8),
+    lightPrimary = Color(0xFF45484F),
+    lightOnPrimary = Color(0xFFFFFFFF),
+    lightPrimaryContainer = Color(0xFFE0E2E8),
+    lightOnPrimaryContainer = Color(0xFF171A1F),
+    lightSecondary = Color(0xFF5D5E63),
+    lightSecondaryContainer = Color(0xFFE3E2E8),
+    lightOnSecondaryContainer = Color(0xFF1A1B1F),
+    lightBg = Color(0xFFFAFAFC),
+    lightLowest = Color(0xFFFFFFFF),
+    lightLow = Color(0xFFF3F3F6),
+    lightContainer = Color(0xFFEDEDEF),
+    lightHigh = Color(0xFFE7E7EA),
+    lightHighest = Color(0xFFE1E1E5),
+    lightOnSurface = Color(0xFF1A1B1E),
+    lightOnSurfaceVariant = Color(0xFF46474C),
+    lightOutline = Color(0xFF76777C),
+    lightOutlineVariant = Color(0xFFC6C6CC),
+    darkPrimary = Color(0xFFC7C8CE),
+    darkOnPrimary = Color(0xFF23252A),
+    darkPrimaryContainer = Color(0xFF3A3C42),
+    darkOnPrimaryContainer = Color(0xFFE3E4EA),
+    darkSecondary = Color(0xFFC5C6CC),
+    darkSecondaryContainer = Color(0xFF44454A),
+    darkOnSecondaryContainer = Color(0xFFE2E2E8),
+    darkBg = Color(0xFF121315),
+    darkLowest = Color(0xFF0D0E10),
+    darkLow = Color(0xFF1A1B1E),
+    darkContainer = Color(0xFF1E1F22),
+    darkHigh = Color(0xFF292A2E),
+    darkHighest = Color(0xFF343539),
+    darkOnSurface = Color(0xFFE3E3E6),
+    darkOnSurfaceVariant = Color(0xFFC6C6CC),
+    darkOutline = Color(0xFF909096),
+    darkOutlineVariant = Color(0xFF46474C),
+)
+
+private fun tokensFor(accent: ThemeAccent): AccentTokens = when (accent) {
+    ThemeAccent.DYNAMIC, ThemeAccent.INDIGO -> IndigoTokens
+    ThemeAccent.ROSE -> RoseTokens
+    ThemeAccent.SAGE -> SageTokens
+    ThemeAccent.AMBER -> AmberTokens
+    ThemeAccent.OCEAN -> OceanTokens
+    ThemeAccent.GRAPHITE -> GraphiteTokens
+}
+
+internal fun staticColorScheme(accent: ThemeAccent, darkTheme: Boolean): ColorScheme {
+    val tokens = tokensFor(accent)
+    return if (darkTheme) tokens.dark else tokens.light
+}
+
+internal fun accentSwatchColors(accent: ThemeAccent): Pair<Color, Color> {
+    val tokens = tokensFor(accent)
+    return tokens.swatchPrimary to tokens.swatchContainer
+}
+
+val PocketNaiLightColors: ColorScheme = IndigoTokens.light
+val PocketNaiDarkColors: ColorScheme = IndigoTokens.dark

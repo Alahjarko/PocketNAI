@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import net.pocketnai.domain.model.ThemeAccent
 import net.pocketnai.domain.model.ThemeMode
 
 /**
@@ -57,6 +58,7 @@ val LocalWeightHighlightColors = compositionLocalOf {
 @Composable
 fun PocketNaiTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
+    themeAccent: ThemeAccent = ThemeAccent.DEFAULT,
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit,
 ) {
@@ -68,14 +70,18 @@ fun PocketNaiTheme(
     }
 
     val context = LocalContext.current
-    val colorScheme = remember(context, darkTheme, dynamicColor) { when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+    val effectiveAccent = if (themeAccent == ThemeAccent.DYNAMIC && (!dynamicColor || Build.VERSION.SDK_INT < Build.VERSION_CODES.S)) {
+        ThemeAccent.INDIGO
+    } else {
+        themeAccent
+    }
+    val colorScheme = remember(context, darkTheme, effectiveAccent) {
+        if (effectiveAccent == ThemeAccent.DYNAMIC && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        } else {
+            staticColorScheme(effectiveAccent, darkTheme)
         }
-
-        darkTheme -> PocketNaiDarkColors
-        else -> PocketNaiLightColors
-    } }
+    }
 
     val weightHighlights = remember(darkTheme) { if (darkTheme) {
         WeightHighlightColors(WeightWeakerHighlightDark, WeightStrongerHighlightDark)
@@ -96,7 +102,7 @@ fun PocketNaiTheme(
     SideEffect {
         reveal.statusProbe = Offset(view.width / 2f, statusInset / 2f)
         reveal.navigationProbe = Offset(view.width / 2f, view.height - navigationInset / 2f)
-        reveal.palette(darkTheme, systemDark, lightBackground)
+        reveal.palette(darkTheme, systemDark, lightBackground, id = darkTheme to effectiveAccent)
     }
     if (!view.isInEditMode && activity != null) DisposableEffect(view, activity, reveal) {
         val controller = WindowCompat.getInsetsController(activity.window, view)

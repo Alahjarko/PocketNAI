@@ -22,6 +22,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,6 +40,7 @@ import net.pocketnai.domain.model.CharacterPosition
 import net.pocketnai.domain.model.CharacterPrompt
 import net.pocketnai.domain.model.ImageSizePreset
 import net.pocketnai.ui.common.WeightHighlightedTextField
+import net.pocketnai.ui.motion.pressFeedback
 
 @Composable
 fun MultiCharacterSection(
@@ -61,19 +63,40 @@ fun MultiCharacterSection(
     var positionsOpen by remember { mutableStateOf(false) }
     Column(modifier.fillMaxWidth().animateContentSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            AssistChip(
+            val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
+            val chipInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            Surface(
                 onClick = {
+                    haptics.tick()
                     if (characters.isEmpty()) { onAddCharacter(); expanded = true }
                     else expanded = !expanded
                 },
-                leadingIcon = { Icon(Icons.Default.Person, null, Modifier.size(FilterChipDefaults.IconSize)) },
-                label = {
-                    Text(if (characters.isEmpty()) "+ 添加独立角色 (0/$maxCharacters)"
-                        else "独立角色 (${characters.size}/$maxCharacters)" + if (expanded) " (收起)" else " (展开)")
-                },
-            )
+                shape = androidx.compose.foundation.shape.CircleShape,
+                color = if (characters.isEmpty()) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = if (characters.isEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSecondaryContainer,
+                interactionSource = chipInteraction,
+                modifier = Modifier.pressFeedback(chipInteraction),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        Icons.Default.Person,
+                        null,
+                        tint = if (characters.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        text = if (characters.isEmpty()) "+ 添加独立角色 (0/$maxCharacters)"
+                        else "独立角色 (${characters.size}/$maxCharacters)" + if (expanded) " (收起)" else " (展开)",
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+            }
             if (expanded && characters.isNotEmpty() && characters.size < maxCharacters) {
-                TextButton(onClick = onAddCharacter) {
+                TextButton(onClick = { haptics.tick(); onAddCharacter() }) {
                     Icon(Icons.Default.Add, null, Modifier.size(16.dp))
                     Text("添加", Modifier.padding(start = 4.dp))
                 }
@@ -81,8 +104,28 @@ fun MultiCharacterSection(
         }
         if (expanded && characters.isNotEmpty()) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = !useCoordinates, onClick = { onCoordinateModeChange(false) }, label = { Text("AI 自动安排") })
-                FilterChip(selected = useCoordinates, onClick = { onCoordinateModeChange(true) }, label = { Text("手动位置") })
+                FilterChip(
+                    selected = !useCoordinates,
+                    onClick = { onCoordinateModeChange(false) },
+                    label = { Text("AI 自动安排") },
+                    shape = androidx.compose.foundation.shape.CircleShape,
+                    border = null,
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    ),
+                )
+                FilterChip(
+                    selected = useCoordinates,
+                    onClick = { onCoordinateModeChange(true) },
+                    label = { Text("手动位置") },
+                    shape = androidx.compose.foundation.shape.CircleShape,
+                    border = null,
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    ),
+                )
             }
             if (useCoordinates) TextButton(onClick = { positionsOpen = true }) { Text("在画布上设置角色位置") }
             characters.forEachIndexed { index, character ->

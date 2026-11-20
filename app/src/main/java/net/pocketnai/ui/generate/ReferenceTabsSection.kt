@@ -2,67 +2,55 @@ package net.pocketnai.ui.generate
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import net.pocketnai.domain.model.ReferenceRole
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import net.pocketnai.R
+import net.pocketnai.domain.model.ReferenceRole
 import net.pocketnai.ui.common.SectionHeader
+import net.pocketnai.ui.motion.rememberPocketHaptics
 
 /**
- * 参考图区：图生图 / Precise Reference / Vibe Transfer 三个面板合并成一张卡片，
- * 顶部用分段按钮切换。合并前是三个各自带标题、卡片与整段说明文字的区块，
- * 在表单底部连占三屏（2026-09-21 界面减负）。
+ * 参考图区：图生图 / Precise Reference / Vibe Transfer 三个面板合并成一张柔和卡片，
+ * 顶部采用现代 Material 3 Tonal 滑动胶囊分段条切换。
  *
  * ## 互斥关系不由页签表达
  * 页签只是"看哪个面板"：图生图可以分别搭配 Precise Reference 或 Vibe。
  * Precise 与 Vibe 互斥，清理由 ViewModel 在挂图时做。
- * 底色表示该功能当前是否生效，可同时亮起；短下划线表示正在查看的面板。
- * 保留但不受当前模型支持的素材仍显示数量，不点亮。
- *
- * ## 说明文字的归宿
- * 三个面板原来的整段说明收进标题旁的 ⓘ（见 `SectionHeader` 的 infoText），
- * 面板内部只留操作与状态。
+ * 胶囊滑块表示正在查看的面板；圆点与强调色表示该功能当前已挂图生效，可同时亮起。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReferenceTabsSection(
     state: GenerateViewModel.UiState,
@@ -71,8 +59,6 @@ fun ReferenceTabsSection(
     onOpenInpaintEditor: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // 初始页签跟随"已有内容"的面板：复用参数 / 导入元数据挂上参考图时，第一眼看到的就是它。
-    // 之后不再自动跳 —— 用户手动切页签不该被"别处还挂着别的图"拽回去。
     var tab by remember {
         mutableStateOf(
             when {
@@ -93,101 +79,148 @@ fun ReferenceTabsSection(
         modifier = modifier,
     )
 
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            val tabPosition = animateFloatAsState(tab.ordinal.toFloat(), spring(dampingRatio = 1f, stiffness = 700f), label = "reference-tab")
-            val indicatorColor = MaterialTheme.colorScheme.onSurface
-            Box(Modifier.fillMaxWidth()) {
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    ReferenceTab.entries.forEachIndexed { index, option ->
+            val haptics = rememberPocketHaptics()
+            val tabPosition by animateFloatAsState(
+                targetValue = tab.ordinal.toFloat(),
+                animationSpec = spring(dampingRatio = 1f, stiffness = 700f),
+                label = "reference-tab",
+            )
+            val pillColor = MaterialTheme.colorScheme.surface
+            val count = ReferenceTab.entries.size
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(4.dp)
+                        .selectableGroup()
+                        .drawBehind {
+                            val slotWidth = size.width / count
+                            val radius = size.height / 2f
+                            drawRoundRect(
+                                color = pillColor,
+                                topLeft = Offset(slotWidth * tabPosition, 0f),
+                                size = Size(slotWidth, size.height),
+                                cornerRadius = CornerRadius(radius, radius),
+                            )
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ReferenceTab.entries.forEach { option ->
+                        val isCurrent = tab == option
                         val active = state.activeReferences.any { it.role == option.role }
-                        val background = if (active) MaterialTheme.colorScheme.primaryContainer
-                            else MaterialTheme.colorScheme.surface
-                        val foreground = if (active) MaterialTheme.colorScheme.onPrimaryContainer
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        val status = stringResource(if (active) R.string.generate_reference_active
-                            else R.string.generate_reference_inactive)
-                        SegmentedButton(
-                            selected = tab == option,
-                            onClick = { tab = option },
-                            shape = SegmentedButtonDefaults.itemShape(
-                                index = index,
-                                count = ReferenceTab.entries.size,
-                            ),
-                            // 查看哪个面板与启用了哪些功能是两个状态，底色只跟随后者。
-                            colors = SegmentedButtonDefaults.colors(
-                                activeContainerColor = background,
-                                inactiveContainerColor = background,
-                                activeContentColor = foreground,
-                                inactiveContentColor = foreground,
-                            ),
-                            modifier = Modifier.semantics { stateDescription = status },
-                            icon = {},
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Text(
-                                    text = option.label(state),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
+                        val status = stringResource(
+                            if (active) R.string.generate_reference_active
+                            else R.string.generate_reference_inactive,
+                        )
+                        val textColor by animateColorAsState(
+                            targetValue = when {
+                                active -> MaterialTheme.colorScheme.primary
+                                isCurrent -> MaterialTheme.colorScheme.onSurface
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            animationSpec = tween(150),
+                            label = "reference-tab-text",
+                        )
+                        val interaction = remember { MutableInteractionSource() }
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 38.dp)
+                                .clip(CircleShape)
+                                .semantics {
+                                    selected = isCurrent
+                                    stateDescription = status
+                                }
+                                .clickable(
+                                    interactionSource = interaction,
+                                    indication = null,
+                                    role = Role.Tab,
+                                    onClick = {
+                                        if (tab != option) {
+                                            haptics.tick()
+                                            tab = option
+                                        }
+                                    },
                                 )
-                                Box(Modifier.width(18.dp).height(2.dp).background(
-                                    Color.Transparent,
-                                    RoundedCornerShape(1.dp),
-                                ))
+                                .padding(horizontal = 8.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (active) {
+                                Box(
+                                    Modifier
+                                        .size(6.dp)
+                                        .background(MaterialTheme.colorScheme.primary, CircleShape),
+                                )
                             }
+                            Text(
+                                text = option.label(state),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = if (isCurrent || active) FontWeight.SemiBold else FontWeight.Medium,
+                                color = textColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
                 }
-
-                Canvas(Modifier.matchParentSize()) {
-                    val x = size.width * (tabPosition.value + .5f) / ReferenceTab.entries.size
-                    val y = size.height - 8.dp.toPx()
-                    drawLine(indicatorColor, Offset(x - 9.dp.toPx(), y), Offset(x + 9.dp.toPx(), y),
-                        2.dp.toPx(), cap = StrokeCap.Round)
-                }
             }
 
-            AnimatedContent(targetState = tab, label = "reference-panel",
+            AnimatedContent(
+                targetState = tab,
+                label = "reference-panel",
                 transitionSpec = {
                     (fadeIn(tween(180)) togetherWith fadeOut(tween(90)))
                         .using(SizeTransform { _, _ -> tween(220) })
-                }) { shownTab ->
+                },
+            ) { shownTab ->
                 val panelModifier = if (shownTab == tab) Modifier else Modifier
                     .clearAndSetSemantics { }
-                    .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial).changes.forEach { it.consume() } } }
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                    .changes.forEach { it.consume() }
+                            }
+                        }
+                    }
                 Box(panelModifier) {
-                when (shownTab) {
-                    ReferenceTab.IMG2IMG -> Img2ImgPanel(
-                        state = state,
-                        connected = connected,
-                        viewModel = viewModel,
-                        onOpenInpaintEditor = onOpenInpaintEditor,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    when (shownTab) {
+                        ReferenceTab.IMG2IMG -> Img2ImgPanel(
+                            state = state,
+                            connected = connected,
+                            viewModel = viewModel,
+                            onOpenInpaintEditor = onOpenInpaintEditor,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
 
-                    ReferenceTab.PRECISE -> PreciseReferencePanel(
-                        state = state,
-                        connected = connected,
-                        viewModel = viewModel,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                        ReferenceTab.PRECISE -> PreciseReferencePanel(
+                            state = state,
+                            connected = connected,
+                            viewModel = viewModel,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
 
-                    ReferenceTab.VIBE -> VibeTransferPanel(
-                        state = state,
-                        connected = connected,
-                        viewModel = viewModel,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+                        ReferenceTab.VIBE -> VibeTransferPanel(
+                            state = state,
+                            connected = connected,
+                            viewModel = viewModel,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
             }
         }
@@ -198,7 +231,7 @@ private enum class ReferenceTab(val role: ReferenceRole) {
     IMG2IMG(ReferenceRole.IMG2IMG), PRECISE(ReferenceRole.DIRECTOR), VIBE(ReferenceRole.VIBE)
 }
 
-/** 页签文字显示素材数量，实际启用状态由底色表达。 */
+/** 页签文字显示素材数量，实际启用状态由强调色与圆点表达。 */
 @Composable
 private fun ReferenceTab.label(state: GenerateViewModel.UiState): String = when (this) {
     ReferenceTab.IMG2IMG ->

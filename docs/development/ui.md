@@ -2,6 +2,8 @@
 
 2026-11-16：系统线性马达触觉（`PocketHaptics`，含底部导航四按钮切换点按反馈，以及 SFW 模式下点开受遮罩敏感缩略图的 `tick` 与详情页揭开 `SFW · 点击图片查看` 遮罩的 `confirm` 确认振感）、Edge-to-Edge 透明系统栏、生成悬浮层头部 1:1 连续跟手与无停顿弹簧触顶（`visibilityThreshold = 0.0003f` 且展开全程零大表单重组）、表单已处于最顶部时大阈值下拉收起抽屉（按下瞬间须满足 `scrollState.value == 0` 且无内部子滚动，慢拉需跨过 `max(148dp, 24% 行程)` 或快速挥动 `>=108dp`，短滑与从中下部滚回顶部绝不误收起）、全屏看图器围绕触点双击弹簧缩放/衰减惯性/下拉离场过渡、画廊多选态顶底栏过渡与卡片选中弹簧（仅 `isSelectionMode` 挂载）、画廊长按底部快捷动作面板、设置主页统一 `SettingsCard` 色阶（恢复 40dp 圆形图标底托对比度）及折叠项箭头图层旋转见[人机交互与动效留痕](../hci-motion-polish-2026-11-16.md)。历史卡片在 `GenerationImageReveal` 中必须保持单层调用与单例 `OpaqueState`，禁止外包 `Box(matchParentSize)` 引入额外测量；画廊拖选与卡片选中缩放仅在 `isSelectionMode` 下挂载。
 
+2026-11-20 视觉现代化升级：新增自定义主题色（`ThemeAccent`：壁纸动态取色 + 靛蓝/樱粉/鼠尾草/暖琥珀/雾蓝/石墨 6 套含完整五档 `surfaceContainer*` 的克制色阶，点击色点复用 `ThemeReveal` 圆形水波扩散换色）；创作抽屉全面去线框化（`WeightHighlightedTextField` 改为 16dp 柔和底色卡片、参考图区升级为无硬边卡片 + Tonal 滑动胶囊分段条、独立角色入口与 `DropdownSelector` 统一柔和填充胶囊）；详情页操作区改为实心主钮 + 无硬边柔和 `FilledTonalButton` 图标网格与可点击复制的 `Seed` 胶囊；全应用剩余 4 处二级搜索框统一换用 `PillSearchField`，筛选弹窗与对话空态同步升级为柔和 tonal 色阶。
+
 同日画廊顶栏升级：移除未经请求的顶部「生成任务」列表入口，将画廊顶栏和历史选图搜索框统一升级为全圆角无硬框的 Material 3 胶囊搜索栏（`PillSearchField`，`surfaceContainerHigh` 底色、聚焦柔边、回车收起键盘与动态清空按钮）；筛选按钮内嵌至胶囊右端（激活时呈现 `secondaryContainer` 计数微胶囊），避免与右下角「返回顶部」圆形按钮视觉重复；画廊滚离顶部时由独立 `GalleryTopBarDivider` 淡入底部分割线，保持与多选顶栏 64dp 等高及零闲置帧开销。
 
 同日瞬切收尾：详情页揭开 SFW 遮罩时由 `SfwRevealImage` 让原图在模糊小图上方淡入（解码期间模糊图垫底，不闪空白），重新遮罩方向立即移除原图节点、绝不淡出残留；该路径仅详情使用（`revealTransition = true`），画廊列表不增加布局节点。收藏角标在多选切换换位时只在新位置淡入一次，日常浏览不创建动画对象。历史选图对勾复用画廊多选徽标弹出曲线；导入进度条、尺寸/校验错误、服务切换提示与改词卡“已应用”行改用 `AnimatedDisclosure` / `AnimatedNote` 有界展开，不再一帧推开下方控件。SFW 总开关切换时不在画廊内，维持瞬切。

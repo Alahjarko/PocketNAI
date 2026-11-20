@@ -46,9 +46,19 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.AutoFixHigh
+import androidx.compose.material.icons.outlined.Brush
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.ZoomOutMap
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.TextStyle
 import net.pocketnai.ui.common.ImageShareManager
 import net.pocketnai.ui.common.MotionButton as Button
 import androidx.compose.material3.Card
@@ -541,9 +551,14 @@ internal fun LazyListScope.detailInfoItems(
     onAskAssistant: (() -> Unit)? = null,
 ) {
     item(key = "actions") {
+        val context = LocalContext.current
+        val detailHaptics = net.pocketnai.ui.motion.rememberPocketHaptics()
+        val cleanTitle = remember(generation.title) {
+            generation.title.trimEnd(',', ' ', '，', '、', ';').ifBlank { "生成图片" }
+        }
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
-                text = generation.title,
+                text = cleanTitle,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -554,9 +569,48 @@ internal fun LazyListScope.detailInfoItems(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            val seed = image.seed?.toString() ?: "未记录"
-            if (generation.openAi == null) SelectionContainer {
-                Text("Seed  $seed", style = MaterialTheme.typography.bodySmall)
+            val seedValue = image.seed?.toString()
+            if (generation.openAi == null) {
+                var seedCopied by remember(image.id) { mutableStateOf(false) }
+                LaunchedEffect(seedCopied) {
+                    if (seedCopied) {
+                        kotlinx.coroutines.delay(1400)
+                        seedCopied = false
+                    }
+                }
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(enabled = seedValue != null) {
+                            seedValue?.let {
+                                detailHaptics.tick()
+                                copyToClipboard(context, it)
+                                seedCopied = true
+                            }
+                        },
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = if (seedCopied) "已复制 Seed" else "Seed  ${seedValue ?: "未记录"}",
+                            style = MaterialTheme.typography.labelMedium.merge(TextStyle(fontFeatureSettings = "tnum")),
+                            color = if (seedCopied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (seedValue != null) {
+                            Icon(
+                                imageVector = Icons.Outlined.ContentCopy,
+                                contentDescription = "复制 Seed",
+                                tint = if (seedCopied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                    }
+                }
             }
 
             if (isCurrentPage && errorCode != null) {
@@ -564,6 +618,7 @@ internal fun LazyListScope.detailInfoItems(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.errorContainer,
                     ),
+                    shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Row(modifier = Modifier.padding(12.dp)) {
@@ -579,18 +634,54 @@ internal fun LazyListScope.detailInfoItems(
                 }
             }
 
-            // 操作分级（2026-09-21 界面减负）：唯一主按钮是"复用参数"（继续创作最常用的动作），
-            // 四个次要操作两两并排，删除降级为红色文字按钮放在最后。
-            Button(onClick = onReuseParams, modifier = Modifier.fillMaxWidth()) {
+            val tonalColors = ButtonDefaults.filledTonalButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            )
+            val tonalShape = RoundedCornerShape(16.dp)
+
+            // 操作分级：唯一实心主按钮是"复用参数"，次要高频操作采用无硬边柔和 tonal 按钮。
+            Button(
+                onClick = {
+                    detailHaptics.tick()
+                    onReuseParams()
+                },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) {
+                Icon(Icons.Outlined.AutoFixHigh, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
                 Text(stringResource(R.string.action_reuse_params))
             }
-            onAskAssistant?.let { ask -> OutlinedButton(onClick = ask, modifier = Modifier.fillMaxWidth()) { Text("交给绘伴调整") } }
+            onAskAssistant?.let { ask ->
+                FilledTonalButton(
+                    onClick = {
+                        detailHaptics.tick()
+                        ask()
+                    },
+                    shape = tonalShape,
+                    colors = tonalColors,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp),
+                ) {
+                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("交给绘伴调整")
+                }
+            }
 
             net.pocketnai.ui.common.ActionPair(first = { actionModifier ->
                 val saved = isCurrentPage && savedToGallery
-                OutlinedButton(onClick = onSaveClick, enabled = !savingToGallery, modifier = actionModifier) {
+                FilledTonalButton(
+                    onClick = {
+                        detailHaptics.tick()
+                        onSaveClick()
+                    },
+                    enabled = !savingToGallery,
+                    shape = tonalShape,
+                    colors = tonalColors,
+                    modifier = actionModifier.heightIn(min = 46.dp),
+                ) {
                     net.pocketnai.ui.common.ActionStatusIcon(savingToGallery, saved, Icons.Outlined.FileDownload)
-                    Spacer(Modifier.width(4.dp))
+                    Spacer(Modifier.width(6.dp))
                     Text(when {
                         savingToGallery -> "保存中"
                         saved -> if (image.privateFilePath.endsWith(".svg", true)) "已存到下载" else "已存到相册"
@@ -608,26 +699,52 @@ internal fun LazyListScope.detailInfoItems(
                         copied = false
                     }
                 }
-                OutlinedButton(onClick = { onCopyPrompt(); copyRevision++ }, modifier = actionModifier) {
+                FilledTonalButton(
+                    onClick = { onCopyPrompt(); copyRevision++ },
+                    shape = tonalShape,
+                    colors = tonalColors,
+                    modifier = actionModifier.heightIn(min = 46.dp),
+                ) {
                     net.pocketnai.ui.common.ActionStatusIcon(false, copied, Icons.Outlined.ContentCopy)
-                    Spacer(Modifier.width(4.dp))
+                    Spacer(Modifier.width(6.dp))
                     Text(if (copied) "已复制" else if (generation.openAi != null) "复制图片描述" else "复制正向词")
                 }
             })
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // 局部重绘：官方文档说可以从"任意一张已生成的图片"进入，
-                // 而"这张图某处画坏了"正是用户点进详情页的常见理由。
-                if (!image.privateFilePath.endsWith(".svg", ignoreCase = true)) OutlinedButton(onClick = onInpaint, modifier = Modifier.weight(1f)) {
-                    Text(if (image.privateFilePath.endsWith(".gif", ignoreCase = true)) "编辑首帧" else if (generation.openAi != null) "继续编辑" else stringResource(R.string.action_inpaint))
+                if (!image.privateFilePath.endsWith(".svg", ignoreCase = true)) {
+                    FilledTonalButton(
+                        onClick = {
+                            detailHaptics.tick()
+                            onInpaint()
+                        },
+                        shape = tonalShape,
+                        colors = tonalColors,
+                        modifier = Modifier.weight(1f).heightIn(min = 46.dp),
+                    ) {
+                        Icon(Icons.Outlined.Brush, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (image.privateFilePath.endsWith(".gif", ignoreCase = true)) "编辑首帧" else if (generation.openAi != null) "继续编辑" else stringResource(R.string.action_inpaint))
+                    }
                 }
 
-                if (generation.openAi == null) OutlinedButton(onClick = onOpenUpscaleDialog, modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.action_upscale))
+                if (generation.openAi == null) {
+                    FilledTonalButton(
+                        onClick = {
+                            detailHaptics.tick()
+                            onOpenUpscaleDialog()
+                        },
+                        shape = tonalShape,
+                        colors = tonalColors,
+                        modifier = Modifier.weight(1f).heightIn(min = 46.dp),
+                    ) {
+                        Icon(Icons.Outlined.ZoomOutMap, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.action_upscale))
+                    }
                 }
             }
 
-            val detailHaptics = net.pocketnai.ui.motion.rememberPocketHaptics()
             var parametersExpanded by rememberSaveable(generation.id) { mutableStateOf(false) }
             TextButton(
                 onClick = {

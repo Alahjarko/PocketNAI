@@ -63,9 +63,18 @@ fun ArtistMixFavoritesDialog(
                         }
                         IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "关闭画师串收藏") }
                     }
-                    OutlinedTextField(query, { query = it }, label = { Text("搜索画师串") }, singleLine = true,
-                        leadingIcon = { Icon(Icons.Default.Search, null) },
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp))
+                    var queryField by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(query)) }
+                    LaunchedEffect(query) {
+                        if (query != queryField.text) queryField = androidx.compose.ui.text.input.TextFieldValue(query)
+                    }
+                    net.pocketnai.ui.common.PillSearchField(
+                        value = queryField,
+                        onValueChange = { queryField = it; query = it.text },
+                        placeholder = "搜索画师串",
+                        clearContentDescription = "清除搜索",
+                        onClear = { queryField = androidx.compose.ui.text.input.TextFieldValue(""); query = "" },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
+                    )
                     if (visible.isEmpty()) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         Text(if (mixes.isEmpty()) "还没有收藏画师串" else "没有匹配的画师串")
                     } else LazyVerticalGrid(columns = GridCells.Adaptive(150.dp), modifier = Modifier.weight(1f),

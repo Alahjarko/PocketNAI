@@ -113,8 +113,18 @@ fun ArtistCatalogDialog(vm: ArtistLabViewModel, onDismiss: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (exportMessage.isNotEmpty()) Text(exportMessage, style = MaterialTheme.typography.bodySmall)
                 if (importMessage.isNotEmpty() || catalogMessage.isNotEmpty()) Text(importMessage.ifEmpty { catalogMessage }, style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(query, { query = it }, label = { Text("搜索画师") }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
+                var queryField by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(query)) }
+                LaunchedEffect(query) {
+                    if (query != queryField.text) queryField = androidx.compose.ui.text.input.TextFieldValue(query)
+                }
+                net.pocketnai.ui.common.PillSearchField(
+                    value = queryField,
+                    onValueChange = { queryField = it; query = it.text },
+                    placeholder = "搜索画师",
+                    clearContentDescription = "清除搜索",
+                    onClear = { queryField = androidx.compose.ui.text.input.TextFieldValue(""); query = "" },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                )
                 if (visible.isEmpty()) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Text(if (removed) "没有已移出的画师" else "没有匹配的画师")
                 } else LazyVerticalGrid(GridCells.Adaptive(140.dp), Modifier.weight(1f),

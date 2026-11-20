@@ -31,8 +31,9 @@ import androidx.compose.material3.Icon
 import net.pocketnai.ui.common.MotionIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import net.pocketnai.ui.common.MotionOutlinedButton as OutlinedButton
-import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.foundation.shape.CircleShape
 import net.pocketnai.ui.common.MotionTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -104,8 +105,8 @@ fun Img2ImgPanel(
                 androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(220)),
             exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(100)) +
                 androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(200))) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedCard(
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Surface(
                     onClick = {
                         pickImage.launch(
                             PickVisualMediaRequest(
@@ -114,25 +115,39 @@ fun Img2ImgPanel(
                         )
                     },
                     enabled = connected && !state.referenceBusy,
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
                     interactionSource = albumPress,
                     modifier = Modifier.weight(1f).pressFeedback(albumPress, connected && !state.referenceBusy),
                 ) {
-                    Column(Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                    Column(Modifier.fillMaxWidth().padding(vertical = 18.dp, horizontal = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
-                        Text(stringResource(R.string.generate_reference_pick))
+                        Box(
+                            Modifier.size(40.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        }
+                        Text(stringResource(R.string.generate_reference_pick), style = MaterialTheme.typography.labelLarge)
                     }
                 }
-                OutlinedCard(
+                Surface(
                     onClick = { historyPickerOpen = true },
                     enabled = connected && !state.referenceBusy,
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
                     interactionSource = historyPress,
                     modifier = Modifier.weight(1f).pressFeedback(historyPress, connected && !state.referenceBusy),
                 ) {
-                    Column(Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                    Column(Modifier.fillMaxWidth().padding(vertical = 18.dp, horizontal = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Default.History, contentDescription = null)
-                        Text(stringResource(R.string.generate_reference_from_history))
+                        Box(
+                            Modifier.size(40.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.Default.History, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        }
+                        Text(stringResource(R.string.generate_reference_from_history), style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }

@@ -25,6 +25,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -166,8 +167,18 @@ fun FavoritePickerDialog(state: PromptFavoritesViewModel.UiState, onQueryChange:
         onDismiss = { val action = pending; if (action != null) action() else onDismiss() }, scrollContent = false) {
         val close = net.pocketnai.ui.settings.LocalSettingsSheetDismiss.current
         fun finish(action: () -> Unit) { pending = action; close() }
-        OutlinedTextField(state.query, onQueryChange, label = { Text(stringResource(R.string.favorites_search)) },
-            singleLine = true, modifier = Modifier.fillMaxWidth())
+        var queryField by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(state.query)) }
+        LaunchedEffect(state.query) {
+            if (state.query != queryField.text) queryField = androidx.compose.ui.text.input.TextFieldValue(state.query)
+        }
+        net.pocketnai.ui.common.PillSearchField(
+            value = queryField,
+            onValueChange = { queryField = it; onQueryChange(it.text) },
+            placeholder = stringResource(R.string.favorites_search),
+            clearContentDescription = "清除搜索",
+            onClear = { queryField = androidx.compose.ui.text.input.TextFieldValue(""); onQueryChange("") },
+            modifier = Modifier.fillMaxWidth(),
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(state.kind == PromptFavoriteKind.PROMPT, { onKindChange(PromptFavoriteKind.PROMPT) },
                 label = { Text("${stringResource(R.string.favorites_tab_prompts)} (${state.promptCount})") })

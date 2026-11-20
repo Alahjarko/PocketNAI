@@ -24,8 +24,19 @@ internal fun ChatHistorySheet(state: ChatViewModel.UiState, vm: ChatViewModel, o
         chosen?.let(vm::selectConversation); onDismiss()
     }, scrollContent = false) {
         val close = LocalSettingsSheetDismiss.current
-        OutlinedTextField(query, { query = it }, label = { Text("搜索对话标题") }, singleLine = true,
-            leadingIcon = { Icon(Icons.Default.Search, null) }, modifier = Modifier.fillMaxWidth().testTag("chat-history-search"))
+        var queryField by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(query)) }
+        LaunchedEffect(query) {
+            if (query != queryField.text) queryField = androidx.compose.ui.text.input.TextFieldValue(query)
+        }
+        net.pocketnai.ui.common.PillSearchField(
+            value = queryField,
+            onValueChange = { queryField = it; query = it.text },
+            placeholder = "搜索对话标题",
+            clearContentDescription = "清除搜索",
+            onClear = { queryField = androidx.compose.ui.text.input.TextFieldValue(""); query = "" },
+            modifier = Modifier.fillMaxWidth(),
+            inputModifier = Modifier.testTag("chat-history-search"),
+        )
         val rows = remember(state.conversations, query) { state.conversations.filter { it.title.contains(query.trim(), ignoreCase = true) } }
         if (rows.isEmpty()) Text(if (query.isBlank()) "还没有历史对话" else "没有匹配的对话", Modifier.padding(16.dp))
         LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
