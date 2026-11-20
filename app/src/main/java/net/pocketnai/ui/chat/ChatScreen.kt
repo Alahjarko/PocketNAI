@@ -1,6 +1,14 @@
 package net.pocketnai.ui.chat
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.DragInteraction
@@ -453,10 +461,62 @@ fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenIm
         } else {
             if (entry.reasoning.isNotBlank()) {
                 var expanded by remember(entry.id) { mutableStateOf(false) }
-                TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "收起思考过程" else "思考过程") }
-                net.pocketnai.ui.common.AnimatedDisclosure(expanded) { Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(0.92f)) {
-                    BoundedChatText(entry.reasoning, "思考过程", streaming, onRead, small = true)
-                } }
+                Column(Modifier.fillMaxWidth(0.94f)) {
+                    Surface(
+                        onClick = {
+                            bubbleHaptics.tick()
+                            expanded = !expanded
+                        },
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(15.dp),
+                            )
+                            Text(
+                                text = if (expanded) "收起思考过程" else "思考过程",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            net.pocketnai.ui.common.ExpandingChevron(
+                                expanded = expanded,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
+                    // 把间距放进 AnimatedVisibility 内部，并采用同步缓出曲线：收起到 0dp 时无末帧 8dp 间距突跳。
+                    AnimatedVisibility(
+                        visible = expanded,
+                        enter = expandVertically(
+                            animationSpec = tween(240, easing = FastOutSlowInEasing),
+                            expandFrom = Alignment.Top,
+                            clip = true,
+                        ) + fadeIn(tween(180, delayMillis = 40)),
+                        exit = shrinkVertically(
+                            animationSpec = tween(200, easing = FastOutSlowInEasing),
+                            shrinkTowards = Alignment.Top,
+                            clip = true,
+                        ) + fadeOut(tween(150, easing = FastOutSlowInEasing)),
+                    ) {
+                        Box(Modifier.padding(top = 8.dp).graphicsLayer()) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                BoundedChatText(entry.reasoning, "思考过程", streaming, onRead, small = true)
+                            }
+                        }
+                    }
+                }
             }
             if (entry.content.isNotBlank()) {
                 if (user) Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.primaryContainer,

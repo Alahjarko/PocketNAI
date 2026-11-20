@@ -69,6 +69,8 @@ class AppContainer(application: Application, mcpBackendOverride: net.pocketnai.d
         net.pocketnai.ui.chat.ChatViewModel(llmSettingsStore, chatClient, chatStore, agentFiles,
                 object : net.pocketnai.domain.chat.ChatImageGenerator {
                     override fun currentParams() = generateViewModel.state.value.params
+                    override fun openAiParams() = if (openAiImageSettings.provider.value == net.pocketnai.domain.openai.ImageProvider.OPEN_AI)
+                        openAiImageViewModel.state.value.draft.params else null
                     override fun promptSnapshot() = if (openAiImageSettings.provider.value == net.pocketnai.domain.openai.ImageProvider.OPEN_AI)
                         openAiImageViewModel.promptSnapshot() else generateViewModel.promptSnapshot()
                     override fun applyPromptEdit(edit: net.pocketnai.domain.chat.PromptEdit): Int? {
@@ -82,16 +84,58 @@ class AppContainer(application: Application, mcpBackendOverride: net.pocketnai.d
                         val macros = promptFavoriteRepository.snapshot()
                         return params.map { net.pocketnai.domain.prompt.PromptTemplates.resolve(it, macros, kotlin.random.Random.Default) }
                     }
-                    override fun authorizationKey() = generateViewModel.artistLabAccount()
+                    override fun authorizationKey() = if (openAiImageSettings.provider.value == net.pocketnai.domain.openai.ImageProvider.OPEN_AI) {
+                        "openai:${openAiImageSettings.hasKey.value}:${openAiImageSettings.apiKey()?.hashCode() ?: 0}:${openAiImageSettings.gifEnabled.value}"
+                    } else generateViewModel.artistLabAccount()
                     override suspend fun quote(params: net.pocketnai.domain.model.GenerationParams): net.pocketnai.domain.chat.ChatImageQuote {
-                        if (openAiImageSettings.provider.value == net.pocketnai.domain.openai.ImageProvider.OPEN_AI)
-                            throw net.pocketnai.domain.chat.ChatFailure("OpenAI 图片暂时请在画廊的专用生成面板创建")
                         return generateViewModel.quoteForChat(params)
                     }
                     override suspend fun generate(params: net.pocketnai.domain.model.GenerationParams, account: String?, beforeSend: suspend () -> Unit, onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit): List<net.pocketnai.domain.chat.ChatImage> {
-                        if (openAiImageSettings.provider.value == net.pocketnai.domain.openai.ImageProvider.OPEN_AI)
-                            throw net.pocketnai.domain.chat.ChatFailure("OpenAI 图片暂时请在画廊的专用生成面板创建")
                         return generateViewModel.generateForChat(params, onImage, account, beforeSend)
+                    }
+                    override suspend fun quoteOpenAi(params: net.pocketnai.domain.openai.OpenAiImageParams): net.pocketnai.domain.chat.ChatImageQuote {
+                        if (!openAiImageSettings.hasKey.value) throw net.pocketnai.domain.chat.ChatFailure("请在设置 → 生图服务中保存 OpenAI API 密钥")
+                        if (params.isAnimated && !openAiImageSettings.gifEnabled.value) throw net.pocketnai.domain.chat.ChatFailure("请先在生图服务中开启 GIF 制作（实验）")
+                        params.validate(0)?.let { throw net.pocketnai.domain.chat.ChatFailure(it) }
+                        return net.pocketnai.domain.chat.ChatImageQuote.fromOpenAi(net.pocketnai.domain.openai.OpenAiImagePricing.estimate(params, 0))
+                    }
+                    override suspend fun generateOpenAi(
+                        params: net.pocketnai.domain.openai.OpenAiImageParams,
+                        account: String?,
+                        beforeSend: suspend () -> Unit,
+                        onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit,
+                    ): List<net.pocketnai.domain.chat.ChatImage> {
+                        if (openAiImageSettings.provider.value != net.pocketnai.domain.openai.ImageProvider.OPEN_AI || authorizationKey() != account) {
+                            throw net.pocketnai.domain.chat.ChatFailure("图片服务或密钥已改变，本张未发送")
+                        }
+                        if (!generateViewModel.reserveExternalGeneration()) {
+                            throw net.pocketnai.domain.chat.ChatFailure("另一个图片任务正在执行，请等待完成")
+                        }
+                        try {
+                            awaitStartup()
+                            val saved = mutableListOf<net.pocketnai.domain.chat.ChatImage>()
+                            openAiImageRepository.generate(
+                                net.pocketnai.domain.openai.OpenAiImageDraft(params, emptyList()),
+                                beforeSend = beforeSend,
+                            ).collect { event ->
+                                when (event) {
+                                    is net.pocketnai.data.repo.GenerationEvent.Final -> {
+                                        val img = net.pocketnai.domain.chat.ChatImage(
+                                            event.image.id, event.image.privateFilePath, event.image.width, event.image.height,
+                                        )
+                                        saved += img
+                                        onImage(img)
+                                    }
+                                    is net.pocketnai.data.repo.GenerationEvent.FatalError -> {
+                                        throw net.pocketnai.domain.chat.ChatFailure(event.error.detail ?: "OpenAI 图片生成未完成，未重试")
+                                    }
+                                    else -> Unit
+                                }
+                            }
+                            return saved
+                        } finally {
+                            generateViewModel.releaseExternalGeneration()
+                        }
                     }
                 }, settingsStore.chatEnabled, chatAttachmentStore, backgroundTasks = backgroundTasks)
     }

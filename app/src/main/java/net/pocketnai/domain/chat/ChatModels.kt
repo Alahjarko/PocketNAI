@@ -117,6 +117,7 @@ interface ChatClient {
 
 interface ChatImageGenerator {
     fun currentParams(): net.pocketnai.domain.model.GenerationParams
+    fun openAiParams(): net.pocketnai.domain.openai.OpenAiImageParams? = null
     fun promptSnapshot() = PromptEdit(beforePrompt = currentParams().prompt, beforeNegative = currentParams().negativePrompt)
     fun applyPromptEdit(edit: PromptEdit): Int? = null
     fun undoPromptEdit(provider: String, revision: Int): Boolean = false
@@ -124,4 +125,12 @@ interface ChatImageGenerator {
     fun authorizationKey(): String?
     suspend fun quote(params: net.pocketnai.domain.model.GenerationParams): ChatImageQuote
     suspend fun generate(params: net.pocketnai.domain.model.GenerationParams, account: String?, beforeSend: suspend () -> Unit, onImage: (ChatImage) -> Unit): List<ChatImage>
+    suspend fun quoteOpenAi(params: net.pocketnai.domain.openai.OpenAiImageParams): ChatImageQuote =
+        throw ChatFailure("OpenAI 图片生成未配置")
+    suspend fun generateOpenAi(
+        params: net.pocketnai.domain.openai.OpenAiImageParams,
+        account: String?,
+        beforeSend: suspend () -> Unit,
+        onImage: (ChatImage) -> Unit,
+    ): List<ChatImage> = throw ChatFailure("OpenAI 图片生成未配置")
 }

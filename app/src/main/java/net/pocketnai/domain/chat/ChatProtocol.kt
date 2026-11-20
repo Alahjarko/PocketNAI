@@ -44,6 +44,11 @@ object ChatProtocol {
         return baseUrl.trim().trimEnd('/') + "/" + resource
     }
 
+    fun isGoogle(config: LlmConfig): Boolean {
+        val value = (config.baseUrl + " " + config.model).lowercase()
+        return "googleapis.com" in value || "gemini" in config.model.lowercase()
+    }
+
     fun dialect(config: LlmConfig): LlmDialect {
         if (config.dialect != LlmDialect.AUTO) return config.dialect
         val value = (config.baseUrl + " " + config.model).lowercase()
@@ -54,12 +59,40 @@ object ChatProtocol {
         }
     }
 
+    /**
+     * 针对 Google OpenAI 兼容端点清理不兼容的扩展思考字段，同时完整保留
+     * `extra_content`（含 `thought_signature`）与 `tool_calls`，并为 `tool` 回传补齐函数名。
+     */
+    private fun outboundMessages(config: LlmConfig, messages: List<JsonObject>): JsonArray {
+        if (!isGoogle(config)) return JsonArray(messages)
+        val toolNames = mutableMapOf<String, String>()
+        messages.forEach { msg ->
+            (msg["tool_calls"] as? JsonArray)?.forEach { call ->
+                val obj = call as? JsonObject ?: return@forEach
+                val id = obj.string("id") ?: return@forEach
+                val name = (obj["function"] as? JsonObject)?.string("name") ?: return@forEach
+                if (id.isNotEmpty() && name.isNotEmpty()) toolNames[id] = name
+            }
+        }
+        return JsonArray(messages.map { msg ->
+            when (msg.string("role")) {
+                "assistant" -> JsonObject(msg.filterKeys { it !in setOf("reasoning_content", "reasoning", "reasoning_details") })
+                "tool" -> {
+                    val callId = msg.string("tool_call_id")
+                    val name = callId?.let(toolNames::get)
+                    if (name != null && !msg.containsKey("name")) JsonObject(msg + ("name" to JsonPrimitive(name))) else msg
+                }
+                else -> msg
+            }
+        })
+    }
+
     fun request(config: LlmConfig, messages: List<JsonObject>, tools: JsonArray): JsonObject {
         if (config.model.isBlank()) throw ChatFailure("请先选择或填写模型")
         return buildJsonObject {
             put("model", config.model); put("stream", true)
             put("max_tokens", config.maxTokens.coerceIn(1024, 65536))
-            put("messages", JsonArray(messages))
+            put("messages", outboundMessages(config, messages))
             if (tools.isNotEmpty()) { put("tools", tools); put("tool_choice", "auto") }
             when (dialect(config)) {
                 LlmDialect.DEEPSEEK -> put("thinking", buildJsonObject { put("type", if (config.thinking) "enabled" else "disabled") })
@@ -78,9 +111,9 @@ object ChatProtocol {
         }
     }
 
-    /** 保留完整思考字段及工具调用，不把应用内部图片路径送到供应商。 */
+    /** 保留完整思考字段、Google `extra_content`（thought_signature）及工具调用，不把应用内部图片路径送到供应商。 */
     fun assistant(message: JsonObject): JsonObject = JsonObject(
-        message.filterKeys { it in setOf("content", "reasoning_content", "reasoning", "reasoning_details", "tool_calls", "refusal") } +
+        message.filterKeys { it in setOf("content", "reasoning_content", "reasoning", "reasoning_details", "tool_calls", "refusal", "extra_content") } +
             mapOf("role" to JsonPrimitive("assistant"), "content" to (message["content"] ?: JsonNull)),
     )
 }

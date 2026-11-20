@@ -32,7 +32,7 @@ class OpenAiImageRepository(
     // Bound simultaneous large responses; every submission still gets its own occupied slot first.
     private val concurrentRequests = Semaphore(3)
 
-    fun generate(draft: OpenAiImageDraft, beforeSend: () -> Unit = {}) = flow<GenerationEvent> {
+    fun generate(draft: OpenAiImageDraft, beforeSend: suspend () -> Unit = {}) = flow<GenerationEvent> {
         val id = UUID.randomUUID().toString()
         val params = draft.params
         if (params.outputFormat == "gif" && !gifEnabled()) {

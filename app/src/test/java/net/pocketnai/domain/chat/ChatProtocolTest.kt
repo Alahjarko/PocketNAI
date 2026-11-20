@@ -95,12 +95,52 @@ class ChatProtocolTest {
         assertThat(net.pocketnai.domain.safety.GaussianBlur.apply(IntArray(25) { color }, 5, 5).toList()).containsExactlyElementsIn(List(25) { color })
     }
     @Test fun `回传assistant完整思考与工具id而不丢签名字段`() {
-        val reply = Json.parseToJsonElement("""{"role":"assistant","content":null,"reasoning_content":"provider reasoning","reasoning_details":[{"signature":"opaque"}],"tool_calls":[{"id":"call1","type":"function","function":{"name":"generate_image","arguments":"{}"}}],"extra":"ignore"}""") as JsonObject
+        val reply = Json.parseToJsonElement("""{"role":"assistant","content":null,"reasoning_content":"provider reasoning","reasoning_details":[{"signature":"opaque"}],"extra_content":{"google":{"thought_signature":"msg-sig"}},"tool_calls":[{"id":"call1","type":"function","function":{"name":"generate_image","arguments":"{}"},"extra_content":{"google":{"thought_signature":"call-sig"}}}],"extra":"ignore"}""") as JsonObject
         val wire = ChatProtocol.assistant(reply)
         assertThat(wire.string("reasoning_content")).isEqualTo("provider reasoning")
         assertThat(wire["reasoning_details"]).isEqualTo(reply["reasoning_details"])
+        assertThat(wire["extra_content"]).isEqualTo(reply["extra_content"])
         assertThat(wire["tool_calls"]).isEqualTo(reply["tool_calls"])
         assertThat(wire.containsKey("extra")).isFalse()
+
+        // Google OpenAI 兼容端点的多轮工具流：保留 thought_signature、处理缺 index 并行调用与重复 id，且不回传 reasoning_content。
+        val stream = ChatStreamAccumulator()
+        stream.append(Json.parseToJsonElement("""{"choices":[{"delta":{"reasoning_content":"think","tool_calls":[{"id":"call_a","function":{"name":"get_generation_settings","arguments":"{}"},"extra_content":{"google":{"thought_signature":"sig-a"}}},{"id":"call_b","function":{"name":"web_search","arguments":"{\"query\":\"rose\"}"},"extra_content":{"google":{"thought_signature":"sig-b"}}}]}}]}""") as JsonObject)
+        stream.append(Json.parseToJsonElement("""{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_a","function":{"name":"get_generation_settings","arguments":""}}]},"finish_reason":"tool_calls"}]}""") as JsonObject)
+        val streamedAssistant = stream.complete()
+        val streamedCalls = streamedAssistant["tool_calls"] as JsonArray
+        assertThat(streamedCalls).hasSize(2)
+        assertThat(streamedCalls[0].jsonObject.string("id")).isEqualTo("call_a")
+        assertThat(streamedCalls[0].jsonObject["extra_content"].toString()).contains("sig-a")
+        assertThat(streamedCalls[1].jsonObject.string("id")).isEqualTo("call_b")
+        assertThat(streamedCalls[1].jsonObject["extra_content"].toString()).contains("sig-b")
+        assertThat(streamedAssistant["content"]).isEqualTo(JsonNull)
+
+        // 工具 Schema 不含 Google 拒绝的 additionalProperties / minLength / maxLength。
+        listOf(ImageChatTools.schema, ImageChatTools.openAiSchema, buildJsonArray { add(ChatSearchTool.schema) }).forEach { schema ->
+            val raw = schema.toString()
+            assertThat(raw).doesNotContain("additionalProperties")
+            assertThat(raw).doesNotContain("minLength")
+            assertThat(raw).doesNotContain("maxLength")
+        }
+
+        val googleCfg = LlmConfig(baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai", model = "gemini-4-pro", thinking = true)
+        val googleReq = ChatProtocol.request(
+            googleCfg,
+            listOf(wireMessage("user", "画一张"), streamedAssistant, wireMessage("tool", "{\"ok\":true}", "call_a")),
+            ImageChatTools.schema,
+        )
+        val outbound = googleReq["messages"] as JsonArray
+        assertThat(outbound[1].jsonObject.containsKey("reasoning_content")).isFalse()
+        assertThat(outbound[1].jsonObject["tool_calls"].toString()).contains("sig-a")
+        assertThat(outbound[2].jsonObject.string("name")).isEqualTo("get_generation_settings")
+
+        val deepseekReq = ChatProtocol.request(
+            LlmConfig(baseUrl = "https://api.deepseek.com/v1", model = "deepseek-reasoner"),
+            listOf(wireMessage("user", "hi"), streamedAssistant),
+            ImageChatTools.schema,
+        )
+        assertThat((deepseekReq["messages"] as JsonArray)[1].jsonObject.string("reasoning_content")).isEqualTo("think")
     }
     @Test fun `未结束与截断流不会被当成可执行工具`() {
         val display = "柔和光线 e\u0301 👩‍🎨 和完整画面"
@@ -204,5 +244,46 @@ class ChatProtocolTest {
         assertThat(calls).hasSize(2); assertThat(fullFailed.remaining).isEqualTo(0)
         assertThat(Json.decodeFromString<LlmConfig>("{} ").effectiveToolPermission).isEqualTo(ChatToolPermission.ASK)
         assertThat(Json.decodeFromString<LlmConfig>("""{"autoGenerate":true}""").effectiveToolPermission).isEqualTo(ChatToolPermission.SINGLE_IMAGE)
+
+        // OpenAI 生图通过同一张确认卡片流执行，支持单图与多图计划及 USD 预估。
+        val openAiBase = net.pocketnai.domain.openai.OpenAiImageParams(
+            model = net.pocketnai.domain.openai.OpenAiImageParams.FLARE_26,
+            size = "1024x1024",
+            quality = "low",
+        )
+        val openAiPlanItems = ImageChatTools.parseOpenAiPlan(
+            ToolCall("oa", "generate_images", """{"images":[{"prompt":"a sunny meadow"},{"prompt":"a starry sky","width":1536,"height":1024,"quality":"medium"}]}"""),
+            openAiBase,
+        )
+        assertThat(openAiPlanItems).hasSize(2)
+        assertThat(openAiPlanItems[0].size).isEqualTo("1024x1024")
+        assertThat(openAiPlanItems[1].size).isEqualTo("1536x1024")
+        assertThat(openAiPlanItems[1].quality).isEqualTo("medium")
+        val openAiCalls = mutableListOf<String>()
+        val openAiFake = object : ChatImageGenerator {
+            override fun currentParams() = base
+            override fun openAiParams() = openAiBase
+            override fun authorizationKey() = "openai:ok"
+            override suspend fun quote(params: GenerationParams) = error("unused")
+            override suspend fun generate(params: GenerationParams, account: String?, beforeSend: suspend () -> Unit, onImage: (ChatImage) -> Unit) = error("unused")
+            override suspend fun quoteOpenAi(params: net.pocketnai.domain.openai.OpenAiImageParams) =
+                ChatImageQuote.fromOpenAi(net.pocketnai.domain.openai.OpenAiImagePricing.estimate(params, 0))
+            override suspend fun generateOpenAi(params: net.pocketnai.domain.openai.OpenAiImageParams, account: String?, beforeSend: suspend () -> Unit, onImage: (ChatImage) -> Unit): List<ChatImage> {
+                beforeSend()
+                openAiCalls += params.prompt
+                return listOf(ChatImage("oa-${openAiCalls.size}", "oa.png", 1024, 1024)).onEach(onImage)
+            }
+        }
+        val openAiConfirmed = mutableListOf<ChatImagePlan>()
+        val openAiResult = ChatImageBatch(openAiFake).executeOpenAi(
+            openAiPlanItems, base, ChatToolPermission.ASK,
+            confirm = { openAiConfirmed += it; true }, active = { true },
+            onProgress = { _, _, _ -> }, onImage = {}, checkpoint = {},
+        )
+        assertThat(openAiConfirmed).hasSize(1)
+        assertThat(openAiConfirmed.single().summary).contains("OpenAI")
+        assertThat(openAiConfirmed.single().items.all { it.openAi != null }).isTrue()
+        assertThat(openAiResult.status).isEqualTo("succeeded")
+        assertThat(openAiCalls).containsExactly("a sunny meadow", "a starry sky").inOrder()
     }
 }
