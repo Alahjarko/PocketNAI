@@ -12,16 +12,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import net.pocketnai.ui.common.MotionIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import net.pocketnai.ui.common.MotionOutlinedButton as OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -103,34 +100,18 @@ fun PreciseReferencePanel(
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = {
-                        pickImage.launch(
-                            PickVisualMediaRequest(
-                                ActivityResultContracts.PickVisualMedia.ImageOnly,
-                            ),
-                        )
-                    },
-                    enabled = connected && !state.referenceBusy && state.remainingDirectorSlots > 0,
-                ) {
-                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
-                    Text(
-                        text = stringResource(R.string.generate_reference_pick),
-                        modifier = Modifier.padding(start = 4.dp),
+            ReferenceSourcePickerRow(
+                enabled = connected && !state.referenceBusy && state.remainingDirectorSlots > 0,
+                compact = state.directorReferences.isNotEmpty(),
+                onPickAlbum = {
+                    pickImage.launch(
+                        PickVisualMediaRequest(
+                            ActivityResultContracts.PickVisualMedia.ImageOnly,
+                        ),
                     )
-                }
-                OutlinedButton(
-                    onClick = { historyPickerOpen = true },
-                    enabled = connected && !state.referenceBusy && state.remainingDirectorSlots > 0,
-                ) {
-                    Icon(Icons.Default.History, contentDescription = null)
-                    Text(
-                        text = stringResource(R.string.generate_reference_from_history),
-                        modifier = Modifier.padding(start = 4.dp),
-                    )
-                }
-            }
+                },
+                onPickHistory = { historyPickerOpen = true },
+            )
 
             Text(
                 text = stringResource(
@@ -189,7 +170,7 @@ private fun DirectorEntry(
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
                     .size(width = 64.dp, height = 64.dp)
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surface),
             )
             Column(modifier = Modifier.weight(1f)) {
@@ -216,14 +197,22 @@ private fun DirectorEntry(
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             // 参考类型与官网 caption 对应，单独一行避免小屏挤压。
             DirectorKind.entries.forEach { kind ->
+                val isSelected = (reference.directorKind ?: DirectorReferenceKind.DEFAULT) == kind.value
                 AssistChip(
                     onClick = { onKindChange(kind.value) },
                     label = { Text(stringResource(kind.labelRes)) },
+                    shape = RoundedCornerShape(12.dp),
+                    border = null,
                     colors = AssistChipDefaults.assistChipColors(
-                        containerColor = if ((reference.directorKind ?: DirectorReferenceKind.DEFAULT) == kind.value) {
+                        containerColor = if (isSelected) {
                             MaterialTheme.colorScheme.secondaryContainer
                         } else {
-                            MaterialTheme.colorScheme.surface
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                        },
+                        labelColor = if (isSelected) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
                         },
                     ),
                 )

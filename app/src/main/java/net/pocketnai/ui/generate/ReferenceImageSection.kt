@@ -21,16 +21,20 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import net.pocketnai.ui.common.MotionIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import net.pocketnai.ui.common.MotionOutlinedButton as OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.foundation.shape.CircleShape
@@ -42,6 +46,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ColorFilter
@@ -98,59 +104,23 @@ fun Img2ImgPanel(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         val source = state.referenceSource
-        val albumPress = remember { MutableInteractionSource() }
-        val historyPress = remember { MutableInteractionSource() }
         androidx.compose.animation.AnimatedVisibility(visible = source == null,
             enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180)) +
                 androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(220)),
             exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(100)) +
                 androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(200))) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Surface(
-                    onClick = {
-                        pickImage.launch(
-                            PickVisualMediaRequest(
-                                ActivityResultContracts.PickVisualMedia.ImageOnly,
-                            ),
-                        )
-                    },
-                    enabled = connected && !state.referenceBusy,
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                    interactionSource = albumPress,
-                    modifier = Modifier.weight(1f).pressFeedback(albumPress, connected && !state.referenceBusy),
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(vertical = 18.dp, horizontal = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(
-                            Modifier.size(40.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        }
-                        Text(stringResource(R.string.generate_reference_pick), style = MaterialTheme.typography.labelLarge)
-                    }
-                }
-                Surface(
-                    onClick = { historyPickerOpen = true },
-                    enabled = connected && !state.referenceBusy,
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                    interactionSource = historyPress,
-                    modifier = Modifier.weight(1f).pressFeedback(historyPress, connected && !state.referenceBusy),
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(vertical = 18.dp, horizontal = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(
-                            Modifier.size(40.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(Icons.Default.History, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        }
-                        Text(stringResource(R.string.generate_reference_from_history), style = MaterialTheme.typography.labelLarge)
-                    }
-                }
-            }
+            ReferenceSourcePickerRow(
+                enabled = connected && !state.referenceBusy,
+                compact = false,
+                onPickAlbum = {
+                    pickImage.launch(
+                        PickVisualMediaRequest(
+                            ActivityResultContracts.PickVisualMedia.ImageOnly,
+                        ),
+                    )
+                },
+                onPickHistory = { historyPickerOpen = true },
+            )
         }
         AnimatedReferenceList(listOfNotNull(source)) { displayedSource ->
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -176,11 +146,20 @@ fun Img2ImgPanel(
                     )
                 } else {
                     val mask = state.inpaintMask
-                    OutlinedButton(
+                    val inpaintPress = remember { MutableInteractionSource() }
+                    FilledTonalButton(
                         onClick = onOpenInpaintEditor,
                         enabled = connected && !state.referenceBusy,
-                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        interactionSource = inpaintPress,
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = if (mask != null) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = if (mask != null) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+                        ),
+                        modifier = Modifier.fillMaxWidth().pressFeedback(inpaintPress, connected && !state.referenceBusy),
                     ) {
+                        Icon(Icons.Default.Brush, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
                         Text(
                             if (mask == null) {
                                 stringResource(R.string.inpaint_open_editor)
@@ -299,10 +278,131 @@ internal fun ReferenceThumbnail(source: java.io.File, mask: java.io.File?, modif
         0f, 0f, 0f, 0f, color.blue * 255f,
         0.6f, 0f, 0f, 0f, 0f,
     ))) }
-    Box(modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surface)) {
+    Box(modifier.clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surface)) {
         AsyncImage(source, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         if (mask != null) AsyncImage(mask, "重绘区域", Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop, colorFilter = tint)
+    }
+}
+
+/**
+ * 统一的「从相册选择 / 从历史选择」入口，供图生图、Precise Reference 与 Vibe Transfer 共用。
+ * 空状态采用双无边框 tonal 卡片；已有参考图继续追加时切为紧凑双 tonal 药丸，避免挤占垂直空间。
+ */
+@Composable
+internal fun ReferenceSourcePickerRow(
+    enabled: Boolean,
+    compact: Boolean,
+    onPickAlbum: () -> Unit,
+    onPickHistory: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val albumPress = remember { MutableInteractionSource() }
+    val historyPress = remember { MutableInteractionSource() }
+    val contentAlpha = if (enabled) 1f else 0.45f
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (compact) {
+            ReferenceSourceCompactTile(
+                icon = Icons.Default.AddPhotoAlternate,
+                label = stringResource(R.string.generate_reference_pick),
+                enabled = enabled,
+                contentAlpha = contentAlpha,
+                interaction = albumPress,
+                onClick = onPickAlbum,
+                modifier = Modifier.weight(1f),
+            )
+            ReferenceSourceCompactTile(
+                icon = Icons.Default.History,
+                label = stringResource(R.string.generate_reference_from_history),
+                enabled = enabled,
+                contentAlpha = contentAlpha,
+                interaction = historyPress,
+                onClick = onPickHistory,
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            ReferenceSourceCardTile(
+                icon = Icons.Default.AddPhotoAlternate,
+                label = stringResource(R.string.generate_reference_pick),
+                enabled = enabled,
+                contentAlpha = contentAlpha,
+                interaction = albumPress,
+                onClick = onPickAlbum,
+                modifier = Modifier.weight(1f),
+            )
+            ReferenceSourceCardTile(
+                icon = Icons.Default.History,
+                label = stringResource(R.string.generate_reference_from_history),
+                enabled = enabled,
+                contentAlpha = contentAlpha,
+                interaction = historyPress,
+                onClick = onPickHistory,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReferenceSourceCardTile(
+    icon: ImageVector,
+    label: String,
+    enabled: Boolean,
+    contentAlpha: Float,
+    interaction: MutableInteractionSource,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        interactionSource = interaction,
+        modifier = modifier.pressFeedback(interaction, enabled),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().alpha(contentAlpha).padding(vertical = 18.dp, horizontal = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(
+                Modifier.size(40.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            }
+            Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun ReferenceSourceCompactTile(
+    icon: ImageVector,
+    label: String,
+    enabled: Boolean,
+    contentAlpha: Float,
+    interaction: MutableInteractionSource,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        interactionSource = interaction,
+        modifier = modifier.pressFeedback(interaction, enabled),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().alpha(contentAlpha).padding(horizontal = 12.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+            Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 

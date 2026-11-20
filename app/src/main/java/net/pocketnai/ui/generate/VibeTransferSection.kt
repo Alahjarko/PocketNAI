@@ -12,14 +12,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.History
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import net.pocketnai.ui.common.MotionIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import net.pocketnai.ui.common.MotionOutlinedButton as OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -97,34 +96,18 @@ fun VibeTransferPanel(
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = {
-                        pickImage.launch(
-                            PickVisualMediaRequest(
-                                ActivityResultContracts.PickVisualMedia.ImageOnly,
-                            ),
-                        )
-                    },
-                    enabled = connected && !state.referenceBusy && state.remainingVibeSlots > 0,
-                ) {
-                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
-                    Text(
-                        text = stringResource(R.string.generate_reference_pick),
-                        modifier = Modifier.padding(start = 4.dp),
+            ReferenceSourcePickerRow(
+                enabled = connected && !state.referenceBusy && state.remainingVibeSlots > 0,
+                compact = state.vibeReferences.isNotEmpty(),
+                onPickAlbum = {
+                    pickImage.launch(
+                        PickVisualMediaRequest(
+                            ActivityResultContracts.PickVisualMedia.ImageOnly,
+                        ),
                     )
-                }
-                OutlinedButton(
-                    onClick = { historyPickerOpen = true },
-                    enabled = connected && !state.referenceBusy && state.remainingVibeSlots > 0,
-                ) {
-                    Icon(Icons.Default.History, contentDescription = null)
-                    Text(
-                        text = stringResource(R.string.generate_reference_from_history),
-                        modifier = Modifier.padding(start = 4.dp),
-                    )
-                }
-            }
+                },
+                onPickHistory = { historyPickerOpen = true },
+            )
 
             Text(
                 text = stringResource(
@@ -149,9 +132,14 @@ fun VibeTransferPanel(
                 },
             )
             if (state.vibeReferences.size > 1) {
-                OutlinedButton(
+                FilledTonalButton(
                     onClick = viewModel::normalizeVibeStrengths,
                     enabled = totalStrength > 1.0,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
                 ) {
                     Text(stringResource(R.string.generate_vibe_normalize))
                 }
@@ -193,7 +181,7 @@ private fun VibeEntry(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .size(width = 64.dp, height = 64.dp)
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surface),
             )
             Column(modifier = Modifier.weight(1f)) {
