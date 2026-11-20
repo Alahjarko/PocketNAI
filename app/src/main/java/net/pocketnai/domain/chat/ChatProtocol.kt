@@ -51,8 +51,10 @@ object ChatProtocol {
 
     fun dialect(config: LlmConfig): LlmDialect {
         if (config.dialect != LlmDialect.AUTO) return config.dialect
+        val base = config.baseUrl.lowercase()
         val value = (config.baseUrl + " " + config.model).lowercase()
         return when {
+            "googleapis.com" in base && "/openai" !in base -> LlmDialect.GEMINI
             "kimi" in value || "moonshot" in value -> LlmDialect.KIMI
             "deepseek" in value -> LlmDialect.DEEPSEEK
             else -> LlmDialect.OPENAI_COMPATIBLE

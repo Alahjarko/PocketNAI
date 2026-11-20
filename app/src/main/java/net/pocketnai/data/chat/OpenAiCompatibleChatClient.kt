@@ -16,10 +16,24 @@ class OpenAiCompatibleChatClient(
         .callTimeout(10, TimeUnit.MINUTES).retryOnConnectionFailure(false)
         .followRedirects(false).followSslRedirects(false).build(),
     private val endpoint: (String, String) -> String = ChatProtocol::endpoint,
+    private val geminiModelsEndpoint: (String) -> String = GeminiProtocol::modelsEndpoint,
+    private val geminiStreamEndpoint: (String, String) -> String = GeminiProtocol::streamEndpoint,
 ) : ChatClient {
     private val json = Json { ignoreUnknownKeys = true }
 
     override suspend fun models(config: LlmConfig, apiKey: String): List<String> = withContext(Dispatchers.IO) {
+        if (ChatProtocol.dialect(config) == LlmDialect.GEMINI) {
+            val request = Request.Builder().url(geminiModelsEndpoint(config.baseUrl))
+                .header("User-Agent", "PocketNAI/Android")
+                .header("x-goog-api-key", apiKey).get().build()
+            return@withContext execute(request) { response ->
+                val body = response.body ?: throw ChatFailure("模型列表为空")
+                val bytes = readBounded(body)
+                val root = json.parseToJsonElement(bytes.toString(Charsets.UTF_8)) as? JsonObject
+                    ?: throw ChatFailure("模型列表格式不兼容")
+                GeminiProtocol.parseModels(root, apiKey)
+            }
+        }
         val request = Request.Builder().url(endpoint(config.baseUrl, "models"))
             .header("User-Agent", "PocketNAI/Android")
             .header("Authorization", "Bearer $apiKey").get().build()
@@ -37,12 +51,16 @@ class OpenAiCompatibleChatClient(
         config: LlmConfig, apiKey: String, messages: List<JsonObject>, tools: JsonArray,
         onPartial: (JsonObject) -> Unit,
     ): JsonObject = withContext(Dispatchers.IO) {
+        val hasImages = messages.any { (it["content"] as? JsonArray)?.any { part -> (part as? JsonObject)?.string("type") == "image_url" } == true }
+        if (ChatProtocol.dialect(config) == LlmDialect.GEMINI) {
+            return@withContext completeGemini(config, apiKey, messages, tools, hasImages, onPartial)
+        }
         val request = Request.Builder().url(endpoint(config.baseUrl, "chat/completions"))
             .header("User-Agent", "PocketNAI/Android")
             .header("Authorization", "Bearer $apiKey")
             .header("Accept", "text/event-stream")
             .post(ChatProtocol.request(config, messages, tools).toString().toRequestBody("application/json".toMediaType())).build()
-        execute(request, hasImages = messages.any { (it["content"] as? JsonArray)?.any { part -> (part as? JsonObject)?.string("type") == "image_url" } == true }) { response ->
+        execute(request, hasImages = hasImages) { response ->
             val body = response.body ?: throw ChatFailure("供应商返回空响应")
             if (response.header("Content-Type").orEmpty().contains("application/json")) {
                 val bytes = readBounded(body)
@@ -89,6 +107,80 @@ class OpenAiCompatibleChatClient(
                 } finally {
                     // Throttling must not discard the last received chunk on stop/EOF/error.
                     // This remains a display draft: complete() still guards all executable calls.
+                    onPartial(accumulator.message().withoutSecret(apiKey))
+                }
+            }
+        }
+    }
+
+    private suspend fun completeGemini(
+        config: LlmConfig,
+        apiKey: String,
+        messages: List<JsonObject>,
+        tools: JsonArray,
+        hasImages: Boolean,
+        onPartial: (JsonObject) -> Unit,
+    ): JsonObject {
+        val request = Request.Builder().url(geminiStreamEndpoint(config.baseUrl, config.model))
+            .header("User-Agent", "PocketNAI/Android")
+            .header("x-goog-api-key", apiKey)
+            .header("Accept", "text/event-stream")
+            .post(GeminiProtocol.request(config, messages, tools).toString().toRequestBody("application/json".toMediaType()))
+            .build()
+        return execute(request, hasImages = hasImages) { response ->
+            val body = response.body ?: throw ChatFailure("供应商返回空响应")
+            val contentType = response.header("Content-Type").orEmpty()
+            if (contentType.contains("application/json")) {
+                val bytes = readBounded(body)
+                val parsed = json.parseToJsonElement(bytes.toString(Charsets.UTF_8))
+                val accumulator = GeminiStreamAccumulator()
+                when (parsed) {
+                    is JsonObject -> {
+                        if (parsed["error"] != null) throw ChatFailure("供应商中断了回复")
+                        accumulator.append(parsed)
+                    }
+                    is JsonArray -> parsed.forEach { el ->
+                        val chunk = el as? JsonObject ?: return@forEach
+                        if (chunk["error"] != null) throw ChatFailure("供应商中断了回复")
+                        accumulator.append(chunk)
+                    }
+                    else -> throw ChatFailure("回复格式不兼容")
+                }
+                accumulator.complete().withoutSecret(apiKey)
+            } else {
+                val accumulator = GeminiStreamAccumulator()
+                val source = body.source()
+                val event = StringBuilder()
+                var lastEmission = 0L
+                fun consume() {
+                    val data = event.toString().trim()
+                    event.clear()
+                    if (data.isBlank() || data == "[DONE]") return
+                    val chunk = json.parseToJsonElement(data) as? JsonObject ?: throw ChatFailure("流式回复格式不兼容")
+                    if (chunk["error"] != null) throw ChatFailure("供应商中断了回复")
+                    accumulator.append(chunk)
+                    val now = System.nanoTime()
+                    if (now - lastEmission >= 120_000_000L) {
+                        onPartial(accumulator.message().withoutSecret(apiKey))
+                        lastEmission = now
+                    }
+                }
+                try {
+                    var totalBytes = 0L
+                    while (!source.exhausted()) {
+                        currentCoroutineContext().ensureActive()
+                        val line = source.readUtf8LineStrict(256 * 1024)
+                        totalBytes += line.toByteArray(Charsets.UTF_8).size
+                        if (totalBytes > MAX_RESPONSE_BYTES) throw ChatFailure("模型回复过长")
+                        if (line.isEmpty()) consume()
+                        else if (line.startsWith("data:")) {
+                            if (event.isNotEmpty()) event.append('\n')
+                            event.append(line.removePrefix("data:").trimStart())
+                        }
+                    }
+                    if (event.isNotEmpty()) consume()
+                    accumulator.complete().withoutSecret(apiKey)
+                } finally {
                     onPartial(accumulator.message().withoutSecret(apiKey))
                 }
             }

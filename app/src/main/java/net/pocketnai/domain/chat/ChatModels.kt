@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
 @Serializable
-enum class LlmDialect { AUTO, KIMI, DEEPSEEK, OPENAI_COMPATIBLE }
+enum class LlmDialect { AUTO, KIMI, DEEPSEEK, GEMINI, OPENAI_COMPATIBLE }
 
 @Serializable
 enum class ChatToolPermission { ASK, SINGLE_IMAGE, FULL }

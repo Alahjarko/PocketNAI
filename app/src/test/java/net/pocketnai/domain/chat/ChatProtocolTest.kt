@@ -141,6 +141,55 @@ class ChatProtocolTest {
             ImageChatTools.schema,
         )
         assertThat((deepseekReq["messages"] as JsonArray)[1].jsonObject.string("reasoning_content")).isEqualTo("think")
+
+        // Gemini 原生协议：自动识别 /v1beta、URL 归一化、多模态 inlineData、无参工具省 parameters、并行 functionResponse 合并及 thoughtSignature 往返。
+        assertThat(ChatProtocol.dialect(LlmConfig(baseUrl = "https://generativelanguage.googleapis.com/v1beta", model = "gemini-4-pro"))).isEqualTo(LlmDialect.GEMINI)
+        assertThat(ChatProtocol.dialect(LlmConfig(baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai", model = "gemini-4-pro"))).isEqualTo(LlmDialect.OPENAI_COMPATIBLE)
+        assertThat(GeminiProtocol.streamEndpoint("https://generativelanguage.googleapis.com", "models/gemini-4-pro"))
+            .isEqualTo("https://generativelanguage.googleapis.com/v1beta/models/gemini-4-pro:streamGenerateContent?alt=sse")
+        assertThat(GeminiProtocol.baseRoot("https://generativelanguage.googleapis.com/v1beta/openai"))
+            .isEqualTo("https://generativelanguage.googleapis.com/v1beta")
+        assertThat(runCatching { GeminiProtocol.streamEndpoint("https://generativelanguage.googleapis.com/v1beta", "../bad") }.isFailure).isTrue()
+
+        val geminiAcc = GeminiStreamAccumulator()
+        geminiAcc.append(Json.parseToJsonElement("""{"candidates":[{"content":{"role":"model","parts":[{"thought":true,"text":"plan step"},{"functionCall":{"id":"g1","name":"get_generation_settings","args":{}},"thoughtSignature":"gsig-1"},{"functionCall":{"id":"g2","name":"web_search","args":{"query":"rose"}},"thoughtSignature":"gsig-2"}]}}]}""") as JsonObject)
+        geminiAcc.append(Json.parseToJsonElement("""{"candidates":[{"finishReason":"STOP"}]}""") as JsonObject)
+        val geminiAssistant = geminiAcc.complete()
+        assertThat(geminiAssistant.string("reasoning_content")).isEqualTo("plan step")
+        val gCalls = geminiAssistant["tool_calls"] as JsonArray
+        assertThat(gCalls).hasSize(2)
+        assertThat(gCalls[0].jsonObject["extra_content"].toString()).contains("gsig-1")
+        assertThat(gCalls[1].jsonObject["extra_content"].toString()).contains("gsig-2")
+
+        val geminiUserWithImage = ChatProtocol.withImages(wireMessage("user", "看看这张图"), listOf("data:image/jpeg;base64,dGVzdA=="))
+        val nativeReq = GeminiProtocol.request(
+            LlmConfig(baseUrl = "https://generativelanguage.googleapis.com/v1beta", model = "gemini-4-pro", dialect = LlmDialect.GEMINI, thinking = true),
+            listOf(
+                wireMessage("system", "你是绘伴"),
+                geminiUserWithImage,
+                geminiAssistant,
+                wireMessage("tool", """{"model":"nai-diffusion-4-5-full"}""", "g1"),
+                wireMessage("tool", """{"status":"succeeded"}""", "g2"),
+            ),
+            buildJsonArray { ImageChatTools.schema.forEach(::add); add(ChatSearchTool.schema) },
+        )
+        assertThat(nativeReq["systemInstruction"].toString()).contains("你是绘伴")
+        assertThat(nativeReq["generationConfig"]!!.jsonObject["thinkingConfig"]!!.jsonObject["includeThoughts"]!!.jsonPrimitive.boolean).isTrue()
+        val decls = nativeReq["tools"]!!.jsonArray[0].jsonObject["functionDeclarations"]!!.jsonArray
+        val getSettingsDecl = decls.first { it.jsonObject.string("name") == "get_generation_settings" }.jsonObject
+        assertThat(getSettingsDecl.containsKey("parameters")).isFalse()
+        val contents = nativeReq["contents"]!!.jsonArray
+        assertThat(contents).hasSize(3) // user(text+image), model(2 functionCalls), user(2 merged functionResponses)
+        assertThat(contents[0].jsonObject["parts"].toString()).contains("inlineData")
+        assertThat(contents[1].jsonObject["parts"]!!.jsonArray[0].jsonObject.string("thoughtSignature")).isEqualTo("gsig-1")
+        val toolTurnParts = contents[2].jsonObject["parts"]!!.jsonArray
+        assertThat(toolTurnParts).hasSize(2)
+        assertThat(toolTurnParts[0].jsonObject["functionResponse"]!!.jsonObject.string("name")).isEqualTo("get_generation_settings")
+        assertThat(toolTurnParts[1].jsonObject["functionResponse"]!!.jsonObject.string("name")).isEqualTo("web_search")
+
+        val safetyAcc = GeminiStreamAccumulator()
+        safetyAcc.append(Json.parseToJsonElement("""{"candidates":[{"finishReason":"SAFETY"}]}""") as JsonObject)
+        assertThat(runCatching { safetyAcc.complete() }.exceptionOrNull()).hasMessageThat().contains("安全")
     }
     @Test fun `未结束与截断流不会被当成可执行工具`() {
         val display = "柔和光线 e\u0301 👩‍🎨 和完整画面"

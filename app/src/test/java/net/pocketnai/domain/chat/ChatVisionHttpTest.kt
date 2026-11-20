@@ -59,8 +59,41 @@ class ChatVisionHttpTest {
             assertThat(interruptedChatEntry("kept", last, "回复未完成")!!.calls).isEmpty()
             assertThat(server.requestCount).isEqualTo(2)
             server.takeRequest()
+            checkGeminiNativeHttp(server)
             checkSearchHttp(server)
         }
+    }
+
+    private suspend fun checkGeminiNativeHttp(server: MockWebServer) {
+        val secret = "local-gemini-placeholder"
+        val client = OpenAiCompatibleChatClient(
+            geminiModelsEndpoint = { server.url("/v1beta/models?pageSize=200").toString() },
+            geminiStreamEndpoint = { _, model -> server.url("/v1beta/models/$model:streamGenerateContent?alt=sse").toString() },
+        )
+        val cfg = LlmConfig(baseUrl = "https://generativelanguage.googleapis.com/v1beta", model = "gemini-4-pro", dialect = LlmDialect.AUTO, thinking = true)
+        server.enqueue(MockResponse().setBody("""{"models":[{"name":"models/gemini-4-pro","supportedGenerationMethods":["generateContent"]},{"name":"models/embedding-001","supportedGenerationMethods":["embedContent"]}]}"""))
+        val models = client.models(cfg, secret)
+        assertThat(models).containsExactly("gemini-4-pro")
+        val modelsReq = server.takeRequest()
+        assertThat(modelsReq.getHeader("x-goog-api-key")).isEqualTo(secret)
+        assertThat(modelsReq.getHeader("Authorization")).isNull()
+
+        server.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream").setBody(
+            "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"thought\":true,\"text\":\"analyzing image\"}]}}]}\n\n" +
+            "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"It is a rose.\"},{\"functionCall\":{\"id\":\"fc1\",\"name\":\"get_generation_settings\",\"args\":{}},\"thoughtSignature\":\"sig-native\"}]},\"finishReason\":\"STOP\"}]}\n\n"
+        ))
+        val imgMsg = ChatProtocol.withImages(wireMessage("user", "分析"), listOf("data:image/jpeg;base64,dGVzdA=="))
+        val reply = client.complete(cfg, secret, listOf(wireMessage("system", "sys"), imgMsg), ImageChatTools.schema)
+        assertThat(reply.string("reasoning_content")).isEqualTo("analyzing image")
+        assertThat(reply.string("content")).isEqualTo("It is a rose.")
+        assertThat(reply["tool_calls"].toString()).contains("sig-native")
+        val genReq = server.takeRequest()
+        assertThat(genReq.getHeader("x-goog-api-key")).isEqualTo(secret)
+        assertThat(genReq.path).contains("gemini-4-pro:streamGenerateContent?alt=sse")
+        val reqBody = genReq.body.readUtf8()
+        assertThat(reqBody).contains("inlineData")
+        assertThat(reqBody).contains("functionDeclarations")
+        assertThat(reqBody).contains("includeThoughts")
     }
 
     private suspend fun checkSearchHttp(server: MockWebServer) {

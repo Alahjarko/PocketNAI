@@ -69,17 +69,25 @@ class ChatViewModel(
     }
     fun hasProviderKey(id: String) = settings.hasProviderKey(id)
     fun saveProvider(provider: LlmProvider, key: String) = changeConfiguration {
-        ChatProtocol.endpoint(provider.baseUrl, "models")
+        if (provider.models.any { it.dialect == LlmDialect.GEMINI } ||
+            ("googleapis.com" in provider.baseUrl.lowercase() && "/openai" !in provider.baseUrl.lowercase())) {
+            GeminiProtocol.baseRoot(provider.baseUrl)
+        } else {
+            ChatProtocol.endpoint(provider.baseUrl, "models")
+        }
         settings.saveProvider(provider, key)
     }
     fun deleteProvider(id: String) = changeConfiguration { settings.deleteProvider(id) }
     fun selectModel(providerId: String, modelId: String) = changeConfiguration { settings.selectModel(providerId, modelId) }
     fun savePreferences(next: LlmConfig) = changeConfiguration { settings.savePreferences(next) }
     suspend fun providerModels(provider: LlmProvider, key: String): List<String> {
-        ChatProtocol.endpoint(provider.baseUrl, "models")
+        val dialect = if (provider.models.any { it.dialect == LlmDialect.GEMINI }) LlmDialect.GEMINI else LlmDialect.AUTO
+        val probe = LlmConfig(baseUrl = provider.baseUrl.trim(), dialect = dialect)
+        if (ChatProtocol.dialect(probe) == LlmDialect.GEMINI) GeminiProtocol.baseRoot(provider.baseUrl)
+        else ChatProtocol.endpoint(provider.baseUrl, "models")
         val token = key.trim().ifEmpty { settings.providerKey(provider.id, provider.baseUrl).orEmpty() }
         if (token.isBlank()) throw ChatFailure("请填写该提供商地址对应的 API Key")
-        return api.models(LlmConfig(baseUrl = provider.baseUrl.trim()), token).distinct().sorted()
+        return api.models(probe, token).distinct().sorted()
     }
     val searchConfig = settings.searchConfig
     @Volatile private var stopImages = false

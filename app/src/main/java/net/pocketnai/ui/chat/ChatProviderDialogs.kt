@@ -46,7 +46,7 @@ fun LlmProviderEditor(viewModel: ChatViewModel, initial: LlmProvider, onDismiss:
         LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item(key = "connection-header") {
                 SettingsSection("连接设置") {
-                    net.pocketnai.ui.common.InfoButton("支持 OpenAI 兼容接口。填写服务的 API 根路径，不自动追加 /v1。每个提供商独立加密保存密钥；更换地址必须填写对应密钥。消息、人格和附件仅在发送时交给所选提供商。")
+                    net.pocketnai.ui.common.InfoButton("支持 OpenAI 兼容与 Gemini 原生接口（Google 官方填 https://generativelanguage.googleapis.com/v1beta 自动识别，无需追加 /openai）。每个提供商独立加密保存密钥；更换地址必须填写对应密钥。消息、人格和附件仅在发送时交给所选提供商。")
                 }
             }
             item(key = "connection") {
@@ -115,7 +115,8 @@ fun LlmProviderEditor(viewModel: ChatViewModel, initial: LlmProvider, onDismiss:
         SettingsEditorSheet("添加模型", Icons.Default.Memory, { discovered = null }, saveLabel = "添加所选", scrollContent = false,
             onSave = {
                 // Discovery is additive: deselecting a fetched item never removes an existing model.
-                provider = provider.copy(models = provider.models + found.filter { it in selected && provider.models.none { model -> model.id == it } }.map { LlmModel(it) })
+                val defaultDialect = if (provider.models.any { it.dialect == LlmDialect.GEMINI }) LlmDialect.GEMINI else LlmDialect.AUTO
+                provider = provider.copy(models = provider.models + found.filter { it in selected && provider.models.none { model -> model.id == it } }.map { LlmModel(it, dialect = defaultDialect) })
                 true
             }) {
             OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), label = { Text("搜索模型") }, singleLine = true,
@@ -132,7 +133,11 @@ fun LlmProviderEditor(viewModel: ChatViewModel, initial: LlmProvider, onDismiss:
 }
 
 private fun dialectLabel(dialect: LlmDialect): String = when (dialect) {
-    LlmDialect.AUTO -> "自动"; LlmDialect.KIMI -> "Kimi"; LlmDialect.DEEPSEEK -> "DeepSeek"; else -> "OpenAI 兼容"
+    LlmDialect.AUTO -> "自动"
+    LlmDialect.KIMI -> "Kimi"
+    LlmDialect.DEEPSEEK -> "DeepSeek"
+    LlmDialect.GEMINI -> "Gemini 原生"
+    LlmDialect.OPENAI_COMPATIBLE -> "OpenAI 兼容"
 }
 
 @OptIn(ExperimentalLayoutApi::class)
