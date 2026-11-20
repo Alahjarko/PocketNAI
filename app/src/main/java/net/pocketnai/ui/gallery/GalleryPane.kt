@@ -11,11 +11,15 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
@@ -23,6 +27,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,12 +61,10 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -75,7 +79,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -84,14 +87,19 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import java.io.File
 import net.pocketnai.ui.common.ImageShareManager
 import net.pocketnai.ui.common.MotionIconButton
+import net.pocketnai.ui.common.PillSearchField
+import net.pocketnai.ui.motion.pressFeedback
 import net.pocketnai.ui.safety.SfwAsyncImage
 import net.pocketnai.ui.settings.SettingsCard
 import net.pocketnai.ui.settings.SettingsIcon
@@ -189,7 +197,6 @@ fun GalleryPane(
     var pendingSave by remember { mutableStateOf<GalleryItem?>(null) }
     var pendingBatchSave by remember { mutableStateOf<List<GalleryItem>?>(null) }
     var confirmBatchDelete by remember { mutableStateOf(false) }
-    var requestedTask by remember { mutableStateOf<String?>(null) }
     var openingImage by remember { mutableStateOf(false) }
     LaunchedEffect(gridState) {
         snapshotFlow { gridState.layoutInfo.let { info ->
@@ -257,11 +264,6 @@ fun GalleryPane(
     val sections = remember(items, generations, filter, isSelectionMode, motionRevision) {
         viewModel.motionSlots.sections(items, generations, !isSelectionMode, filter = filter)
     }
-    LaunchedEffect(sections, requestedTask) {
-        val id = requestedTask ?: return@LaunchedEffect
-        val index = sections.flatMap { it.slots }.indexOfFirst { it.generation?.id == id || it.image?.generationId == id }
-        if (index >= 0) { gridState.scrollToItem(index + 1); requestedTask = null }
-    }
     Column(modifier = modifier.fillMaxSize()) {
         val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
         val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
@@ -303,10 +305,10 @@ fun GalleryPane(
                         haptics.tick()
                         viewModel.enterSelectionMode()
                     },
-                    taskAction = { GenerationTasksButton(generations) { id -> viewModel.clearFilter(); requestedTask = id } },
                 )
             }
         }
+        GalleryTopBarDivider(gridState)
 
         Box(modifier = Modifier.fillMaxSize()) {
             if (sections.isEmpty()) {
@@ -514,6 +516,24 @@ fun GalleryPane(
  * 模型/模式/仅收藏收进筛选对话框，多选收进同一对话框与长按菜单。
  */
 @Composable
+private fun GalleryTopBarDivider(state: androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState) {
+    val scrolled by remember(state) {
+        derivedStateOf { state.firstVisibleItemIndex > 0 || state.firstVisibleItemScrollOffset > 0 }
+    }
+    val alpha by animateFloatAsState(
+        targetValue = if (scrolled) 0.45f else 0f,
+        animationSpec = tween(160),
+        label = "gallery-top-divider",
+    )
+    HorizontalDivider(
+        color = MaterialTheme.colorScheme.outlineVariant,
+        modifier = Modifier
+            .imageMotionChrome()
+            .graphicsLayer { this.alpha = alpha },
+    )
+}
+
+@Composable
 private fun GalleryFilterBar(
     filter: GalleryFilter,
     onQueryChange: (String) -> Unit,
@@ -522,72 +542,100 @@ private fun GalleryFilterBar(
     onFavoritesOnlyChange: (Boolean) -> Unit,
     onClearAll: () -> Unit,
     onEnterSelectionMode: () -> Unit,
-    taskAction: @Composable () -> Unit = {},
 ) {
     var queryField by remember { mutableStateOf(TextFieldValue(filter.query)) }
+    val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
 
     var filterDialogOpen by remember { mutableStateOf(false) }
     LaunchedEffect(filter.query) { if (filter.query != queryField.text) queryField = TextFieldValue(filter.query) }
 
-    // 角标只数"藏起来"的条件：关键词就写在搜索框里，不必再数一遍。
+    // 胶囊右端计数只数"藏起来"的条件：关键词就写在搜索框里，不必再数一遍。
     val hiddenActiveCount = (if (filter.modelApiIds.isNotEmpty()) 1 else 0) +
         (if (filter.mode != null) 1 else 0) +
         (if (filter.favoritesOnly) 1 else 0)
 
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .imageMotionChrome()
             .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
-        OutlinedTextField(
+        PillSearchField(
             value = queryField,
             onValueChange = {
                 queryField = it
                 onQueryChange(it.text)
             },
-            placeholder = { Text(stringResource(R.string.gallery_search_hint)) },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            trailingIcon = {
-                if (queryField.text.isNotEmpty()) {
-                    IconButton(
-                        onClick = {
-                            queryField = TextFieldValue("")
-                            onQueryChange("")
-                        },
+            placeholder = stringResource(R.string.gallery_search_hint),
+            clearContentDescription = stringResource(R.string.gallery_filter_clear),
+            onClear = {
+                queryField = TextFieldValue("")
+                onQueryChange("")
+            },
+            modifier = Modifier.fillMaxWidth(),
+            trailing = {
+                val filterInteraction = remember { MutableInteractionSource() }
+                val active = hiddenActiveCount > 0
+                val containerColor by animateColorAsState(
+                    targetValue = if (active) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                    animationSpec = tween(150),
+                    label = "gallery-filter-pill-bg",
+                )
+                val contentColor by animateColorAsState(
+                    targetValue = if (active) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                    animationSpec = tween(150),
+                    label = "gallery-filter-pill-fg",
+                )
+                val openFilterLabel = stringResource(R.string.gallery_filter_open)
+                Surface(
+                    shape = CircleShape,
+                    color = containerColor,
+                    modifier = Modifier
+                        .height(36.dp)
+                        .pressFeedback(filterInteraction, pressedScale = 0.92f)
+                        .clip(CircleShape)
+                        .clickable(
+                            interactionSource = filterInteraction,
+                            indication = null,
+                            role = Role.Button,
+                            onClickLabel = openFilterLabel,
+                            onClick = {
+                                haptics.tick()
+                                filterDialogOpen = true
+                            },
+                        ),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = if (active) 10.dp else 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = stringResource(R.string.gallery_filter_clear),
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = openFilterLabel,
+                            tint = contentColor,
+                            modifier = Modifier.size(20.dp),
                         )
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = active,
+                            enter = fadeIn(tween(120)) + scaleIn(
+                                spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 700f),
+                                initialScale = 0.7f,
+                            ),
+                            exit = fadeOut(tween(90)) + scaleOut(tween(90), targetScale = 0.75f),
+                        ) {
+                            Text(
+                                text = hiddenActiveCount.toString(),
+                                style = MaterialTheme.typography.labelMedium.merge(TextStyle(fontFeatureSettings = "tnum")),
+                                fontWeight = FontWeight.SemiBold,
+                                color = contentColor,
+                            )
+                        }
                     }
                 }
             },
-            singleLine = true,
-            modifier = Modifier.weight(1f),
         )
-        taskAction()
-        Box {
-            IconButton(onClick = { filterDialogOpen = true }) {
-                Icon(
-                    imageVector = Icons.Default.FilterList,
-                    contentDescription = stringResource(R.string.gallery_filter_open),
-                    tint = if (hiddenActiveCount > 0) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-            if (hiddenActiveCount > 0) {
-                Badge(modifier = Modifier.align(Alignment.TopEnd)) {
-                    Text(hiddenActiveCount.toString())
-                }
-            }
-        }
     }
 
     if (filterDialogOpen) {

@@ -65,8 +65,15 @@ internal fun HistoryImagePickerDialog(onPick: (String) -> Unit, onDismiss: () ->
         if (confirmed && choice != null) onPickItem?.invoke(choice) ?: onPick(choice.relativePath) else onDismiss()
     }, scrollContent = false, saveLabel = "使用图片", saveEnabled = selected != null,
         onSave = { confirmed = true; true }) {
-        OutlinedTextField(query, { query = it; vm.onQueryChange(it.text) }, label = { Text("搜索提示词") },
-            singleLine = true, leadingIcon = { Icon(Icons.Default.Search, null) }, modifier = Modifier.fillMaxWidth().testTag("history-image-search"))
+        net.pocketnai.ui.common.PillSearchField(
+            value = query,
+            onValueChange = { query = it; vm.onQueryChange(it.text) },
+            placeholder = "搜索提示词",
+            clearContentDescription = "清除搜索",
+            onClear = { query = TextFieldValue(""); vm.onQueryChange("") },
+            modifier = Modifier.fillMaxWidth(),
+            inputModifier = Modifier.testTag("history-image-search"),
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) { GalleryModelFilterChip(filter.modelApiIds, vm::onModelsChange) }
             FilterChip(filter.favoritesOnly, { vm.onFavoritesOnlyChange(!filter.favoritesOnly) }, label = { Text("仅收藏") },
