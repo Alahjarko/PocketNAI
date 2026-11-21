@@ -291,9 +291,125 @@ class ChatViewModel(
             catch (_: Exception) { _state.update { it.copy(error = "附件移除尚未保存，请保留当前页面后重试") } } }
     }
 
+    fun editEntry(entryId: String, newText: String, resend: Boolean = false) {
+        if (_state.value.busy || _state.value.importingAttachment || _state.value.switchingConversation || !enabled.value) return
+        val current = _state.value.current ?: return
+        val target = current.entries.firstOrNull { it.id == entryId } ?: return
+        if (target.role != "user" && target.role != "assistant") return
+        val trimmed = newText.trim().let { if (it.isEmpty() && target.role == "user" && target.attachments.isNotEmpty()) "请看看这些图片。" else it }
+        if (trimmed.isEmpty()) { _state.update { it.copy(error = "消息内容不能为空") }; return }
+        if (trimmed.length > 64 * 1024) { _state.update { it.copy(error = "单条输入过长，请缩短内容或分条发送") }; return }
+        val secrets = listOfNotNull(settings.apiKey(), settings.searchKey()).filter { it.isNotBlank() }
+        if (secrets.any { trimmed.contains(it) }) { _state.update { it.copy(error = "请勿在聊天消息中粘贴 API Key") }; return }
+        if (!resend || target.role != "user") {
+            val updated = current.editEntry(entryId, trimmed) ?: return
+            viewModelScope.launch {
+                try {
+                    val saved = updated.copy(updatedAt = System.currentTimeMillis())
+                    store.save(saved)
+                    _state.update { it.copy(current = saved, error = null) }
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) { _state.update { it.copy(error = "修改未能保存，请稍后重试") } }
+            }
+            return
+        }
+        launchChatTurn { chat, _, _, _, _, _, _ ->
+            val edited = chat.editEntry(entryId, trimmed) ?: throw ChatFailure("无法定位要编辑的消息")
+            val (truncated, dropped) = edited.truncateForRetry(entryId) ?: throw ChatFailure("无法从该消息重新发送")
+            val saved = truncated.copy(updatedAt = System.currentTimeMillis())
+            store.save(saved)
+            _state.update { it.copy(current = saved) }
+            discardOrphanedAttachments(dropped)
+            saved
+        }
+    }
+
+    fun retryEntry(entryId: String) {
+        if (_state.value.busy || _state.value.importingAttachment || _state.value.switchingConversation || !enabled.value) return
+        val current = _state.value.current ?: return
+        if (current.truncateForRetry(entryId) == null) return
+        launchChatTurn { chat, _, _, _, _, _, _ ->
+            val (truncated, dropped) = chat.truncateForRetry(entryId) ?: throw ChatFailure("无法重试该轮对话")
+            val saved = truncated.copy(updatedAt = System.currentTimeMillis())
+            store.save(saved)
+            _state.update { it.copy(current = saved) }
+            discardOrphanedAttachments(dropped)
+            saved
+        }
+    }
+
+    fun branchFrom(entryId: String) {
+        if (_state.value.busy || _state.value.importingAttachment || _state.value.switchingConversation) return
+        val current = _state.value.current ?: return
+        val branched = current.branchAt(entryId, UUID.randomUUID().toString(), System.currentTimeMillis()) ?: return
+        _state.update { it.copy(switchingConversation = true, error = null) }
+        viewModelScope.launch {
+            try {
+                flushDraft()
+                store.save(branched)
+                _state.update {
+                    it.copy(
+                        current = branched,
+                        partial = null,
+                        streamId = null,
+                        error = null,
+                        draftText = "",
+                        draftSelectionStart = 0,
+                        draftSelectionEnd = 0,
+                        draftAttachments = emptyList(),
+                    )
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { _state.update { it.copy(error = "创建分支失败，请稍后重试") } }
+            finally { _state.update { it.copy(switchingConversation = false) } }
+        }
+    }
+
+    private suspend fun discardOrphanedAttachments(dropped: List<ChatEntry>) {
+        val candidates = dropped.flatMap { it.attachments }.distinctBy { it.id }
+        if (candidates.isEmpty()) return
+        val alive = store.liveAttachmentIds()
+        candidates.filter { it.id !in alive }.forEach { runCatching { attachments.discard(it) } }
+    }
+
     fun send(text: String) {
         if ((text.isBlank() && _state.value.draftAttachments.isEmpty()) || _state.value.busy || _state.value.importingAttachment || _state.value.switchingConversation || !enabled.value) return
         val attached = _state.value.draftAttachments.toList()
+        launchChatTurn { chat, token, searchToken, secrets, systemPrompt, withinContext, contextWire ->
+            val userText = text.trim().ifEmpty { "请看看这些图片。" }
+            if (userText.length > 64 * 1024) throw ChatFailure("单条输入过长，请缩短内容或分条发送")
+            if (secrets.any { userText.contains(it) }) throw ChatFailure("请勿在聊天消息中粘贴 API Key")
+            val safeAttached = attached.map { it.copy(promptContext = it.promptContext?.redacted(token)?.redacted(searchToken)?.bounded()) }
+            if (!withinContext(listOf(wireMessage("system", systemPrompt)) + chat.entries.map(contextWire) +
+                    ChatProtocol.withImageContext(wireMessage("user", userText), safeAttached.map { it.promptContext }, token)))
+                throw ChatFailure("对话上下文过长，请新建对话；历史消息仍可完整阅读")
+            val next = chat.copy(
+                title = if (chat.entries.isEmpty() && chat.title == "新对话") userText.take(28) else chat.title,
+                updatedAt = System.currentTimeMillis(),
+                entries = chat.entries + ChatEntry(UUID.randomUUID().toString(), wireMessage("user", userText), attachments = safeAttached),
+            )
+            store.save(next)
+            _state.update { s ->
+                val base = s.copy(current = next)
+                if (s.draftText == text) base.copy(draftAttachments = emptyList(), draftText = "", draftSelectionStart = 0, draftSelectionEnd = 0)
+                else base.copy(draftAttachments = emptyList())
+            }
+            flushDraft()
+            next
+        }
+    }
+
+    private fun launchChatTurn(
+        prepareChat: suspend (
+            chat: ChatConversation,
+            token: String,
+            searchToken: String,
+            secrets: List<String>,
+            systemPrompt: String,
+            withinContext: suspend (List<JsonObject>) -> Boolean,
+            contextWire: (ChatEntry) -> JsonObject,
+        ) -> ChatConversation,
+    ) {
         val cfg = config.value
         val background = try {
             backgroundTasks.begin(net.pocketnai.domain.task.BackgroundTasks.Kind.CHAT) {
@@ -327,9 +443,6 @@ class ChatViewModel(
                 val searchToken = settings.searchKey().orEmpty()
                 val secrets = listOf(token, searchToken).filter { it.isNotBlank() }
                 fun clean(wire: JsonObject) = secrets.fold(wire) { result, secret -> result.withoutSecret(secret) }
-                val userText = text.trim().ifEmpty { "请看看这些图片。" }
-                if (userText.length > 64 * 1024) throw ChatFailure("单条输入过长，请缩短内容或分条发送")
-                if (secrets.any { userText.contains(it) }) throw ChatFailure("请勿在聊天消息中粘贴 API Key")
                 val searchAvailable = searchCfg.enabled && searchToken.isNotBlank()
                 val isOpenAiProvider = images.openAiParams() != null
                 val systemPrompt = files.systemPrompt() + "\n\n当前应用能力：" +
@@ -342,17 +455,8 @@ class ChatViewModel(
                 suspend fun withinContext(messages: List<JsonObject>) = withContext(Dispatchers.Default) {
                     messages.sumOf { it.toString().toByteArray(Charsets.UTF_8).size } <= 512 * 1024
                 }
-                val safeAttached = attached.map { it.copy(promptContext = it.promptContext?.redacted(token)?.redacted(searchToken)?.bounded()) }
                 fun contextWire(entry: ChatEntry) = clean(ChatProtocol.withImageContext(entry.wire, entry.attachments.map { it.promptContext }, token))
-                if (!withinContext(listOf(wireMessage("system", systemPrompt)) + chat.entries.map(::contextWire) +
-                        ChatProtocol.withImageContext(wireMessage("user", userText), safeAttached.map { it.promptContext }, token)))
-                    throw ChatFailure("对话上下文过长，请新建对话；历史消息仍可完整阅读")
-                chat = chat.copy(title = if (chat.entries.isEmpty() && chat.title == "新对话") userText.take(28) else chat.title,
-                    entries = chat.entries + ChatEntry(UUID.randomUUID().toString(), wireMessage("user", userText), attachments = safeAttached))
-                persist()
-                _state.update { s -> if (s.draftText == text) s.copy(draftAttachments = emptyList(), draftText = "", draftSelectionStart = 0, draftSelectionEnd = 0)
-                    else s.copy(draftAttachments = emptyList()) }
-                flushDraft()
+                chat = prepareChat(chat, token, searchToken, secrets, systemPrompt, ::withinContext, ::contextWire)
                 val imageCache = mutableMapOf<String, String>()
                 val batch = ChatImageBatch(images)
                 val searched = mutableSetOf<String>()

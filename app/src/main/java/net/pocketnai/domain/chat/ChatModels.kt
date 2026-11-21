@@ -105,6 +105,66 @@ fun ChatConversation.recoverInterruptedTools(): ChatConversation {
     })
 }
 
+/** 修改某条用户或助手消息的正文，保留原有附件、思考与工具字段。 */
+fun ChatConversation.editEntry(entryId: String, newText: String): ChatConversation? {
+    val index = entries.indexOfFirst { it.id == entryId }
+    if (index < 0) return null
+    val target = entries[index]
+    if (target.role != "user" && target.role != "assistant") return null
+    val updatedWire = JsonObject(target.wire + ("content" to JsonPrimitive(newText)))
+    return copy(entries = entries.mapIndexed { i, entry -> if (i == index) entry.copy(wire = updatedWire) else entry })
+}
+
+/**
+ * 为「重试」截断对话：
+ * - 若选中用户消息，截断该消息之后的所有内容（保留该用户消息及附件）；
+ * - 若选中助手消息，回溯到它所属的那条用户消息，一并清掉该轮旧回复与中间工具调用。
+ * 返回截断后的对话与被截掉的条目（供清理孤立附件）。
+ */
+fun ChatConversation.truncateForRetry(entryId: String): Pair<ChatConversation, List<ChatEntry>>? {
+    val index = entries.indexOfFirst { it.id == entryId }
+    if (index < 0) return null
+    val userIndex = when (entries[index].role) {
+        "user" -> index
+        "assistant" -> (index - 1 downTo 0).firstOrNull { entries[it].role == "user" } ?: return null
+        else -> return null
+    }
+    val kept = entries.take(userIndex + 1)
+    val dropped = entries.drop(userIndex + 1)
+    return copy(entries = kept) to dropped
+}
+
+/**
+ * 从指定消息处分叉出一条独立新对话：
+ * - 若该消息是带 `tool_calls` 的助手消息，自动把紧随其后的配对 `tool` 结果一起带入分支，
+ *   再经 [recoverInterruptedTools] 兜底，避免悬空 `tool_call_id` 引发 400。
+ * - 所有条目分配全新 id，避免与原对话共享界面状态键；附件文件按引用计数安全共享。
+ */
+fun ChatConversation.branchAt(
+    entryId: String,
+    newConversationId: String,
+    now: Long,
+    idGenerator: () -> String = { java.util.UUID.randomUUID().toString() },
+): ChatConversation? {
+    val index = entries.indexOfFirst { it.id == entryId }
+    if (index < 0) return null
+    var end = index
+    val pendingCallIds = entries[index].calls.map { it.id }.toMutableSet()
+    while (pendingCallIds.isNotEmpty() && end + 1 < entries.size && entries[end + 1].role == "tool") {
+        end++
+        entries[end].wire.string("tool_call_id")?.let(pendingCallIds::remove)
+    }
+    val baseTitle = title.ifBlank { "新对话" }
+    val branchTitle = if (baseTitle.endsWith(" · 分支")) baseTitle else "${baseTitle.take(40)} · 分支"
+    val cloned = entries.take(end + 1).map { it.copy(id = idGenerator()) }
+    return ChatConversation(
+        id = newConversationId,
+        title = branchTitle,
+        updatedAt = now,
+        entries = cloned,
+    ).recoverInterruptedTools()
+}
+
 class ChatFailure(val userMessage: String) : Exception(userMessage)
 
 interface ChatClient {

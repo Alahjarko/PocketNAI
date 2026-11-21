@@ -222,6 +222,35 @@ class ChatProtocolTest {
         assertThat(stopped.calls).isEmpty()
         assertThat(stopped.notice).isEqualTo("回复已停止")
         assertThat(interruptedChatEntry("empty", wireMessage("assistant", ""), "回复已停止")).isNull()
+
+        // 上下文编辑、重试截断与分支克隆（含工具链配对保护）。
+        val u1 = ChatEntry("u1", wireMessage("user", "画一只猫"))
+        val a1 = ChatEntry("a1", Json.parseToJsonElement("""{"role":"assistant","content":null,"tool_calls":[{"id":"tc1","type":"function","function":{"name":"get_generation_settings","arguments":"{}"}}]}""") as JsonObject)
+        val t1 = ChatEntry("t1", wireMessage("tool", """{"ok":true}""", "tc1"))
+        val a2 = ChatEntry("a2", wireMessage("assistant", "已为你构思好画面"))
+        val u2 = ChatEntry("u2", wireMessage("user", "换夜景"))
+        val a3 = ChatEntry("a3", wireMessage("assistant", "好的，改成夜景"))
+        val conv = ChatConversation("c-main", title = "猫咪创作", updatedAt = 10, entries = listOf(u1, a1, t1, a2, u2, a3))
+
+        val edited = conv.editEntry("u1", "画一只银渐层")!!
+        assertThat(edited.entries[0].content).isEqualTo("画一只银渐层")
+        assertThat(edited.entries).hasSize(6)
+        assertThat(conv.editEntry("t1", "bad")).isNull()
+
+        val (retryA2, droppedA2) = conv.truncateForRetry("a2")!!
+        assertThat(retryA2.entries.map { it.id }).containsExactly("u1")
+        assertThat(droppedA2.map { it.id }).containsExactly("a1", "t1", "a2", "u2", "a3").inOrder()
+        val (retryU2, droppedU2) = conv.truncateForRetry("u2")!!
+        assertThat(retryU2.entries.map { it.id }).containsExactly("u1", "a1", "t1", "a2", "u2").inOrder()
+        assertThat(droppedU2.map { it.id }).containsExactly("a3")
+
+        val branchAtToolAssistant = conv.branchAt("a1", "c-branch-1", 20L)!!
+        assertThat(branchAtToolAssistant.id).isEqualTo("c-branch-1")
+        assertThat(branchAtToolAssistant.title).isEqualTo("猫咪创作 · 分支")
+        // 自动携带配对的 t1，不产生悬空 tool_call_id。
+        assertThat(branchAtToolAssistant.entries).hasSize(3)
+        assertThat(branchAtToolAssistant.entries.last().role).isEqualTo("tool")
+        assertThat(branchAtToolAssistant.entries.map { it.id }.toSet().intersect(conv.entries.map { it.id }.toSet())).isEmpty()
     }
 
     private fun checkConfirmedBatch() = kotlinx.coroutines.test.runTest {

@@ -111,7 +111,7 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
         }
     }
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let { viewModel.addPhoto(it.toString()) } }
-    var menuOpen by remember { mutableStateOf(false) }
+    var editingEntry by remember { mutableStateOf<ChatEntry?>(null) }
     var deleteId by remember { mutableStateOf<String?>(null) }
     var reading by remember { mutableStateOf<Pair<String, String>?>(null) }
     val scrollSession = rememberChatScrollSession(state.current?.id)
@@ -187,14 +187,11 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
     }
     ChatPageLayout(header = {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box {
-                IconButton(onClick = { menuOpen = true }, modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)) {
-                    Icon(Icons.Default.Menu, "对话菜单")
-                }
-                DropdownMenu(menuOpen, { menuOpen = false }) {
-                    DropdownMenuItem(text = { Text("新对话") }, onClick = { viewModel.newConversation(); menuOpen = false }, enabled = !state.busy)
-                    DropdownMenuItem(text = { Text("历史对话") }, onClick = { sessionsOpen = true; menuOpen = false })
-                }
+            IconButton(
+                onClick = { chatHaptics.tick(); sessionsOpen = true },
+                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape),
+            ) {
+                Icon(Icons.Default.Forum, "历史对话")
             }
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -210,8 +207,8 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                     Icon(Icons.Default.ArrowDropDown, "切换模型", Modifier.size(18.dp))
                 }
             }
-            IconButton(onClick = { imagesOpen = true }, modifier = Modifier.testTag("chat-image-history").background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)) {
-                Icon(Icons.Default.History, "打开对话图片记录")
+            IconButton(onClick = { chatHaptics.tick(); imagesOpen = true }, modifier = Modifier.testTag("chat-image-history").background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)) {
+                Icon(Icons.Default.PhotoLibrary, "打开对话图片记录")
             }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
@@ -258,12 +255,25 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                 }
             }
             items(entries, key = { it.id }, contentType = { it.role }) { entry ->
-                ChatTimelineEntry(entry, viewModel, resolveImage, onOpenImage,
-                    { title, text -> reading = title to text }, openAttachment)
+                ChatTimelineEntry(
+                    entry = entry,
+                    viewModel = viewModel,
+                    resolveImage = resolveImage,
+                    onOpenImage = onOpenImage,
+                    onRead = { title, text -> reading = title to text },
+                    onOpenAttachment = openAttachment,
+                    busy = state.busy || state.switchingConversation,
+                    onEdit = { editingEntry = it },
+                    onRetry = {
+                        if (!hasKey || config.model.isBlank()) { modelsOpen = true }
+                        else { following = true; viewModel.retryEntry(it.id) }
+                    },
+                    onBranch = { viewModel.branchFrom(it.id) },
+                )
             }
             state.streamId?.let { responseId -> item(key = responseId, contentType = "assistant") {
                 ChatTimelineEntry(null, viewModel, resolveImage, onOpenImage,
-                    { title, text -> reading = title to text }, openAttachment)
+                    { title, text -> reading = title to text }, openAttachment, busy = true)
             } }
             state.pending?.let { pending -> item {
                 ChatImagePlanCard(pending.plan, { viewModel.confirmImage(pending.callId, true) },
@@ -351,6 +361,26 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
         confirmButton = { TextButton(onClick = { viewModel.deleteConversation(id); deleteId = null }) { Text("删除") } },
         dismissButton = { TextButton(onClick = { deleteId = null }) { Text("取消") } }) }
     reading?.let { (title, text) -> ChatTextReader(title, text) { reading = null } }
+    editingEntry?.let { entry ->
+        ChatEntryEditSheet(
+            entry = entry,
+            onDismiss = { editingEntry = null },
+            onSaveOnly = { text ->
+                viewModel.editEntry(entry.id, text, resend = false)
+                editingEntry = null
+            },
+            onSaveAndResend = { text ->
+                if (!hasKey || config.model.isBlank()) {
+                    editingEntry = null
+                    modelsOpen = true
+                } else {
+                    following = true
+                    viewModel.editEntry(entry.id, text, resend = true)
+                    editingEntry = null
+                }
+            },
+        )
+    }
     if (galleryPicker) HistoryImagePickerDialog(
         onPick = { path -> viewModel.addGalleryImage(path); galleryPicker = false },
         onDismiss = { galleryPicker = false },
@@ -402,8 +432,18 @@ internal fun ChatPageLayout(
 }
 
 @Composable
-private fun ChatTimelineEntry(entry: ChatEntry?, viewModel: ChatViewModel, resolveImage: (String) -> File,
-    onOpenImage: (String, List<String>) -> Unit, onRead: (String, String) -> Unit, onOpenAttachment: (ChatAttachment) -> Unit) {
+private fun ChatTimelineEntry(
+    entry: ChatEntry?,
+    viewModel: ChatViewModel,
+    resolveImage: (String) -> File,
+    onOpenImage: (String, List<String>) -> Unit,
+    onRead: (String, String) -> Unit,
+    onOpenAttachment: (ChatAttachment) -> Unit,
+    busy: Boolean = false,
+    onEdit: ((ChatEntry) -> Unit)? = null,
+    onRetry: ((ChatEntry) -> Unit)? = null,
+    onBranch: ((ChatEntry) -> Unit)? = null,
+) {
     val shown = if (entry != null) entry else {
         val partialFlow = remember(viewModel) { viewModel.state.map { state ->
             state.partial?.let { ChatEntry(state.streamId ?: "partial", it) }
@@ -414,15 +454,35 @@ private fun ChatTimelineEntry(entry: ChatEntry?, viewModel: ChatViewModel, resol
         partial
     }
     if (shown != null) {
-        ChatMessageBubble(shown, resolveImage, onOpenImage, streaming = entry == null,
-            onRead = onRead, onOpenAttachment = onOpenAttachment)
+        ChatMessageBubble(
+            entry = shown,
+            resolveImage = resolveImage,
+            onOpenImage = onOpenImage,
+            streaming = entry == null,
+            onRead = onRead,
+            onOpenAttachment = onOpenAttachment,
+            busy = busy,
+            onEdit = onEdit,
+            onRetry = onRetry,
+            onBranch = onBranch,
+        )
         shown.promptEdit?.let { ChatPromptEditCard(shown.id, it, viewModel) }
     }
 }
 
 @Composable
-fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenImage: (String, List<String>) -> Unit,
-    streaming: Boolean = false, onRead: (String, String) -> Unit = { _, _ -> }, onOpenAttachment: (ChatAttachment) -> Unit = {}) {
+fun ChatMessageBubble(
+    entry: ChatEntry,
+    resolveImage: (String) -> File,
+    onOpenImage: (String, List<String>) -> Unit,
+    streaming: Boolean = false,
+    onRead: (String, String) -> Unit = { _, _ -> },
+    onOpenAttachment: (ChatAttachment) -> Unit = {},
+    busy: Boolean = false,
+    onEdit: ((ChatEntry) -> Unit)? = null,
+    onRetry: ((ChatEntry) -> Unit)? = null,
+    onBranch: ((ChatEntry) -> Unit)? = null,
+) {
     if (entry.content.isBlank() && entry.reasoning.isBlank() && entry.images.isEmpty() && entry.attachments.isEmpty() && entry.notice == null) return
     val imageMotion = LocalImageMotion.current
     val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
@@ -524,7 +584,43 @@ fun ChatMessageBubble(entry: ChatEntry, resolveImage: (String) -> File, onOpenIm
                     BoundedChatText(entry.content, "我的消息", streaming, onRead, markdown = false)
                 } else BoundedChatText(entry.content, "回复全文", streaming, onRead)
             }
-            if (!streaming && !user && entry.content.isNotBlank()) ChatCopyAction(entry.content)
+            if (!streaming && (entry.content.isNotBlank() || entry.images.isNotEmpty() || entry.attachments.isNotEmpty())) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (entry.content.isNotBlank()) {
+                        ChatCopyAction(entry.content)
+                    }
+                    if (!user && onRetry != null) {
+                        IconButton(
+                            onClick = { bubbleHaptics.tick(); onRetry(entry) },
+                            enabled = !busy,
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(Icons.Default.Refresh, "重新生成", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
+                        }
+                    }
+                    if (onEdit != null) {
+                        IconButton(
+                            onClick = { bubbleHaptics.tick(); onEdit(entry) },
+                            enabled = !busy,
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(Icons.Default.Edit, if (user) "编辑消息" else "编辑回复", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
+                        }
+                    }
+                    if (onBranch != null) {
+                        IconButton(
+                            onClick = { bubbleHaptics.tick(); onBranch(entry) },
+                            enabled = !busy,
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(Icons.Default.CallSplit, "从此开新分支", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
+                        }
+                    }
+                }
+            }
             entry.notice?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
@@ -566,5 +662,66 @@ private fun ChatCopyAction(text: String) {
     IconButton(onClick = { copied = runCatching { clipboard.setText(AnnotatedString(text)) }.isSuccess }, modifier = Modifier.size(32.dp)) {
         Icon(if (copied) Icons.Default.Check else Icons.Default.ContentCopy, if (copied) "已复制" else "复制回复",
             tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChatEntryEditSheet(
+    entry: ChatEntry,
+    onDismiss: () -> Unit,
+    onSaveOnly: (String) -> Unit,
+    onSaveAndResend: (String) -> Unit,
+) {
+    val isUser = entry.role == "user"
+    var text by remember(entry.id) { mutableStateOf(entry.content) }
+    val canSave = text.isNotBlank() || (isUser && entry.attachments.isNotEmpty())
+    net.pocketnai.ui.settings.SettingsEditorSheet(
+        title = if (isUser) "编辑消息" else "编辑回复上下文",
+        icon = Icons.Default.Edit,
+        onDismiss = onDismiss,
+        saveLabel = if (isUser) "保存并重发" else "保存修改",
+        saveEnabled = canSave,
+        onSave = {
+            if (isUser) onSaveAndResend(text) else onSaveOnly(text)
+            true
+        },
+    ) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it.take(64 * 1024) },
+            placeholder = { Text(if (isUser) "修改消息内容…" else "修改助手回复上下文…") },
+            shape = RoundedCornerShape(16.dp),
+            minLines = 4,
+            maxLines = 12,
+            modifier = Modifier.fillMaxWidth().testTag("chat-edit-entry-field"),
+        )
+        if (isUser) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "「保存并重发」会清除后续旧回复并重新生成",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    onClick = { onSaveOnly(text) },
+                    enabled = canSave,
+                    modifier = Modifier.testTag("chat-edit-save-only"),
+                ) {
+                    Text("仅保存")
+                }
+            }
+        } else {
+            Text(
+                "仅修改当前对话上下文中的这条回复，不会自动重新发送请求。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }

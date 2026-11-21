@@ -338,7 +338,8 @@ class ChatShortReplyTest {
             assertThat(fixture.editedPrompt).isNull()
             compose.runOnUiThread { fixture.proposeOnly = false; fixture.viewModel.newConversation() }
             compose.waitUntil(5000) { fixture.viewModel.state.value.current?.entries?.isEmpty() == true && !fixture.viewModel.state.value.switchingConversation }
-            compose.onNodeWithContentDescription("对话菜单").performClick()
+            compose.onNodeWithContentDescription("历史对话").performClick()
+            compose.onNodeWithTag("chat-new-conversation").assertIsDisplayed()
             compose.onNodeWithText("连接与人格").assertDoesNotExist()
             shell("input keyevent 4")
             compose.runOnUiThread { agentSettings = true }
