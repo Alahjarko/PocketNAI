@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.Brush
@@ -108,6 +109,7 @@ import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.common.CenteredHint
 import net.pocketnai.ui.common.labelRes
 import net.pocketnai.ui.common.messageRes
+import net.pocketnai.ui.generate.ReferenceRoleChooserDialog
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -131,6 +133,9 @@ fun DetailScreen(
     onInpaint: (String) -> Unit,
     onAskAssistant: ((String, String) -> Unit)? = null,
     initialOrder: List<String>? = null,
+    supportsDirectorReference: Boolean = false,
+    supportsVibeTransfer: Boolean = false,
+    onUseAsReference: ((String, ReferenceRole) -> Unit)? = null,
 ) {
     val container = LocalAppContainer.current
     val viewModel: DetailViewModel = viewModel(
@@ -167,6 +172,7 @@ fun DetailScreen(
 
     var pendingSave by remember { mutableStateOf(false) }
     var showUpscaleDialog by remember { mutableStateOf(false) }
+    var referenceDialogPath by remember { mutableStateOf<String?>(null) }
     var fullscreen by remember { mutableStateOf(false) }
     val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
     var revealedImageId by remember(state.currentId, sfw.enabled) { mutableStateOf<String?>(null) }
@@ -332,6 +338,15 @@ fun DetailScreen(
                     onDismissError = viewModel::dismissError,
                     onAskAssistant = if (onAskAssistant != null && detail != null && !detail.image.privateFilePath.endsWith(".svg", true))
                         ({ onAskAssistant(detail.image.privateFilePath, detail.image.id) }) else null,
+                    onUseAsReference = if (onUseAsReference != null && detail != null && !detail.image.privateFilePath.endsWith(".svg", true)) {
+                        {
+                            if (supportsDirectorReference || supportsVibeTransfer) {
+                                referenceDialogPath = detail.image.privateFilePath
+                            } else {
+                                onUseAsReference(detail.image.privateFilePath, ReferenceRole.IMG2IMG)
+                            }
+                        }
+                    } else null,
                 )
 
                 pageId in state.failedIds -> CenteredHint(
@@ -358,6 +373,18 @@ fun DetailScreen(
                     }
                 },
                 onDismiss = { showUpscaleDialog = false },
+            )
+        }
+
+        referenceDialogPath?.let { path ->
+            ReferenceRoleChooserDialog(
+                supportsDirector = supportsDirectorReference,
+                supportsVibe = supportsVibeTransfer,
+                onSelect = { role ->
+                    referenceDialogPath = null
+                    onUseAsReference?.invoke(path, role)
+                },
+                onDismiss = { referenceDialogPath = null },
             )
         }
 
@@ -403,6 +430,7 @@ private fun DetailPageContent(
     onDelete: () -> Unit,
     onDismissError: () -> Unit,
     onAskAssistant: (() -> Unit)? = null,
+    onUseAsReference: (() -> Unit)? = null,
     revealed: Boolean = false,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -444,6 +472,7 @@ private fun DetailPageContent(
                         onDelete = onDelete,
                         onDismissError = onDismissError,
                         onAskAssistant = onAskAssistant,
+                        onUseAsReference = onUseAsReference,
                     )
                 }
             }
@@ -483,7 +512,8 @@ private fun DetailPageContent(
                     onOpenUpscaleDialog = onOpenUpscaleDialog,
                     onDelete = onDelete,
                     onDismissError = onDismissError,
-                        onAskAssistant = onAskAssistant,
+                    onAskAssistant = onAskAssistant,
+                    onUseAsReference = onUseAsReference,
                 )
             }
         }
@@ -549,6 +579,7 @@ internal fun LazyListScope.detailInfoItems(
     onDelete: () -> Unit,
     onDismissError: () -> Unit,
     onAskAssistant: (() -> Unit)? = null,
+    onUseAsReference: (() -> Unit)? = null,
 ) {
     item(key = "actions") {
         val context = LocalContext.current
@@ -651,6 +682,21 @@ internal fun LazyListScope.detailInfoItems(
                 Icon(Icons.Outlined.AutoFixHigh, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(stringResource(R.string.action_reuse_params))
+            }
+            onUseAsReference?.let { useAsRef ->
+                FilledTonalButton(
+                    onClick = {
+                        detailHaptics.tick()
+                        useAsRef()
+                    },
+                    shape = tonalShape,
+                    colors = tonalColors,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp),
+                ) {
+                    Icon(Icons.Outlined.AddPhotoAlternate, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("用作参考图")
+                }
             }
             onAskAssistant?.let { ask ->
                 FilledTonalButton(

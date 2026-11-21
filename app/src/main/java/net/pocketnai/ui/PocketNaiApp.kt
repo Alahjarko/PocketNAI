@@ -377,6 +377,14 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                             openAiViewModel = openAiViewModel.takeIf { openAiMode },
                             onOpenAiSettings = { navController.navigate(Routes.SETTINGS) },
                             onOpenStatistics = { navController.navigate(Routes.ANLAS_STATISTICS) { launchSingleTop = true } },
+                            onUseAsReference = { item, role ->
+                                if (openAiMode) {
+                                    openAiViewModel.addReference(ReferenceSource.LocalPath(item.relativePath))
+                                    generateViewModel.requestExpandSheet()
+                                } else {
+                                    generateViewModel.sendImageAsReference(ReferenceSource.LocalPath(item.relativePath), role)
+                                }
+                            },
                         )
                     }
                 }
@@ -478,6 +486,20 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                                 // 详情页 → 以当前这张图作为重绘底图并进入编辑器。
                                 generateViewModel.onInpaintBasePicked(ReferenceSource.LocalPath(relativePath))
                                 navController.navigate(Routes.INPAINT) {
+                                    popUpTo(Routes.HOME)
+                                    launchSingleTop = true
+                                }
+                            },
+                            supportsDirectorReference = !openAiMode && generateState.supportsDirectorReference,
+                            supportsVibeTransfer = !openAiMode && generateState.supportsVibeTransfer,
+                            onUseAsReference = { relativePath, role ->
+                                if (openAiMode) {
+                                    openAiViewModel.addReference(ReferenceSource.LocalPath(relativePath))
+                                    generateViewModel.requestExpandSheet()
+                                } else {
+                                    generateViewModel.sendImageAsReference(ReferenceSource.LocalPath(relativePath), role)
+                                }
+                                navController.navigate(Routes.HOME) {
                                     popUpTo(Routes.HOME)
                                     launchSingleTop = true
                                 }

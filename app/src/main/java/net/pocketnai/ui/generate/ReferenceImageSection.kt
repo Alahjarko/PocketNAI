@@ -406,6 +406,71 @@ private fun ReferenceSourceCompactTile(
     }
 }
 
+/** 详情页与画廊长按共用的一键「用作参考图」目标选择器（V4.5 弹出三选一，V5/OpenAI 直接跳过此弹窗）。 */
+@Composable
+internal fun ReferenceRoleChooserDialog(
+    supportsDirector: Boolean,
+    supportsVibe: Boolean,
+    onSelect: (net.pocketnai.domain.model.ReferenceRole) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        title = { Text("用作参考图") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ReferenceRoleChoiceTile(
+                    title = "图生图底图",
+                    subtitle = "以这张图作为起点重新绘制（不额外收费）",
+                    enabled = true,
+                    onClick = { onSelect(net.pocketnai.domain.model.ReferenceRole.IMG2IMG) },
+                )
+                ReferenceRoleChoiceTile(
+                    title = "Precise Ref（角色 / 画风）",
+                    subtitle = if (supportsDirector) "作为角色或画风条件参考（每张 +5 Anlas）" else "仅 V4.5 系列模型支持",
+                    enabled = supportsDirector,
+                    onClick = { onSelect(net.pocketnai.domain.model.ReferenceRole.DIRECTOR) },
+                )
+                ReferenceRoleChoiceTile(
+                    title = "Vibe Transfer（风格迁移）",
+                    subtitle = if (supportsVibe) "提取整体氛围与笔触风格（可与图生图并用）" else "仅 V4.5 系列模型支持",
+                    enabled = supportsVibe,
+                    onClick = { onSelect(net.pocketnai.domain.model.ReferenceRole.VIBE) },
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+@Composable
+private fun ReferenceRoleChoiceTile(
+    title: String,
+    subtitle: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val press = remember { MutableInteractionSource() }
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        interactionSource = press,
+        modifier = Modifier.fillMaxWidth().pressFeedback(press, enabled),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.42f).padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
 /**
  * 从历史里选一张图作为起点。
  *

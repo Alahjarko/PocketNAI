@@ -78,6 +78,39 @@ data class ChatConversation(
     val entries: List<ChatEntry> = emptyList(),
 )
 
+data class ChatReferenceCandidate(
+    val refId: String,
+    val relativePath: String,
+    val source: String,
+)
+
+data class ChatReferenceSpec(
+    val refId: String,
+    val relativePath: String,
+    val role: net.pocketnai.domain.model.ReferenceRole,
+    val strength: Double? = null,
+    val directorKind: net.pocketnai.domain.model.DirectorReferenceKind? = null,
+)
+
+/** 按对话出现顺序列出可作为参考图的图片（用户附件与已生成图片），跳过矢量图并按路径去重。 */
+fun ChatConversation.availableReferenceImages(): List<ChatReferenceCandidate> {
+    val seen = mutableSetOf<String>()
+    val result = mutableListOf<ChatReferenceCandidate>()
+    for (entry in entries) {
+        for (att in entry.attachments) {
+            if (att.relativePath.isNotBlank() && !att.relativePath.endsWith(".svg", ignoreCase = true) && seen.add(att.relativePath)) {
+                result += ChatReferenceCandidate("ref_${result.size + 1}", att.relativePath, "attachment")
+            }
+        }
+        for (img in entry.images) {
+            if (img.relativePath.isNotBlank() && !img.relativePath.endsWith(".svg", ignoreCase = true) && seen.add(img.relativePath)) {
+                result += ChatReferenceCandidate("ref_${result.size + 1}", img.relativePath, "generated")
+            }
+        }
+    }
+    return result
+}
+
 fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 
 /** 服务端误回显认证值时也不进入界面、工具参数或普通历史。 */
@@ -182,15 +215,41 @@ interface ChatImageGenerator {
     fun applyPromptEdit(edit: PromptEdit): Int? = null
     fun undoPromptEdit(provider: String, revision: Int): Boolean = false
     suspend fun prepare(params: List<net.pocketnai.domain.model.GenerationParams>): List<net.pocketnai.domain.model.GenerationParams> = params
+    suspend fun prepareReferences(
+        specs: List<ChatReferenceSpec>,
+        model: net.pocketnai.domain.model.ImageModel?,
+    ): List<net.pocketnai.domain.model.ReferenceImage> = emptyList()
     fun authorizationKey(): String?
     suspend fun quote(params: net.pocketnai.domain.model.GenerationParams): ChatImageQuote
+    suspend fun quote(
+        params: net.pocketnai.domain.model.GenerationParams,
+        references: List<net.pocketnai.domain.model.ReferenceImage>,
+    ): ChatImageQuote = quote(params)
     suspend fun generate(params: net.pocketnai.domain.model.GenerationParams, account: String?, beforeSend: suspend () -> Unit, onImage: (ChatImage) -> Unit): List<ChatImage>
+    suspend fun generate(
+        params: net.pocketnai.domain.model.GenerationParams,
+        references: List<net.pocketnai.domain.model.ReferenceImage>,
+        account: String?,
+        beforeSend: suspend () -> Unit,
+        onImage: (ChatImage) -> Unit,
+    ): List<ChatImage> = generate(params, account, beforeSend, onImage)
     suspend fun quoteOpenAi(params: net.pocketnai.domain.openai.OpenAiImageParams): ChatImageQuote =
         throw ChatFailure("OpenAI 图片生成未配置")
+    suspend fun quoteOpenAi(
+        params: net.pocketnai.domain.openai.OpenAiImageParams,
+        references: List<net.pocketnai.domain.model.ReferenceImage>,
+    ): ChatImageQuote = quoteOpenAi(params)
     suspend fun generateOpenAi(
         params: net.pocketnai.domain.openai.OpenAiImageParams,
         account: String?,
         beforeSend: suspend () -> Unit,
         onImage: (ChatImage) -> Unit,
     ): List<ChatImage> = throw ChatFailure("OpenAI 图片生成未配置")
+    suspend fun generateOpenAi(
+        params: net.pocketnai.domain.openai.OpenAiImageParams,
+        references: List<net.pocketnai.domain.model.ReferenceImage>,
+        account: String?,
+        beforeSend: suspend () -> Unit,
+        onImage: (ChatImage) -> Unit,
+    ): List<ChatImage> = generateOpenAi(params, account, beforeSend, onImage)
 }

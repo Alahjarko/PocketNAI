@@ -84,23 +84,125 @@ class AppContainer(application: Application, mcpBackendOverride: net.pocketnai.d
                         val macros = promptFavoriteRepository.snapshot()
                         return params.map { net.pocketnai.domain.prompt.PromptTemplates.resolve(it, macros, kotlin.random.Random.Default) }
                     }
+                    override suspend fun prepareReferences(
+                        specs: List<net.pocketnai.domain.chat.ChatReferenceSpec>,
+                        model: net.pocketnai.domain.model.ImageModel?,
+                    ): List<net.pocketnai.domain.model.ReferenceImage> {
+                        if (specs.isEmpty()) return emptyList()
+                        val profile = model?.let(net.pocketnai.domain.model.ModelCatalog::profileOf)
+                        val result = mutableListOf<net.pocketnai.domain.model.ReferenceImage>()
+                        var directorOrdinal = 0
+                        var vibeOrdinal = 0
+                        var openAiOrdinal = 0
+                        for (spec in specs) {
+                            if (!fileStore.resolve(spec.relativePath).isFile) {
+                                throw net.pocketnai.domain.chat.ChatFailure("参考图 ${spec.refId} 的本地文件不存在，可能已被删除")
+                            }
+                            val transform = if (model != null && spec.role == net.pocketnai.domain.model.ReferenceRole.DIRECTOR) {
+                                net.pocketnai.domain.image.ImageTransform.DirectorCanvas
+                            } else null
+                            val outcome = referenceImageProcessor.import(
+                                source = net.pocketnai.domain.image.ReferenceSource.LocalPath(spec.relativePath),
+                                transform = transform,
+                            )
+                            val prepared = when (outcome) {
+                                is net.pocketnai.core.Outcome.Success -> outcome.value
+                                is net.pocketnai.core.Outcome.Failure ->
+                                    throw net.pocketnai.domain.chat.ChatFailure("无法读取参考图 ${spec.refId}")
+                            }
+                            val id = java.util.UUID.randomUUID().toString()
+                            val now = System.currentTimeMillis()
+                            if (model == null) {
+                                result += net.pocketnai.domain.model.ReferenceImage.img2imgSource(prepared, 1.0, id, now)
+                                    .copy(ordinal = openAiOrdinal++)
+                            } else {
+                                result += when (spec.role) {
+                                    net.pocketnai.domain.model.ReferenceRole.IMG2IMG ->
+                                        net.pocketnai.domain.model.ReferenceImage.img2imgSource(prepared, spec.strength ?: 0.7, id, now)
+                                    net.pocketnai.domain.model.ReferenceRole.DIRECTOR ->
+                                        net.pocketnai.domain.model.ReferenceImage(
+                                            id = id,
+                                            role = net.pocketnai.domain.model.ReferenceRole.DIRECTOR,
+                                            ordinal = directorOrdinal++,
+                                            relativePath = prepared.relativePath,
+                                            width = prepared.width,
+                                            height = prepared.height,
+                                            byteSize = prepared.byteSize,
+                                            sha256 = prepared.sha256,
+                                            sourceImageId = prepared.sourceImageId,
+                                            createdAt = now,
+                                            strength = profile?.defaultDirectorStrength ?: 0.6,
+                                            secondaryStrength = profile?.defaultDirectorFidelity ?: 1.0,
+                                            informationExtracted = profile?.defaultDirectorInfoExtracted ?: 1.0,
+                                            directorKind = spec.directorKind ?: net.pocketnai.domain.model.DirectorReferenceKind.DEFAULT,
+                                        )
+                                    net.pocketnai.domain.model.ReferenceRole.VIBE ->
+                                        net.pocketnai.domain.model.ReferenceImage(
+                                            id = id,
+                                            role = net.pocketnai.domain.model.ReferenceRole.VIBE,
+                                            ordinal = vibeOrdinal++,
+                                            relativePath = prepared.relativePath,
+                                            width = prepared.width,
+                                            height = prepared.height,
+                                            byteSize = prepared.byteSize,
+                                            sha256 = prepared.sha256,
+                                            sourceImageId = prepared.sourceImageId,
+                                            createdAt = now,
+                                            strength = 0.6,
+                                            informationExtracted = 1.0,
+                                        )
+                                    net.pocketnai.domain.model.ReferenceRole.INPAINT_MASK ->
+                                        throw net.pocketnai.domain.chat.ChatFailure("不支持在对话中直接使用蒙版参考")
+                                }
+                            }
+                        }
+                        return result
+                    }
                     override fun authorizationKey() = if (openAiImageSettings.provider.value == net.pocketnai.domain.openai.ImageProvider.OPEN_AI) {
                         "openai:${openAiImageSettings.hasKey.value}:${openAiImageSettings.apiKey()?.hashCode() ?: 0}:${openAiImageSettings.gifEnabled.value}"
                     } else generateViewModel.artistLabAccount()
                     override suspend fun quote(params: net.pocketnai.domain.model.GenerationParams): net.pocketnai.domain.chat.ChatImageQuote {
                         return generateViewModel.quoteForChat(params)
                     }
+                    override suspend fun quote(
+                        params: net.pocketnai.domain.model.GenerationParams,
+                        references: List<net.pocketnai.domain.model.ReferenceImage>,
+                    ): net.pocketnai.domain.chat.ChatImageQuote {
+                        return generateViewModel.quoteForChat(params, references)
+                    }
                     override suspend fun generate(params: net.pocketnai.domain.model.GenerationParams, account: String?, beforeSend: suspend () -> Unit, onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit): List<net.pocketnai.domain.chat.ChatImage> {
                         return generateViewModel.generateForChat(params, onImage, account, beforeSend)
                     }
+                    override suspend fun generate(
+                        params: net.pocketnai.domain.model.GenerationParams,
+                        references: List<net.pocketnai.domain.model.ReferenceImage>,
+                        account: String?,
+                        beforeSend: suspend () -> Unit,
+                        onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit,
+                    ): List<net.pocketnai.domain.chat.ChatImage> {
+                        return generateViewModel.generateForChat(params, onImage, account, beforeSend, references)
+                    }
                     override suspend fun quoteOpenAi(params: net.pocketnai.domain.openai.OpenAiImageParams): net.pocketnai.domain.chat.ChatImageQuote {
+                        return quoteOpenAi(params, emptyList())
+                    }
+                    override suspend fun quoteOpenAi(
+                        params: net.pocketnai.domain.openai.OpenAiImageParams,
+                        references: List<net.pocketnai.domain.model.ReferenceImage>,
+                    ): net.pocketnai.domain.chat.ChatImageQuote {
                         if (!openAiImageSettings.hasKey.value) throw net.pocketnai.domain.chat.ChatFailure("请在设置 → 生图服务中保存 OpenAI API 密钥")
                         if (params.isAnimated && !openAiImageSettings.gifEnabled.value) throw net.pocketnai.domain.chat.ChatFailure("请先在生图服务中开启 GIF 制作（实验）")
-                        params.validate(0)?.let { throw net.pocketnai.domain.chat.ChatFailure(it) }
-                        return net.pocketnai.domain.chat.ChatImageQuote.fromOpenAi(net.pocketnai.domain.openai.OpenAiImagePricing.estimate(params, 0))
+                        params.validate(references.size)?.let { throw net.pocketnai.domain.chat.ChatFailure(it) }
+                        return net.pocketnai.domain.chat.ChatImageQuote.fromOpenAi(net.pocketnai.domain.openai.OpenAiImagePricing.estimate(params, references.size))
                     }
                     override suspend fun generateOpenAi(
                         params: net.pocketnai.domain.openai.OpenAiImageParams,
+                        account: String?,
+                        beforeSend: suspend () -> Unit,
+                        onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit,
+                    ): List<net.pocketnai.domain.chat.ChatImage> = generateOpenAi(params, emptyList(), account, beforeSend, onImage)
+                    override suspend fun generateOpenAi(
+                        params: net.pocketnai.domain.openai.OpenAiImageParams,
+                        references: List<net.pocketnai.domain.model.ReferenceImage>,
                         account: String?,
                         beforeSend: suspend () -> Unit,
                         onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit,
@@ -115,7 +217,7 @@ class AppContainer(application: Application, mcpBackendOverride: net.pocketnai.d
                             awaitStartup()
                             val saved = mutableListOf<net.pocketnai.domain.chat.ChatImage>()
                             openAiImageRepository.generate(
-                                net.pocketnai.domain.openai.OpenAiImageDraft(params, emptyList()),
+                                net.pocketnai.domain.openai.OpenAiImageDraft(params, references),
                                 beforeSend = beforeSend,
                             ).collect { event ->
                                 when (event) {

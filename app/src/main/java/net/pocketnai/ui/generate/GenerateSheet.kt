@@ -45,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardType
@@ -122,13 +123,20 @@ fun GenerateSheet(
     val scrollState = rememberScrollState()
     val profile = state.profile
 
+    val artistPromptSplitEnabled by viewModel.artistPromptSplitEnabled.collectAsStateWithLifecycle()
+
     // 两个输入框都用 TextFieldValue 跟踪：只有拿到选区，才能判断"收藏选中片段"
     // 还是"收藏整条提示词"。负面提示词也同样处理，否则两个长得一样的框行为不一致。
     // textRevision 是"外部整体替换过文本"的代数，见 rememberSyncedField 的说明。
-    var promptField by rememberSyncedField(state.promptTemplate, state.textRevision)
+    var promptField by rememberSyncedField(
+        if (artistPromptSplitEnabled) state.positiveMainPrompt else state.promptTemplate,
+        state.textRevision,
+    )
+    var artistField by rememberSyncedField(state.artistPrompt, state.artistTextRevision)
     var negativeField by rememberSyncedField(state.negativeTemplate, state.textRevision)
 
     var promptFocused by remember { mutableStateOf(false) }
+    var artistFocused by remember { mutableStateOf(false) }
     var negativeFocused by remember { mutableStateOf(false) }
 
     val container = LocalAppContainer.current
@@ -142,9 +150,10 @@ fun GenerateSheet(
     // 待保存的收藏内容；非空时弹出命名对话框。
     var saveRequest by remember { mutableStateOf<SaveRequest?>(null) }
     var pickerOpen by remember { mutableStateOf(false) }
-    // 收藏夹填到哪个框由打开它的入口决定（正向 / 负向），而不是收藏自己的 target：
+    // 收藏夹填到哪个框由打开它的入口决定（正向 / 画师 / 负向），而不是收藏自己的 target：
     // 用户在负向框旁点了「收藏夹」，内容却填进上方的正向框，看起来像"没反应"。
     var pickerTarget by remember { mutableStateOf(PromptTarget.POSITIVE) }
+    var pickerForArtist by remember { mutableStateOf(false) }
     // 从收藏夹里"新建"时弹出的表单。
     var createFavoriteOpen by remember { mutableStateOf(false) }
     var editingFavorite by remember { mutableStateOf<PromptFavorite?>(null) }
@@ -207,10 +216,89 @@ fun GenerateSheet(
                 },
             )
 
+            if (artistPromptSplitEnabled) {
+                WeightHighlightedTextField(
+                    value = artistField,
+                    onFocusChanged = { artistFocused = it },
+                    onValueChange = { newValue ->
+                        artistField = newValue
+                        viewModel.onArtistPromptChange(newValue.text)
+                    },
+                    label = "画师提示词（artist:）",
+                    minLines = 2,
+                    trailingIcon = {
+                        Column {
+                            FavoriteSaveButton(
+                                field = artistField,
+                                target = PromptTarget.POSITIVE,
+                                onRequest = { saveRequest = it },
+                            )
+                            net.pocketnai.ui.common.ClearPromptButton(artistField.text, "画师提示词", state.artistTextRevision) {
+                                viewModel.replaceArtistPromptText(it)
+                                viewModel.state.value.artistTextRevision
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("artist-prompt-field"),
+                )
+
+                PromptTagSuggestions(
+                    field = artistField,
+                    focused = artistFocused,
+                    target = "artist",
+                    macros = favoritesState.favorites,
+                    state = state,
+                    onQuery = viewModel::onSuggestionFragmentChange,
+                    onFieldChange = { next ->
+                        artistField = next
+                        viewModel.onArtistPromptChange(next.text)
+                    },
+                )
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            artistField = applyEmphasisTo(artistField, EmphasisSyntax::strengthen, viewModel::onArtistPromptChange)
+                        },
+                        enabled = !artistField.selection.collapsed,
+                    ) {
+                        Text(stringResource(R.string.generate_emphasis_strong))
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            artistField = applyEmphasisTo(artistField, EmphasisSyntax::weaken, viewModel::onArtistPromptChange)
+                        },
+                        enabled = !artistField.selection.collapsed,
+                    ) {
+                        Text(stringResource(R.string.generate_emphasis_weak))
+                    }
+                    TextButton(
+                        onClick = {
+                            pickerTarget = PromptTarget.POSITIVE
+                            pickerForArtist = true
+                            pickerOpen = true
+                        },
+                    ) {
+                        Icon(Icons.Default.Bookmarks, contentDescription = null)
+                        Text(
+                            text = "画师收藏 (${favoritesState.promptCount + favoritesState.tagCount})",
+                            modifier = Modifier.padding(start = 4.dp),
+                        )
+                    }
+                    InfoButton(dialogText = "独立画师提示词框：支持直接从收藏夹填入画师串，也支持一键清除；提交时自动单独成行并与正向提示词合并。")
+                }
+            }
+
             // 权重高亮：{}/[] 与 `0.9::tag ::` 会被画上绿/红底纹，见 PromptWeightScanner。
             WeightHighlightedTextField(
                 value = promptField,
-                onFocusChanged = { promptFocused = it },
+                onFocusChanged = { focused ->
+                    if (!focused && promptFocused) viewModel.flushArtistExtraction()
+                    promptFocused = focused
+                },
                 onValueChange = { newValue ->
                     promptField = newValue
                     viewModel.onPromptChange(newValue.text)
@@ -278,6 +366,7 @@ fun GenerateSheet(
                 TextButton(
                     onClick = {
                         pickerTarget = PromptTarget.POSITIVE
+                        pickerForArtist = false
                         pickerOpen = true
                     },
                 ) {
@@ -363,6 +452,7 @@ fun GenerateSheet(
                 TextButton(
                     onClick = {
                         pickerTarget = PromptTarget.NEGATIVE
+                        pickerForArtist = false
                         pickerOpen = true
                     },
                 ) {
@@ -669,6 +759,7 @@ fun GenerateSheet(
                     favorite = favorite,
                     replace = false,
                     target = pickerTarget,
+                    forArtist = pickerForArtist,
                     state = state,
                     viewModel = viewModel,
                 )
@@ -679,6 +770,7 @@ fun GenerateSheet(
                     favorite = favorite,
                     replace = true,
                     target = pickerTarget,
+                    forArtist = pickerForArtist,
                     state = state,
                     viewModel = viewModel,
                 )
@@ -690,14 +782,21 @@ fun GenerateSheet(
                 createFavoriteOpen = true
             },
             onDelete = favoritesViewModel::delete,
-            onDismiss = { pickerOpen = false },
+            onDismiss = { pickerOpen = false; pickerForArtist = false },
             onDismissNotice = favoritesViewModel::dismissNotice,
             onEdit = { editingFavorite = it; pickerOpen = false },
             onUseMacro = { favorite ->
-                val current = if (pickerTarget == PromptTarget.POSITIVE) state.promptTemplate else state.negativeTemplate
-                viewModel.replacePromptText(pickerTarget, PromptComposition.append(current, "!macro:${favorite.name}!"))
+                if (pickerForArtist) {
+                    viewModel.replaceArtistPromptText(PromptComposition.append(state.artistPrompt, "!macro:${favorite.name}!"))
+                } else {
+                    val current = if (pickerTarget == PromptTarget.POSITIVE) {
+                        if (artistPromptSplitEnabled) state.positiveMainPrompt else state.promptTemplate
+                    } else state.negativeTemplate
+                    viewModel.replacePromptText(pickerTarget, PromptComposition.append(current, "!macro:${favorite.name}!"))
+                }
                 favoritesViewModel.markUsed(favorite)
                 pickerOpen = false
+                pickerForArtist = false
             },
         )
     }
@@ -968,6 +1067,12 @@ private fun applyEmphasis(
     field: TextFieldValue,
     viewModel: GenerateViewModel,
     transform: (String) -> String,
+): TextFieldValue = applyEmphasisTo(field, transform, viewModel::onPromptChange)
+
+private fun applyEmphasisTo(
+    field: TextFieldValue,
+    transform: (String) -> String,
+    onChange: (String) -> Unit,
 ): TextFieldValue {
     val selection = field.selection
     if (selection.collapsed) return field
@@ -976,7 +1081,7 @@ private fun applyEmphasis(
 
     val replaced = transform(selected)
     val newText = field.text.replaceRange(selection.start, selection.end, replaced)
-    viewModel.onPromptChange(newText)
+    onChange(newText)
     return TextFieldValue(
         text = newText,
         selection = TextRange(selection.start, selection.start + replaced.length),
@@ -1157,11 +1262,18 @@ private fun applyFavorite(
     favorite: PromptFavorite,
     replace: Boolean,
     target: PromptTarget,
+    forArtist: Boolean = false,
     state: GenerateViewModel.UiState,
     viewModel: GenerateViewModel,
 ) {
+    if (forArtist) {
+        val next = if (replace) favorite.content else PromptComposition.append(state.artistPrompt, favorite.content)
+        viewModel.replaceArtistPromptText(next)
+        return
+    }
+    val splitEnabled = viewModel.artistPromptSplitEnabled.value
     val current = when (target) {
-        PromptTarget.POSITIVE -> state.promptTemplate
+        PromptTarget.POSITIVE -> if (splitEnabled) state.positiveMainPrompt else state.promptTemplate
         PromptTarget.NEGATIVE -> state.negativeTemplate
     }
     val next = if (replace) {

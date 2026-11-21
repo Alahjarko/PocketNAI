@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -277,7 +278,8 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
             } }
             state.pending?.let { pending -> item {
                 ChatImagePlanCard(pending.plan, { viewModel.confirmImage(pending.callId, true) },
-                    { viewModel.confirmImage(pending.callId, false) }, { title, text -> reading = title to text })
+                    { viewModel.confirmImage(pending.callId, false) }, { title, text -> reading = title to text },
+                    resolveImage = resolveImage)
             } }
             if (state.busy && state.pending == null) item(key = "activity", contentType = "activity") { ChatReplyIndicator(state.phase) }
             if (state.stoppingImages) item { Text("将在当前图片完成后停止，剩余图片不会发送", style = MaterialTheme.typography.bodySmall) }
@@ -616,7 +618,7 @@ fun ChatMessageBubble(
                             enabled = !busy,
                             modifier = Modifier.size(32.dp),
                         ) {
-                            Icon(Icons.Default.CallSplit, "从此开新分支", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
+                            Icon(Icons.AutoMirrored.Filled.CallSplit, "从此开新分支", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
                         }
                     }
                 }

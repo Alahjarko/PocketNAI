@@ -57,6 +57,13 @@ class SettingsStore(context: Context) {
         _artistLabEnabled.value = enabled
     }
 
+    private val _artistPromptSplitEnabled = MutableStateFlow(prefs.getBoolean("artist_prompt_split_enabled", false))
+    val artistPromptSplitEnabled: StateFlow<Boolean> = _artistPromptSplitEnabled.asStateFlow()
+    fun setArtistPromptSplitEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("artist_prompt_split_enabled", enabled).apply()
+        _artistPromptSplitEnabled.value = enabled
+    }
+
     private val _chatEnabled = MutableStateFlow(prefs.getBoolean("experimental_chat_enabled", false))
     val chatEnabled: StateFlow<Boolean> = _chatEnabled.asStateFlow()
     fun setChatEnabled(enabled: Boolean) {

@@ -36,6 +36,15 @@ object ImageChatTools {
                     }); put("required", JsonArray(listOf(JsonPrimitive("prompt"))))
                 })
             })
+            put("img2img_ref", text("可选，对话中已有图片的 ref_id，作为图生图底图"))
+            put("img2img_strength", number("number", "可选，图生图重绘强度（0.01–0.99，默认 0.7）"))
+            put("precise_ref", text("可选，对话中已有图片的 ref_id，作为 Precise Reference（仅 V4.5 支持，不能与 vibe_ref 同时使用）"))
+            put("precise_kind", buildJsonObject {
+                put("type", "string")
+                put("enum", JsonArray(DirectorReferenceKind.entries.map { JsonPrimitive(it.apiValue) }))
+                put("description", "可选，Precise Reference 类型，默认 character&style")
+            })
+            put("vibe_ref", text("可选，对话中已有图片的 ref_id，作为 Vibe Transfer（仅 V4.5 支持，不能与 precise_ref 同时使用）"))
         }, listOf("prompt", "negative_prompt")))
     }
 
@@ -47,6 +56,11 @@ object ImageChatTools {
             put("width", number("integer", "可选宽度（16 的倍数，省略则沿用当前画布）"))
             put("height", number("integer", "可选高度（16 的倍数，省略则沿用当前画布）"))
             put("quality", buildJsonObject { put("type", "string"); put("enum", JsonArray(OpenAiImageParams.QUALITIES.map(::JsonPrimitive))) })
+            put("reference_refs", buildJsonObject {
+                put("type", "array")
+                put("description", "可选，对话中已有图片的 ref_id 列表，用作编辑或参考图（最多 16 张）")
+                put("items", buildJsonObject { put("type", "string") })
+            })
         }, listOf("prompt")))
     }
 
@@ -84,8 +98,25 @@ object ImageChatTools {
 
     fun schemaFor(isOpenAi: Boolean): JsonArray = if (isOpenAi) openAiSchema else schema
 
-    fun parseOpenAiPlan(call: ToolCall, base: OpenAiImageParams): List<OpenAiImageParams> {
-        if (call.name == "generate_image") return listOf(parseOpenAi(call, base))
+    data class ParsedNovelAiItem(
+        val params: GenerationParams,
+        val references: List<ChatReferenceSpec> = emptyList(),
+    )
+
+    data class ParsedOpenAiItem(
+        val params: OpenAiImageParams,
+        val references: List<ChatReferenceSpec> = emptyList(),
+    )
+
+    fun parseOpenAiPlan(call: ToolCall, base: OpenAiImageParams): List<OpenAiImageParams> =
+        parseOpenAiPlanWithReferences(call, base, emptyMap()).map { it.params }
+
+    fun parseOpenAiPlanWithReferences(
+        call: ToolCall,
+        base: OpenAiImageParams,
+        availableRefs: Map<String, String>,
+    ): List<ParsedOpenAiItem> {
+        if (call.name == "generate_image") return listOf(parseOpenAiWithReferences(call, base, availableRefs))
         if (call.name != "generate_images") throw ChatFailure("未知图片工具")
         if (call.arguments.length > 192 * 1024) throw ChatFailure("多图计划过长，请减少张数或提示词")
         val obj = runCatching { Json.parseToJsonElement(call.arguments) as? JsonObject }.getOrNull()
@@ -93,14 +124,23 @@ object ImageChatTools {
         if (obj.keys != setOf("images")) throw ChatFailure("多图计划包含不支持的参数")
         val rows = obj["images"] as? JsonArray ?: throw ChatFailure("images 必须为数组")
         if (rows.size !in 1..MAX_IMAGES) throw ChatFailure("每次计划须包含 1–$MAX_IMAGES 张图片")
-        return rows.mapIndexed { index, row -> parseOpenAi(ToolCall("${call.id}-$index", "generate_image", row.toString()), base) }
+        return rows.mapIndexed { index, row ->
+            parseOpenAiWithReferences(ToolCall("${call.id}-$index", "generate_image", row.toString()), base, availableRefs)
+        }
     }
 
-    fun parseOpenAi(call: ToolCall, base: OpenAiImageParams): OpenAiImageParams {
+    fun parseOpenAi(call: ToolCall, base: OpenAiImageParams): OpenAiImageParams =
+        parseOpenAiWithReferences(call, base, emptyMap()).params
+
+    fun parseOpenAiWithReferences(
+        call: ToolCall,
+        base: OpenAiImageParams,
+        availableRefs: Map<String, String>,
+    ): ParsedOpenAiItem {
         if (call.name != "generate_image") throw ChatFailure("未知图片工具")
         val obj = runCatching { Json.parseToJsonElement(call.arguments) as? JsonObject }.getOrNull()
             ?: throw ChatFailure("模型提供的图片参数格式不正确")
-        if (obj.keys.any { it !in setOf("prompt", "negative_prompt", "model", "width", "height", "quality") })
+        if (obj.keys.any { it !in setOf("prompt", "negative_prompt", "model", "width", "height", "quality", "reference_refs") })
             throw ChatFailure("模型提供了不支持的图片参数")
         val prompt = obj.string("prompt")?.trim()?.takeIf { it.isNotEmpty() && it.length <= 32_000 }
             ?: throw ChatFailure("图片描述为空或过长")
@@ -121,13 +161,31 @@ object ImageChatTools {
             OpenAiImageParams.sizeError(candidate)?.let { throw ChatFailure(it) }
             candidate
         }
+        val refs = if ("reference_refs" !in obj) emptyList() else {
+            val arr = obj["reference_refs"] as? JsonArray ?: throw ChatFailure("reference_refs 必须为数组")
+            if (arr.size > 16) throw ChatFailure("OpenAI 参考图最多 16 张")
+            val seenPaths = mutableSetOf<String>()
+            arr.mapNotNull { elem ->
+                val refId = (elem as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: throw ChatFailure("reference_refs 中包含无效的 ref_id")
+                val path = availableRefs[refId] ?: throw ChatFailure("未找到参考图 $refId，请先调用 get_generation_settings 查看可用图片")
+                if (seenPaths.add(path)) ChatReferenceSpec(refId, path, ReferenceRole.IMG2IMG, strength = 1.0) else null
+            }
+        }
         val params = base.copy(prompt = prompt, model = model, size = size, quality = quality, count = 1)
-        params.validate(0)?.let { throw ChatFailure(it) }
-        return params
+        params.validate(refs.size)?.let { throw ChatFailure(it) }
+        return ParsedOpenAiItem(params, refs)
     }
 
-    fun parsePlan(call: ToolCall, base: GenerationParams): List<GenerationParams> {
-        if (call.name == "generate_image") return listOf(parse(call, base))
+    fun parsePlan(call: ToolCall, base: GenerationParams): List<GenerationParams> =
+        parsePlanWithReferences(call, base, emptyMap()).map { it.params }
+
+    fun parsePlanWithReferences(
+        call: ToolCall,
+        base: GenerationParams,
+        availableRefs: Map<String, String>,
+    ): List<ParsedNovelAiItem> {
+        if (call.name == "generate_image") return listOf(parseWithReferences(call, base, availableRefs))
         if (call.name != "generate_images") throw ChatFailure("未知图片工具")
         if (call.arguments.length > 192 * 1024) throw ChatFailure("多图计划过长，请减少张数或提示词")
         val obj = runCatching { Json.parseToJsonElement(call.arguments) as? JsonObject }.getOrNull()
@@ -136,7 +194,9 @@ object ImageChatTools {
         val rows = obj["images"] as? JsonArray ?: throw ChatFailure("images 必须为数组")
         if (rows.size !in 1..MAX_IMAGES) throw ChatFailure("每次计划须包含 1–$MAX_IMAGES 张图片")
         // Validate the entire plan before asking for permission or issuing any request.
-        return rows.mapIndexed { index, row -> parse(ToolCall("${call.id}-$index", "generate_image", row.toString()), base) }
+        return rows.mapIndexed { index, row ->
+            parseWithReferences(ToolCall("${call.id}-$index", "generate_image", row.toString()), base, availableRefs)
+        }
     }
 
     // 工具对提示词内容不预设立场：NovelAI 本身支持 NSFW，是否放行由服务端与账号策略决定，
@@ -144,11 +204,22 @@ object ImageChatTools {
     // 这也为 NovelAI 服务条款所禁止，不属于"立场"。
     private val childSafetyTags = Regex("(?i)(?<![a-z])(?:child sexual|underage sexual)(?![a-z])")
 
-    fun parse(call: ToolCall, base: GenerationParams): GenerationParams {
+    fun parse(call: ToolCall, base: GenerationParams): GenerationParams =
+        parseWithReferences(call, base, emptyMap()).params
+
+    fun parseWithReferences(
+        call: ToolCall,
+        base: GenerationParams,
+        availableRefs: Map<String, String>,
+    ): ParsedNovelAiItem {
         if (call.name != "generate_image") throw ChatFailure("未知图片工具")
         val obj = runCatching { Json.parseToJsonElement(call.arguments) as? JsonObject }.getOrNull()
             ?: throw ChatFailure("模型提供的图片参数格式不正确")
-        if (obj.keys.any { it !in setOf("prompt", "negative_prompt", "model", "width", "height", "seed", "characters", "use_coords") })
+        val allowedKeys = setOf(
+            "prompt", "negative_prompt", "model", "width", "height", "seed", "characters", "use_coords",
+            "img2img_ref", "img2img_strength", "precise_ref", "precise_kind", "vibe_ref",
+        )
+        if (obj.keys.any { it !in allowedKeys })
             throw ChatFailure("模型提供了不支持的图片参数")
         val prompt = obj.string("prompt")?.trim()?.takeIf { it.isNotEmpty() && it.length <= 16000 }
             ?: throw ChatFailure("图片正向提示词为空或过长")
@@ -181,11 +252,48 @@ object ImageChatTools {
         } ?: false
         val useCoordinates = if ("use_coords" in obj) (obj["use_coords"] as? JsonPrimitive)?.booleanOrNull
             ?: throw ChatFailure("use_coords 必须为布尔值") else explicitCoordinates
+        val refs = mutableListOf<ChatReferenceSpec>()
+        val img2imgRefId = obj.string("img2img_ref")?.trim()?.takeIf { it.isNotEmpty() }
+        if (img2imgRefId != null) {
+            val path = availableRefs[img2imgRefId]
+                ?: throw ChatFailure("未找到参考图 $img2imgRefId，请先调用 get_generation_settings 查看可用图片")
+            val strength = if ("img2img_strength" !in obj) 0.7 else {
+                (obj["img2img_strength"] as? JsonPrimitive)?.doubleOrNull
+                    ?.takeIf { it.isFinite() && it in 0.01..0.99 }
+                    ?: throw ChatFailure("img2img_strength 必须在 0.01–0.99 之间")
+            }
+            refs += ChatReferenceSpec(img2imgRefId, path, ReferenceRole.IMG2IMG, strength = strength)
+        }
+        val preciseRefId = obj.string("precise_ref")?.trim()?.takeIf { it.isNotEmpty() }
+        val vibeRefId = obj.string("vibe_ref")?.trim()?.takeIf { it.isNotEmpty() }
+        if (preciseRefId != null && vibeRefId != null) {
+            throw ChatFailure("Precise Reference 与 Vibe Transfer 不能同时使用")
+        }
+        if (preciseRefId != null) {
+            if (!profile.supportsDirectorReference) {
+                throw ChatFailure("当前模型不支持 Precise Reference，请切换 V4.5 或改用图生图")
+            }
+            val path = availableRefs[preciseRefId]
+                ?: throw ChatFailure("未找到参考图 $preciseRefId，请先调用 get_generation_settings 查看可用图片")
+            val kind = obj.string("precise_kind")?.trim()?.takeIf { it.isNotEmpty() }?.let { raw ->
+                DirectorReferenceKind.entries.firstOrNull { it.apiValue == raw }
+                    ?: throw ChatFailure("不支持的 precise_kind：$raw")
+            } ?: DirectorReferenceKind.DEFAULT
+            refs += ChatReferenceSpec(preciseRefId, path, ReferenceRole.DIRECTOR, directorKind = kind)
+        }
+        if (vibeRefId != null) {
+            if (!profile.supportsVibeTransfer) {
+                throw ChatFailure("当前模型不支持 Vibe Transfer，请切换 V4.5 或改用图生图")
+            }
+            val path = availableRefs[vibeRefId]
+                ?: throw ChatFailure("未找到参考图 $vibeRefId，请先调用 get_generation_settings 查看可用图片")
+            refs += ChatReferenceSpec(vibeRefId, path, ReferenceRole.VIBE)
+        }
         val params = start.copy(prompt = prompt, negativePrompt = negative, size = size, outputSize = null,
             sampleCount = 1, qualityTags = QualityTagsOption.NONE, characters = characters,
             useCharacterCoordinates = useCoordinates,
             seedMode = if (seed == null) SeedMode.RANDOM else SeedMode.FIXED, baseSeed = seed ?: 0L)
         if (profile.validate(params).any { it !is ParamViolation.PromptTooLong }) throw ChatFailure("图片尺寸或参数不合法，请按 64 像素步长选择画布")
-        return params
+        return ParsedNovelAiItem(params, refs)
     }
 }

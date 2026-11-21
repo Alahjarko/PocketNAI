@@ -62,11 +62,31 @@ fun ReferenceTabsSection(
     var tab by remember {
         mutableStateOf(
             when {
-                state.directorReferences.isNotEmpty() -> ReferenceTab.PRECISE
-                state.vibeReferences.isNotEmpty() -> ReferenceTab.VIBE
+                state.supportsDirectorReference && state.directorReferences.isNotEmpty() -> ReferenceTab.PRECISE
+                state.supportsVibeTransfer && state.vibeReferences.isNotEmpty() -> ReferenceTab.VIBE
                 else -> ReferenceTab.IMG2IMG
             },
         )
+    }
+
+    // 模型切到 V5 等不支持 Precise / Vibe 的版本时，立即退回图生图页签。
+    LaunchedEffect(state.supportsDirectorReference, state.supportsVibeTransfer) {
+        if ((tab == ReferenceTab.PRECISE && !state.supportsDirectorReference) ||
+            (tab == ReferenceTab.VIBE && !state.supportsVibeTransfer)
+        ) {
+            tab = ReferenceTab.IMG2IMG
+        }
+    }
+
+    // 从详情页/画廊一键「用作参考图」送入时，自动切到对应面板。
+    LaunchedEffect(state.referenceTabSignal) {
+        val target = state.referenceTabTarget ?: return@LaunchedEffect
+        val next = when (target) {
+            ReferenceRole.DIRECTOR -> if (state.supportsDirectorReference) ReferenceTab.PRECISE else ReferenceTab.IMG2IMG
+            ReferenceRole.VIBE -> if (state.supportsVibeTransfer) ReferenceTab.VIBE else ReferenceTab.IMG2IMG
+            else -> ReferenceTab.IMG2IMG
+        }
+        tab = next
     }
 
     val infoText = stringResource(R.string.generate_img2img_info) + "\n\n" +
@@ -119,14 +139,21 @@ fun ReferenceTabsSection(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     ReferenceTab.entries.forEach { option ->
-                        val isCurrent = tab == option
-                        val active = state.activeReferences.any { it.role == option.role }
-                        val status = stringResource(
-                            if (active) R.string.generate_reference_active
-                            else R.string.generate_reference_inactive,
-                        )
+                        val supported = when (option) {
+                            ReferenceTab.IMG2IMG -> true
+                            ReferenceTab.PRECISE -> state.supportsDirectorReference
+                            ReferenceTab.VIBE -> state.supportsVibeTransfer
+                        }
+                        val isCurrent = tab == option && supported
+                        val active = supported && state.activeReferences.any { it.role == option.role }
+                        val status = when {
+                            !supported -> "当前模型不支持"
+                            active -> stringResource(R.string.generate_reference_active)
+                            else -> stringResource(R.string.generate_reference_inactive)
+                        }
                         val textColor by animateColorAsState(
                             targetValue = when {
+                                !supported -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.36f)
                                 active -> MaterialTheme.colorScheme.primary
                                 isCurrent -> MaterialTheme.colorScheme.onSurface
                                 else -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -145,6 +172,7 @@ fun ReferenceTabsSection(
                                     stateDescription = status
                                 }
                                 .clickable(
+                                    enabled = supported,
                                     interactionSource = interaction,
                                     indication = null,
                                     role = Role.Tab,
@@ -167,7 +195,7 @@ fun ReferenceTabsSection(
                                 )
                             }
                             Text(
-                                text = option.label(state),
+                                text = option.label(state, supported),
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = if (isCurrent || active) FontWeight.SemiBold else FontWeight.Medium,
                                 color = textColor,
@@ -233,15 +261,15 @@ private enum class ReferenceTab(val role: ReferenceRole) {
 
 /** 页签文字显示素材数量，实际启用状态由强调色与圆点表达。 */
 @Composable
-private fun ReferenceTab.label(state: GenerateViewModel.UiState): String = when (this) {
+private fun ReferenceTab.label(state: GenerateViewModel.UiState, supported: Boolean): String = when (this) {
     ReferenceTab.IMG2IMG ->
         stringResource(R.string.generate_mode_img2img)
 
     ReferenceTab.PRECISE ->
         stringResource(R.string.generate_precise_tab) +
-            if (state.directorReferences.isNotEmpty()) " (${state.directorReferences.size})" else ""
+            if (supported && state.directorReferences.isNotEmpty()) " (${state.directorReferences.size})" else ""
 
     ReferenceTab.VIBE ->
         stringResource(R.string.generate_vibe_short) +
-            if (state.vibeReferences.isNotEmpty()) " (${state.vibeReferences.size})" else ""
+            if (supported && state.vibeReferences.isNotEmpty()) " (${state.vibeReferences.size})" else ""
 }

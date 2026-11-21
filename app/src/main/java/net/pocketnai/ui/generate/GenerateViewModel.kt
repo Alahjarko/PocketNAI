@@ -112,7 +112,13 @@ class GenerateViewModel(
     data class UiState(
         val params: GenerationParams,
         val promptTemplate: String = "",
+        val artistPrompt: String = "",
+        val positiveMainPrompt: String = promptTemplate,
         val negativeTemplate: String = "",
+        val artistTextRevision: Int = 0,
+        val referenceTabTarget: ReferenceRole? = null,
+        val referenceTabSignal: Int = 0,
+        val expandSheetSignal: Int = 0,
         /**
          * 提示词文本被"输入框之外的力量"整体替换过的代数。
          *
@@ -310,6 +316,7 @@ class GenerateViewModel(
     private val _state = MutableStateFlow(restoreDraft())
     val state: StateFlow<UiState> = _state.asStateFlow()
     val opusV5PresetEnabled: StateFlow<Boolean> = settingsStore.opusV5PresetEnabled
+    val artistPromptSplitEnabled: StateFlow<Boolean> = settingsStore.artistPromptSplitEnabled
 
     fun onOpusV5PresetEnabled(enabled: Boolean) {
         if (enabled && _state.value.params.isMediumEffort && isOpusV5Normal(_state.value)) {
@@ -356,9 +363,17 @@ class GenerateViewModel(
         } else {
             emptyList()
         }
+        val splitEnabled = settingsStore.artistPromptSplitEnabled.value
+        val split = if (splitEnabled) {
+            net.pocketnai.domain.prompt.ArtistPromptSplitter.split(draft.promptTemplate, extractOnlyCompleted = false)
+        } else null
+        val restoredArtist = split?.artistPrompt.orEmpty()
+        val restoredMain = if (splitEnabled) split?.mainPrompt ?: draft.promptTemplate else draft.promptTemplate
         return UiState(
             params = draft.params,
             promptTemplate = draft.promptTemplate,
+            artistPrompt = restoredArtist,
+            positiveMainPrompt = restoredMain,
             negativeTemplate = draft.negativeTemplate,
             referenceSource = restoredBase,
             directorReferences = draft.references.filter { it.role == ReferenceRole.DIRECTOR },
@@ -517,8 +532,17 @@ class GenerateViewModel(
                 // 复用参数只填充编辑区，绝不自动开始生成（规划书 4.3）。
                 // 参考图一并恢复：只带回 Strength 却没有图，那个参数没有任何意义。
                 _state.update {
+                    val splitEnabled = settingsStore.artistPromptSplitEnabled.value
+                    val split = if (splitEnabled) {
+                        net.pocketnai.domain.prompt.ArtistPromptSplitter.split(reused.params.prompt, extractOnlyCompleted = false)
+                    } else null
+                    val nextArtist = split?.artistPrompt.orEmpty()
+                    val nextMain = if (splitEnabled) split?.mainPrompt ?: reused.params.prompt else reused.params.prompt
+                    val nextCombined = if (splitEnabled && split?.extractedAny == true) {
+                        net.pocketnai.domain.prompt.ArtistPromptSplitter.combine(nextArtist, nextMain)
+                    } else reused.params.prompt
                     it.copy(
-                        params = reused.params,
+                        params = reused.params.copy(prompt = nextCombined),
                         // 复用历史参数时把分辨率模式一并还原：尺寸不在预设里说明
                         // 那次用的是自定义尺寸，编辑器要回到自定义模式而不是悄悄换成预设。
                         customResolution = reused.params.let { params ->
@@ -534,10 +558,13 @@ class GenerateViewModel(
                             }
                         },
                         customResolutionError = null,
-                        promptTemplate = reused.params.prompt,
+                        promptTemplate = nextCombined,
+                        artistPrompt = nextArtist,
+                        positiveMainPrompt = nextMain,
                         negativeTemplate = reused.params.negativePrompt,
                         // 外部整体替换：让编辑框重建一次（见 textRevision 的说明）。
                         textRevision = it.textRevision + 1,
+                        artistTextRevision = it.artistTextRevision + 1,
                         referenceSource = reused.img2imgSource,
                         directorReferences = reused.referencesOf(ReferenceRole.DIRECTOR),
                         vibeReferences = reused.referencesOf(ReferenceRole.VIBE),
@@ -546,6 +573,45 @@ class GenerateViewModel(
                         modelSwitchNotice = null,
                         referenceError = null,
                     )
+                }
+            }
+        }
+
+        // 设置中开关「独立画师提示词框」时，无损拆分或合并现有提示词。
+        viewModelScope.launch {
+            var initialized = false
+            settingsStore.artistPromptSplitEnabled.collect { enabled ->
+                if (!initialized) {
+                    initialized = true
+                    return@collect
+                }
+                _state.update { current ->
+                    if (enabled) {
+                        val split = net.pocketnai.domain.prompt.ArtistPromptSplitter.split(current.promptTemplate, extractOnlyCompleted = false)
+                        val nextArtist = split.artistPrompt
+                        val nextMain = split.mainPrompt
+                        val combined = if (split.extractedAny) {
+                            net.pocketnai.domain.prompt.ArtistPromptSplitter.combine(nextArtist, nextMain)
+                        } else current.promptTemplate
+                        current.copy(
+                            artistPrompt = nextArtist,
+                            positiveMainPrompt = nextMain,
+                            promptTemplate = combined,
+                            params = current.params.copy(prompt = combined),
+                            textRevision = current.textRevision + 1,
+                            artistTextRevision = current.artistTextRevision + 1,
+                        )
+                    } else {
+                        val merged = net.pocketnai.domain.prompt.ArtistPromptSplitter.combine(current.artistPrompt, current.positiveMainPrompt)
+                        current.copy(
+                            artistPrompt = "",
+                            positiveMainPrompt = merged,
+                            promptTemplate = merged,
+                            params = current.params.copy(prompt = merged),
+                            textRevision = current.textRevision + 1,
+                            artistTextRevision = current.artistTextRevision + 1,
+                        )
+                    }
                 }
             }
         }
@@ -564,7 +630,76 @@ class GenerateViewModel(
     }
 
     fun onPromptChange(value: String) {
-        _state.update { it.copy(promptTemplate = value, params = it.params.copy(prompt = value)) }
+        if (!settingsStore.artistPromptSplitEnabled.value) {
+            _state.update { it.copy(promptTemplate = value, positiveMainPrompt = value, params = it.params.copy(prompt = value)) }
+            return
+        }
+        val split = net.pocketnai.domain.prompt.ArtistPromptSplitter.split(value, extractOnlyCompleted = true)
+        _state.update { current ->
+            if (split.extractedAny) {
+                val nextArtist = net.pocketnai.domain.prompt.ArtistPromptSplitter.appendArtist(current.artistPrompt, split.artistPrompt)
+                val nextMain = split.mainPrompt
+                val combined = net.pocketnai.domain.prompt.ArtistPromptSplitter.combine(nextArtist, nextMain)
+                current.copy(
+                    artistPrompt = nextArtist,
+                    positiveMainPrompt = nextMain,
+                    promptTemplate = combined,
+                    params = current.params.copy(prompt = combined),
+                    textRevision = current.textRevision + 1,
+                    artistTextRevision = current.artistTextRevision + 1,
+                )
+            } else {
+                val combined = net.pocketnai.domain.prompt.ArtistPromptSplitter.combine(current.artistPrompt, value)
+                current.copy(
+                    positiveMainPrompt = value,
+                    promptTemplate = combined,
+                    params = current.params.copy(prompt = combined),
+                )
+            }
+        }
+    }
+
+    /** 正向框失焦时，把末尾尚未带逗号的完整 `artist:` 标签也顺手剥离到画师框。 */
+    fun flushArtistExtraction() {
+        if (!settingsStore.artistPromptSplitEnabled.value) return
+        _state.update { current ->
+            val split = net.pocketnai.domain.prompt.ArtistPromptSplitter.split(current.positiveMainPrompt, extractOnlyCompleted = false)
+            if (!split.extractedAny) return@update current
+            val nextArtist = net.pocketnai.domain.prompt.ArtistPromptSplitter.appendArtist(current.artistPrompt, split.artistPrompt)
+            val nextMain = split.mainPrompt
+            val combined = net.pocketnai.domain.prompt.ArtistPromptSplitter.combine(nextArtist, nextMain)
+            current.copy(
+                artistPrompt = nextArtist,
+                positiveMainPrompt = nextMain,
+                promptTemplate = combined,
+                params = current.params.copy(prompt = combined),
+                textRevision = current.textRevision + 1,
+                artistTextRevision = current.artistTextRevision + 1,
+            )
+        }
+    }
+
+    fun onArtistPromptChange(value: String) {
+        _state.update { current ->
+            val combined = net.pocketnai.domain.prompt.ArtistPromptSplitter.combine(value, current.positiveMainPrompt)
+            current.copy(
+                artistPrompt = value,
+                promptTemplate = combined,
+                params = current.params.copy(prompt = combined),
+            )
+        }
+    }
+
+    fun replaceArtistPromptText(value: String) {
+        _state.update { current ->
+            val combined = net.pocketnai.domain.prompt.ArtistPromptSplitter.combine(value, current.positiveMainPrompt)
+            current.copy(
+                artistPrompt = value,
+                promptTemplate = combined,
+                params = current.params.copy(prompt = combined),
+                artistTextRevision = current.artistTextRevision + 1,
+            )
+        }
     }
 
     fun onNegativePromptChange(value: String) {
@@ -616,8 +751,32 @@ class GenerateViewModel(
     fun replacePromptText(target: PromptTarget, text: String) {
         _state.update { current ->
             val replaced = when (target) {
-                PromptTarget.POSITIVE ->
-                    current.copy(promptTemplate = text, params = current.params.copy(prompt = text))
+                PromptTarget.POSITIVE -> {
+                    if (!settingsStore.artistPromptSplitEnabled.value) {
+                        current.copy(promptTemplate = text, positiveMainPrompt = text, params = current.params.copy(prompt = text))
+                    } else if (text.isEmpty()) {
+                        val combined = net.pocketnai.domain.prompt.ArtistPromptSplitter.combine(current.artistPrompt, "")
+                        current.copy(
+                            positiveMainPrompt = "",
+                            promptTemplate = combined,
+                            params = current.params.copy(prompt = combined),
+                        )
+                    } else {
+                        val split = net.pocketnai.domain.prompt.ArtistPromptSplitter.split(text, extractOnlyCompleted = false)
+                        val nextArtist = if (split.extractedAny) {
+                            net.pocketnai.domain.prompt.ArtistPromptSplitter.appendArtist(current.artistPrompt, split.artistPrompt)
+                        } else current.artistPrompt
+                        val nextMain = if (split.extractedAny) split.mainPrompt else text
+                        val combined = net.pocketnai.domain.prompt.ArtistPromptSplitter.combine(nextArtist, nextMain)
+                        current.copy(
+                            artistPrompt = nextArtist,
+                            positiveMainPrompt = nextMain,
+                            promptTemplate = combined,
+                            params = current.params.copy(prompt = combined),
+                            artistTextRevision = if (split.extractedAny) current.artistTextRevision + 1 else current.artistTextRevision,
+                        )
+                    }
+                }
 
                 PromptTarget.NEGATIVE ->
                     current.copy(
@@ -636,9 +795,22 @@ class GenerateViewModel(
         val current = _state.value
         if (edit.provider != "novelai" || (edit.prompt != null && edit.beforePrompt != current.promptTemplate) ||
             (edit.negative != null && edit.beforeNegative != current.negativeTemplate)) return null
-        val next = current.copy(promptTemplate = edit.prompt ?: current.promptTemplate, negativeTemplate = edit.negative ?: current.negativeTemplate,
-            params = current.params.copy(prompt = edit.prompt ?: current.promptTemplate, negativePrompt = edit.negative ?: current.negativeTemplate),
-            textRevision = current.textRevision + 1)
+        val targetPositive = edit.prompt ?: current.promptTemplate
+        val splitEnabled = settingsStore.artistPromptSplitEnabled.value
+        val split = if (splitEnabled && edit.prompt != null) {
+            net.pocketnai.domain.prompt.ArtistPromptSplitter.split(targetPositive, extractOnlyCompleted = false)
+        } else null
+        val nextArtist = if (split != null) split.artistPrompt else current.artistPrompt
+        val nextMain = if (split != null) split.mainPrompt else if (edit.prompt != null) targetPositive else current.positiveMainPrompt
+        val next = current.copy(
+            promptTemplate = targetPositive,
+            artistPrompt = nextArtist,
+            positiveMainPrompt = nextMain,
+            negativeTemplate = edit.negative ?: current.negativeTemplate,
+            params = current.params.copy(prompt = targetPositive, negativePrompt = edit.negative ?: current.negativeTemplate),
+            textRevision = current.textRevision + 1,
+            artistTextRevision = if (split != null) current.artistTextRevision + 1 else current.artistTextRevision,
+        )
         promptEditUndo = PromptUndo(next.textRevision, current.promptTemplate, current.negativeTemplate, next.promptTemplate, next.negativeTemplate)
         _state.value = next
         return next.textRevision
@@ -648,8 +820,21 @@ class GenerateViewModel(
         val previous = promptEditUndo?.takeIf { it.revision == revision && current.textRevision == revision &&
             current.promptTemplate == it.afterPositive && current.negativeTemplate == it.afterNegative } ?: return false
         val positive = previous.beforePositive; val negative = previous.beforeNegative
-        _state.update { it.copy(promptTemplate = positive, negativeTemplate = negative,
-            params = it.params.copy(prompt = positive, negativePrompt = negative), textRevision = it.textRevision + 1) }
+        val splitEnabled = settingsStore.artistPromptSplitEnabled.value
+        val split = if (splitEnabled) {
+            net.pocketnai.domain.prompt.ArtistPromptSplitter.split(positive, extractOnlyCompleted = false)
+        } else null
+        _state.update {
+            it.copy(
+                promptTemplate = positive,
+                artistPrompt = split?.artistPrompt ?: "",
+                positiveMainPrompt = split?.mainPrompt ?: positive,
+                negativeTemplate = negative,
+                params = it.params.copy(prompt = positive, negativePrompt = negative),
+                textRevision = it.textRevision + 1,
+                artistTextRevision = if (split != null) it.artistTextRevision + 1 else it.artistTextRevision,
+            )
+        }
         promptEditUndo = null
         return true
     }
@@ -942,6 +1127,30 @@ class GenerateViewModel(
      * 用官方预设而不是任意合法尺寸是有意的：预设是计费与观感都确定的那些尺寸
      * （Normal 档位 832×1216 / 1216×832 / 1024×1024），自己算一个尺寸等于引入一个未知量。
      */
+    /** 详情页或画廊长按一键「用作参考图」：直接挂入目标角色，不弹出元数据导入询问，并展开面板切到对应页签。 */
+    fun sendImageAsReference(source: ReferenceSource, role: ReferenceRole) {
+        _state.update {
+            it.copy(
+                referenceTabTarget = role,
+                referenceTabSignal = it.referenceTabSignal + 1,
+                expandSheetSignal = it.expandSheetSignal + 1,
+            )
+        }
+        when (role) {
+            ReferenceRole.DIRECTOR -> onDirectorReferencePicked(source)
+            ReferenceRole.VIBE -> onVibeReferencePicked(source)
+            else -> {
+                if (_state.value.referenceBusy) return
+                _state.update { it.copy(referenceBusy = true, referenceError = null) }
+                viewModelScope.launch { importReferenceImage(source) }
+            }
+        }
+    }
+
+    fun requestExpandSheet() {
+        _state.update { it.copy(expandSheetSignal = it.expandSheetSignal + 1) }
+    }
+
     fun onReferencePicked(source: ReferenceSource) {
         if (_state.value.referenceBusy) return
         _state.update { it.copy(referenceBusy = true, referenceError = null) }
@@ -1072,9 +1281,19 @@ class GenerateViewModel(
                 undesiredContentPresetIndex = plan.undesiredContentPresetIndex ?: state.params.undesiredContentPresetIndex,
             )
             val normalized = profile.normalize(updated)
+            val importedPrompt = plan.prompt ?: state.promptTemplate
+            val splitEnabled = settingsStore.artistPromptSplitEnabled.value
+            val split = if (splitEnabled && plan.prompt != null) {
+                net.pocketnai.domain.prompt.ArtistPromptSplitter.split(importedPrompt, extractOnlyCompleted = false)
+            } else null
+            val nextArtist = if (split != null) split.artistPrompt else state.artistPrompt
+            val nextMain = if (split != null) split.mainPrompt else if (plan.prompt != null) importedPrompt else state.positiveMainPrompt
+            val nextCombined = if (split != null && split.extractedAny) {
+                net.pocketnai.domain.prompt.ArtistPromptSplitter.combine(nextArtist, nextMain)
+            } else importedPrompt
             state.copy(
                 // 采样器/调度/尺寸都按新模型再过一遍，避免导入出的组合服务端不认。
-                params = normalized,
+                params = normalized.copy(prompt = nextCombined),
                 referenceSource = if (candidate.source != null) null else state.referenceSource,
                 inpaintReferences = if (candidate.source != null) emptyList() else state.inpaintReferences,
                 // 元数据里的尺寸不在预设里但合法时，把它当作自定义尺寸接住：
@@ -1090,12 +1309,15 @@ class GenerateViewModel(
                 // 模板与提交值保持一致：勾了"实际提示词"时官方网页也是把展开值写进输入框
                 // （模板原文不再保留），否则那个勾选项在我们这里等于没有作用 ——
                 // 提交时提示词会从模板重新抽选一遍。
-                promptTemplate = plan.prompt ?: state.promptTemplate,
+                promptTemplate = nextCombined,
+                artistPrompt = nextArtist,
+                positiveMainPrompt = nextMain,
                 // 负向词同理，而且**必须写模板**：提交时 params.negativePrompt 会被
                 // 模板重新解析一遍覆盖掉，只写 params 的话导入的负面词会被静默丢弃。
                 negativeTemplate = plan.negativePrompt ?: state.negativeTemplate,
                 // 外部整体替换：让编辑框重建一次（见 textRevision 的说明）。
                 textRevision = state.textRevision + 1,
+                artistTextRevision = if (split != null) state.artistTextRevision + 1 else state.artistTextRevision,
                 metadataCandidate = null,
                 // 导入的参数是"这张图的",与上一次的模型切换提示无关。
                 modelSwitchNotice = null,
@@ -1642,9 +1864,18 @@ class GenerateViewModel(
     }
 
     /** 对话独立参数快照，与首页共用生成锁、计费和仓库，不覆盖用户草稿。 */
-    suspend fun quoteForChat(params: GenerationParams): net.pocketnai.domain.chat.ChatImageQuote {
+    suspend fun quoteForChat(
+        params: GenerationParams,
+        references: List<ReferenceImage> = emptyList(),
+    ): net.pocketnai.domain.chat.ChatImageQuote {
+        val fakeState = UiState(
+            params = params,
+            referenceSource = references.firstOrNull { it.role == ReferenceRole.IMG2IMG },
+            directorReferences = references.filter { it.role == ReferenceRole.DIRECTOR },
+            vibeReferences = references.filter { it.role == ReferenceRole.VIBE },
+        )
         val estimate = costCalculator.estimate(pricingContextOf(
-            UiState(params = params), accountBalanceRepository.state.value, settingsStore.subscriptionOverride.value,
+            fakeState, accountBalanceRepository.state.value, settingsStore.subscriptionOverride.value,
         ))
         return net.pocketnai.domain.chat.ChatImageQuote.from(estimate)
     }
@@ -1688,8 +1919,10 @@ class GenerateViewModel(
         onImage: (net.pocketnai.domain.chat.ChatImage) -> Unit,
         expectedAccountFingerprint: String?,
         beforeSend: suspend () -> Unit,
+        references: List<ReferenceImage> = emptyList(),
     ): List<net.pocketnai.domain.chat.ChatImage> = generateIsolated(params, { onImage(it) }, "对话生成",
-        expectedAccountFingerprint = expectedAccountFingerprint, templatesResolved = true, verifySend = beforeSend)
+        expectedAccountFingerprint = expectedAccountFingerprint, templatesResolved = true, verifySend = beforeSend,
+        references = references)
 
     /** The already-running local service owns this task's protection; do not start an FGS from background. */
     suspend fun generateForMcp(
@@ -1711,6 +1944,7 @@ class GenerateViewModel(
         templatesResolved: Boolean = false,
         verifySend: suspend () -> Unit = {},
         externalProtection: net.pocketnai.domain.task.BackgroundTasks.Task? = null,
+        references: List<ReferenceImage> = emptyList(),
     ): List<net.pocketnai.domain.chat.ChatImage> {
         if (_state.value.inFlight || _state.value.externalGenerationActive || _state.value.referenceBusy || (_state.value.artistLabActive && !fromArtistLab))
             throw net.pocketnai.domain.chat.ChatFailure("另一个图片任务正在执行，请等待完成")
@@ -1726,7 +1960,14 @@ class GenerateViewModel(
                 background?.awaitReady()
                 awaitStartup()
                 naiGenerationGate.run {
-                    repository.generate(GenerationRequest(params = params), params.prompt, expectedAccountFingerprint,
+                    val profile = ModelCatalog.profileOf(params.model)
+                    val mode = when {
+                        references.any { it.role == ReferenceRole.IMG2IMG } -> GenerationMode.IMG2IMG
+                        references.any { it.role == ReferenceRole.DIRECTOR } && profile.supportsDirectorReference -> GenerationMode.PRECISE_REFERENCE
+                        else -> GenerationMode.TXT2IMG
+                    }
+                    val request = GenerationRequest(params = params, mode = mode, references = references).withActiveReferences(profile)
+                    repository.generate(request, params.prompt, expectedAccountFingerprint,
                         beforeSend = { background?.ensureRunning(); verifySend(); if (fromArtistLab) onStarted(it) }, templatesResolved = templatesResolved).collect { event ->
                         when (event) {
                             is GenerationEvent.Final -> {

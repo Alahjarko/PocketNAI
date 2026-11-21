@@ -53,8 +53,11 @@ fun HomeScreen(
     openAiViewModel: OpenAiImageViewModel? = null,
     onOpenAiSettings: () -> Unit = {},
     onOpenStatistics: (() -> Unit)? = null,
+    onUseAsReference: ((net.pocketnai.domain.model.GalleryItem, net.pocketnai.domain.model.ReferenceRole) -> Unit)? = null,
 ) {
     val openAiState = openAiViewModel?.state?.collectAsStateWithLifecycle()?.value
+    val supportsDirector = openAiViewModel == null && state.supportsDirectorReference
+    val supportsVibe = openAiViewModel == null && state.supportsVibeTransfer
     BoxWithConstraints(modifier = modifier) {
         if (maxWidth >= 720.dp) {
             // ---- 平板形态：右侧面板常驻 ----
@@ -65,6 +68,9 @@ fun HomeScreen(
                 GalleryPane(
                     onOpenImage = onOpenImage,
                     onInpaintImage = onInpaintImage,
+                    onUseAsReference = onUseAsReference,
+                    supportsDirectorReference = supportsDirector,
+                    supportsVibeTransfer = supportsVibe,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxSize(),
@@ -97,6 +103,7 @@ fun HomeScreen(
         GenerationSheetScaffold(
             inFlight = state.inFlight || openAiState?.busy == true,
             submissionRevision = openAiState?.submissionRevision ?: state.submissionRevision,
+            expandSignal = state.expandSheetSignal,
             sheetContent = { expanded, headerDragModifier ->
                 if (openAiViewModel != null) OpenAiImageSheet(openAiViewModel, expanded, onOpenAiSettings, headerDragModifier)
                 else GenerateSheet(
@@ -115,6 +122,9 @@ fun HomeScreen(
             GalleryPane(
                 onOpenImage = onOpenImage,
                 onInpaintImage = onInpaintImage,
+                onUseAsReference = onUseAsReference,
+                supportsDirectorReference = supportsDirector,
+                supportsVibeTransfer = supportsVibe,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(contentPadding),

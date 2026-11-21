@@ -275,6 +275,7 @@ internal fun GenerationSheetScaffold(
     inFlight: Boolean,
     sheetContent: @Composable (expanded: Boolean, headerDragModifier: Modifier) -> Unit,
     submissionRevision: Int = 0,
+    expandSignal: Int = 0,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -293,12 +294,20 @@ internal fun GenerationSheetScaffold(
     val bodyCushionPx = with(density) { 16.dp.toPx() }
 
     var targetExpanded by rememberSaveable { mutableStateOf(false) }
+    var handledExpandSignal by rememberSaveable { mutableStateOf(expandSignal) }
     // 亚像素收敛阈值（0.0003 * 2400px < 0.8px），消除默认 0.01（约 20px）在触顶前的渐近爬行与末帧跳变。
     val progress = remember {
         Animatable(
             initialValue = if (targetExpanded) 1f else 0f,
             visibilityThreshold = 0.0003f,
         )
+    }
+    LaunchedEffect(expandSignal) {
+        if (expandSignal > handledExpandSignal) {
+            handledExpandSignal = expandSignal
+            targetExpanded = true
+            progress.animateTo(1f, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 750f))
+        }
     }
     val backProgress = remember { Animatable(0f, visibilityThreshold = 0.0005f) }
     var scaffoldHeight by remember { mutableFloatStateOf(0f) }

@@ -94,6 +94,7 @@ fun SettingsScreen(
     val updateState by updateViewModel.state.collectAsStateWithLifecycle()
     val chatEnabled by container.settingsStore.chatEnabled.collectAsStateWithLifecycle()
     val artistLabEnabled by container.settingsStore.artistLabEnabled.collectAsStateWithLifecycle()
+    val artistPromptSplitEnabled by container.settingsStore.artistPromptSplitEnabled.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     var accountSwitchDialogOpen by remember { mutableStateOf(false) }
@@ -232,6 +233,26 @@ fun SettingsScreen(
                 onClick = {
                     haptics.tick()
                     onOpenLocalMcp()
+                },
+            )
+            SettingsDivider()
+            SettingsRow(
+                title = "独立画师提示词框",
+                icon = Icons.Default.Brush,
+                active = artistPromptSplitEnabled,
+                subtitle = "自动剥离 artist: 标签到独立框，提交时合并",
+                onClick = {
+                    haptics.tick()
+                    container.settingsStore.setArtistPromptSplitEnabled(!artistPromptSplitEnabled)
+                },
+                trailing = {
+                    Switch(
+                        checked = artistPromptSplitEnabled,
+                        onCheckedChange = {
+                            haptics.tick()
+                            container.settingsStore.setArtistPromptSplitEnabled(it)
+                        },
+                    )
                 },
             )
             SettingsDivider()

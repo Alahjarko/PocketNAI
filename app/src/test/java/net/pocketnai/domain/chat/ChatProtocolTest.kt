@@ -363,5 +363,104 @@ class ChatProtocolTest {
         assertThat(openAiConfirmed.single().items.all { it.openAi != null }).isTrue()
         assertThat(openAiResult.status).isEqualTo("succeeded")
         assertThat(openAiCalls).containsExactly("a sunny meadow", "a starry sky").inOrder()
+
+        // Chat reference image indexing & tool parsing (NovelAI + OpenAI)
+        val refConv = ChatConversation(
+            id = "c-ref",
+            updatedAt = 1L,
+            entries = listOf(
+                ChatEntry(
+                    id = "u1",
+                    wire = wireMessage("user", "look"),
+                    attachments = listOf(
+                        ChatAttachment("a1", "chat-attachments/a1.jpg", "image/jpeg", 512, 512),
+                        ChatAttachment("a2", "chat-attachments/v.svg", "image/svg+xml", 512, 512),
+                    ),
+                ),
+                ChatEntry(
+                    id = "t1",
+                    wire = wireMessage("tool", "{}", "tc1"),
+                    images = listOf(
+                        ChatImage("g1", "generations/g1.png", 832, 1216),
+                        ChatImage("g1-dup", "generations/g1.png", 832, 1216),
+                    ),
+                ),
+            ),
+        )
+        val availList = refConv.availableReferenceImages()
+        assertThat(availList.map { it.refId to it.relativePath }).containsExactly(
+            "ref_1" to "chat-attachments/a1.jpg",
+            "ref_2" to "generations/g1.png",
+        ).inOrder()
+        val availMap = availList.associate { it.refId to it.relativePath }
+
+        val naiV45Base = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V4_5_FULL))
+        val parsedNaiRef = ImageChatTools.parseWithReferences(
+            ToolCall(
+                "r1", "generate_image",
+                """{"prompt":"1girl","negative_prompt":"lowres","img2img_ref":"ref_1","img2img_strength":0.65,"precise_ref":"ref_2","precise_kind":"style"}""",
+            ),
+            naiV45Base,
+            availMap,
+        )
+        assertThat(parsedNaiRef.references).hasSize(2)
+        assertThat(parsedNaiRef.references[0].role).isEqualTo(ReferenceRole.IMG2IMG)
+        assertThat(parsedNaiRef.references[0].strength).isWithin(1e-6).of(0.65)
+        assertThat(parsedNaiRef.references[1].role).isEqualTo(ReferenceRole.DIRECTOR)
+        assertThat(parsedNaiRef.references[1].directorKind).isEqualTo(DirectorReferenceKind.STYLE)
+
+        // V5 rejects precise_ref & vibe_ref; V4.5 rejects precise_ref + vibe_ref together
+        val naiV5Base = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V5_FULL))
+        assertThat(runCatching {
+            ImageChatTools.parseWithReferences(
+                ToolCall("r2", "generate_image", """{"prompt":"1girl","negative_prompt":"","precise_ref":"ref_1"}"""),
+                naiV5Base,
+                availMap,
+            )
+        }.isFailure).isTrue()
+        assertThat(runCatching {
+            ImageChatTools.parseWithReferences(
+                ToolCall("r3", "generate_image", """{"prompt":"1girl","negative_prompt":"","precise_ref":"ref_1","vibe_ref":"ref_2"}"""),
+                naiV45Base,
+                availMap,
+            )
+        }.isFailure).isTrue()
+
+        // OpenAI reference_refs parsing & deduplication
+        val parsedOaRef = ImageChatTools.parseOpenAiWithReferences(
+            ToolCall("r4", "generate_image", """{"prompt":"edit lighting","reference_refs":["ref_1","ref_2","ref_1"]}"""),
+            openAiBase,
+            availMap,
+        )
+        assertThat(parsedOaRef.references.map { it.relativePath }).containsExactly(
+            "chat-attachments/a1.jpg",
+            "generations/g1.png",
+        ).inOrder()
+
+        // ArtistPromptSplitter: canonical artist: extraction & newline combine
+        val splitFull = net.pocketnai.domain.prompt.ArtistPromptSplitter.split(
+            "1girl, artist:foo, {artist:bar}, 1.2::artist:baz, artist:qux ::, blue sky",
+            extractOnlyCompleted = false,
+        )
+        assertThat(splitFull.extractedAny).isTrue()
+        assertThat(splitFull.artistPrompt).isEqualTo("artist:foo, {artist:bar}, 1.2::artist:baz, artist:qux ::")
+        assertThat(splitFull.mainPrompt).isEqualTo("1girl, blue sky")
+        assertThat(net.pocketnai.domain.prompt.ArtistPromptSplitter.combine(splitFull.artistPrompt, splitFull.mainPrompt))
+            .isEqualTo("artist:foo, {artist:bar}, 1.2::artist:baz, artist:qux ::,\n1girl, blue sky")
+
+        // Typing mid-tag (no trailing comma) must not yank the incomplete artist: tag
+        val splitTyping = net.pocketnai.domain.prompt.ArtistPromptSplitter.split(
+            "1girl, artist:incomplete",
+            extractOnlyCompleted = true,
+        )
+        assertThat(splitTyping.extractedAny).isFalse()
+        assertThat(splitTyping.mainPrompt).isEqualTo("1girl, artist:incomplete")
+        val splitTypedComma = net.pocketnai.domain.prompt.ArtistPromptSplitter.split(
+            "1girl, artist:done, ",
+            extractOnlyCompleted = true,
+        )
+        assertThat(splitTypedComma.extractedAny).isTrue()
+        assertThat(splitTypedComma.artistPrompt).isEqualTo("artist:done")
+        assertThat(splitTypedComma.mainPrompt).isEqualTo("1girl, ")
     }
 }

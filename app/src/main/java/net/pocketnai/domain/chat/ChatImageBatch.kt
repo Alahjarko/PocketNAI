@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import net.pocketnai.domain.billing.GenerationCostEstimate
 import net.pocketnai.domain.model.GenerationParams
+import net.pocketnai.domain.model.ReferenceImage
 import net.pocketnai.domain.openai.OpenAiImageEstimate
 import net.pocketnai.domain.openai.OpenAiImageParams
 import java.util.Locale
@@ -47,6 +48,7 @@ data class ChatPlannedImage(
     val params: GenerationParams,
     val quote: ChatImageQuote,
     val openAi: OpenAiImageParams? = null,
+    val references: List<ReferenceImage> = emptyList(),
 )
 data class ChatImagePlan(val items: List<ChatPlannedImage>, val completed: Int = 0, val changed: Boolean = false) {
     val summary: String get() = buildList {
@@ -84,10 +86,15 @@ class ChatImageBatch(private val images: ChatImageGenerator, private val pause: 
         onProgress: (Int, Int, ChatImageQuote) -> Unit,
         onImage: (ChatImage) -> Unit,
         checkpoint: suspend (List<ChatImage>) -> Unit,
+        referencesPerItem: List<List<ReferenceImage>> = emptyList(),
     ): ChatBatchResult {
         if (params.isEmpty() || params.size > remaining) throw ChatFailure("本条消息剩余可生成 $remaining 张，请调整计划或发送新消息")
         val account = images.authorizationKey()
-        var plan = params.map { ChatPlannedImage(it, images.quote(it)) }
+        fun refsAt(index: Int): List<ReferenceImage> = referencesPerItem.getOrElse(index) { emptyList() }
+        var plan = params.mapIndexed { idx, p ->
+            val refs = refsAt(idx)
+            ChatPlannedImage(p, images.quote(p, refs), references = refs)
+        }
         val output = mutableListOf<ChatImage>()
         fun finish(status: String, message: String): ChatBatchResult {
             if (status != "succeeded") blocked = true
@@ -101,27 +108,31 @@ class ChatImageBatch(private val images: ChatImageGenerator, private val pause: 
             if (index > 0 || attempted > 0) pause()
             if (!active()) return finish("cancelled", "已停止后续图片；已完成 ${output.size}/${params.size} 张")
             if (images.authorizationKey() != account) return finish("cancelled", "账号或图片服务已改变，后续图片未发送")
+            val refs = refsAt(index)
             try {
-                val latest = images.quote(params[index])
+                val latest = images.quote(params[index], refs)
                 if (latest != plan[index].quote) {
-                    val remainingPlan = params.drop(index).map { ChatPlannedImage(it, images.quote(it)) }
+                    val remainingPlan = params.drop(index).mapIndexed { offset, p ->
+                        val itemRefs = refsAt(index + offset)
+                        ChatPlannedImage(p, images.quote(p, itemRefs), references = itemRefs)
+                    }
                     if (!full && !confirm(ChatImagePlan(remainingPlan, output.size, changed = true)))
                         return finish("cancelled", "费用变化后用户取消，后续图片未发送")
                     plan = plan.take(index) + remainingPlan
                     // Confirmation is asynchronous: recheck the account and current price again.
                     if (!active() || images.authorizationKey() != account)
                         return finish("cancelled", "授权条件已改变，后续图片未发送")
-                    if (!full && images.quote(params[index]) != plan[index].quote)
+                    if (!full && images.quote(params[index], refs) != plan[index].quote)
                         return finish("cancelled", "费用再次变化，请发送新消息重新确认")
                 }
                 attempted++ // A failed or uncertain request consumes its allowance too.
                 onProgress(index + 1, params.size, plan[index].quote)
                 val approvedQuote = plan[index].quote
-                val current = images.generate(params[index], account, beforeSend = {
+                val current = images.generate(params[index], refs, account, beforeSend = {
                     // The shared generation gate can wait behind another task after this loop's check.
                     if (!active()) throw ChatFailure("用户已停止后续图片，本张未发送")
                     if (images.authorizationKey() != account) throw ChatFailure("账号已改变，本张未发送")
-                    if (!full && images.quote(params[index]) != approvedQuote) throw ChatFailure("等待发送期间费用变化，本张未发送；请重新确认计划")
+                    if (!full && images.quote(params[index], refs) != approvedQuote) throw ChatFailure("等待发送期间费用变化，本张未发送；请重新确认计划")
                 }) { image ->
                     if (output.none { it.imageId == image.imageId }) { output += image; onImage(image) }
                 }
@@ -144,10 +155,15 @@ class ChatImageBatch(private val images: ChatImageGenerator, private val pause: 
         onProgress: (Int, Int, ChatImageQuote) -> Unit,
         onImage: (ChatImage) -> Unit,
         checkpoint: suspend (List<ChatImage>) -> Unit,
+        referencesPerItem: List<List<ReferenceImage>> = emptyList(),
     ): ChatBatchResult {
         if (params.isEmpty() || params.size > remaining) throw ChatFailure("本条消息剩余可生成 $remaining 张，请调整计划或发送新消息")
         val account = images.authorizationKey()
-        var plan = params.map { ChatPlannedImage(placeholder.copy(prompt = it.prompt), images.quoteOpenAi(it), openAi = it) }
+        fun refsAt(index: Int): List<ReferenceImage> = referencesPerItem.getOrElse(index) { emptyList() }
+        var plan = params.mapIndexed { idx, p ->
+            val refs = refsAt(idx)
+            ChatPlannedImage(placeholder.copy(prompt = p.prompt), images.quoteOpenAi(p, refs), openAi = p, references = refs)
+        }
         val output = mutableListOf<ChatImage>()
         fun finish(status: String, message: String): ChatBatchResult {
             if (status != "succeeded") blocked = true
@@ -161,27 +177,29 @@ class ChatImageBatch(private val images: ChatImageGenerator, private val pause: 
             if (index > 0 || attempted > 0) pause()
             if (!active()) return finish("cancelled", "已停止后续图片；已完成 ${output.size}/${params.size} 张")
             if (images.authorizationKey() != account) return finish("cancelled", "账号或图片服务已改变，后续图片未发送")
+            val refs = refsAt(index)
             try {
-                val latest = images.quoteOpenAi(params[index])
+                val latest = images.quoteOpenAi(params[index], refs)
                 if (latest != plan[index].quote) {
-                    val remainingPlan = params.drop(index).map {
-                        ChatPlannedImage(placeholder.copy(prompt = it.prompt), images.quoteOpenAi(it), openAi = it)
+                    val remainingPlan = params.drop(index).mapIndexed { offset, p ->
+                        val itemRefs = refsAt(index + offset)
+                        ChatPlannedImage(placeholder.copy(prompt = p.prompt), images.quoteOpenAi(p, itemRefs), openAi = p, references = itemRefs)
                     }
                     if (!full && !confirm(ChatImagePlan(remainingPlan, output.size, changed = true)))
                         return finish("cancelled", "费用变化后用户取消，后续图片未发送")
                     plan = plan.take(index) + remainingPlan
                     if (!active() || images.authorizationKey() != account)
                         return finish("cancelled", "授权条件已改变，后续图片未发送")
-                    if (!full && images.quoteOpenAi(params[index]) != plan[index].quote)
+                    if (!full && images.quoteOpenAi(params[index], refs) != plan[index].quote)
                         return finish("cancelled", "费用再次变化，请发送新消息重新确认")
                 }
                 attempted++
                 onProgress(index + 1, params.size, plan[index].quote)
                 val approvedQuote = plan[index].quote
-                val current = images.generateOpenAi(params[index], account, beforeSend = {
+                val current = images.generateOpenAi(params[index], refs, account, beforeSend = {
                     if (!active()) throw ChatFailure("用户已停止后续图片，本张未发送")
                     if (images.authorizationKey() != account) throw ChatFailure("账号或图片服务已改变，本张未发送")
-                    if (!full && images.quoteOpenAi(params[index]) != approvedQuote) throw ChatFailure("等待发送期间费用变化，本张未发送；请重新确认计划")
+                    if (!full && images.quoteOpenAi(params[index], refs) != approvedQuote) throw ChatFailure("等待发送期间费用变化，本张未发送；请重新确认计划")
                 }) { image ->
                     if (output.none { it.imageId == image.imageId }) { output += image; onImage(image) }
                 }

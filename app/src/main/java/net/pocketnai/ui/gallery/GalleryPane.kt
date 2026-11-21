@@ -50,6 +50,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.CheckCircle
@@ -138,8 +139,10 @@ import net.pocketnai.domain.model.GalleryFilter
 import net.pocketnai.domain.model.GalleryItem
 import net.pocketnai.domain.model.GenerationMode
 import net.pocketnai.domain.model.GalleryModels
+import net.pocketnai.domain.model.ReferenceRole
 import net.pocketnai.domain.prompt.PromptTitle
 import net.pocketnai.ui.LocalAppContainer
+import net.pocketnai.ui.generate.ReferenceRoleChooserDialog
 import net.pocketnai.ui.motion.imageMotionChrome
 import net.pocketnai.ui.common.CenteredHint
 import net.pocketnai.ui.common.labelRes
@@ -167,6 +170,9 @@ fun GalleryPane(
      */
     onInpaintImage: (GalleryItem) -> Unit,
     modifier: Modifier = Modifier,
+    onUseAsReference: ((GalleryItem, ReferenceRole) -> Unit)? = null,
+    supportsDirectorReference: Boolean = false,
+    supportsVibeTransfer: Boolean = false,
 ) {
     val container = LocalAppContainer.current
     val viewModel: GalleryViewModel = viewModel(
@@ -194,6 +200,7 @@ fun GalleryPane(
     val gridState = androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState()
     val snackbarHostState = remember { SnackbarHostState() }
     var actionTarget by remember { mutableStateOf<GalleryItem?>(null) }
+    var referenceTarget by remember { mutableStateOf<GalleryItem?>(null) }
     var pendingSave by remember { mutableStateOf<GalleryItem?>(null) }
     var pendingBatchSave by remember { mutableStateOf<List<GalleryItem>?>(null) }
     var confirmBatchDelete by remember { mutableStateOf(false) }
@@ -465,11 +472,32 @@ fun GalleryPane(
                 copyToClipboard(context, target.prompt)
                 scope.launch { snackbarHostState.showSnackbar("已复制提示词") }
             },
+            onUseAsReference = if (onUseAsReference != null && !target.relativePath.endsWith(".svg", ignoreCase = true)) {
+                {
+                    if (supportsDirectorReference || supportsVibeTransfer) {
+                        referenceTarget = target
+                    } else {
+                        onUseAsReference(target, ReferenceRole.IMG2IMG)
+                    }
+                }
+            } else null,
             onInpaint = if (!target.relativePath.endsWith(".svg", ignoreCase = true)) {
                 { onInpaintImage(target) }
             } else null,
             onEnterBatchMode = { viewModel.enterSelectionMode(target.imageId) },
             onDelete = { viewModel.deleteGeneration(target.generationId) },
+        )
+    }
+
+    referenceTarget?.let { target ->
+        ReferenceRoleChooserDialog(
+            supportsDirector = supportsDirectorReference,
+            supportsVibe = supportsVibeTransfer,
+            onSelect = { role ->
+                referenceTarget = null
+                onUseAsReference?.invoke(target, role)
+            },
+            onDismiss = { referenceTarget = null },
         )
     }
 
@@ -973,6 +1001,7 @@ private fun GalleryItemActionSheet(
     onSave: () -> Unit,
     onShare: () -> Unit,
     onCopyPrompt: () -> Unit,
+    onUseAsReference: (() -> Unit)?,
     onInpaint: (() -> Unit)?,
     onEnterBatchMode: () -> Unit,
     onDelete: () -> Unit,
@@ -1117,6 +1146,17 @@ private fun GalleryItemActionSheet(
                         dismissWith(onCopyPrompt, immediate = true)
                     },
                 )
+                if (onUseAsReference != null) {
+                    SheetActionDivider()
+                    SheetActionRow(
+                        icon = Icons.Default.AddPhotoAlternate,
+                        label = "用作参考图",
+                        onClick = {
+                            haptics.tick()
+                            dismissWith(onUseAsReference)
+                        },
+                    )
+                }
                 if (onInpaint != null) {
                     SheetActionDivider()
                     SheetActionRow(
