@@ -5,14 +5,20 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.AnimationState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.animateTo
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -24,6 +30,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -71,13 +78,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -97,11 +106,13 @@ import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -111,10 +122,16 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filterNotNull
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import net.pocketnai.data.repo.GenerationRepository.GalleryPage
 import kotlinx.coroutines.launch
 import net.pocketnai.R
 import net.pocketnai.domain.model.GalleryFilter
@@ -124,6 +141,7 @@ import net.pocketnai.domain.model.GallerySearch
 import net.pocketnai.domain.model.GenerationStatus
 import net.pocketnai.domain.model.ReferenceRole
 import net.pocketnai.domain.safety.SfwPolicy
+import net.pocketnai.ui.Routes
 import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.common.CenteredHint
 import net.pocketnai.ui.common.ImageShareManager
@@ -143,6 +161,7 @@ import net.pocketnai.ui.motion.rememberPocketHaptics
 import net.pocketnai.ui.motion.sharedImage
 import net.pocketnai.ui.safety.SfwAsyncImage
 import java.io.File
+import kotlin.math.pow
 import kotlin.math.roundToInt
 
 /**
@@ -174,87 +193,139 @@ fun HomeWorkbenchPane(
     val haptics = rememberPocketHaptics()
     val imageMotion = LocalImageMotion.current
 
-    val syncFilter by container.settingsStore.tabletWorkbenchSyncFilter.collectAsStateWithLifecycle()
-    val filteredItems by galleryViewModel.items.collectAsStateWithLifecycle()
-    val hasMoreFiltered by galleryViewModel.hasMore.collectAsStateWithLifecycle()
-    val filter by galleryViewModel.filter.collectAsStateWithLifecycle()
+    val syncFilter = container.settingsStore.tabletWorkbenchSyncFilter.collectAsStateWithLifecycle().value
     val generations by galleryViewModel.generations.collectAsStateWithLifecycle()
     val previews by container.generationPreviewStore.previews.collectAsStateWithLifecycle()
     val undoGenerationIds by galleryViewModel.undoGenerationIds.collectAsStateWithLifecycle()
 
-    // 关闭「同步应用画廊筛选条件」时读取全量画廊流，互不干扰；同步开启时不订阅冗余查询。
-    var unfilteredLimit by remember { mutableIntStateOf(120) }
-    val unfilteredPage by remember(container, unfilteredLimit, syncFilter) {
-        if (syncFilter) {
-            flowOf(false to emptyList())
-        } else {
-            combine(
-                container.generationRepository.observeGalleryWindow(GalleryFilter.None, unfilteredLimit),
-                container.favoriteImageRepository.observeFavoriteIds(),
-            ) { page, favIds ->
-                page.hasMore to page.items.map { item -> item.copy(favorite = item.imageId in favIds) }
-            }
-        }
-    }.collectAsStateWithLifecycle(initialValue = false to emptyList())
-    val hasMoreUnfiltered = unfilteredPage.first
-    val items = if (syncFilter) filteredItems else unfilteredPage.second
-    val hasMore = if (syncFilter) hasMoreFiltered else hasMoreUnfiltered
+    var unfilteredLimit by rememberSaveable { mutableIntStateOf(120) }
+    val source = remember(galleryViewModel, syncFilter, unfilteredLimit) {
+        if (syncFilter) galleryViewModel.filteredPage.filterNotNull()
+        else galleryViewModel.observePage(GalleryFilter.None, unfilteredLimit)
+    }
+    val entryImageId = remember {
+        imageMotion?.returning?.takeIf { it.source == Routes.HOME }?.imageId ?: selectedImageId
+    }
+    var displayedPage by remember {
+        mutableStateOf(galleryViewModel.filteredPage.value?.takeIf { page ->
+            syncFilter && (entryImageId == null || page.items.any { it.imageId == entryImageId })
+        })
+    }
+    var displayedSync by remember { mutableStateOf(syncFilter) }
+    val items = displayedPage?.items.orEmpty()
+    val filter = displayedPage?.filter ?: GalleryFilter.None
+    val hasMore = displayedPage?.hasMore == true && displayedSync == syncFilter
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
 
-    val activeGenerations = remember(generations, filter, syncFilter) {
+    val activeGenerations = remember(generations, filter) {
         generations.filter { summary ->
-            summary.generation.isActive && (!syncFilter || GallerySearch.matches(summary.generation, filter))
+            summary.generation.isActive && GallerySearch.matches(summary.generation, filter)
         }
     }
     val hasGeneratingSlot = activeGenerations.isNotEmpty() || inFlight
 
-    var activeImageId by rememberSaveable { mutableStateOf(selectedImageId) }
     var viewingGenerating by remember { mutableStateOf(false) }
-    var previousTopImageId by remember { mutableStateOf<String?>(null) }
     var showNewImageBanner by remember { mutableStateOf(false) }
-
-    LaunchedEffect(selectedImageId) {
-        if (selectedImageId != null && selectedImageId != activeImageId) {
-            activeImageId = selectedImageId
-        }
+    val initialPage = remember {
+        items.indexOfFirst { it.imageId == entryImageId }.coerceAtLeast(0)
     }
-
-    val currentIndex = remember(items, activeImageId) {
-        if (items.isEmpty()) 0
-        else items.indexOfFirst { it.imageId == activeImageId }.let { if (it >= 0) it else 0 }
-    }
+    val stagePagerState = rememberPagerState(initialPage) { items.size }
+    val currentIndex = stagePagerState.currentPage.coerceIn(0, items.lastIndex.coerceAtLeast(0))
     val activeItem = if (viewingGenerating && hasGeneratingSlot) null else items.getOrNull(currentIndex)
-    LaunchedEffect(activeItem?.imageId) {
-        onSelectedImageIdChange?.invoke(activeItem?.imageId)
-    }
+    var targetId by remember { mutableStateOf<String?>(null) }
+    val pageRequests = remember { Channel<String>(Channel.CONFLATED) }
+    val savedSelection by rememberUpdatedState(selectedImageId)
+    val pageSlideSpec = remember { spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 520f) }
 
-    // 使用原生 VerticalPager 驱动未放大状态下的跟手上下滑动与胶片条平滑切图，杜绝手动偏移与 AnimatedContent 叠加造成的回弹抖动。
-    val stagePagerState = rememberPagerState(
-        initialPage = currentIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
-        pageCount = { items.size.coerceAtLeast(1) },
-    )
-    var programmaticPaging by remember { mutableStateOf(false) }
-    val pageSlideSpec = remember {
-        spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 420f)
-    }
-
-    // 用户手指滑动 VerticalPager 时，同步更新 activeImageId（供胶片条高亮、底部信息栏与共享元素键消费）。
-    LaunchedEffect(stagePagerState, items) {
-        snapshotFlow { stagePagerState.currentPage }.collect { page ->
-            if (!programmaticPaging && !viewingGenerating) {
-                val item = items.getOrNull(page)
-                if (item != null && item.imageId != activeImageId) {
-                    activeImageId = item.imageId
-                    if (page == 0) showNewImageBanner = false
+    // 查询、收藏状态和分页窗口一起提交。等 Room 首次发值时保留旧画面，真空结果才显示空态。
+    LaunchedEffect(source, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            source.collectLatest { page ->
+                val old = displayedPage
+                val oldIndex = stagePagerState.currentPage
+                val oldTop = old?.items?.firstOrNull()
+                val newTop = page.items.firstOrNull()
+                val sameSource = old != null && displayedSync == syncFilter && old.filter == page.filter
+                val newArrival = sameSource && newTop != null && oldTop != null &&
+                    newTop.imageId != oldTop.imageId && newTop.createdAt >= oldTop.createdAt &&
+                    page.items.any { it.imageId == oldTop.imageId }
+                val atLatest = viewingGenerating || (oldIndex == 0 && targetId == null) || targetId == oldTop?.imageId
+                val followTop = (newArrival && atLatest) ||
+                    (sameSource && oldTop == null && newTop != null && viewingGenerating)
+                val anchor = imageMotion?.returning?.takeIf { it.source == Routes.HOME }?.imageId
+                    ?: old?.items?.getOrNull(oldIndex)?.imageId ?: (if (old == null) entryImageId else savedSelection)
+                val anchorIndex = page.items.indexOfFirst { it.imageId == anchor }
+                // 稀疏筛选中的旧图可能落在全部图库的下一窗口。只查 ID 顺序，命中后一次扩窗。
+                if (anchor != null && anchorIndex < 0 && page.hasMore && (!sameSource || imageMotion?.returning != null)) {
+                    val rank = container.generationRepository.galleryOrder(page.filter).indexOf(anchor)
+                    if (rank >= page.items.size) {
+                        if (syncFilter) galleryViewModel.includeIndex(page.filter, rank)
+                        else unfilteredLimit = rank + 1
+                        return@collectLatest
+                    }
                 }
+                val animateNewArrival = followTop && newArrival && !viewingGenerating && anchorIndex > 0 && newTop != null
+                val index = when {
+                    animateNewArrival -> anchorIndex
+                    followTop -> 0
+                    anchorIndex >= 0 -> anchorIndex
+                    else -> oldIndex.coerceIn(0, page.items.lastIndex.coerceAtLeast(0))
+                }
+                displayedPage = page
+                displayedSync = syncFilter
+                if (animateNewArrival) {
+                    // 先把 Pager 静默锚在旧图的新索引，待新列表完成首帧测量后再平滑滑入顶部新图，避免 0 帧硬切。
+                    stagePagerState.requestScrollToPage(anchorIndex)
+                    val arrivalId = newTop.imageId
+                    targetId = arrivalId
+                    scope.launch {
+                        withFrameNanos { }
+                        if (targetId == arrivalId) {
+                            pageRequests.trySend(arrivalId)
+                        }
+                    }
+                } else if (!sameSource || followTop || index != oldIndex || anchorIndex < 0) {
+                    targetId = null
+                    if (page.items.isNotEmpty()) stagePagerState.requestScrollToPage(index)
+                }
+                if (!sameSource || followTop) showNewImageBanner = false
+                else if (newArrival) showNewImageBanner = true
+                if (followTop) viewingGenerating = false
             }
         }
     }
 
-    // 列表头插入新图或外部选中变化导致 currentIndex 与 pager 位置偏移时，静默对齐到同一张图。
-    LaunchedEffect(currentIndex, items.size) {
-        if (items.isNotEmpty() && !stagePagerState.isScrollInProgress && !programmaticPaging && stagePagerState.currentPage != currentIndex) {
-            stagePagerState.scrollToPage(currentIndex.coerceIn(0, items.lastIndex))
+    // 详情中翻过页后，把返回共享元素定位到实际正在看的图。
+    val returning = imageMotion?.returning
+    LaunchedEffect(returning, displayedPage) {
+        if (returning?.source == Routes.HOME) {
+            val index = items.indexOfFirst { it.imageId == returning.imageId }
+            if (index >= 0) {
+                targetId = null
+                viewingGenerating = false
+                stagePagerState.requestScrollToPage(index)
+                imageMotion.consume(returning)
+            }
         }
+    }
+    LaunchedEffect(activeItem?.imageId, displayedPage != null) {
+        if (displayedPage != null) onSelectedImageIdChange?.invoke(activeItem?.imageId)
+    }
+
+    // 单个翻页协程完成当前动画再取最新目标。高频滚轮不会逐帧重启弹簧，反向也不会排长队。
+    LaunchedEffect(stagePagerState) {
+        for (id in pageRequests) {
+            if (id != targetId) continue
+            val index = displayedPage?.items?.indexOfFirst { it.imageId == id } ?: -1
+            if (index >= 0) {
+                // 手指可抢占 Pager 的滚动互斥锁；只取消这一段动画，不终止目标处理循环。
+                launch { stagePagerState.animateScrollToPage(index, animationSpec = pageSlideSpec) }.join()
+            }
+            if (targetId == id) targetId = null
+        }
+    }
+    LaunchedEffect(stagePagerState) {
+        stagePagerState.interactionSource.interactions.collect { if (it is DragInteraction.Start) targetId = null }
     }
 
     val filmstripState = rememberLazyListState()
@@ -272,30 +343,7 @@ fun HomeWorkbenchPane(
         runCatching { stageFocusRequester.requestFocus() }
     }
 
-    // 实时生成同步：位于第 1 张（或正在看占位卡片）时自动切换至新图；浏览旧图时弹出轻提示。
     val topImageId = items.firstOrNull()?.imageId
-    LaunchedEffect(topImageId) {
-        if (topImageId == null) {
-            previousTopImageId = null
-            return@LaunchedEffect
-        }
-        val prevTop = previousTopImageId
-        if (prevTop == null) {
-            if (activeImageId == null) activeImageId = topImageId
-        } else if (topImageId != prevTop) {
-            val wasAtLatest = activeImageId == null || activeImageId == prevTop || viewingGenerating
-            if (wasAtLatest) {
-                activeImageId = topImageId
-                viewingGenerating = false
-                showNewImageBanner = false
-                filmstripState.animateScrollToItem(0)
-            } else {
-                showNewImageBanner = true
-            }
-        }
-        previousTopImageId = topImageId
-    }
-
     LaunchedEffect(showNewImageBanner, topImageId) {
         if (showNewImageBanner) {
             delay(4_000L)
@@ -311,29 +359,26 @@ fun HomeWorkbenchPane(
     }
 
     // 选中项变化时平滑保持胶片栏可见，接近末尾自动加载更多。
-    LaunchedEffect(currentIndex, items.size) {
-        if (items.isNotEmpty() && !viewingGenerating) {
+    LaunchedEffect(currentIndex, activeItem?.imageId, hasGeneratingSlot, displayedSync) {
+        if (activeItem != null) {
             val listIdx = currentIndex + if (hasGeneratingSlot) 1 else 0
-            val visible = filmstripState.layoutInfo.visibleItemsInfo
-            if (visible.none { it.index == listIdx }) {
-                filmstripState.animateScrollToItem(listIdx.coerceAtLeast(0))
-            }
-            if (hasMore && currentIndex >= items.size - 16) {
-                if (syncFilter) galleryViewModel.loadMore()
-                else unfilteredLimit = (unfilteredLimit + 120).coerceAtMost(Int.MAX_VALUE - 1)
-            }
+            val thumb = filmstripState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == activeItem.imageId }
+            if (thumb == null) filmstripState.animateScrollToItem(listIdx)
+            else if (thumb.index != listIdx) filmstripState.requestScrollToItem(listIdx, -thumb.offset)
         }
     }
 
-    LaunchedEffect(filmstripState, syncFilter, hasMore) {
+    LaunchedEffect(filmstripState, displayedPage, hasMore, hasGeneratingSlot) {
+        if (!hasMore) return@LaunchedEffect
         snapshotFlow {
-            filmstripState.layoutInfo.let { info ->
-                Triple(info.visibleItemsInfo.lastOrNull()?.index ?: -1, info.totalItemsCount, hasMore)
-            }
-        }.collect { (last, count, more) ->
-            if (more && count > 0 && last >= count - 12) {
+            val last = filmstripState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            maxOf(stagePagerState.currentPage, last - if (hasGeneratingSlot) 1 else 0) >= items.size - 16
+        }.collect { nearEnd ->
+            if (nearEnd) {
                 if (syncFilter) galleryViewModel.loadMore()
-                else unfilteredLimit = (unfilteredLimit + 120).coerceAtMost(Int.MAX_VALUE - 1)
+                else if (displayedPage?.limit == unfilteredLimit) {
+                    unfilteredLimit = (unfilteredLimit.toLong() + 120).coerceAtMost(Int.MAX_VALUE - 1L).toInt()
+                }
             }
         }
     }
@@ -376,45 +421,21 @@ fun HomeWorkbenchPane(
     fun selectIndex(index: Int) {
         val target = items.getOrNull(index) ?: return
         viewingGenerating = false
-        activeImageId = target.imageId
+        targetId = target.imageId
+        pageRequests.trySend(target.imageId)
         if (index == 0) showNewImageBanner = false
-        scope.launch {
-            if (items.isEmpty()) return@launch
-            val clamped = index.coerceIn(0, items.lastIndex)
-            if (stagePagerState.currentPage == clamped) return@launch
-            programmaticPaging = true
-            try {
-                val dist = kotlin.math.abs(clamped - stagePagerState.currentPage)
-                if (dist > 3) {
-                    val stagingPage = if (clamped > stagePagerState.currentPage) clamped - 1 else clamped + 1
-                    stagePagerState.scrollToPage(stagingPage.coerceIn(0, items.lastIndex))
-                }
-                stagePagerState.animateScrollToPage(clamped, animationSpec = pageSlideSpec)
-            } finally {
-                programmaticPaging = false
-            }
-        }
     }
 
-    fun stepPrev() {
+    fun stepPages(steps: Int) {
         if (items.isEmpty()) return
-        if (viewingGenerating) return
-        if (currentIndex > 0) {
+        // 同一帧可能送达多个滚轮刻度，直接读最新目标，不能从尚在动画中的 currentPage 起算。
+        val base = if (viewingGenerating) -1 else targetId?.let { id -> items.indexOfFirst { it.imageId == id } }
+            ?.takeIf { it >= 0 } ?: stagePagerState.currentPage
+        if (base < 0 && steps < 0) return
+        val index = (base + steps).coerceIn(0, items.lastIndex)
+        if (index != base) {
             haptics.tick()
-            selectIndex(currentIndex - 1)
-        }
-    }
-
-    fun stepNext() {
-        if (items.isEmpty()) return
-        if (viewingGenerating) {
-            haptics.tick()
-            selectIndex(0)
-            return
-        }
-        if (currentIndex < items.lastIndex) {
-            haptics.tick()
-            selectIndex(currentIndex + 1)
+            selectIndex(index)
         }
     }
 
@@ -423,11 +444,10 @@ fun HomeWorkbenchPane(
         openingImage = true
         val file = container.generationRepository.fileOf(item)
         imageMotion?.preview = ImageOriginPreview(item.imageId, file, item.aspectRatio, item.title, item.sensitivePrompt)
-        imageMotion?.open(net.pocketnai.ui.Routes.HOME, item.imageId)
+        imageMotion?.open(Routes.HOME, item.imageId)
         scope.launch {
             try {
-                val order = if (syncFilter) galleryViewModel.fullOrder()
-                else container.generationRepository.galleryOrder(GalleryFilter.None)
+                val order = container.generationRepository.galleryOrder(filter)
                 container.galleryOrderSnapshot.publish(order)
                 onOpenImage(item.imageId)
             } catch (e: CancellationException) {
@@ -459,49 +479,33 @@ fun HomeWorkbenchPane(
     }
 
     // 舞台缩放与平移状态（切换图片时自动重置至 100%）
-    val scaleAnim = remember(activeItem?.imageId) { Animatable(1f) }
-    val offsetXAnim = remember(activeItem?.imageId) { Animatable(0f) }
-    val offsetYAnim = remember(activeItem?.imageId) { Animatable(0f) }
+    val transformScope = androidx.compose.runtime.key(activeItem?.imageId) { rememberCoroutineScope() }
+    val transform = remember(transformScope) { StageTransform(transformScope) }
     var stageSize by remember { mutableStateOf(Size.Zero) }
-    var lastWheelStepMs by remember { mutableLongStateOf(0L) }
-    val zoomSpring = remember {
-        spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+    var wheelRemainder by remember(syncFilter) { mutableFloatStateOf(0f) }
+    val density = LocalDensity.current
+    val stageInset = with(density) { 12.dp.roundToPx() * 2 }
+    val wheelPanPx = with(density) { 48.dp.toPx() }
+
+    fun clampOffset(candidate: Offset, scale: Float, item: GalleryItem): Offset {
+        val aspect = item.aspectRatio.coerceIn(0.25f, 4f)
+        val width = (stageSize.width - stageInset).coerceAtLeast(0f)
+        val height = (stageSize.height - stageInset).coerceAtLeast(0f)
+        val maxX = ((minOf(width, height * aspect) * scale - stageSize.width) / 2f).coerceAtLeast(0f)
+        val maxY = ((minOf(height, width / aspect) * scale - stageSize.height) / 2f).coerceAtLeast(0f)
+        return Offset(candidate.x.coerceIn(-maxX, maxX), candidate.y.coerceIn(-maxY, maxY))
     }
 
-    fun maxPanBounds(forScale: Float, imageWidth: Int, imageHeight: Int): Offset {
-        if (stageSize.width <= 0f || stageSize.height <= 0f) return Offset.Zero
-        val imageAspect = if (imageHeight > 0) imageWidth.toFloat() / imageHeight else 1f
-        val containerAspect = stageSize.width / stageSize.height
-        val display = if (imageAspect > containerAspect) {
-            Size(stageSize.width, stageSize.width / imageAspect)
-        } else {
-            Size(stageSize.height * imageAspect, stageSize.height)
-        }
-        val maxX = ((display.width * forScale - stageSize.width) / 2f).coerceAtLeast(0f)
-        val maxY = ((display.height * forScale - stageSize.height) / 2f).coerceAtLeast(0f)
-        return Offset(maxX, maxY)
-    }
-
-    fun clampOffset(candidate: Offset, forScale: Float, item: GalleryItem): Offset {
-        val max = maxPanBounds(forScale, item.width, item.height)
-        return Offset(candidate.x.coerceIn(-max.x, max.x), candidate.y.coerceIn(-max.y, max.y))
-    }
-
-    fun resetZoom() {
-        scope.launch {
-            coroutineScope {
-                launch { scaleAnim.animateTo(1f, zoomSpring) }
-                launch { offsetXAnim.animateTo(0f, zoomSpring) }
-                launch { offsetYAnim.animateTo(0f, zoomSpring) }
-            }
-        }
+    fun zoomAt(scale: Float, pointer: Offset, item: GalleryItem) {
+        val pivot = pointer - Offset(stageSize.width / 2f, stageSize.height / 2f)
+        val offset = pivot + (transform.targetOffset - pivot) * (scale / transform.targetScale)
+        transform.animateTo(scale, clampOffset(offset, scale, item))
     }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .focusRequester(stageFocusRequester)
-            .focusable()
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown ||
                     event.isCtrlPressed || event.isAltPressed || event.isMetaPressed ||
@@ -511,11 +515,11 @@ fun HomeWorkbenchPane(
                 }
                 when (event.key) {
                     Key.A, Key.DirectionLeft -> {
-                        stepPrev()
+                        stepPages(-1)
                         true
                     }
                     Key.D, Key.DirectionRight -> {
-                        stepNext()
+                        stepPages(1)
                         true
                     }
                     Key.F -> {
@@ -531,7 +535,8 @@ fun HomeWorkbenchPane(
                     }
                     else -> false
                 }
-            },
+            }
+            .focusable(),
     ) {
         // ---- 上半区：中央大舞台 + 右侧竖向胶片缩略图栏 ----
         Row(
@@ -546,27 +551,34 @@ fun HomeWorkbenchPane(
                     .fillMaxHeight()
                     .background(MaterialTheme.colorScheme.surfaceContainerLowest)
                     .clipToBounds()
-                    .onSizeChanged { stageSize = Size(it.width.toFloat(), it.height.toFloat()) }
-                    .onMouseWheel { deltaY, isCtrlPressed ->
-                        if (isCtrlPressed) {
-                            val item = activeItem ?: return@onMouseWheel
-                            val factor = if (deltaY < 0f) 1.15f else 1f / 1.15f
-                            val nextScale = (scaleAnim.value * factor).coerceIn(1f, 6f)
-                            val nextOffset = if (nextScale <= 1.02f) {
-                                Offset.Zero
-                            } else {
-                                clampOffset(Offset(offsetXAnim.value, offsetYAnim.value), nextScale, item)
+                    .onSizeChanged {
+                        stageSize = Size(it.width.toFloat(), it.height.toFloat())
+                        activeItem?.let { item ->
+                            val bounded = clampOffset(transform.offset, transform.scale, item)
+                            if (bounded != transform.offset) transform.snapTo(transform.scale, bounded)
+                        }
+                    }
+                    .onMouseWheel(PointerEventPass.Initial) { delta, ctrl, position ->
+                        val item = activeItem
+                        when {
+                            ctrl && item != null -> {
+                                wheelRemainder = 0f
+                                val scale = (transform.targetScale * 1.15f.pow(-delta)).coerceIn(1f, 6f)
+                                zoomAt(scale, position, item)
                             }
-                            scope.launch {
-                                scaleAnim.snapTo(if (nextScale <= 1.02f) 1f else nextScale)
-                                offsetXAnim.snapTo(nextOffset.x)
-                                offsetYAnim.snapTo(nextOffset.y)
+                            item != null && (transform.targetScale > 1.02f || transform.scale > 1.02f) -> {
+                                wheelRemainder = 0f
+                                val pan = transform.targetOffset - Offset(0f, delta * wheelPanPx)
+                                transform.animateTo(transform.targetScale, clampOffset(pan, transform.targetScale, item))
                             }
-                        } else if (deltaY != 0f) {
-                            val now = System.currentTimeMillis()
-                            if (now - lastWheelStepMs >= 110L) {
-                                lastWheelStepMs = now
-                                if (deltaY > 0f) stepNext() else stepPrev()
+                            !ctrl -> {
+                                if (wheelRemainder * delta < 0f) wheelRemainder = 0f
+                                wheelRemainder += delta
+                                val steps = wheelRemainder.toInt()
+                                if (steps != 0) {
+                                    wheelRemainder -= steps
+                                    stepPages(steps.coerceIn(-items.size, items.size))
+                                }
                             }
                         }
                     }
@@ -583,25 +595,8 @@ fun HomeWorkbenchPane(
                                 val item = activeItem ?: return@detectTapGestures
                                 runCatching { stageFocusRequester.requestFocus() }
                                 haptics.tick()
-                                if (scaleAnim.value > 1.05f) {
-                                    resetZoom()
-                                } else {
-                                    val targetScale = 2.2f
-                                    val center = Offset(stageSize.width / 2f, stageSize.height / 2f)
-                                    val delta = tap - center
-                                    val target = clampOffset(
-                                        Offset(-delta.x * (targetScale - 1f), -delta.y * (targetScale - 1f)),
-                                        targetScale,
-                                        item,
-                                    )
-                                    scope.launch {
-                                        coroutineScope {
-                                            launch { scaleAnim.animateTo(targetScale, zoomSpring) }
-                                            launch { offsetXAnim.animateTo(target.x, zoomSpring) }
-                                            launch { offsetYAnim.animateTo(target.y, zoomSpring) }
-                                        }
-                                    }
-                                }
+                                if (transform.targetScale > 1.02f) transform.animateTo(1f, Offset.Zero)
+                                else zoomAt(2.2f, tap, item)
                             },
                             onLongPress = {
                                 val item = activeItem ?: return@detectTapGestures
@@ -615,40 +610,33 @@ fun HomeWorkbenchPane(
                         awaitEachGesture {
                             awaitFirstDown(requireUnconsumed = false)
                             do {
-                                val event = awaitPointerEvent()
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
                                 if (event.buttons.isSecondaryPressed) break
                                 val pressedCount = event.changes.count { it.pressed }
                                 if (pressedCount >= 2) {
                                     val zoomChange = event.calculateZoom()
                                     val panChange = event.calculatePan()
-                                    val nextScale = (scaleAnim.value * zoomChange).coerceIn(1f, 6f)
+                                    val nextScale = (transform.scale * zoomChange).coerceIn(1f, 6f)
                                     val nextOffset = if (nextScale <= 1.02f) {
                                         Offset.Zero
                                     } else {
                                         clampOffset(
-                                            Offset(offsetXAnim.value, offsetYAnim.value) + panChange,
+                                            transform.offset + panChange,
                                             nextScale,
                                             item,
                                         )
                                     }
-                                    scope.launch {
-                                        scaleAnim.snapTo(nextScale)
-                                        offsetXAnim.snapTo(nextOffset.x)
-                                        offsetYAnim.snapTo(nextOffset.y)
-                                    }
+                                    transform.snapTo(nextScale, nextOffset)
                                     event.changes.forEach { if (it.positionChanged()) it.consume() }
-                                } else if (pressedCount == 1 && scaleAnim.value > 1.02f) {
+                                } else if (pressedCount == 1 && transform.scale > 1.02f) {
                                     val pan = event.calculatePan()
                                     if (pan != Offset.Zero) {
                                         val nextOffset = clampOffset(
-                                            Offset(offsetXAnim.value, offsetYAnim.value) + pan,
-                                            scaleAnim.value,
+                                            transform.offset + pan,
+                                            transform.scale,
                                             item,
                                         )
-                                        scope.launch {
-                                            offsetXAnim.snapTo(nextOffset.x)
-                                            offsetYAnim.snapTo(nextOffset.y)
-                                        }
+                                        transform.snapTo(transform.scale, nextOffset)
                                         event.changes.forEach { if (it.positionChanged()) it.consume() }
                                     }
                                 }
@@ -657,152 +645,189 @@ fun HomeWorkbenchPane(
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                when {
-                    (viewingGenerating || items.isEmpty()) && hasGeneratingSlot -> {
-                        val activeGen = activeGenerations.firstOrNull()?.generation
-                        val aspect = activeGen?.params?.targetSize?.let { it.width.toFloat() / it.height } ?: (832f / 1216f)
-                        val preview = activeGen?.id?.let { previews[it] }
-                        val sensitive = activeGen?.let(SfwPolicy::isSensitive) ?: false
-                        Box(
-                            modifier = Modifier
-                                .padding(24.dp)
-                                .fillMaxHeight(0.82f)
-                                .aspectRatio(aspect.coerceIn(0.45f, 2.2f), matchHeightConstraintsFirst = true)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
-                        ) {
-                            GenerationImageReveal(
-                                ready = false,
-                                failed = false,
-                                animate = true,
-                                startedAt = activeGen?.createdAt ?: System.currentTimeMillis(),
-                                onRevealed = {},
-                                queued = activeGen?.status == GenerationStatus.QUEUED,
-                                modifier = Modifier.fillMaxSize(),
-                            ) {
-                                if (preview != null) {
-                                    SfwAsyncImage(
-                                        file = File(preview.path),
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Crop,
-                                        sensitive = sensitive,
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .graphicsLayer { alpha = 0.35f },
-                                    )
-                                }
-                            }
+                val stageMode = when {
+                    (viewingGenerating || items.isEmpty()) && hasGeneratingSlot -> StageContentMode.GENERATING
+                    displayedPage == null -> StageContentMode.LOADING
+                    activeItem == null -> StageContentMode.EMPTY
+                    else -> StageContentMode.PAGER
+                }
+                AnimatedContent(
+                    targetState = stageMode,
+                    label = "stage-content-mode",
+                    transitionSpec = {
+                        if (targetState == StageContentMode.PAGER && initialState == StageContentMode.GENERATING) {
+                            (fadeIn(tween(260, easing = FastOutSlowInEasing)) +
+                                scaleIn(tween(260, easing = FastOutSlowInEasing), initialScale = 0.96f)) togetherWith
+                                fadeOut(tween(180, easing = FastOutSlowInEasing))
+                        } else {
+                            fadeIn(tween(180, easing = FastOutSlowInEasing)) togetherWith
+                                fadeOut(tween(140, easing = FastOutSlowInEasing))
                         }
-                    }
-
-                    activeItem == null -> {
-                        CenteredHint(
-                            text = stringResource(
-                                if (syncFilter && filter.isActive) R.string.gallery_no_match else R.string.gallery_empty,
-                            ),
-                            modifier = Modifier.align(Alignment.Center),
-                        )
-                    }
-
-                    else -> {
-                        VerticalPager(
-                            state = stagePagerState,
-                            beyondViewportPageCount = 1,
-                            userScrollEnabled = scaleAnim.value <= 1.02f,
-                            key = { idx -> items.getOrNull(idx)?.imageId ?: "empty-$idx" },
-                            modifier = Modifier.fillMaxSize(),
-                        ) { page ->
-                            val stageItem = items.getOrNull(page) ?: return@VerticalPager
-                            val isCurrentPage = page == stagePagerState.currentPage
-                            val imageFile = container.generationRepository.fileOf(stageItem)
-                            val itemAspect = remember(stageItem.width, stageItem.height) {
-                                (if (stageItem.height > 0) stageItem.width.toFloat() / stageItem.height else 1f)
-                                    .coerceIn(0.25f, 4f)
-                            }
-                            BoxWithConstraints(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(12.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                val containerAspect = if (maxHeight > 0.dp) maxWidth.value / maxHeight.value else itemAspect
-                                val fittedModifier = if (containerAspect > itemAspect) {
-                                    Modifier.fillMaxHeight().aspectRatio(itemAspect, matchHeightConstraintsFirst = true)
-                                } else {
-                                    Modifier.fillMaxWidth().aspectRatio(itemAspect, matchHeightConstraintsFirst = false)
-                                }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                ) { mode ->
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        when (mode) {
+                            StageContentMode.GENERATING -> {
+                                val activeGen = activeGenerations.firstOrNull()?.generation
+                                val aspect = activeGen?.params?.targetSize?.let { it.width.toFloat() / it.height } ?: (832f / 1216f)
+                                val preview = activeGen?.id?.let { previews[it] }
+                                val sensitive = activeGen?.let(SfwPolicy::isSensitive) ?: false
                                 Box(
-                                    modifier = fittedModifier
-                                        .graphicsLayer {
-                                            if (isCurrentPage) {
-                                                scaleX = scaleAnim.value
-                                                scaleY = scaleAnim.value
-                                                translationX = offsetXAnim.value
-                                                translationY = offsetYAnim.value
-                                            }
-                                        }
-                                        .clip(RoundedCornerShape(12.dp)),
+                                    modifier = Modifier
+                                        .padding(24.dp)
+                                        .fillMaxHeight(0.82f)
+                                        .aspectRatio(aspect.coerceIn(0.45f, 2.2f), matchHeightConstraintsFirst = true)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
                                 ) {
-                                    SfwAsyncImage(
-                                        file = imageFile,
-                                        contentDescription = stageItem.title,
-                                        sensitive = stageItem.sensitivePrompt,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .then(
-                                                if (isCurrentPage) {
-                                                    Modifier.sharedImage(stageItem.imageId, stageItem.sensitivePrompt)
-                                                } else Modifier,
-                                            ),
-                                    )
+                                    GenerationImageReveal(
+                                        ready = false,
+                                        failed = false,
+                                        animate = true,
+                                        startedAt = activeGen?.createdAt ?: System.currentTimeMillis(),
+                                        onRevealed = {},
+                                        queued = activeGen?.status == GenerationStatus.QUEUED,
+                                        modifier = Modifier.fillMaxSize(),
+                                    ) {
+                                        if (preview != null) {
+                                            SfwAsyncImage(
+                                                file = File(preview.path),
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Crop,
+                                                sensitive = sensitive,
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .graphicsLayer { alpha = 0.35f },
+                                            )
+                                        }
+                                    }
                                 }
                             }
-                        }
 
-                        // 缩放倍率轻提示（大于 105% 时显示，点击一键复原）
-                        if (scaleAnim.value > 1.05f) {
-                            Surface(
-                                shape = CircleShape,
-                                color = Color.Black.copy(alpha = 0.62f),
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(12.dp)
-                                    .clip(CircleShape)
-                                    .clickable { resetZoom() },
-                            ) {
-                                Text(
-                                    text = "${(scaleAnim.value * 100f).roundToInt()}% · 点击复原",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            StageContentMode.LOADING -> Unit
+
+                            StageContentMode.EMPTY -> {
+                                CenteredHint(
+                                    text = stringResource(
+                                        if (displayedSync && filter.isActive) R.string.gallery_no_match else R.string.gallery_empty,
+                                    ),
+                                    modifier = Modifier.align(Alignment.Center),
                                 )
                             }
-                        }
 
-                        // 桌面鼠标右键菜单
-                        val isSvg = activeItem.relativePath.endsWith(".svg", ignoreCase = true)
-                        GalleryItemContextMenu(
-                            item = activeItem,
-                            expanded = stageContextMenuExpanded,
-                            onDismiss = { stageContextMenuExpanded = false },
-                            onToggleFavorite = {
-                                if (!activeItem.favorite) haptics.confirm() else haptics.tick()
-                                galleryViewModel.toggleFavorite(activeItem)
-                            },
-                            onReuseParams = { triggerReuse(activeItem) },
-                            onUseAsReference = if (onUseAsReference != null && !isSvg) {
-                                { role -> onUseAsReference(activeItem, role) }
-                            } else null,
-                            supportsDirectorReference = supportsDirectorReference,
-                            supportsVibeTransfer = supportsVibeTransfer,
-                            onInpaint = if (!isSvg) ({ onInpaintImage(activeItem) }) else null,
-                            onCopyPrompt = {
-                                copyToClipboard(context, activeItem.prompt)
-                                scope.launch { snackbarHostState.showSnackbar("已复制提示词") }
-                            },
-                            onDelete = { galleryViewModel.deleteGeneration(activeItem.generationId) },
-                        )
+                            StageContentMode.PAGER -> {
+                                VerticalPager(
+                                    state = stagePagerState,
+                                    beyondViewportPageCount = 1,
+                                    userScrollEnabled = transform.scale <= 1.02f,
+                                    key = { idx -> items.getOrNull(idx)?.imageId ?: "empty-$idx" },
+                                    modifier = Modifier.fillMaxSize(),
+                                ) { page ->
+                                    val stageItem = items.getOrNull(page) ?: return@VerticalPager
+                                    val isCurrentPage = page == stagePagerState.currentPage
+                                    val imageFile = container.generationRepository.fileOf(stageItem)
+                                    val itemAspect = remember(stageItem.width, stageItem.height) {
+                                        (if (stageItem.height > 0) stageItem.width.toFloat() / stageItem.height else 1f)
+                                            .coerceIn(0.25f, 4f)
+                                    }
+                                    BoxWithConstraints(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(12.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        val containerAspect = if (maxHeight > 0.dp) maxWidth.value / maxHeight.value else itemAspect
+                                        val fittedModifier = if (containerAspect > itemAspect) {
+                                            Modifier.fillMaxHeight().aspectRatio(itemAspect, matchHeightConstraintsFirst = true)
+                                        } else {
+                                            Modifier.fillMaxWidth().aspectRatio(itemAspect, matchHeightConstraintsFirst = false)
+                                        }
+                                        val isStageSvg = stageItem.relativePath.endsWith(".svg", ignoreCase = true)
+                                        Box(
+                                            modifier = fittedModifier
+                                                .graphicsLayer {
+                                                    scaleX = if (isCurrentPage) transform.scale else 1f
+                                                    scaleY = scaleX
+                                                    val pan = if (isCurrentPage) clampOffset(transform.offset, scaleX, stageItem) else Offset.Zero
+                                                    translationX = pan.x
+                                                    translationY = pan.y
+                                                }
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .then(
+                                                    if (!isStageSvg) {
+                                                        // 未放大状态下支持鼠标左键直接拖动大图到右侧参考图区；放大后让位给画布平移，不影响触屏切图。
+                                                        Modifier.mouseImageDragSource(
+                                                            localPath = stageItem.relativePath,
+                                                            enabled = isCurrentPage && transform.scale <= 1.02f,
+                                                        )
+                                                    } else Modifier,
+                                                ),
+                                        ) {
+                                            SfwAsyncImage(
+                                                file = imageFile,
+                                                contentDescription = stageItem.title,
+                                                sensitive = stageItem.sensitivePrompt,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .then(
+                                                        if (isCurrentPage) {
+                                                            Modifier.sharedImage(stageItem.imageId, stageItem.sensitivePrompt)
+                                                        } else Modifier,
+                                                    ),
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // 缩放倍率轻提示（大于 105% 时显示，点击一键复原）
+                                if (transform.scale > 1.05f) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = Color.Black.copy(alpha = 0.62f),
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(12.dp)
+                                            .clip(CircleShape)
+                                            .clickable { transform.animateTo(1f, Offset.Zero) },
+                                    ) {
+                                        Text(
+                                            text = "${(transform.scale * 100f).roundToInt()}% · 点击复原",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color.White,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                        )
+                                    }
+                                }
+
+                                // 桌面鼠标右键菜单
+                                activeItem?.let { current ->
+                                    val isSvg = current.relativePath.endsWith(".svg", ignoreCase = true)
+                                    GalleryItemContextMenu(
+                                        item = current,
+                                        expanded = stageContextMenuExpanded,
+                                        onDismiss = { stageContextMenuExpanded = false },
+                                        onToggleFavorite = {
+                                            if (!current.favorite) haptics.confirm() else haptics.tick()
+                                            galleryViewModel.toggleFavorite(current)
+                                        },
+                                        onReuseParams = { triggerReuse(current) },
+                                        onUseAsReference = if (onUseAsReference != null && !isSvg) {
+                                            { role -> onUseAsReference(current, role) }
+                                        } else null,
+                                        supportsDirectorReference = supportsDirectorReference,
+                                        supportsVibeTransfer = supportsVibeTransfer,
+                                        onInpaint = if (!isSvg) ({ onInpaintImage(current) }) else null,
+                                        onCopyPrompt = {
+                                            copyToClipboard(context, current.prompt)
+                                            scope.launch { snackbarHostState.showSnackbar("已复制提示词") }
+                                        },
+                                        onDelete = { galleryViewModel.deleteGeneration(current.generationId) },
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -825,7 +850,6 @@ fun HomeWorkbenchPane(
                             .clickable {
                                 haptics.tick()
                                 selectIndex(0)
-                                scope.launch { filmstripState.animateScrollToItem(0) }
                             },
                     ) {
                         Row(
@@ -905,6 +929,7 @@ fun HomeWorkbenchPane(
                                     .background(MaterialTheme.colorScheme.surfaceVariant)
                                     .clickable {
                                         haptics.tick()
+                                        targetId = null
                                         viewingGenerating = true
                                         runCatching { stageFocusRequester.requestFocus() }
                                     },
@@ -1325,6 +1350,60 @@ private fun WorkbenchIconAction(
                 tint = contentColor,
                 modifier = Modifier.size(17.dp),
             )
+        }
+    }
+}
+
+
+private enum class StageContentMode {
+    GENERATING,
+    LOADING,
+    EMPTY,
+    PAGER,
+}
+
+/** 每张图共用一条缩放/平移动画。滚轮基于目标累积，直接拖拽从当前绘制位置接管。 */
+private class StageTransform(private val scope: CoroutineScope) {
+    var scale by mutableFloatStateOf(1f)
+        private set
+    var offset by mutableStateOf(Offset.Zero)
+        private set
+    var targetScale = 1f
+        private set
+    var targetOffset = Offset.Zero
+        private set
+    private var animation: Job? = null
+    private var scaleMotion = AnimationState(1f)
+    private var panMotion = AnimationState(Offset.VectorConverter, Offset.Zero)
+
+    fun snapTo(nextScale: Float, nextOffset: Offset) {
+        animation?.cancel()
+        targetScale = nextScale
+        targetOffset = nextOffset
+        scale = nextScale
+        offset = nextOffset
+    }
+
+    fun animateTo(nextScale: Float, nextOffset: Offset) {
+        if (targetScale == nextScale && targetOffset == nextOffset) return
+        val continuing = animation?.isActive == true
+        animation?.cancel()
+        targetScale = nextScale
+        targetOffset = nextOffset
+        if (!continuing) {
+            scaleMotion = AnimationState(scale)
+            panMotion = AnimationState(Offset.VectorConverter, offset)
+        }
+        animation = scope.launch {
+            // 连续刻度沿用上一帧的时间和速度，触控板持续输入也能在输入期间向目标移动。
+            launch {
+                scaleMotion.animateTo(nextScale, spring(dampingRatio = 1f, stiffness = 650f), continuing) {
+                    scale = value.coerceIn(1f, 6f)
+                }
+            }
+            panMotion.animateTo(nextOffset, spring(dampingRatio = 1f, stiffness = 650f), continuing) {
+                offset = value
+            }
         }
     }
 }

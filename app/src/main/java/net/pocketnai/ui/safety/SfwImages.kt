@@ -87,7 +87,8 @@ fun SfwAsyncImage(
         SfwRevealImage(file, contentDescription, modifier, contentScale, sensitive, revealed, masked, onSuccess, onError)
         return
     }
-    if (animate && !masked && file?.extension.equals("gif", ignoreCase = true)) {
+    var playing = false
+    val visibility = if (animate && !masked && file?.extension.equals("gif", ignoreCase = true)) {
         val lifecycle = LocalLifecycleOwner.current.lifecycle
         var resumed by remember(lifecycle) { mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
         var visible by remember(file) { mutableStateOf(false) }
@@ -96,14 +97,15 @@ fun SfwAsyncImage(
             lifecycle.addObserver(observer)
             onDispose { lifecycle.removeObserver(observer) }
         }
-        val playing = resumed && visible
-        key(file?.absolutePath, playing) {
-            AsyncImage(model = file?.let { sharedImageRequest(it, sensitive, revealed, playing) }, contentDescription = contentDescription,
-                modifier = modifier.onGloballyPositioned { val bounds = it.boundsInWindow(); visible = bounds.width > 0 && bounds.height > 0 },
-                contentScale = contentScale, onSuccess = onSuccess, onError = onError)
+        playing = resumed && visible
+        Modifier.onGloballyPositioned {
+            val bounds = it.boundsInWindow()
+            visible = bounds.width > 0 && bounds.height > 0
         }
-    } else key(file?.absolutePath, masked) {
-        AsyncImage(model = file?.let { sharedImageRequest(it, sensitive, revealed) }, contentDescription = contentDescription,
-            modifier = modifier, contentScale = contentScale, onSuccess = onSuccess, onError = onError)
+    } else Modifier
+    // 播放状态变化只换请求，保留同一个图片节点与共享元素；遮罩变化仍须丢弃旧 painter。
+    key(file?.absolutePath, masked) {
+        AsyncImage(model = file?.let { sharedImageRequest(it, sensitive, revealed, playing) }, contentDescription = contentDescription,
+            modifier = modifier.then(visibility), contentScale = contentScale, onSuccess = onSuccess, onError = onError)
     }
 }

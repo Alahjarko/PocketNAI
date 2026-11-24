@@ -134,23 +134,27 @@ fun Modifier.onSecondaryClick(
 fun Modifier.onMouseWheel(
     enabled: Boolean = true,
     onWheel: (deltaY: Float, isCtrlPressed: Boolean) -> Unit,
+): Modifier = onMouseWheel(PointerEventPass.Main, enabled) { dy, ctrl, _ -> onWheel(dy, ctrl) }
+
+internal fun Modifier.onMouseWheel(
+    pass: PointerEventPass,
+    enabled: Boolean = true,
+    onWheel: (deltaY: Float, isCtrlPressed: Boolean, position: Offset) -> Unit,
 ): Modifier = composed {
     val currentEnabled by rememberUpdatedState(enabled)
     val currentOnWheel by rememberUpdatedState(onWheel)
-
-    pointerInput(Unit) {
+    pointerInput(pass) {
         awaitPointerEventScope {
             while (true) {
-                val event = awaitPointerEvent(PointerEventPass.Main)
+                val event = awaitPointerEvent(pass)
                 if (!currentEnabled || event.type != PointerEventType.Scroll) continue
-                if (event.changes.none { !it.isConsumed }) continue
-
-                val deltaY = event.changes.fold(0f) { acc, change ->
-                    if (change.isConsumed) acc else acc + change.scrollDelta.y
+                val first = event.changes.firstOrNull { !it.isConsumed && it.scrollDelta.y != 0f } ?: continue
+                val delta = event.changes.fold(0f) { sum, change ->
+                    if (change.isConsumed) sum else sum + change.scrollDelta.y
                 }
-                if (deltaY != 0f) {
+                if (delta != 0f) {
                     event.changes.forEach { it.consume() }
-                    currentOnWheel(deltaY, event.keyboardModifiers.isCtrlPressed)
+                    currentOnWheel(delta, event.keyboardModifiers.isCtrlPressed, first.position)
                 }
             }
         }
@@ -237,8 +241,9 @@ fun Modifier.mouseImageDragSource(
                                 POCKETNAI_DRAG_CLIP_LABEL,
                                 "$POCKETNAI_DRAG_LOCAL_PATH_PREFIX$path",
                             )
+                            val previewPath = resolveDragPreviewPath(view.context, path)
                             val shadowBuilder = ImageDragShadowBuilder(
-                                localPath = path,
+                                localPath = previewPath,
                                 density = view.resources.displayMetrics.density,
                             )
                             dragState.active = true
@@ -620,6 +625,14 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
+}
+
+private fun resolveDragPreviewPath(context: Context, path: String): String {
+    val direct = java.io.File(path)
+    if (direct.isFile) return direct.absolutePath
+    val inFiles = java.io.File(context.filesDir, path)
+    if (inFiles.isFile) return inFiles.absolutePath
+    return path
 }
 
 private class ImageDragShadowBuilder(

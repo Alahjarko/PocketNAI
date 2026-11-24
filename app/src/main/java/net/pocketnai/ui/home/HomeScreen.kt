@@ -7,12 +7,14 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -54,7 +56,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -62,6 +64,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.CornerRadius
@@ -81,6 +84,8 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -194,30 +199,17 @@ fun HomeScreen(
             // ---- 平板 / 桌面形态：可切换视图 + 可拖宽可收起的常驻右侧面板 ----
             val density = LocalDensity.current
             val haptics = rememberPocketHaptics()
-            val maxAllowedPaneWidth = (maxWidth.value - 320f).coerceIn(MIN_PANE_WIDTH_DP, MAX_PANE_WIDTH_DP)
-            var paneWidthDp by remember {
-                mutableFloatStateOf(persistedPaneWidthDp.toFloat().coerceIn(MIN_PANE_WIDTH_DP, MAX_PANE_WIDTH_DP))
-            }
-            LaunchedEffect(persistedPaneWidthDp) {
-                paneWidthDp = persistedPaneWidthDp.toFloat().coerceIn(MIN_PANE_WIDTH_DP, MAX_PANE_WIDTH_DP)
-            }
+            val endSign = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1 else -1
+            val maxAllowedPaneWidth = (maxWidth.value - 320f - SPLIT_HANDLE_WIDTH.value)
+                .coerceIn(MIN_PANE_WIDTH_DP, MAX_PANE_WIDTH_DP)
+            val paneWidth = persistedPaneWidthDp.toFloat().coerceIn(MIN_PANE_WIDTH_DP, maxAllowedPaneWidth).dp
             var rightPaneCollapsed by rememberSaveable { mutableStateOf(false) }
-            var splitDragging by remember { mutableStateOf(false) }
-            var panelAnimating by remember { mutableStateOf(false) }
-            var hasSeenCollapseState by remember { mutableStateOf(false) }
-            LaunchedEffect(rightPaneCollapsed) {
-                if (!hasSeenCollapseState) {
-                    hasSeenCollapseState = true
-                    return@LaunchedEffect
-                }
-                panelAnimating = true
-                kotlinx.coroutines.delay(380L)
-                panelAnimating = false
-            }
-            val effectivePaneWidth = paneWidthDp.coerceIn(MIN_PANE_WIDTH_DP, maxAllowedPaneWidth).dp
-            val targetGalleryWidthDp = (maxWidth.value - if (rightPaneCollapsed) 0f else effectivePaneWidth.value)
-                .coerceAtLeast(320f)
-            val targetGalleryColumns = (targetGalleryWidthDp / 168f).toInt().coerceAtLeast(2)
+            // 面板在独立图层滑动。展开时先覆盖图库，完全到位才收窄；收起时一次铺满背后。
+            val panel = updateTransition(!rightPaneCollapsed, label = "generate-pane")
+            val galleryWidth = if (panel.currentState && !rightPaneCollapsed && !panel.isRunning) {
+                maxWidth - paneWidth - SPLIT_HANDLE_WIDTH
+            } else maxWidth
+            var dragWidth by remember(paneWidth, maxAllowedPaneWidth) { mutableStateOf<Float?>(null) }
             val galleryItems by galleryViewModel.items.collectAsStateWithLifecycle()
             var stageImageId by rememberSaveable { mutableStateOf<String?>(null) }
             val workbenchSharedImageId = remember(stageImageId, galleryItems) {
@@ -225,11 +217,11 @@ fun HomeScreen(
                     ?: galleryItems.firstOrNull()?.imageId
             }
 
-            Row(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
                 // 左侧工作区：顶部切换栏 + 大图工作台 / 相册瀑布流
                 Column(
                     modifier = Modifier
-                        .weight(1f)
+                        .width(galleryWidth)
                         .fillMaxHeight(),
                 ) {
                     TabletHomeTopBar(
@@ -241,6 +233,7 @@ fun HomeScreen(
                         rightPaneCollapsed = rightPaneCollapsed,
                         onToggleRightPane = {
                             haptics.tick()
+                            dragWidth = null
                             rightPaneCollapsed = !rightPaneCollapsed
                         },
                     )
@@ -286,8 +279,7 @@ fun HomeScreen(
                                     searchFocusRequester = searchFocusRequester,
                                     onReuseItem = generateViewModel::reuseGalleryItem,
                                     galleryViewModel = galleryViewModel,
-                                    fixedColumnCount = targetGalleryColumns,
-                                    suppressPlacementAnimation = panelAnimating || splitDragging,
+                                    tabletWidth = galleryWidth,
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }
@@ -295,39 +287,27 @@ fun HomeScreen(
                     }
                 }
 
-                // 中间可拖拽分栏手柄 + 右侧常驻生成面板（带展开/收起平滑物理动效）
-                AnimatedVisibility(
-                    visible = !rightPaneCollapsed,
-                    enter = expandHorizontally(
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = 460f,
-                        ),
-                        expandFrom = Alignment.End,
-                    ) + fadeIn(tween(190, easing = FastOutSlowInEasing)),
-                    exit = shrinkHorizontally(
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = 520f,
-                        ),
-                        shrinkTowards = Alignment.End,
-                    ) + fadeOut(tween(140, easing = FastOutSlowInEasing)),
+                // 手柄和右侧面板一起平移，动画只影响这一层。
+                panel.AnimatedVisibility(
+                    visible = { it },
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                    enter = slideInHorizontally(tween(230, easing = FastOutSlowInEasing)) { it * endSign },
+                    exit = slideOutHorizontally(tween(200, easing = FastOutSlowInEasing)) { it * endSign },
                 ) {
-                    Row(modifier = Modifier.fillMaxHeight()) {
+                    Row(Modifier.fillMaxHeight().background(MaterialTheme.colorScheme.surface)) {
                         SplitPaneDragHandle(
                             onDragDeltaPx = { deltaPx ->
-                                splitDragging = true
-                                val deltaDp = deltaPx / density.density
-                                paneWidthDp = (paneWidthDp - deltaDp).coerceIn(MIN_PANE_WIDTH_DP, maxAllowedPaneWidth)
+                                dragWidth = ((dragWidth ?: paneWidth.value) - endSign * deltaPx / density.density)
+                                    .coerceIn(MIN_PANE_WIDTH_DP, maxAllowedPaneWidth)
                             },
-                            onDragFinished = {
-                                splitDragging = false
-                                container.settingsStore.setTabletGeneratePaneWidthDp(paneWidthDp.roundToInt())
+                            onDragFinished = { commit ->
+                                if (commit) dragWidth?.let { container.settingsStore.setTabletGeneratePaneWidthDp(it.roundToInt()) }
+                                dragWidth = null
                             },
                         )
                         Surface(
                             modifier = Modifier
-                                .width(effectivePaneWidth)
+                                .width(paneWidth)
                                 .fillMaxHeight()
                                 .imageMotionChrome(zIndex = 2f),
                         ) {
@@ -349,6 +329,15 @@ fun HomeScreen(
                                 )
                             }
                         }
+                    }
+                }
+                // 拖动期间只移动预览线，放手一次提交，取消拖动保留原宽。
+                val guideColor = MaterialTheme.colorScheme.primary
+                Canvas(Modifier.matchParentSize()) {
+                    dragWidth?.let { width ->
+                        val distance = (width.dp + SPLIT_HANDLE_WIDTH / 2).toPx()
+                        val x = if (endSign == 1) size.width - distance else distance
+                        drawLine(guideColor, Offset(x, 0f), Offset(x, size.height), 2.dp.toPx())
                     }
                 }
             }
@@ -571,8 +560,10 @@ private fun ModeSegmentButton(
 @Composable
 private fun SplitPaneDragHandle(
     onDragDeltaPx: (Float) -> Unit,
-    onDragFinished: () -> Unit,
+    onDragFinished: (Boolean) -> Unit,
 ) {
+    val dragDelta by rememberUpdatedState(onDragDeltaPx)
+    val finish by rememberUpdatedState(onDragFinished)
     val hoverInteraction = remember { MutableInteractionSource() }
     val hovered by hoverInteraction.collectIsHoveredAsState()
     var dragging by remember { mutableStateOf(false) }
@@ -599,7 +590,7 @@ private fun SplitPaneDragHandle(
 
     Box(
         modifier = Modifier
-            .width(10.dp)
+            .width(SPLIT_HANDLE_WIDTH)
             .fillMaxHeight()
             .hoverable(hoverInteraction)
             .pointerInput(Unit) {
@@ -607,15 +598,15 @@ private fun SplitPaneDragHandle(
                     onDragStart = { dragging = true },
                     onHorizontalDrag = { change, dragAmount ->
                         change.consume()
-                        onDragDeltaPx(dragAmount)
+                        dragDelta(dragAmount)
                     },
                     onDragEnd = {
                         dragging = false
-                        onDragFinished()
+                        finish(true)
                     },
                     onDragCancel = {
                         dragging = false
-                        onDragFinished()
+                        finish(false)
                     },
                 )
             },
@@ -710,3 +701,5 @@ private const val HOME_MODE_GALLERY = "gallery"
 private const val HOME_MODE_STAGE = "stage"
 private const val MIN_PANE_WIDTH_DP = 320f
 private const val MAX_PANE_WIDTH_DP = 560f
+
+private val SPLIT_HANDLE_WIDTH = 10.dp

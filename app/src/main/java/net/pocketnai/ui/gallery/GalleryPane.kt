@@ -146,6 +146,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -207,8 +208,7 @@ fun GalleryPane(
     searchFocusRequester: FocusRequester? = null,
     onReuseItem: ((GalleryItem) -> Unit)? = null,
     galleryViewModel: GalleryViewModel? = null,
-    fixedColumnCount: Int? = null,
-    suppressPlacementAnimation: Boolean = false,
+    tabletWidth: Dp? = null,
 ) {
     val container = LocalAppContainer.current
     val viewModel: GalleryViewModel = galleryViewModel ?: viewModel(
@@ -436,8 +436,7 @@ fun GalleryPane(
                         scope.launch { snackbarHostState.showSnackbar("已复制提示词") }
                     },
                     onDeleteItem = { item -> viewModel.deleteGeneration(item.generationId) },
-                    fixedColumnCount = fixedColumnCount,
-                    suppressPlacementAnimation = suppressPlacementAnimation,
+                    tabletWidth = tabletWidth,
                 )
             }
 
@@ -1463,11 +1462,15 @@ private fun GalleryDesktopGrid(
     onInpaintImage: (GalleryItem) -> Unit,
     onCopyPrompt: (GalleryItem) -> Unit,
     onDeleteItem: (GalleryItem) -> Unit,
-    fixedColumnCount: Int? = null,
-    suppressPlacementAnimation: Boolean = false,
+    tabletWidth: Dp? = null,
     modifier: Modifier = Modifier,
 ) {
     val motion = LocalImageMotion.current
+    val targetWidthPx = with(LocalDensity.current) { tabletWidth?.roundToPx() }
+    // 首个新宽度的测量就停用补位弹簧，等网格自己报告已采用该宽度再恢复。
+    val suppressPlacementAnimation by remember(state, targetWidthPx) {
+        derivedStateOf { targetWidthPx != null && state.layoutInfo.viewportSize.width != targetWidthPx }
+    }
     val returning = motion?.returning
     val moving = imageRouteIsMoving()
 
@@ -1507,8 +1510,8 @@ private fun GalleryDesktopGrid(
     }
 
     LazyVerticalStaggeredGrid(
-        columns = if (fixedColumnCount != null) {
-            androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells.Fixed(fixedColumnCount)
+        columns = if (tabletWidth != null) {
+            StaggeredGridCells.Fixed((tabletWidth.value / 168f).toInt().coerceAtLeast(2))
         } else {
             StaggeredGridCells.Adaptive(160.dp)
         },

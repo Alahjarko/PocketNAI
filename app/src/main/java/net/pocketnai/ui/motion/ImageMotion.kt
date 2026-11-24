@@ -109,7 +109,7 @@ internal data class WorkbenchSharedTransition(
 )
 
 val LocalImageMotion = staticCompositionLocalOf<ImageMotionState?> { null }
-internal val LocalWorkbenchSharedTransition = staticCompositionLocalOf<WorkbenchSharedTransition?> { null }
+internal val LocalWorkbenchSharedTransition = compositionLocalOf<WorkbenchSharedTransition?> { null }
 @OptIn(ExperimentalSharedTransitionApi::class)
 private val LocalSharedImages = staticCompositionLocalOf<SharedTransitionScope?> { null }
 private val LocalImageVisibility = staticCompositionLocalOf<AnimatedVisibilityScope?> { null }
@@ -221,7 +221,8 @@ internal fun buildSharedImageRequest(context: Context, file: File, masked: Boole
     } else ""
     return ImageRequest.Builder(context).data(file)
         .memoryCacheKey(key)
-        .placeholderMemoryCacheKey(key)
+        // 播放请求可借用本图的静帧，等待 GIF 解码时继续显示原缩略图。
+        .placeholderMemoryCacheKey(if (gif && animate && !masked) file.absolutePath + "|gif-still" else key)
         .apply {
             if (gif && (!animate || masked)) {
                 decoderFactory(STATIC_GIF_DECODER)

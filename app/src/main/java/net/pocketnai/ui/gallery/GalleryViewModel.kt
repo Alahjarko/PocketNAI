@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import net.pocketnai.data.repo.FavoriteImageRepository
@@ -47,29 +48,30 @@ class GalleryViewModel(
     /** 当前筛选条件。界面用它决定筛选控件的高亮状态与"无结果"的措辞。 */
     val filter: StateFlow<GalleryFilter> = _filter.asStateFlow()
     private val limit = MutableStateFlow(120)
+    internal fun observePage(filter: GalleryFilter, limit: Int) = combine(
+        repository.observeGalleryWindow(filter, limit),
+        favorites.observeFavoriteIds(),
+    ) { page, ids -> page.copy(items = page.items.map { it.copy(favorite = it.imageId in ids) }) }
+        .flowOn(Dispatchers.Default)
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    private val page = combine(_filter, limit) { f, n -> f to n }.flatMapLatest { (f, n) -> repository.observeGalleryWindow(f, n) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS), GenerationRepository.GalleryPage(GalleryFilter.None, 120, emptyList(), false))
-    val hasMore = page.map { it.hasMore }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS), false)
+    internal val filteredPage = combine(_filter, limit) { f, n -> f to n }
+        .flatMapLatest { (f, n) -> observePage(f, n) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS), null)
+    val hasMore = filteredPage.filterNotNull().map { it.hasMore }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS), false)
     fun loadMore() {
-        val p = page.value
+        val p = filteredPage.value ?: return
         if (p.hasMore && p.limit == limit.value && p.filter == _filter.value) limit.value = (limit.value + 120).coerceAtMost(Int.MAX_VALUE - 1)
+    }
+    /** 保留深页选图时，按该图在新筛选中的实际序号一次扩窗。 */
+    internal fun includeIndex(filter: GalleryFilter, index: Int) {
+        if (filter == _filter.value && index >= limit.value) limit.value = index + 1
     }
     suspend fun fullOrder() = repository.galleryOrder(_filter.value)
 
-    /** 过滤后的瀑布流内容。[GalleryItem.favorite] 已按收藏表补齐。 */
-    val items: StateFlow<List<GalleryItem>> = combine(
-        page.map { it.items },
-        favorites.observeFavoriteIds(),
-    ) { gallery, favoriteIds ->
-        gallery.asSequence()
-            .map { item -> item.copy(favorite = item.imageId in favoriteIds) }
-            .toList()
-    }.flowOn(Dispatchers.Default).stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS),
-        initialValue = emptyList(),
-    )
+    val items: StateFlow<List<GalleryItem>> = filteredPage.filterNotNull().map { it.items }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MS), emptyList())
 
     internal val motionSlots = GalleryMotionSlots()
 

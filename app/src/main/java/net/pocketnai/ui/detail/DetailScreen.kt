@@ -176,7 +176,6 @@ fun DetailScreen(
         imageMotion?.enterDetail()
         onDispose { imageMotion?.exitDetail() }
     }
-    LaunchedEffect(state.currentId) { state.currentId?.let { imageMotion?.prepareReturn(it) } }
     val context = LocalContext.current
 
     // 顺序在打开时定死：详情页里新生成/删除不应让滑动顺序"自己跳走"。
@@ -211,6 +210,8 @@ fun DetailScreen(
 
     val displayedIds = state.pagerIds.ifEmpty { pagerIds }
     val pagerState = rememberDetailPager(imageId, pagerIds, state.pagerIds, state.currentId, viewModel::selectPage)
+    val visibleImageId = displayedIds.getOrNull(pagerState.currentPage)
+    LaunchedEffect(visibleImageId) { visibleImageId?.let { imageMotion?.prepareReturn(it) } }
     val returnFromCurrent = {
         revealedImageId = null
         displayedIds.getOrNull(pagerState.currentPage)?.let { imageMotion?.prepareReturn(it) }
@@ -235,7 +236,6 @@ fun DetailScreen(
         modifier = Modifier
             .fillMaxSize()
             .focusRequester(rootFocusRequester)
-            .focusable()
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 if (showUpscaleDialog || referenceDialogPath != null) return@onPreviewKeyEvent false
@@ -288,7 +288,8 @@ fun DetailScreen(
                     }
                     else -> false
                 }
-            },
+            }
+            .focusable(),
     ) {
     Scaffold(
         topBar = {
@@ -372,7 +373,7 @@ fun DetailScreen(
                     generation = detail?.generation,
                     preview = preview,
                     isCurrentPage = pageId == state.currentId,
-                    animateMedia = pageId == state.currentId && !fullscreen,
+                    animateMedia = pageId == visibleImageId && !fullscreen && !routeMoving,
                     errorCode = state.errorCode,
                     savedToGallery = state.savedToGallery,
                     savingToGallery = pageId in state.savingImageIds,

@@ -32,11 +32,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import net.pocketnai.ui.motion.GenerationImageReveal
 import net.pocketnai.core.ErrorCode
 import net.pocketnai.ui.motion.sharedImage
-import net.pocketnai.ui.motion.sharedImageRequest
 import net.pocketnai.ui.motion.LocalImageMotion
 import net.pocketnai.ui.motion.ImageOriginPreview
 import net.pocketnai.ui.state.GenerationPreviewStore
@@ -112,16 +110,18 @@ internal fun GalleryMotionCard(
                     file = imageFile, contentDescription = item.title, contentScale = ContentScale.Crop, sensitive = sensitive,
                     // Historical thumbnails are already opaque; a cache hit must not trigger
                     // a second composition of the entire card just to set an unused flag.
-                    onSuccess = { if (slot.reveal) decoded = true }, onError = { decodeFailed = true },
-                    modifier = Modifier.fillMaxSize().sharedImage(item.imageId, sensitive).graphicsLayer {
-                        val a = revealAlpha.value
-                        alpha = a
-                        if (a < 1f) {
-                            val s = 0.97f + 0.03f * a
-                            scaleX = s
-                            scaleY = s
-                        }
+                    onSuccess = {
+                        if (decodeFailed) decodeFailed = false
+                        if (slot.reveal) decoded = true
                     },
+                    onError = { decodeFailed = true },
+                    modifier = Modifier.fillMaxSize().sharedImage(item.imageId, sensitive).then(
+                        if (slot.reveal) Modifier.graphicsLayer {
+                            alpha = revealAlpha.value
+                            scaleX = 0.97f + 0.03f * alpha
+                            scaleY = scaleX
+                        } else Modifier,
+                    ),
                 )
             }
             if (failed) Column(Modifier.align(Alignment.Center).padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
