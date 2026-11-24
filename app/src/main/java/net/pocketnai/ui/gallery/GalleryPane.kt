@@ -207,6 +207,8 @@ fun GalleryPane(
     searchFocusRequester: FocusRequester? = null,
     onReuseItem: ((GalleryItem) -> Unit)? = null,
     galleryViewModel: GalleryViewModel? = null,
+    fixedColumnCount: Int? = null,
+    suppressPlacementAnimation: Boolean = false,
 ) {
     val container = LocalAppContainer.current
     val viewModel: GalleryViewModel = galleryViewModel ?: viewModel(
@@ -434,6 +436,8 @@ fun GalleryPane(
                         scope.launch { snackbarHostState.showSnackbar("已复制提示词") }
                     },
                     onDeleteItem = { item -> viewModel.deleteGeneration(item.generationId) },
+                    fixedColumnCount = fixedColumnCount,
+                    suppressPlacementAnimation = suppressPlacementAnimation,
                 )
             }
 
@@ -1459,6 +1463,8 @@ private fun GalleryDesktopGrid(
     onInpaintImage: (GalleryItem) -> Unit,
     onCopyPrompt: (GalleryItem) -> Unit,
     onDeleteItem: (GalleryItem) -> Unit,
+    fixedColumnCount: Int? = null,
+    suppressPlacementAnimation: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val motion = LocalImageMotion.current
@@ -1501,7 +1507,11 @@ private fun GalleryDesktopGrid(
     }
 
     LazyVerticalStaggeredGrid(
-        columns = StaggeredGridCells.Adaptive(160.dp),
+        columns = if (fixedColumnCount != null) {
+            androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells.Fixed(fixedColumnCount)
+        } else {
+            StaggeredGridCells.Adaptive(160.dp)
+        },
         state = state,
         contentPadding = PaddingValues(8.dp),
         verticalItemSpacing = 8.dp,
@@ -1532,11 +1542,11 @@ private fun GalleryDesktopGrid(
                         .testTag(slot.key)
                         .animateItem(
                             fadeInSpec = null,
-                            placementSpec = if (moving || returning != null) null else placementSpring,
+                            placementSpec = if (moving || returning != null || suppressPlacementAnimation) null else placementSpring,
                             fadeOutSpec = null,
                         )
                         .then(
-                            if (interactive && image != null) {
+                            if (interactive) {
                                 Modifier
                                     .hoverable(hoverInteraction)
                                     .onSecondaryClick { contextMenuExpanded = true }
@@ -1561,7 +1571,7 @@ private fun GalleryDesktopGrid(
                         dateLabel = section.label.takeIf { dayIndex > 0 && slot.key == section.slots.first().key },
                     )
 
-                    if (interactive && image != null) {
+                    if (interactive) {
                         androidx.compose.animation.AnimatedVisibility(
                             visible = isHovered,
                             enter = fadeIn(tween(120)),

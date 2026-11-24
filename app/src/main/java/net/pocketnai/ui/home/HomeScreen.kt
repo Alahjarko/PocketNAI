@@ -202,7 +202,22 @@ fun HomeScreen(
                 paneWidthDp = persistedPaneWidthDp.toFloat().coerceIn(MIN_PANE_WIDTH_DP, MAX_PANE_WIDTH_DP)
             }
             var rightPaneCollapsed by rememberSaveable { mutableStateOf(false) }
+            var splitDragging by remember { mutableStateOf(false) }
+            var panelAnimating by remember { mutableStateOf(false) }
+            var hasSeenCollapseState by remember { mutableStateOf(false) }
+            LaunchedEffect(rightPaneCollapsed) {
+                if (!hasSeenCollapseState) {
+                    hasSeenCollapseState = true
+                    return@LaunchedEffect
+                }
+                panelAnimating = true
+                kotlinx.coroutines.delay(380L)
+                panelAnimating = false
+            }
             val effectivePaneWidth = paneWidthDp.coerceIn(MIN_PANE_WIDTH_DP, maxAllowedPaneWidth).dp
+            val targetGalleryWidthDp = (maxWidth.value - if (rightPaneCollapsed) 0f else effectivePaneWidth.value)
+                .coerceAtLeast(320f)
+            val targetGalleryColumns = (targetGalleryWidthDp / 168f).toInt().coerceAtLeast(2)
             val galleryItems by galleryViewModel.items.collectAsStateWithLifecycle()
             var stageImageId by rememberSaveable { mutableStateOf<String?>(null) }
             val workbenchSharedImageId = remember(stageImageId, galleryItems) {
@@ -271,6 +286,8 @@ fun HomeScreen(
                                     searchFocusRequester = searchFocusRequester,
                                     onReuseItem = generateViewModel::reuseGalleryItem,
                                     galleryViewModel = galleryViewModel,
+                                    fixedColumnCount = targetGalleryColumns,
+                                    suppressPlacementAnimation = panelAnimating || splitDragging,
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }
@@ -299,10 +316,12 @@ fun HomeScreen(
                     Row(modifier = Modifier.fillMaxHeight()) {
                         SplitPaneDragHandle(
                             onDragDeltaPx = { deltaPx ->
+                                splitDragging = true
                                 val deltaDp = deltaPx / density.density
                                 paneWidthDp = (paneWidthDp - deltaDp).coerceIn(MIN_PANE_WIDTH_DP, maxAllowedPaneWidth)
                             },
                             onDragFinished = {
+                                splitDragging = false
                                 container.settingsStore.setTabletGeneratePaneWidthDp(paneWidthDp.roundToInt())
                             },
                         )

@@ -49,16 +49,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Brush
-import androidx.compose.material.icons.filled.CheckBox
-import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.HorizontalDivider
@@ -1019,59 +1016,62 @@ fun HomeWorkbenchPane(
             }
         }
 
-        // ---- 底部紧凑信息与快捷操作栏 ----
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+        // ---- 底部极简单排工具栏：左侧精简信息，右侧高频操作 ----
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerLow,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Column(
+            val hasActive = activeItem != null
+            val activeIsSvg = activeItem?.relativePath?.endsWith(".svg", ignoreCase = true) == true
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // Row 1: 同步画廊筛选条件 + 元数据摘要（含点击复制 Seed）
+                // 左侧信息组（空间不足时允许轻扫滚动，不挤压右侧主操作）
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .weight(1f)
                         .horizontalScroll(rememberScrollState()),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(10.dp),
+                        shape = CircleShape,
                         color = if (syncFilter && filter.isActive) {
                             MaterialTheme.colorScheme.secondaryContainer
                         } else {
                             MaterialTheme.colorScheme.surfaceContainerHigh
                         },
                         modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(CircleShape)
                             .clickable {
                                 haptics.tick()
                                 container.settingsStore.setTabletWorkbenchSyncFilter(!syncFilter)
                             },
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             Icon(
-                                imageVector = if (syncFilter) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
-                                contentDescription = null,
+                                imageVector = Icons.Default.FilterList,
+                                contentDescription = "同步应用画廊筛选条件",
                                 tint = if (syncFilter) {
                                     MaterialTheme.colorScheme.primary
                                 } else {
                                     MaterialTheme.colorScheme.onSurfaceVariant
                                 },
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(14.dp),
                             )
                             Text(
-                                text = "同步应用画廊筛选条件",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
+                                text = if (syncFilter) "同步筛选" else "全部图库",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                             )
                         }
@@ -1079,17 +1079,17 @@ fun HomeWorkbenchPane(
 
                     if (activeItem != null) {
                         Text(
-                            text = "${currentIndex + 1} / ${items.size} · ${activeItem.width}×${activeItem.height}",
-                            style = MaterialTheme.typography.labelMedium.merge(TextStyle(fontFeatureSettings = "tnum")),
+                            text = "${activeItem.width}×${activeItem.height} · ${GalleryModels.labelOf(activeItem.modelApiId)}",
+                            style = MaterialTheme.typography.labelSmall.merge(TextStyle(fontFeatureSettings = "tnum")),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                         )
                         activeItem.seed?.let { seed ->
                             Surface(
-                                shape = RoundedCornerShape(8.dp),
+                                shape = CircleShape,
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .clip(CircleShape)
                                     .clickable {
                                         haptics.tick()
                                         copyToClipboard(context, seed.toString())
@@ -1097,14 +1097,14 @@ fun HomeWorkbenchPane(
                                     },
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 ) {
                                     Text(
-                                        text = "Seed $seed",
+                                        text = "$seed",
                                         style = MaterialTheme.typography.labelSmall.merge(TextStyle(fontFeatureSettings = "tnum")),
-                                        color = MaterialTheme.colorScheme.onSurface,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
                                     )
                                     Icon(
@@ -1116,47 +1116,24 @@ fun HomeWorkbenchPane(
                                 }
                             }
                         }
-                        Text(
-                            text = GalleryModels.labelOf(activeItem.modelApiId),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                        )
                     } else if (hasGeneratingSlot) {
                         Text(
                             text = "正在生成中…",
-                            style = MaterialTheme.typography.labelMedium,
+                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                             maxLines = 1,
                         )
                     }
                 }
 
-                // Row 2: 紧凑快捷操作栏
-                val hasActive = activeItem != null
-                val activeIsSvg = activeItem?.relativePath?.endsWith(".svg", ignoreCase = true) == true
+                // 右侧操作组：次要动作纯圆形图标，高频创作动作紧凑胶囊
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    WorkbenchActionChip(
-                        icon = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                        label = "上一张 (A)",
-                        enabled = items.isNotEmpty() && !viewingGenerating && currentIndex > 0,
-                        onClick = { stepPrev() },
-                    )
-                    WorkbenchActionChip(
-                        icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        label = "下一张 (D)",
-                        enabled = items.isNotEmpty() && (viewingGenerating || currentIndex < items.lastIndex),
-                        onClick = { stepNext() },
-                    )
-                    WorkbenchActionChip(
+                    WorkbenchIconAction(
                         icon = if (activeItem?.favorite == true) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        label = "收藏 (F)",
+                        contentDescription = "收藏 (F)",
                         highlighted = activeItem?.favorite == true,
                         enabled = hasActive,
                         onClick = {
@@ -1166,31 +1143,31 @@ fun HomeWorkbenchPane(
                             }
                         },
                     )
-                    WorkbenchActionChip(
+                    WorkbenchIconAction(
                         icon = Icons.Default.OpenInFull,
-                        label = "查看详情",
+                        contentDescription = "查看详情 (Space)",
                         enabled = hasActive,
                         onClick = { activeItem?.let { openDetail(it) } },
                     )
-                    WorkbenchActionChip(
-                        icon = Icons.Default.Replay,
-                        label = "复用参数",
-                        enabled = hasActive,
-                        onClick = { activeItem?.let { triggerReuse(it) } },
+                    WorkbenchIconAction(
+                        icon = Icons.Default.Brush,
+                        contentDescription = "局部重绘",
+                        enabled = hasActive && !activeIsSvg,
+                        onClick = { activeItem?.let { onInpaintImage(it) } },
                     )
                     if (onUseAsReference != null) {
                         WorkbenchActionChip(
                             icon = Icons.Default.AddPhotoAlternate,
-                            label = "用作参考图",
+                            label = "参考",
                             enabled = hasActive && !activeIsSvg,
                             onClick = { activeItem?.let { triggerUseAsReference(it) } },
                         )
                     }
                     WorkbenchActionChip(
-                        icon = Icons.Default.Brush,
-                        label = "局部重绘",
-                        enabled = hasActive && !activeIsSvg,
-                        onClick = { activeItem?.let { onInpaintImage(it) } },
+                        icon = Icons.Default.Replay,
+                        label = "复用",
+                        enabled = hasActive,
+                        onClick = { activeItem?.let { triggerReuse(it) } },
                     )
                 }
             }
@@ -1280,17 +1257,18 @@ private fun WorkbenchActionChip(
         else -> MaterialTheme.colorScheme.onSurface
     }
     Surface(
-        shape = RoundedCornerShape(10.dp),
+        shape = CircleShape,
         color = containerColor,
         border = if (highlighted && enabled) {
             BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
         } else null,
         modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
+            .height(34.dp)
+            .clip(CircleShape)
             .clickable(enabled = enabled, onClick = onClick),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
@@ -1306,6 +1284,46 @@ private fun WorkbenchActionChip(
                 fontWeight = if (highlighted) FontWeight.SemiBold else FontWeight.Medium,
                 color = contentColor,
                 maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun WorkbenchIconAction(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    highlighted: Boolean = false,
+) {
+    val containerColor = when {
+        !enabled -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.45f)
+        highlighted -> MaterialTheme.colorScheme.primaryContainer
+        else -> MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+    val contentColor = when {
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+        highlighted -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Surface(
+        shape = CircleShape,
+        color = containerColor,
+        border = if (highlighted && enabled) {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+        } else null,
+        modifier = Modifier
+            .size(34.dp)
+            .clip(CircleShape)
+            .clickable(enabled = enabled, onClick = onClick),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = contentColor,
+                modifier = Modifier.size(17.dp),
             )
         }
     }
