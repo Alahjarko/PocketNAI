@@ -20,6 +20,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
@@ -78,14 +79,27 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -97,6 +111,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
+import kotlin.math.abs
+import kotlinx.coroutines.launch
 import net.pocketnai.R
 import net.pocketnai.domain.model.DirectorReferenceKind
 import net.pocketnai.domain.model.CharacterPosition
@@ -109,6 +125,7 @@ import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.common.CenteredHint
 import net.pocketnai.ui.common.labelRes
 import net.pocketnai.ui.common.messageRes
+import net.pocketnai.ui.common.onMouseWheel
 import net.pocketnai.ui.generate.ReferenceRoleChooserDialog
 import java.text.DateFormat
 import java.util.Date
@@ -174,7 +191,12 @@ fun DetailScreen(
     var showUpscaleDialog by remember { mutableStateOf(false) }
     var referenceDialogPath by remember { mutableStateOf<String?>(null) }
     var fullscreen by remember { mutableStateOf(false) }
+    var fullscreenInitialScale by remember { mutableFloatStateOf(1f) }
+    var lastWheelPageTurnAt by remember { mutableLongStateOf(0L) }
     val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
+    val scope = rememberCoroutineScope()
+    val rootFocusRequester = remember { FocusRequester() }
+    val keyHaptics = net.pocketnai.ui.motion.rememberPocketHaptics()
     var revealedImageId by remember(state.currentId, sfw.enabled) { mutableStateOf<String?>(null) }
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -199,7 +221,71 @@ fun DetailScreen(
             }
         }
     }
+    LaunchedEffect(fullscreen, showUpscaleDialog, referenceDialogPath) {
+        if (!fullscreen && !showUpscaleDialog && referenceDialogPath == null) {
+            runCatching { rootFocusRequester.requestFocus() }
+        }
+    }
 
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .focusRequester(rootFocusRequester)
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (showUpscaleDialog || referenceDialogPath != null) return@onPreviewKeyEvent false
+                if (event.key == Key.Escape) {
+                    if (fullscreen) {
+                        fullscreen = false
+                        fullscreenInitialScale = 1f
+                    } else {
+                        returnFromCurrent()
+                    }
+                    return@onPreviewKeyEvent true
+                }
+                if (fullscreen) return@onPreviewKeyEvent false
+                if (event.isCtrlPressed || event.isAltPressed || event.isMetaPressed) {
+                    return@onPreviewKeyEvent false
+                }
+                when (event.key) {
+                    Key.A, Key.DirectionLeft -> {
+                        if (pagerState.currentPage > 0) {
+                            scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
+                        }
+                        true
+                    }
+                    Key.D, Key.DirectionRight -> {
+                        if (pagerState.currentPage < displayedIds.lastIndex) {
+                            scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
+                        }
+                        true
+                    }
+                    Key.F -> {
+                        if (!state.favorite) keyHaptics.confirm() else keyHaptics.tick()
+                        viewModel.toggleFavorite()
+                        true
+                    }
+                    Key.Spacebar -> {
+                        val currentImage = state.image
+                        val currentGeneration = state.generation
+                        if (currentImage != null && currentGeneration != null) {
+                            val file = container.fileStore.resolve(currentImage.privateFilePath)
+                            val sensitive = net.pocketnai.domain.safety.SfwPolicy.isSensitive(currentGeneration)
+                            if (sfw.masks(file, sensitive, revealedImageId == currentImage.id)) {
+                                keyHaptics.confirm()
+                                revealedImageId = currentImage.id
+                            } else {
+                                fullscreenInitialScale = 1f
+                                fullscreen = true
+                            }
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            },
+    ) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -294,7 +380,36 @@ fun DetailScreen(
                             pageHaptics.confirm()
                             revealedImageId = pageId
                         } else {
+                            fullscreenInitialScale = 1f
                             fullscreen = true
+                        }
+                    },
+                    onImageWheel = { deltaY, isCtrlPressed ->
+                        if (isCtrlPressed) {
+                            if (!fullscreen && abs(deltaY) > 0.01f) {
+                                val file = detail?.image?.let { container.fileStore.resolve(it.privateFilePath) }
+                                val sensitive = detail?.generation?.let(net.pocketnai.domain.safety.SfwPolicy::isSensitive)
+                                if (sfw.masks(file, sensitive, revealedImageId == pageId)) {
+                                    pageHaptics.confirm()
+                                    revealedImageId = pageId
+                                } else {
+                                    fullscreenInitialScale = if (deltaY < 0f) 1.35f else 1f
+                                    fullscreen = true
+                                }
+                            }
+                        } else if (!fullscreen && !pagerState.isScrollInProgress && abs(deltaY) > 0.01f) {
+                            val now = android.os.SystemClock.uptimeMillis()
+                            if (now - lastWheelPageTurnAt >= 220L) {
+                                val targetPage = if (deltaY > 0f) {
+                                    (pagerState.currentPage + 1).coerceAtMost(displayedIds.lastIndex)
+                                } else {
+                                    (pagerState.currentPage - 1).coerceAtLeast(0)
+                                }
+                                if (targetPage != pagerState.currentPage) {
+                                    lastWheelPageTurnAt = now
+                                    scope.launch { pagerState.animateScrollToPage(targetPage) }
+                                }
+                            }
                         }
                     },
                     onSaveClick = {
@@ -394,10 +509,15 @@ fun DetailScreen(
                 contentDescription = generation.title,
                 imageWidth = image.width,
                 imageHeight = image.height,
-                onDismiss = { fullscreen = false },
+                onDismiss = {
+                    fullscreen = false
+                    fullscreenInitialScale = 1f
+                },
                 revealed = revealedImageId == image.id,
+                initialScale = fullscreenInitialScale,
             )
         }
+    }
     }
 }
 
@@ -432,6 +552,7 @@ private fun DetailPageContent(
     onAskAssistant: (() -> Unit)? = null,
     onUseAsReference: (() -> Unit)? = null,
     revealed: Boolean = false,
+    onImageWheel: (deltaY: Float, isCtrlPressed: Boolean) -> Unit = { _, _ -> },
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         if (maxWidth >= DETAIL_TWO_PANE_MIN_WIDTH) {
@@ -441,6 +562,7 @@ private fun DetailPageContent(
                     generation = generation,
                     preview = preview,
                     onOpenFullscreen = onOpenFullscreen,
+                    onImageWheel = onImageWheel,
                     revealed = revealed,
                     animateMedia = animateMedia,
                     // 宽屏交给 ContentScale.Fit 适配整块左栏，不再按宽高比撑高。
@@ -488,6 +610,7 @@ private fun DetailPageContent(
                         generation = generation,
                         preview = preview,
                         onOpenFullscreen = onOpenFullscreen,
+                        onImageWheel = onImageWheel,
                         revealed = revealed,
                         animateMedia = animateMedia,
                         modifier = Modifier
@@ -530,6 +653,7 @@ private fun DetailImagePane(
     modifier: Modifier,
     revealed: Boolean = false,
     animateMedia: Boolean = false,
+    onImageWheel: (deltaY: Float, isCtrlPressed: Boolean) -> Unit = { _, _ -> },
 ) {
     val container = LocalAppContainer.current
     val file = image?.let { container.generationRepository.fileOfRelativePath(it.privateFilePath) }
@@ -537,7 +661,12 @@ private fun DetailImagePane(
     val imageId = image?.id ?: preview?.imageId ?: return
     val sensitive = generation?.let(net.pocketnai.domain.safety.SfwPolicy::isSensitive) ?: preview?.sensitivePrompt
     val masked = net.pocketnai.ui.safety.LocalSfwDisplay.current.masks(file, sensitive, revealed)
-    Box(modifier.clip(RoundedCornerShape(12.dp)).clickable(enabled = image != null, onClick = onOpenFullscreen)) {
+    Box(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .onMouseWheel(enabled = image != null, onWheel = onImageWheel)
+            .clickable(enabled = image != null, onClick = onOpenFullscreen),
+    ) {
         net.pocketnai.ui.safety.SfwAsyncImage(file = file, sensitive = sensitive, revealed = revealed,
             animate = animateMedia, revealTransition = true,
             contentDescription = generation?.title ?: preview?.title, contentScale = ContentScale.Fit,

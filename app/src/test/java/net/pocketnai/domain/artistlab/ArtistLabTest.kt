@@ -6,6 +6,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 import net.pocketnai.domain.model.SerialGenerationGate
 import org.junit.Test
 import kotlin.random.Random
@@ -63,5 +65,114 @@ class ArtistLabTest {
         assertThat(unsent).isEqualTo(0)
         gate.run { unsent++ } // A new explicit submission, not a retry of the interrupted one.
         assertThat(unsent).isEqualTo(1)
+
+        // Locked base artists: included first without duplicates, remainder drawn randomly from pool - locked.
+        val multiPool = listOf(
+            "artist: alpha", "artist: beta", "artist: gamma",
+            "artist: delta", "artist: epsilon", "artist: zeta",
+        )
+        val locked = listOf("artist: alpha", "artist: beta")
+        val lockedMixes = ArtistLabPlanner.plan(
+            pool = multiPool,
+            config = ArtistLabConfig(
+                paramsJson = "",
+                artistCount = 4,
+                minTicks = 10,
+                maxTicks = 30,
+                drawCount = 40,
+                catalogHash = "locked-test",
+                lockedArtists = locked,
+            ),
+            random = Random(7),
+        )
+        assertThat(lockedMixes).hasSize(40)
+        lockedMixes.forEach { mix ->
+            val tags = mix.artists.map { it.tag }
+            assertThat(tags).hasSize(4)
+            assertThat(tags.distinct()).hasSize(4)
+            assertThat(tags.take(2)).containsExactly("artist: alpha", "artist: beta").inOrder()
+            assertThat(tags.drop(2).all { it in multiPool && it !in locked }).isTrue()
+            assertThat(mix.artists.all { it.ticks in 10..30 }).isTrue()
+        }
+        // Remainder slots vary across draws rather than always taking the same artists.
+        assertThat(lockedMixes.map { it.artists.drop(2).map(ArtistTag::tag) }.distinct().size).isGreaterThan(1)
+
+        // When locked count exceeds artistCount, only the first min(3, artistCount) locked artists are used cleanly.
+        val cappedLocked = ArtistLabPlanner.plan(
+            pool = multiPool,
+            config = ArtistLabConfig(
+                paramsJson = "",
+                artistCount = 2,
+                minTicks = 14,
+                maxTicks = 26,
+                drawCount = 10,
+                catalogHash = "capped-test",
+                lockedArtists = listOf("artist: alpha", "artist: beta", "artist: gamma"),
+            ),
+            random = Random(11),
+        )
+        cappedLocked.forEach { mix ->
+            assertThat(mix.artists.map { it.tag }).containsExactly("artist: alpha", "artist: beta").inOrder()
+        }
+
+        // Tiered weights (primary upper half, supporting lower half) within minTicks..maxTicks.
+        val (lowerMaxEven, upperMinEven) = ArtistLabPlanner.tieredBounds(10, 30)
+        assertThat(lowerMaxEven).isEqualTo(20)
+        assertThat(upperMinEven).isEqualTo(20)
+        val tieredWithLocked = ArtistLabPlanner.plan(
+            pool = multiPool,
+            config = ArtistLabConfig(
+                paramsJson = "",
+                artistCount = 4,
+                minTicks = 10,
+                maxTicks = 30,
+                drawCount = 40,
+                catalogHash = "tiered-locked",
+                lockedArtists = locked,
+                tieredWeights = true,
+            ),
+            random = Random(19),
+        )
+        tieredWithLocked.forEach { mix ->
+            val primary = mix.artists.take(2)
+            val supporting = mix.artists.drop(2)
+            assertThat(primary.all { it.ticks in upperMinEven..30 }).isTrue()
+            assertThat(supporting.all { it.ticks in 10..lowerMaxEven }).isTrue()
+        }
+
+        val (lowerMaxOdd, upperMinOdd) = ArtistLabPlanner.tieredBounds(11, 30)
+        assertThat(lowerMaxOdd).isEqualTo(20)
+        assertThat(upperMinOdd).isEqualTo(21)
+        val tieredUnlocked = ArtistLabPlanner.plan(
+            pool = multiPool,
+            config = ArtistLabConfig(
+                paramsJson = "",
+                artistCount = 3,
+                minTicks = 11,
+                maxTicks = 30,
+                drawCount = 40,
+                catalogHash = "tiered-unlocked",
+                tieredWeights = true,
+            ),
+            random = Random(23),
+        )
+        tieredUnlocked.forEach { mix ->
+            assertThat(mix.artists.first().ticks in upperMinOdd..30).isTrue()
+            assertThat(mix.artists.drop(1).all { it.ticks in 11..lowerMaxOdd }).isTrue()
+            assertThat(mix.artists.all { it.ticks in 11..30 }).isTrue()
+        }
+
+        // Legacy JSON without lockedArtists/tieredWeights still decodes cleanly with safe defaults.
+        val compatJson = Json { ignoreUnknownKeys = true }
+        val legacyConfig = compatJson.decodeFromString<ArtistLabConfig>(
+            """{"paramsJson":"{}","artistCount":3,"minTicks":10,"maxTicks":30,"drawCount":50,"catalogHash":"legacy"}"""
+        )
+        assertThat(legacyConfig.lockedArtists).isEmpty()
+        assertThat(legacyConfig.tieredWeights).isFalse()
+        val legacyForm = compatJson.decodeFromString<ArtistLabForm>(
+            """{"prompt":"1girl","negative":"lowres","seed":"1","count":"10","artists":3,"minTicks":10,"maxTicks":30}"""
+        )
+        assertThat(legacyForm.lockedArtists).isEmpty()
+        assertThat(legacyForm.tieredWeights).isFalse()
     }
 }

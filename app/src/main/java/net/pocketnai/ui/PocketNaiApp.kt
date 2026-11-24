@@ -63,6 +63,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -84,6 +91,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import net.pocketnai.R
+import net.pocketnai.ui.common.ShortcutCheatsheetDialog
 import net.pocketnai.ui.connect.ConnectScreen
 import net.pocketnai.domain.image.ReferenceSource
 import net.pocketnai.ui.detail.DetailScreen
@@ -270,8 +278,25 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
     }
 
     val referencePreviews = remember { mutableMapOf<String, net.pocketnai.ui.motion.ImageOriginPreview>() }
+    val chatEnterToSend by container.settingsStore.chatEnterToSend.collectAsStateWithLifecycle()
+    var showShortcutCheatsheet by remember { mutableStateOf(false) }
+
     // Each destination owns its insets and navigation chrome, including while it leaves.
-    Surface(Modifier.fillMaxSize()) {
+    Surface(
+        Modifier
+            .fillMaxSize()
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown &&
+                    (event.isCtrlPressed || event.isMetaPressed) &&
+                    event.key == Key.Slash
+                ) {
+                    showShortcutCheatsheet = !showShortcutCheatsheet
+                    true
+                } else {
+                    false
+                }
+            },
+    ) {
         CompositionLocalProvider(net.pocketnai.ui.generate.LocalReferenceOriginOpener provides { preview ->
             navController.navigate(Routes.referenceDetail(preview.imageId))
             navController.currentBackStackEntry?.id?.let { referencePreviews[it] = preview }
@@ -446,10 +471,19 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
             composable(Routes.ARTIST_LAB) {
                 ImageMotionRoute(this, Routes.ARTIST_LAB) {
                     PocketNaiPageFrame(navController, Routes.ARTIST_LAB, chatEnabled, artistLabEnabled) {
-                        ArtistLabScreen(artistLabViewModel, generateState.params, container.fileStore::resolve) { imageId ->
-                            imageMotion.open(Routes.ARTIST_LAB, imageId)
-                            navController.navigate(Routes.detail(imageId))
-                        }
+                        ArtistLabScreen(
+                            vm = artistLabViewModel,
+                            currentParams = generateState.params,
+                            resolve = container.fileStore::resolve,
+                            onOpen = { imageId ->
+                                imageMotion.open(Routes.ARTIST_LAB, imageId)
+                                navController.navigate(Routes.detail(imageId))
+                            },
+                            onApplyArtistChain = { chain ->
+                                generateViewModel.applyArtistChainFromLab(chain)
+                                navController.navigateToTab(Routes.HOME)
+                            },
+                        )
                     }
                 }
             }
@@ -553,6 +587,13 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
             onDownload = updateViewModel::downloadUpdate,
             onLater = updateViewModel::dismissAvailable,
             onDismissError = updateViewModel::dismissError,
+        )
+    }
+
+    if (showShortcutCheatsheet) {
+        ShortcutCheatsheetDialog(
+            chatEnterToSend = chatEnterToSend,
+            onDismiss = { showShortcutCheatsheet = false },
         )
     }
 

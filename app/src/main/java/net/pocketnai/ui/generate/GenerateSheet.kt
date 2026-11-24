@@ -1,7 +1,15 @@
 package net.pocketnai.ui.generate
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,14 +18,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
@@ -29,12 +40,24 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
+import net.pocketnai.domain.image.ReferenceSource
 import net.pocketnai.domain.model.ImageModel
+import net.pocketnai.domain.model.ReferenceRole
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import net.pocketnai.ui.common.adjustPromptWeightAtCursor
+import net.pocketnai.ui.common.imageUriDropTarget
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -167,8 +190,31 @@ fun GenerateSheet(
         state.params.model.family == net.pocketnai.domain.model.GenerationFamily.V5 && state.customResolution == null &&
         profile.tierOf(state.params.size) == ResolutionTier.NORMAL
 
+    var sheetDragOver by remember { mutableStateOf(false) }
+    var refSectionDragOver by remember { mutableStateOf(false) }
+    var hoveredDropRole by remember { mutableStateOf<ReferenceRole?>(null) }
+    val showDropSlots = sheetDragOver || refSectionDragOver || hoveredDropRole != null
+
     val headerScrolled by remember { androidx.compose.runtime.derivedStateOf { scrollState.value > 4 } }
-    Column(modifier = modifier.fillMaxWidth()) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .imageUriDropTarget(
+                enabled = expanded,
+                onDragStateChange = { sheetDragOver = it },
+                onDropLocalPath = { path ->
+                    sheetDragOver = false
+                    hoveredDropRole = null
+                    viewModel.sendImageAsReference(ReferenceSource.LocalPath(path), ReferenceRole.IMG2IMG)
+                },
+                onDropUri = { uri ->
+                    sheetDragOver = false
+                    hoveredDropRole = null
+                    viewModel.onReferencePicked(ReferenceSource.PickedUri(uri))
+                },
+            ),
+    ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         SheetHeader(
             state = state,
             connected = connected,
@@ -239,7 +285,16 @@ fun GenerateSheet(
                             }
                         }
                     },
-                    modifier = Modifier.fillMaxWidth().testTag("artist-prompt-field"),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("artist-prompt-field")
+                        .promptWeightShortcuts(
+                            currentValue = { artistField },
+                            onAdjusted = { next ->
+                                artistField = next
+                                viewModel.onArtistPromptChange(next.text)
+                            },
+                        ),
                 )
 
                 PromptTagSuggestions(
@@ -318,7 +373,15 @@ fun GenerateSheet(
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .promptWeightShortcuts(
+                        currentValue = { promptField },
+                        onAdjusted = { next ->
+                            promptField = next
+                            viewModel.onPromptChange(next.text)
+                        },
+                    ),
             )
 
             PromptTagSuggestions(
@@ -432,7 +495,15 @@ fun GenerateSheet(
                             }
                         }
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .promptWeightShortcuts(
+                            currentValue = { negativeField },
+                            onAdjusted = { next ->
+                                negativeField = next
+                                viewModel.onNegativePromptChange(next.text)
+                            },
+                        ),
                 )
 
                 PromptTagSuggestions(
@@ -715,15 +786,82 @@ fun GenerateSheet(
             // 参考图放在内容区最底部：它只在需要图生图/参考条件时才用，
             // 不该挡在每次都要写的提示词前面。三个面板合并成一张带页签的卡片
             // （2026-09-21 界面减负），互斥清理仍由 ViewModel 在挂图时做。
-            ReferenceTabsSection(
-                state = state,
-                connected = connected,
-                viewModel = viewModel,
-                onOpenInpaintEditor = onOpenInpaintEditor,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (refSectionDragOver || sheetDragOver) {
+                            Modifier.border(
+                                width = 2.dp,
+                                color = MaterialTheme.colorScheme.primary,
+                                shape = RoundedCornerShape(22.dp),
+                            )
+                        } else Modifier,
+                    )
+                    .imageUriDropTarget(
+                        enabled = expanded,
+                        onDragStateChange = { refSectionDragOver = it },
+                        onDropLocalPath = { path ->
+                            refSectionDragOver = false
+                            sheetDragOver = false
+                            hoveredDropRole = null
+                            viewModel.sendImageAsReference(ReferenceSource.LocalPath(path), ReferenceRole.IMG2IMG)
+                        },
+                        onDropUri = { uri ->
+                            refSectionDragOver = false
+                            sheetDragOver = false
+                            hoveredDropRole = null
+                            viewModel.onReferencePicked(ReferenceSource.PickedUri(uri))
+                        },
+                    ),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ReferenceTabsSection(
+                    state = state,
+                    connected = connected,
+                    viewModel = viewModel,
+                    onOpenInpaintEditor = onOpenInpaintEditor,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
 
             Spacer(Modifier.size(8.dp))
+        }
+    }
+
+        AnimatedVisibility(
+            visible = showDropSlots,
+            enter = fadeIn() + slideInVertically { it / 2 },
+            exit = fadeOut() + slideOutVertically { it / 2 },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(12.dp),
+        ) {
+            ReferenceDropSlotsOverlay(
+                supportsDirector = state.supportsDirectorReference,
+                supportsVibe = state.supportsVibeTransfer,
+                hoveredRole = hoveredDropRole,
+                onHoverRoleChange = { role, hovered ->
+                    hoveredDropRole = if (hovered) role else if (hoveredDropRole == role) null else hoveredDropRole
+                },
+                onDropLocalPath = { path, role ->
+                    sheetDragOver = false
+                    refSectionDragOver = false
+                    hoveredDropRole = null
+                    viewModel.sendImageAsReference(ReferenceSource.LocalPath(path), role)
+                },
+                onDropUri = { uri, role ->
+                    sheetDragOver = false
+                    refSectionDragOver = false
+                    hoveredDropRole = null
+                    if (role == ReferenceRole.IMG2IMG) {
+                        viewModel.onReferencePicked(ReferenceSource.PickedUri(uri))
+                    } else {
+                        viewModel.sendImageAsReference(ReferenceSource.PickedUri(uri), role)
+                    }
+                },
+            )
         }
     }
 
@@ -1284,4 +1422,189 @@ private fun applyFavorite(
     // 走 replacePromptText 而不是 onPromptChange：整体替换要 +1 textRevision，
     // 输入框才会带着新文本重建（见 rememberSyncedField）。
     viewModel.replacePromptText(target, next)
+}
+
+/**
+ * 提示词输入框的桌面端权重快捷键：`Ctrl + ↑` 加权、`Ctrl + ↓` 减权。
+ */
+private fun Modifier.promptWeightShortcuts(
+    currentValue: () -> TextFieldValue,
+    onAdjusted: (TextFieldValue) -> Unit,
+): Modifier = onPreviewKeyEvent { event ->
+    if (event.type == KeyEventType.KeyDown &&
+        (event.isCtrlPressed || event.isMetaPressed) &&
+        (event.key == Key.DirectionUp || event.key == Key.DirectionDown)
+    ) {
+        val current = currentValue()
+        val next = adjustPromptWeightAtCursor(
+            value = current,
+            increase = event.key == Key.DirectionUp,
+        )
+        if (next != current) {
+            onAdjusted(next)
+        }
+        true
+    } else {
+        false
+    }
+}
+
+/**
+ * 拖拽图片进入生成面板时浮现的 3 槽位投放栏：
+ * 图生图始终可用；Precise / Vibe 在 V5 等不支持模型下自动锁定提示。
+ */
+@Composable
+private fun ReferenceDropSlotsOverlay(
+    supportsDirector: Boolean,
+    supportsVibe: Boolean,
+    hoveredRole: ReferenceRole?,
+    onHoverRoleChange: (ReferenceRole, Boolean) -> Unit,
+    onDropLocalPath: (String, ReferenceRole) -> Unit,
+    onDropUri: (String, ReferenceRole) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
+        tonalElevation = 8.dp,
+        shadowElevation = 8.dp,
+        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AddPhotoAlternate,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    text = "松手投放至参考图槽位",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ReferenceDropSlotCard(
+                    title = "图生图",
+                    subtitle = "底图",
+                    enabled = true,
+                    hovered = hoveredRole == ReferenceRole.IMG2IMG,
+                    onHoverChange = { onHoverRoleChange(ReferenceRole.IMG2IMG, it) },
+                    onDropLocalPath = { onDropLocalPath(it, ReferenceRole.IMG2IMG) },
+                    onDropUri = { onDropUri(it, ReferenceRole.IMG2IMG) },
+                    modifier = Modifier.weight(1f),
+                )
+                ReferenceDropSlotCard(
+                    title = "Precise",
+                    subtitle = if (supportsDirector) "角色/画风" else "仅 V4.5",
+                    enabled = supportsDirector,
+                    hovered = hoveredRole == ReferenceRole.DIRECTOR,
+                    onHoverChange = { onHoverRoleChange(ReferenceRole.DIRECTOR, it) },
+                    onDropLocalPath = { onDropLocalPath(it, ReferenceRole.DIRECTOR) },
+                    onDropUri = { onDropUri(it, ReferenceRole.DIRECTOR) },
+                    modifier = Modifier.weight(1f),
+                )
+                ReferenceDropSlotCard(
+                    title = "Vibe",
+                    subtitle = if (supportsVibe) "风格迁移" else "仅 V4.5",
+                    enabled = supportsVibe,
+                    hovered = hoveredRole == ReferenceRole.VIBE,
+                    onHoverChange = { onHoverRoleChange(ReferenceRole.VIBE, it) },
+                    onDropLocalPath = { onDropLocalPath(it, ReferenceRole.VIBE) },
+                    onDropUri = { onDropUri(it, ReferenceRole.VIBE) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReferenceDropSlotCard(
+    title: String,
+    subtitle: String,
+    enabled: Boolean,
+    hovered: Boolean,
+    onHoverChange: (Boolean) -> Unit,
+    onDropLocalPath: (String) -> Unit,
+    onDropUri: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val containerColor = when {
+        !enabled -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.45f)
+        hovered -> MaterialTheme.colorScheme.primaryContainer
+        else -> MaterialTheme.colorScheme.surface
+    }
+    val borderColor = when {
+        !enabled -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+        hovered -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+    }
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = containerColor,
+        border = BorderStroke(if (hovered && enabled) 2.dp else 1.dp, borderColor),
+        modifier = modifier.imageUriDropTarget(
+            enabled = enabled,
+            onDragStateChange = onHoverChange,
+            onDropLocalPath = onDropLocalPath,
+            onDropUri = onDropUri,
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                if (!enabled) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.size(13.dp),
+                    )
+                }
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (enabled) {
+                        if (hovered) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (enabled) {
+                    if (hovered) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }

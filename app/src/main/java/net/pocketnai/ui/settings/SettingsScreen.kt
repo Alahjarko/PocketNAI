@@ -1,40 +1,52 @@
 package net.pocketnai.ui.settings
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardReturn
 import androidx.compose.material.icons.filled.*
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -46,17 +58,24 @@ import net.pocketnai.R
 import net.pocketnai.data.repo.BalanceRefreshReason
 import net.pocketnai.domain.proxy.ProxyMode
 import net.pocketnai.ui.LocalAppContainer
-import net.pocketnai.ui.common.messageRes
+import net.pocketnai.ui.common.ShortcutCheatsheetDialog
 import net.pocketnai.ui.update.UpdateCheckDialog
 import net.pocketnai.ui.update.UpdateViewModel
 
+private enum class SettingsCategory(
+    val label: String,
+    val icon: ImageVector,
+) {
+    ACCOUNTS("账号与生图服务", Icons.Default.AccountCircle),
+    FEATURES("功能与键鼠", Icons.Default.Tune),
+    APPEARANCE("外观与显示", Icons.Default.ColorLens),
+    DATA_ABOUT("数据与关于", Icons.Default.Storage),
+}
+
 /**
- * 设置页：顶部账号卡片 + 一个分组列表。
- *
- * 列表化之前，每个设置项都是"标题 + 当前值 + 一排按钮 + 整段说明散文"直接铺在页面上，
- * 设置页读起来像一篇文档（2026-09-21 界面减负）。现在的约定：
- * 每项一行（标题 + 当前值 + ›），点进去是对话框，说明散文只住在对话框里。
- * 纯开关项（流式预览）与"行上就要能拨"的开关（代理）保留行内 Switch。
+ * 设置页：
+ * - 窄屏（< 720.dp）：单列分组列表，保持既有轻量布局；
+ * - 宽屏（>= 720.dp）：左侧 220.dp 分类导航 + 右侧可滚动详情页。
  */
 @Composable
 fun SettingsScreen(
@@ -93,8 +112,10 @@ fun SettingsScreen(
     val balanceState by container.accountBalanceRepository.state.collectAsStateWithLifecycle()
     val updateState by updateViewModel.state.collectAsStateWithLifecycle()
     val chatEnabled by container.settingsStore.chatEnabled.collectAsStateWithLifecycle()
+    val chatEnterToSend by container.settingsStore.chatEnterToSend.collectAsStateWithLifecycle()
     val artistLabEnabled by container.settingsStore.artistLabEnabled.collectAsStateWithLifecycle()
     val artistPromptSplitEnabled by container.settingsStore.artistPromptSplitEnabled.collectAsStateWithLifecycle()
+    val sfwMode by container.settingsStore.sfwMode.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     var accountSwitchDialogOpen by remember { mutableStateOf(false) }
@@ -102,6 +123,24 @@ fun SettingsScreen(
     var storageDialogOpen by remember { mutableStateOf(false) }
     var updateDialogOpen by remember { mutableStateOf(false) }
     var cleanupImagesDialogOpen by remember { mutableStateOf(false) }
+    var shortcutsDialogOpen by remember { mutableStateOf(false) }
+    var selectedCategoryName by rememberSaveable { mutableStateOf(SettingsCategory.ACCOUNTS.name) }
+    val selectedCategory = remember(selectedCategoryName) {
+        SettingsCategory.entries.firstOrNull { it.name == selectedCategoryName }
+            ?: SettingsCategory.ACCOUNTS
+    }
+    var pendingOpenImageService by rememberSaveable { mutableStateOf(openImageServiceOnEntry) }
+    LaunchedEffect(openImageServiceOnEntry) {
+        if (openImageServiceOnEntry) {
+            selectedCategoryName = SettingsCategory.ACCOUNTS.name
+            pendingOpenImageService = true
+        }
+    }
+    LaunchedEffect(pendingOpenImageService) {
+        if (pendingOpenImageService) {
+            pendingOpenImageService = false
+        }
+    }
 
     val proxySettings by container.proxyStore.settings.collectAsStateWithLifecycle()
     val proxyUsedBytes by container.proxyStore.usedBytesToday.collectAsStateWithLifecycle()
@@ -117,187 +156,196 @@ fun SettingsScreen(
     }
 
     val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            text = stringResource(R.string.settings_title),
-            style = MaterialTheme.typography.headlineSmall,
+    val activeAccount = remember(connected, accountSwitchDialogOpen) {
+        container.credentialStore.listAccounts().firstOrNull { it.isActive }
+    }
+
+    val proxyRow: @Composable () -> Unit = {
+        SettingsRow(
+            title = stringResource(R.string.proxy_section_title),
+            icon = Icons.Default.Language,
+            active = proxySettings.enabled,
+            subtitle = proxySummaryLabel(
+                enabled = proxySettings.enabled,
+                mode = proxySettings.mode,
+                host = proxySettings.host,
+                port = proxySettings.port,
+                usedBytesToday = proxyUsedBytes,
+            ),
+            onClick = {
+                haptics.tick()
+                proxyDialogOpen = true
+            },
+            trailing = {
+                Switch(
+                    checked = proxySettings.enabled,
+                    onCheckedChange = {
+                        haptics.tick()
+                        container.proxyStore.update(proxySettings.copy(enabled = it))
+                    },
+                )
+            },
         )
+    }
 
-        net.pocketnai.ui.openai.OpenAiImageSettingsRow(initiallyOpen = openImageServiceOnEntry)
-
-        SettingsSection("NovelAI 账户")
-        val activeAccount = remember(connected, accountSwitchDialogOpen) {
-            container.credentialStore.listAccounts().firstOrNull { it.isActive }
-        }
-        NovelAiAccountCard(
-            connected = connected,
-            accountName = activeAccount?.name,
-            fingerprint = activeAccount?.tokenFingerprint,
-            state = balanceState,
-            status = subscriptionStatus,
-            onManage = { accountSwitchDialogOpen = true },
-            onConnect = onRequestConnect,
-            onDisconnect = viewModel::disconnect,
-            onRefresh = refreshBalance,
+    val chatEnterToSendRow: @Composable () -> Unit = {
+        SettingsRow(
+            title = "外接键盘 Enter 直接发送",
+            icon = Icons.AutoMirrored.Filled.KeyboardReturn,
+            active = chatEnterToSend,
+            subtitle = if (chatEnterToSend) {
+                "Enter 发送消息，Shift + Enter 换行"
+            } else {
+                "Ctrl + Enter 发送消息，Enter 换行"
+            },
+            onClick = {
+                haptics.tick()
+                container.settingsStore.setChatEnterToSend(!chatEnterToSend)
+            },
+            trailing = {
+                Switch(
+                    checked = chatEnterToSend,
+                    onCheckedChange = {
+                        haptics.tick()
+                        container.settingsStore.setChatEnterToSend(it)
+                    },
+                )
+            },
         )
+    }
 
-        SettingsSection("外观与显示")
-        ColorModeCard(
-            mode = themeMode,
-            onSelect = viewModel::setThemeMode,
-            accent = themeAccent,
-            onSelectAccent = viewModel::setThemeAccent,
+    val shortcutsRow: @Composable () -> Unit = {
+        SettingsRow(
+            title = "键鼠快捷键一览",
+            icon = Icons.Default.Keyboard,
+            subtitle = "画廊、生成、对话与重绘快捷操作（Ctrl + /）",
+            onClick = {
+                haptics.tick()
+                shortcutsDialogOpen = true
+            },
         )
-        val sfwMode by container.settingsStore.sfwMode.collectAsStateWithLifecycle()
-        SfwModeCard(sfwMode, container.settingsStore::setSfwMode)
+    }
 
-        // ---- 设置项分组列表 ----
-        SettingsSection("功能与数据")
-        SettingsCard {
-            SettingsRow(
-                title = stringResource(R.string.settings_balance_ledger),
-                icon = Icons.Default.QueryStats,
-                subtitle = stringResource(R.string.settings_ledger_subtitle),
-                onClick = {
-                    haptics.tick()
-                    onOpenStatistics()
-                },
-            )
-            SettingsDivider()
-            SettingsRow(
-                title = stringResource(R.string.proxy_section_title),
-                icon = Icons.Default.Language,
-                active = proxySettings.enabled,
-                subtitle = proxySummaryLabel(
-                    enabled = proxySettings.enabled,
-                    mode = proxySettings.mode,
-                    host = proxySettings.host,
-                    port = proxySettings.port,
-                    usedBytesToday = proxyUsedBytes,
-                ),
-                onClick = {
-                    haptics.tick()
-                    proxyDialogOpen = true
-                },
-                trailing = {
-                    Switch(
-                        checked = proxySettings.enabled,
-                        onCheckedChange = {
-                            haptics.tick()
-                            container.proxyStore.update(proxySettings.copy(enabled = it))
-                        },
-                    )
-                },
-            )
-            SettingsDivider()
-            SettingsRow(
-                title = "实验性对话",
-                icon = Icons.Default.ChatBubbleOutline,
-                active = chatEnabled,
-                subtitle = if (chatEnabled) "已在导航栏显示对话" else "开启后在导航栏显示对话",
-                onClick = {
-                    haptics.tick()
-                    container.settingsStore.setChatEnabled(!chatEnabled)
-                },
-                trailing = {
-                    Switch(
-                        checked = chatEnabled,
-                        onCheckedChange = {
-                            haptics.tick()
-                            container.settingsStore.setChatEnabled(it)
-                        },
-                    )
-                },
-            )
-            SettingsDivider()
-            SettingsRow(
-                title = "连接与人格",
-                icon = Icons.Default.Hub,
-                subtitle = "模型服务、人格与工具",
-                onClick = {
-                    haptics.tick()
-                    onOpenChatSettings()
-                },
-            )
-            SettingsDivider()
-            SettingsRow(
-                title = "本机助手连接",
-                icon = Icons.Default.Devices,
-                subtitle = "MCP · 供 RikkaHub 等本机助手调用",
-                onClick = {
-                    haptics.tick()
-                    onOpenLocalMcp()
-                },
-            )
-            SettingsDivider()
-            SettingsRow(
-                title = "独立画师提示词框",
-                icon = Icons.Default.Brush,
-                active = artistPromptSplitEnabled,
-                subtitle = "自动剥离 artist: 标签到独立框，提交时合并",
-                onClick = {
-                    haptics.tick()
-                    container.settingsStore.setArtistPromptSplitEnabled(!artistPromptSplitEnabled)
-                },
-                trailing = {
-                    Switch(
-                        checked = artistPromptSplitEnabled,
-                        onCheckedChange = {
-                            haptics.tick()
-                            container.settingsStore.setArtistPromptSplitEnabled(it)
-                        },
-                    )
-                },
-            )
-            SettingsDivider()
-            SettingsRow(
-                title = "抽卡实验室（实验）",
-                icon = Icons.Default.Palette,
-                active = artistLabEnabled,
-                subtitle = "随机画师串 · 固定种子 · 收藏与批次清理",
-                onClick = {
-                    haptics.tick()
-                    container.settingsStore.setArtistLabEnabled(!artistLabEnabled)
-                },
-                trailing = {
-                    Switch(
-                        checked = artistLabEnabled,
-                        onCheckedChange = {
-                            haptics.tick()
-                            container.settingsStore.setArtistLabEnabled(it)
-                        },
-                    )
-                },
-            )
-            SettingsDivider()
-            SettingsRow(
-                title = stringResource(R.string.settings_storage),
-                icon = Icons.Default.Storage,
-                subtitle = "私有历史占用 ${formatBytes(state.usedBytes)}",
-                onClick = {
-                    haptics.tick()
-                    storageDialogOpen = true
-                },
-            )
-            SettingsDivider()
-            SettingsRow(
-                title = stringResource(R.string.update_section_title),
-                icon = Icons.Default.SystemUpdate,
-                subtitle = "${stringResource(R.string.settings_version)} " +
-                    "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})",
-                onClick = {
-                    haptics.tick()
-                    updateDialogOpen = true
-                },
-            )
-        }
+    val featureRows: @Composable () -> Unit = {
+        SettingsRow(
+            title = "实验性对话",
+            icon = Icons.Default.ChatBubbleOutline,
+            active = chatEnabled,
+            subtitle = if (chatEnabled) "已在导航栏显示对话" else "开启后在导航栏显示对话",
+            onClick = {
+                haptics.tick()
+                container.settingsStore.setChatEnabled(!chatEnabled)
+            },
+            trailing = {
+                Switch(
+                    checked = chatEnabled,
+                    onCheckedChange = {
+                        haptics.tick()
+                        container.settingsStore.setChatEnabled(it)
+                    },
+                )
+            },
+        )
+        SettingsDivider()
+        SettingsRow(
+            title = "连接与人格",
+            icon = Icons.Default.Hub,
+            subtitle = "模型服务、人格与工具",
+            onClick = {
+                haptics.tick()
+                onOpenChatSettings()
+            },
+        )
+        SettingsDivider()
+        SettingsRow(
+            title = "本机助手连接",
+            icon = Icons.Default.Devices,
+            subtitle = "MCP · 供 RikkaHub 等本机助手调用",
+            onClick = {
+                haptics.tick()
+                onOpenLocalMcp()
+            },
+        )
+        SettingsDivider()
+        SettingsRow(
+            title = "独立画师提示词框",
+            icon = Icons.Default.Brush,
+            active = artistPromptSplitEnabled,
+            subtitle = "自动剥离 artist: 标签到独立框，提交时合并",
+            onClick = {
+                haptics.tick()
+                container.settingsStore.setArtistPromptSplitEnabled(!artistPromptSplitEnabled)
+            },
+            trailing = {
+                Switch(
+                    checked = artistPromptSplitEnabled,
+                    onCheckedChange = {
+                        haptics.tick()
+                        container.settingsStore.setArtistPromptSplitEnabled(it)
+                    },
+                )
+            },
+        )
+        SettingsDivider()
+        SettingsRow(
+            title = "抽卡实验室（实验）",
+            icon = Icons.Default.Palette,
+            active = artistLabEnabled,
+            subtitle = "随机画师串 · 固定种子 · 收藏与批次清理",
+            onClick = {
+                haptics.tick()
+                container.settingsStore.setArtistLabEnabled(!artistLabEnabled)
+            },
+            trailing = {
+                Switch(
+                    checked = artistLabEnabled,
+                    onCheckedChange = {
+                        haptics.tick()
+                        container.settingsStore.setArtistLabEnabled(it)
+                    },
+                )
+            },
+        )
+    }
 
+    val statisticsRow: @Composable () -> Unit = {
+        SettingsRow(
+            title = stringResource(R.string.settings_balance_ledger),
+            icon = Icons.Default.QueryStats,
+            subtitle = stringResource(R.string.settings_ledger_subtitle),
+            onClick = {
+                haptics.tick()
+                onOpenStatistics()
+            },
+        )
+    }
+
+    val storageRow: @Composable () -> Unit = {
+        SettingsRow(
+            title = stringResource(R.string.settings_storage),
+            icon = Icons.Default.Storage,
+            subtitle = "私有历史占用 ${formatBytes(state.usedBytes)}",
+            onClick = {
+                haptics.tick()
+                storageDialogOpen = true
+            },
+        )
+    }
+
+    val updateRow: @Composable () -> Unit = {
+        SettingsRow(
+            title = stringResource(R.string.update_section_title),
+            icon = Icons.Default.SystemUpdate,
+            subtitle = "${stringResource(R.string.settings_version)} " +
+                "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})",
+            onClick = {
+                haptics.tick()
+                updateDialogOpen = true
+            },
+        )
+    }
+
+    val maintenanceBanner: @Composable () -> Unit = {
         state.maintenanceMessage?.let { message ->
             Card(
                 colors = CardDefaults.cardColors(
@@ -311,6 +359,182 @@ fun SettingsScreen(
                         Text(stringResource(R.string.action_confirm))
                     }
                 }
+            }
+        }
+    }
+
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isWide = maxWidth >= 720.dp
+        if (isWide) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                Column(
+                    modifier = Modifier
+                        .width(220.dp)
+                        .fillMaxHeight()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 12.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.settings_title),
+                        style = MaterialTheme.typography.headlineSmall,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    SettingsCategory.entries.forEach { category ->
+                        SettingsCategoryRailItem(
+                            category = category,
+                            selected = category == selectedCategory,
+                            onClick = {
+                                haptics.tick()
+                                selectedCategoryName = category.name
+                            },
+                        )
+                    }
+                }
+
+                VerticalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                )
+
+                key(selectedCategory) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 24.dp, vertical = 18.dp),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .widthIn(max = 760.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Text(
+                                text = selectedCategory.label,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+
+                            when (selectedCategory) {
+                                SettingsCategory.ACCOUNTS -> {
+                                    net.pocketnai.ui.openai.OpenAiImageSettingsRow(
+                                        initiallyOpen = pendingOpenImageService,
+                                    )
+                                    SettingsSection("NovelAI 账户")
+                                    NovelAiAccountCard(
+                                        connected = connected,
+                                        accountName = activeAccount?.name,
+                                        fingerprint = activeAccount?.tokenFingerprint,
+                                        state = balanceState,
+                                        status = subscriptionStatus,
+                                        onManage = { accountSwitchDialogOpen = true },
+                                        onConnect = onRequestConnect,
+                                        onDisconnect = viewModel::disconnect,
+                                        onRefresh = refreshBalance,
+                                    )
+                                    SettingsSection("网络连接")
+                                    SettingsCard {
+                                        proxyRow()
+                                    }
+                                }
+
+                                SettingsCategory.FEATURES -> {
+                                    SettingsSection("外接键盘与鼠标")
+                                    SettingsCard {
+                                        chatEnterToSendRow()
+                                        SettingsDivider()
+                                        shortcutsRow()
+                                    }
+                                    SettingsSection("实验性与连接")
+                                    SettingsCard {
+                                        featureRows()
+                                    }
+                                }
+
+                                SettingsCategory.APPEARANCE -> {
+                                    ColorModeCard(
+                                        mode = themeMode,
+                                        onSelect = viewModel::setThemeMode,
+                                        accent = themeAccent,
+                                        onSelectAccent = viewModel::setThemeAccent,
+                                    )
+                                    SfwModeCard(sfwMode, container.settingsStore::setSfwMode)
+                                }
+
+                                SettingsCategory.DATA_ABOUT -> {
+                                    SettingsCard {
+                                        statisticsRow()
+                                        SettingsDivider()
+                                        storageRow()
+                                        SettingsDivider()
+                                        updateRow()
+                                    }
+                                }
+                            }
+
+                            maintenanceBanner()
+                        }
+                    }
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.settings_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+
+                net.pocketnai.ui.openai.OpenAiImageSettingsRow(initiallyOpen = pendingOpenImageService)
+
+                SettingsSection("NovelAI 账户")
+                NovelAiAccountCard(
+                    connected = connected,
+                    accountName = activeAccount?.name,
+                    fingerprint = activeAccount?.tokenFingerprint,
+                    state = balanceState,
+                    status = subscriptionStatus,
+                    onManage = { accountSwitchDialogOpen = true },
+                    onConnect = onRequestConnect,
+                    onDisconnect = viewModel::disconnect,
+                    onRefresh = refreshBalance,
+                )
+
+                SettingsSection("外观与显示")
+                ColorModeCard(
+                    mode = themeMode,
+                    onSelect = viewModel::setThemeMode,
+                    accent = themeAccent,
+                    onSelectAccent = viewModel::setThemeAccent,
+                )
+                SfwModeCard(sfwMode, container.settingsStore::setSfwMode)
+
+                // ---- 设置项分组列表 ----
+                SettingsSection("功能与数据")
+                SettingsCard {
+                    statisticsRow()
+                    SettingsDivider()
+                    proxyRow()
+                    SettingsDivider()
+                    featureRows()
+                    SettingsDivider()
+                    chatEnterToSendRow()
+                    SettingsDivider()
+                    shortcutsRow()
+                    SettingsDivider()
+                    storageRow()
+                    SettingsDivider()
+                    updateRow()
+                }
+
+                maintenanceBanner()
             }
         }
     }
@@ -406,7 +630,6 @@ fun SettingsScreen(
         )
     }
 
-
     if (updateDialogOpen) {
         UpdateCheckDialog(
             currentVersionName = BuildConfig.VERSION_NAME,
@@ -424,6 +647,63 @@ fun SettingsScreen(
             },
             onDismiss = { cleanupImagesDialogOpen = false },
         )
+    }
+
+    if (shortcutsDialogOpen) {
+        ShortcutCheatsheetDialog(
+            chatEnterToSend = chatEnterToSend,
+            onDismiss = { shortcutsDialogOpen = false },
+        )
+    }
+}
+
+@Composable
+private fun SettingsCategoryRailItem(
+    category: SettingsCategory,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            Color.Transparent
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .settingsClickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                imageVector = category.icon,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = if (selected) {
+                    MaterialTheme.colorScheme.onSecondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+            Text(
+                text = category.label,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onSecondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

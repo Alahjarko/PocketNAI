@@ -6,6 +6,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.splineBasedDecay
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
@@ -22,10 +23,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -36,13 +45,16 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.io.File
 import kotlin.math.abs
+import kotlin.math.pow
 import kotlin.math.sign
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import net.pocketnai.ui.common.onMouseWheel
 import net.pocketnai.ui.motion.rememberPocketHaptics
 
 /**
- * 全屏图片查看：双指缩放、带惯性衰减的边界拖动、双击弹簧放大/复原、1x 纵向拖拽关闭。
+ * 全屏图片查看：双指缩放、带惯性衰减的边界拖动、双击弹簧放大/复原、1x 纵向拖拽关闭，
+ * 以及外接键鼠滚轮缩放、左键拖动画布与 Esc 关闭。
  *
  * 交互对齐系统相册：
  * - 双击**围绕点按处**平滑弹簧放大（不是瞬间跳变），再次双击平滑归零；
@@ -57,6 +69,7 @@ fun FullscreenImageViewer(
     imageHeight: Int,
     onDismiss: () -> Unit,
     revealed: Boolean = false,
+    initialScale: Float = MIN_SCALE,
 ) {
     val scope = rememberCoroutineScope()
     val visibilityAnim = remember { Animatable(0f) }
@@ -97,10 +110,15 @@ fun FullscreenImageViewer(
         val density = LocalDensity.current
         val decay = remember(density) { splineBasedDecay<Float>(density) }
         val haptics = rememberPocketHaptics()
+        val focusRequester = remember { FocusRequester() }
 
-        val scaleAnim = remember { Animatable(MIN_SCALE) }
+        val scaleAnim = remember { Animatable(initialScale.coerceIn(MIN_SCALE, WHEEL_MAX_SCALE)) }
         val offsetXAnim = remember { Animatable(0f) }
         val offsetYAnim = remember { Animatable(0f) }
+
+        LaunchedEffect(Unit) {
+            runCatching { focusRequester.requestFocus() }
+        }
 
         val imageAspect = if (imageHeight > 0) imageWidth.toFloat() / imageHeight else 1f
         val zoomSpring = remember {
@@ -135,6 +153,18 @@ fun FullscreenImageViewer(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .focusRequester(focusRequester)
+                .focusable()
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown &&
+                        (event.key == Key.Escape || event.key == Key.Spacebar)
+                    ) {
+                        requestClose()
+                        true
+                    } else {
+                        false
+                    }
+                }
                 .onSizeChanged { containerSize = Size(it.width.toFloat(), it.height.toFloat()) }
                 .drawBehind {
                     val maxDismiss = (size.height * 0.42f).coerceAtLeast(1f)
@@ -142,6 +172,36 @@ fun FullscreenImageViewer(
                     val alpha = ((1f - dismissFraction * 0.85f).coerceIn(0.15f, 1f)) * visibilityAnim.value
                     if (alpha > 0.002f) {
                         drawRect(Color.Black.copy(alpha = alpha))
+                    }
+                }
+                .onMouseWheel { deltaY, isCtrlPressed ->
+                    if (!isCtrlPressed && scaleAnim.targetValue <= MIN_SCALE + 0.02f && scaleAnim.value <= MIN_SCALE + 0.02f) {
+                        return@onMouseWheel
+                    }
+                    val baseScale = scaleAnim.targetValue
+                    val factor = 1.18f.pow((-deltaY).coerceIn(-3f, 3f))
+                    val rawNext = (baseScale * factor).coerceIn(MIN_SCALE, WHEEL_MAX_SCALE)
+                    val nextScale = if (rawNext < MIN_SCALE + 0.02f) MIN_SCALE else rawNext
+                    val ratio = if (baseScale > 0f) nextScale / baseScale else 1f
+                    val nextOffset = if (nextScale <= MIN_SCALE) {
+                        Offset.Zero
+                    } else {
+                        clamped(
+                            Offset(offsetXAnim.targetValue * ratio, offsetYAnim.targetValue * ratio),
+                            nextScale,
+                        )
+                    }
+                    scope.launch {
+                        offsetXAnim.updateBounds(null, null)
+                        offsetYAnim.updateBounds(null, null)
+                        coroutineScope {
+                            launch { scaleAnim.animateTo(nextScale, tween(90, easing = FastOutSlowInEasing)) }
+                            launch { offsetXAnim.animateTo(nextOffset.x, tween(90, easing = FastOutSlowInEasing)) }
+                            launch { offsetYAnim.animateTo(nextOffset.y, tween(90, easing = FastOutSlowInEasing)) }
+                            if (dismissYAnim.value != 0f) {
+                                launch { dismissYAnim.animateTo(0f, tween(90, easing = FastOutSlowInEasing)) }
+                            }
+                        }
                     }
                 }
                 .pointerInput(Unit) {
@@ -185,6 +245,7 @@ fun FullscreenImageViewer(
                     val touchSlop = viewConfiguration.touchSlop
                     awaitEachGesture {
                         awaitFirstDown(requireUnconsumed = false)
+                        if (currentEvent.buttons.isSecondaryPressed) return@awaitEachGesture
                         val velocityTracker = VelocityTracker()
                         var totalPan = Offset.Zero
                         var gestureMode = ViewerGestureMode.UNDETERMINED
@@ -342,4 +403,5 @@ private enum class ViewerGestureMode {
 
 private const val MIN_SCALE = 1f
 private const val MAX_SCALE = 8f
+private const val WHEEL_MAX_SCALE = 5f
 private const val DOUBLE_TAP_SCALE = 2.5f

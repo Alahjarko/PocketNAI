@@ -13,6 +13,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -28,7 +29,16 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -62,8 +72,12 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -107,18 +121,28 @@ import net.pocketnai.ui.settings.SettingsIcon
 import net.pocketnai.ui.settings.settingsClickable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.TextFieldValue
@@ -142,11 +166,18 @@ import net.pocketnai.domain.model.GalleryModels
 import net.pocketnai.domain.model.ReferenceRole
 import net.pocketnai.domain.prompt.PromptTitle
 import net.pocketnai.ui.LocalAppContainer
+import net.pocketnai.ui.Routes
 import net.pocketnai.ui.generate.ReferenceRoleChooserDialog
+import net.pocketnai.ui.motion.LocalImageMotion
 import net.pocketnai.ui.motion.imageMotionChrome
+import net.pocketnai.ui.motion.imageRouteIsMoving
+import net.pocketnai.ui.motion.rememberPocketHaptics
+import net.pocketnai.ui.state.GenerationPreviewStore
 import net.pocketnai.ui.common.CenteredHint
 import net.pocketnai.ui.common.labelRes
 import net.pocketnai.ui.common.messageRes
+import net.pocketnai.ui.common.mouseImageDragSource
+import net.pocketnai.ui.common.onSecondaryClick
 
 /**
  * 瀑布流画廊内容（规划书 4.3）。
@@ -173,9 +204,12 @@ fun GalleryPane(
     onUseAsReference: ((GalleryItem, ReferenceRole) -> Unit)? = null,
     supportsDirectorReference: Boolean = false,
     supportsVibeTransfer: Boolean = false,
+    searchFocusRequester: FocusRequester? = null,
+    onReuseItem: ((GalleryItem) -> Unit)? = null,
+    galleryViewModel: GalleryViewModel? = null,
 ) {
     val container = LocalAppContainer.current
-    val viewModel: GalleryViewModel = viewModel(
+    val viewModel: GalleryViewModel = galleryViewModel ?: viewModel(
         factory = viewModelFactory {
             initializer {
                 GalleryViewModel(
@@ -312,6 +346,7 @@ fun GalleryPane(
                         haptics.tick()
                         viewModel.enterSelectionMode()
                     },
+                    searchFocusRequester = searchFocusRequester,
                 )
             }
         }
@@ -327,7 +362,7 @@ fun GalleryPane(
                     modifier = Modifier.align(Alignment.Center),
                 )
             } else {
-                GalleryMotionGrid(
+                GalleryDesktopGrid(
                     state = gridState,
                     sections = sections,
                     fileOf = container.generationRepository::fileOf,
@@ -362,6 +397,36 @@ fun GalleryPane(
                     onRevealed = { viewModel.motionSlots.finish(it); motionRevision++ },
                     onDismissFailure = { viewModel.motionSlots.dismiss(it); motionRevision++ },
                     onDragSelect = viewModel::applyDragSelection,
+                    onToggleFavorite = { item ->
+                        if (!item.favorite) haptics.confirm() else haptics.tick()
+                        viewModel.toggleFavorite(item)
+                    },
+                    onReuseItem = onReuseItem?.let { reuse ->
+                        { item ->
+                            haptics.tick()
+                            reuse(item)
+                            scope.launch { snackbarHostState.showSnackbar("已复用参数到生成面板") }
+                        }
+                    },
+                    onUseAsReference = onUseAsReference,
+                    onQuickPickReference = if (onUseAsReference != null) {
+                        { item ->
+                            haptics.tick()
+                            if (supportsDirectorReference || supportsVibeTransfer) {
+                                referenceTarget = item
+                            } else {
+                                onUseAsReference(item, ReferenceRole.IMG2IMG)
+                            }
+                        }
+                    } else null,
+                    supportsDirectorReference = supportsDirectorReference,
+                    supportsVibeTransfer = supportsVibeTransfer,
+                    onInpaintImage = onInpaintImage,
+                    onCopyPrompt = { item ->
+                        copyToClipboard(context, item.prompt)
+                        scope.launch { snackbarHostState.showSnackbar("已复制提示词") }
+                    },
+                    onDeleteItem = { item -> viewModel.deleteGeneration(item.generationId) },
                 )
             }
 
@@ -472,6 +537,12 @@ fun GalleryPane(
                 copyToClipboard(context, target.prompt)
                 scope.launch { snackbarHostState.showSnackbar("已复制提示词") }
             },
+            onReuseParams = onReuseItem?.let { reuse ->
+                {
+                    reuse(target)
+                    scope.launch { snackbarHostState.showSnackbar("已复用参数到生成面板") }
+                }
+            },
             onUseAsReference = if (onUseAsReference != null && !target.relativePath.endsWith(".svg", ignoreCase = true)) {
                 {
                     if (supportsDirectorReference || supportsVibeTransfer) {
@@ -570,6 +641,7 @@ private fun GalleryFilterBar(
     onFavoritesOnlyChange: (Boolean) -> Unit,
     onClearAll: () -> Unit,
     onEnterSelectionMode: () -> Unit,
+    searchFocusRequester: FocusRequester? = null,
 ) {
     var queryField by remember { mutableStateOf(TextFieldValue(filter.query)) }
     val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
@@ -602,6 +674,7 @@ private fun GalleryFilterBar(
                 onQueryChange("")
             },
             modifier = Modifier.fillMaxWidth(),
+            inputModifier = if (searchFocusRequester != null) Modifier.focusRequester(searchFocusRequester) else Modifier,
             trailing = {
                 val filterInteraction = remember { MutableInteractionSource() }
                 val active = hiddenActiveCount > 0
@@ -834,7 +907,7 @@ private fun FilterValue(text: String) {
 }
 
 /** 时间轴的日期组头：跨两列（FullLine），像相册那样把图片按天隔开。 */
-private fun saveToSystemGallery(
+internal fun saveToSystemGallery(
     scope: CoroutineScope,
     context: Context,
     repository: GenerationRepository,
@@ -866,7 +939,7 @@ private fun saveToSystemGallery(
 private fun messageFor(context: Context, code: ErrorCode): String =
     context.getString(code.messageRes())
 
-private fun copyToClipboard(context: Context, text: String) {
+internal fun copyToClipboard(context: Context, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText("PocketNAI prompt", text))
 }
@@ -993,7 +1066,7 @@ private fun GallerySelectionBottomBar(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GalleryItemActionSheet(
+internal fun GalleryItemActionSheet(
     target: GalleryItem,
     imageFile: File,
     onDismiss: () -> Unit,
@@ -1003,8 +1076,9 @@ private fun GalleryItemActionSheet(
     onCopyPrompt: () -> Unit,
     onUseAsReference: (() -> Unit)?,
     onInpaint: (() -> Unit)?,
-    onEnterBatchMode: () -> Unit,
+    onEnterBatchMode: (() -> Unit)?,
     onDelete: () -> Unit,
+    onReuseParams: (() -> Unit)? = null,
 ) {
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -1138,6 +1212,17 @@ private fun GalleryItemActionSheet(
 
             // 分组操作列表
             SettingsCard {
+                if (onReuseParams != null) {
+                    SheetActionRow(
+                        icon = Icons.Default.Replay,
+                        label = "复用参数",
+                        onClick = {
+                            haptics.tick()
+                            dismissWith(onReuseParams, immediate = true)
+                        },
+                    )
+                    SheetActionDivider()
+                }
                 SheetActionRow(
                     icon = Icons.Default.ContentCopy,
                     label = stringResource(R.string.action_copy_prompt),
@@ -1172,15 +1257,17 @@ private fun GalleryItemActionSheet(
                         },
                     )
                 }
-                SheetActionDivider()
-                SheetActionRow(
-                    icon = Icons.Default.Checklist,
-                    label = stringResource(R.string.action_batch_mode),
-                    onClick = {
-                        haptics.tick()
-                        dismissWith(onEnterBatchMode, immediate = true)
-                    },
-                )
+                if (onEnterBatchMode != null) {
+                    SheetActionDivider()
+                    SheetActionRow(
+                        icon = Icons.Default.Checklist,
+                        label = stringResource(R.string.action_batch_mode),
+                        onClick = {
+                            haptics.tick()
+                            dismissWith(onEnterBatchMode, immediate = true)
+                        },
+                    )
+                }
                 SheetActionDivider()
                 SheetActionRow(
                     icon = Icons.Default.DeleteOutline,
@@ -1335,5 +1422,553 @@ private fun saveMultipleToSystemGallery(
         } else {
             snackbarHostState.showSnackbar(context.getString(R.string.common_unknown))
         }
+    }
+}
+
+/**
+ * 桌面/键鼠增强瀑布流网格：
+ * - 100% 保留触屏点击、滑动、长按弹出 [GalleryItemActionSheet] 与多选涂选；
+ * - 仅在鼠标悬停、右键与鼠标拖拽时激活悬浮快捷按钮、右键菜单与拖入右侧参考图面板。
+ */
+@Composable
+private fun GalleryDesktopGrid(
+    sections: List<GalleryMotionSection>,
+    fileOf: (GalleryItem) -> File,
+    previews: Map<String, GenerationPreviewStore.Preview>,
+    isSelectionMode: Boolean,
+    selectedIds: Set<String>,
+    onClick: (GalleryItem) -> Unit,
+    onLongClick: (GalleryItem) -> Unit,
+    onRevealed: (String) -> Unit,
+    onDismissFailure: (String) -> Unit,
+    state: LazyStaggeredGridState,
+    onDragSelect: (anchorIndex: Int, currentIndex: Int, orderedIds: List<String>, baseSelection: Set<String>, selectTarget: Boolean) -> Unit,
+    onToggleFavorite: (GalleryItem) -> Unit,
+    onReuseItem: ((GalleryItem) -> Unit)?,
+    onUseAsReference: ((GalleryItem, ReferenceRole) -> Unit)?,
+    onQuickPickReference: ((GalleryItem) -> Unit)?,
+    supportsDirectorReference: Boolean,
+    supportsVibeTransfer: Boolean,
+    onInpaintImage: (GalleryItem) -> Unit,
+    onCopyPrompt: (GalleryItem) -> Unit,
+    onDeleteItem: (GalleryItem) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val motion = LocalImageMotion.current
+    val returning = motion?.returning
+    val moving = imageRouteIsMoving()
+
+    LaunchedEffect(returning, sections) {
+        if (returning?.source != Routes.HOME) return@LaunchedEffect
+        val cards = sections.flatMap { it.slots }
+        val target = cards.indexOfFirst { it.image?.imageId == returning.imageId }
+        if (target >= 0) {
+            val index = target + 1
+            val layout = snapshotFlow { state.layoutInfo }.first { it.visibleItemsInfo.isNotEmpty() }
+            val key = cards[target].key
+            if (layout.visibleItemsInfo.none { it.key == key }) {
+                state.scrollToItem(index)
+                snapshotFlow { state.layoutInfo }.first { info -> info.visibleItemsInfo.any { it.key == key } }
+            }
+            motion.consume(returning)
+        }
+    }
+
+    val placementSpring = remember {
+        spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+            visibilityThreshold = IntOffset.VisibilityThreshold,
+        )
+    }
+
+    val dragSelectModifier = if (isSelectionMode) {
+        rememberDesktopDragSelectModifier(
+            sections = sections,
+            selectedIds = selectedIds,
+            state = state,
+            onDragSelect = onDragSelect,
+        )
+    } else {
+        Modifier
+    }
+
+    LazyVerticalStaggeredGrid(
+        columns = StaggeredGridCells.Adaptive(160.dp),
+        state = state,
+        contentPadding = PaddingValues(8.dp),
+        verticalItemSpacing = 8.dp,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier.fillMaxSize().then(dragSelectModifier),
+    ) {
+        sections.firstOrNull()?.let { first ->
+            item(key = "gallery-current-day", span = StaggeredGridItemSpan.FullLine) {
+                Text(
+                    first.label,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp, top = 4.dp),
+                )
+            }
+        }
+        sections.forEachIndexed { dayIndex, section ->
+            items(section.slots, key = { it.key }) { slot ->
+                val image = slot.image
+                val interactive = image != null && !isSelectionMode
+                val hoverInteraction = remember { MutableInteractionSource() }
+                val isHovered by hoverInteraction.collectIsHoveredAsState()
+                var contextMenuExpanded by remember { mutableStateOf(false) }
+                val isSvg = image?.relativePath?.endsWith(".svg", ignoreCase = true) == true
+
+                Box(
+                    modifier = Modifier
+                        .testTag(slot.key)
+                        .animateItem(
+                            fadeInSpec = null,
+                            placementSpec = if (moving || returning != null) null else placementSpring,
+                            fadeOutSpec = null,
+                        )
+                        .then(
+                            if (interactive && image != null) {
+                                Modifier
+                                    .hoverable(hoverInteraction)
+                                    .onSecondaryClick { contextMenuExpanded = true }
+                                    .then(
+                                        if (!isSvg) {
+                                            Modifier.mouseImageDragSource(localPath = image.relativePath)
+                                        } else Modifier,
+                                    )
+                            } else Modifier,
+                        ),
+                ) {
+                    GalleryMotionCard(
+                        slot = slot,
+                        imageFile = image?.let(fileOf),
+                        preview = previews[slot.generation?.id],
+                        isSelectionMode = isSelectionMode,
+                        isSelected = image?.imageId in selectedIds,
+                        onClick = { image?.let(onClick) },
+                        onLongClick = { image?.let(onLongClick) },
+                        onRevealed = { onRevealed(slot.key) },
+                        onDismissFailure = { slot.generation?.id?.let(onDismissFailure) },
+                        dateLabel = section.label.takeIf { dayIndex > 0 && slot.key == section.slots.first().key },
+                    )
+
+                    if (interactive && image != null) {
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = isHovered,
+                            enter = fadeIn(tween(120)),
+                            exit = fadeOut(tween(100)),
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(6.dp),
+                        ) {
+                            GalleryCardHoverActions(
+                                favorite = image.favorite,
+                                onToggleFavorite = { onToggleFavorite(image) },
+                                onUseAsReference = if (onQuickPickReference != null && !isSvg) {
+                                    { onQuickPickReference(image) }
+                                } else null,
+                                onReuseParams = onReuseItem?.let { reuse -> { reuse(image) } },
+                            )
+                        }
+
+                        GalleryItemContextMenu(
+                            item = image,
+                            expanded = contextMenuExpanded,
+                            onDismiss = { contextMenuExpanded = false },
+                            onToggleFavorite = { onToggleFavorite(image) },
+                            onReuseParams = onReuseItem?.let { reuse -> { reuse(image) } },
+                            onUseAsReference = if (onUseAsReference != null && !isSvg) {
+                                { role -> onUseAsReference(image, role) }
+                            } else null,
+                            supportsDirectorReference = supportsDirectorReference,
+                            supportsVibeTransfer = supportsVibeTransfer,
+                            onInpaint = if (!isSvg) ({ onInpaintImage(image) }) else null,
+                            onCopyPrompt = { onCopyPrompt(image) },
+                            onDelete = { onDeleteItem(image) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GalleryCardHoverActions(
+    favorite: Boolean,
+    onToggleFavorite: () -> Unit,
+    onUseAsReference: (() -> Unit)?,
+    onReuseParams: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = CircleShape,
+        color = Color.Black.copy(alpha = 0.68f),
+        modifier = modifier,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            HoverQuickIconButton(
+                icon = if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                contentDescription = if (favorite) "取消收藏" else "收藏",
+                tint = if (favorite) Color(0xFFFF6B81) else Color.White,
+                onClick = onToggleFavorite,
+            )
+            if (onUseAsReference != null) {
+                HoverQuickIconButton(
+                    icon = Icons.Default.AddPhotoAlternate,
+                    contentDescription = "用作参考图",
+                    tint = Color.White,
+                    onClick = onUseAsReference,
+                )
+            }
+            if (onReuseParams != null) {
+                HoverQuickIconButton(
+                    icon = Icons.Default.Replay,
+                    contentDescription = "复用参数",
+                    tint = Color.White,
+                    onClick = onReuseParams,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HoverQuickIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    tint: Color,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(30.dp)
+            .clip(CircleShape)
+            .clickable(role = Role.Button, onClickLabel = contentDescription, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
+/**
+ * 桌面鼠标右键快捷菜单：供相册卡片与首页大图工作台共用。
+ */
+@Composable
+internal fun GalleryItemContextMenu(
+    item: GalleryItem,
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onReuseParams: (() -> Unit)?,
+    onUseAsReference: ((ReferenceRole) -> Unit)?,
+    supportsDirectorReference: Boolean,
+    supportsVibeTransfer: Boolean,
+    onInpaint: (() -> Unit)?,
+    onCopyPrompt: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+    ) {
+        DropdownMenuItem(
+            text = { Text(stringResource(if (item.favorite) R.string.action_unfavorite else R.string.action_favorite)) },
+            leadingIcon = {
+                Icon(
+                    imageVector = if (item.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+            },
+            onClick = {
+                onDismiss()
+                onToggleFavorite()
+            },
+        )
+        if (onReuseParams != null) {
+            DropdownMenuItem(
+                text = { Text("复用参数") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Replay,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+                onClick = {
+                    onDismiss()
+                    onReuseParams()
+                },
+            )
+        }
+        if (onUseAsReference != null) {
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text("用作参考图 · 图生图") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Image,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+                onClick = {
+                    onDismiss()
+                    onUseAsReference(ReferenceRole.IMG2IMG)
+                },
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        if (supportsDirectorReference) "用作参考图 · Precise" else "用作参考图 · Precise（当前模型不支持）",
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.PersonSearch,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+                enabled = supportsDirectorReference,
+                onClick = {
+                    onDismiss()
+                    onUseAsReference(ReferenceRole.DIRECTOR)
+                },
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        if (supportsVibeTransfer) "用作参考图 · Vibe" else "用作参考图 · Vibe（当前模型不支持）",
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Style,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+                enabled = supportsVibeTransfer,
+                onClick = {
+                    onDismiss()
+                    onUseAsReference(ReferenceRole.VIBE)
+                },
+            )
+        }
+        if (onInpaint != null) {
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        if (item.relativePath.endsWith(".gif", ignoreCase = true)) {
+                            "编辑首帧"
+                        } else {
+                            stringResource(R.string.action_inpaint)
+                        },
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Brush,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+                onClick = {
+                    onDismiss()
+                    onInpaint()
+                },
+            )
+        }
+        HorizontalDivider()
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.action_copy_prompt)) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Default.ContentCopy,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+            },
+            onClick = {
+                onDismiss()
+                onCopyPrompt()
+            },
+        )
+        DropdownMenuItem(
+            text = {
+                Text(
+                    text = stringResource(R.string.action_delete),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Default.DeleteOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(18.dp),
+                )
+            },
+            onClick = {
+                onDismiss()
+                onDelete()
+            },
+        )
+    }
+}
+
+@Composable
+private fun rememberDesktopDragSelectModifier(
+    sections: List<GalleryMotionSection>,
+    selectedIds: Set<String>,
+    state: LazyStaggeredGridState,
+    onDragSelect: (anchorIndex: Int, currentIndex: Int, orderedIds: List<String>, baseSelection: Set<String>, selectTarget: Boolean) -> Unit,
+): Modifier {
+    val haptics = rememberPocketHaptics()
+    val density = LocalDensity.current
+
+    val keyToImageIndex = remember(sections) {
+        buildMap {
+            var idx = 0
+            sections.forEach { sec ->
+                sec.slots.forEach { slot ->
+                    if (slot.image != null) {
+                        put(slot.key, idx)
+                        idx++
+                    }
+                }
+            }
+        }
+    }
+    val orderedIds = remember(sections) {
+        sections.flatMap { sec -> sec.slots.mapNotNull { it.image?.imageId } }
+    }
+
+    val currentKeyMap by rememberUpdatedState(keyToImageIndex)
+    val currentOrderedIds by rememberUpdatedState(orderedIds)
+    val currentSelectedIds by rememberUpdatedState(selectedIds)
+    val currentOnDragSelect by rememberUpdatedState(onDragSelect)
+
+    var dragActive by remember { mutableStateOf(false) }
+    var dragPointer by remember { mutableStateOf(Offset.Zero) }
+    var dragAnchorIndex by remember { mutableIntStateOf(-1) }
+    var dragLastIndex by remember { mutableIntStateOf(-1) }
+    var dragBaseSelection by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var dragSelectTarget by remember { mutableStateOf(true) }
+
+    fun findImageIndexAt(point: Offset): Int? {
+        val visible = state.layoutInfo.visibleItemsInfo
+        val exact = visible.firstOrNull { item ->
+            point.x >= item.offset.x && point.x <= item.offset.x + item.size.width &&
+                point.y >= item.offset.y && point.y <= item.offset.y + item.size.height
+        }
+        if (exact != null) return currentKeyMap[exact.key]
+        val rowCandidate = visible.filter { item ->
+            item.key in currentKeyMap &&
+                point.y >= item.offset.y - 16 && point.y <= item.offset.y + item.size.height + 16
+        }.minByOrNull { item ->
+            val cx = item.offset.x + item.size.width / 2f
+            kotlin.math.abs(point.x - cx)
+        }
+        return rowCandidate?.let { currentKeyMap[it.key] }
+    }
+
+    val edgeZonePx = with(density) { 60.dp.toPx() }
+    val maxAutoScrollPx = with(density) { 12.dp.toPx() }
+    LaunchedEffect(dragActive) {
+        if (!dragActive) return@LaunchedEffect
+        while (dragActive) {
+            withFrameNanos { }
+            val viewportHeight = state.layoutInfo.viewportSize.height.toFloat()
+            if (viewportHeight <= 0f) continue
+            val py = dragPointer.y
+            val delta = when {
+                py < edgeZonePx && state.canScrollBackward -> {
+                    val factor = ((edgeZonePx - py) / edgeZonePx).coerceIn(0f, 1f)
+                    -maxAutoScrollPx * factor
+                }
+                py > viewportHeight - edgeZonePx && state.canScrollForward -> {
+                    val factor = ((py - (viewportHeight - edgeZonePx)) / edgeZonePx).coerceIn(0f, 1f)
+                    maxAutoScrollPx * factor
+                }
+                else -> 0f
+            }
+            if (delta != 0f) {
+                state.scrollBy(delta)
+                val idx = findImageIndexAt(dragPointer)
+                if (idx != null && idx != dragLastIndex && dragAnchorIndex >= 0) {
+                    dragLastIndex = idx
+                    currentOnDragSelect(
+                        dragAnchorIndex,
+                        idx,
+                        currentOrderedIds,
+                        dragBaseSelection,
+                        dragSelectTarget,
+                    )
+                    haptics.frequentTick()
+                }
+            }
+        }
+    }
+
+    return Modifier.pointerInput(Unit) {
+        detectDragGesturesAfterLongPress(
+            onDragStart = { startOffset ->
+                val hit = findImageIndexAt(startOffset) ?: return@detectDragGesturesAfterLongPress
+                val ids = currentOrderedIds
+                if (hit !in ids.indices) return@detectDragGesturesAfterLongPress
+                val base = currentSelectedIds
+                val targetSelect = ids[hit] !in base
+                dragAnchorIndex = hit
+                dragLastIndex = hit
+                dragBaseSelection = base
+                dragSelectTarget = targetSelect
+                dragPointer = startOffset
+                dragActive = true
+                haptics.longPress()
+                currentOnDragSelect(hit, hit, ids, base, targetSelect)
+            },
+            onDrag = { change, _ ->
+                if (!dragActive || dragAnchorIndex < 0) return@detectDragGesturesAfterLongPress
+                change.consume()
+                dragPointer = change.position
+                val hit = findImageIndexAt(change.position)
+                if (hit != null && hit != dragLastIndex) {
+                    dragLastIndex = hit
+                    currentOnDragSelect(
+                        dragAnchorIndex,
+                        hit,
+                        currentOrderedIds,
+                        dragBaseSelection,
+                        dragSelectTarget,
+                    )
+                    haptics.frequentTick()
+                }
+            },
+            onDragEnd = {
+                dragActive = false
+                dragAnchorIndex = -1
+                dragLastIndex = -1
+            },
+            onDragCancel = {
+                dragActive = false
+                dragAnchorIndex = -1
+                dragLastIndex = -1
+            },
+        )
     }
 }

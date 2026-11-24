@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
+import net.pocketnai.domain.artistlab.ArtistLabConfig
 import net.pocketnai.domain.artistlab.ArtistLabForm
 import net.pocketnai.domain.artistlab.ArtistCatalogEntry
 import net.pocketnai.domain.artistlab.ArtistCatalogImport
@@ -25,6 +26,14 @@ class ArtistLabStore(context: Context, val database: PocketNaiDatabase) {
 
     fun loadForm(): ArtistLabForm? = runCatching { json.decodeFromString<ArtistLabForm>(prefs.getString("form", null) ?: return null) }
         .getOrNull()?.takeIf { it.artists in 1..10 && it.minTicks in 10..30 && it.maxTicks in it.minTicks..30 }
+        ?.let { form ->
+            val sanitizedLocked = form.lockedArtists
+                .map { it.trim() }
+                .filter { it.startsWith("artist: ") }
+                .distinct()
+                .take(ArtistLabConfig.MAX_LOCKED_ARTISTS)
+            if (sanitizedLocked == form.lockedArtists) form else form.copy(lockedArtists = sanitizedLocked)
+        }
     fun saveForm(form: ArtistLabForm) { prefs.edit().putString("form", json.encodeToString(form)).apply() }
     fun excludedArtists(): Set<String> = catalogPrefs.getStringSet("excluded", emptySet()).orEmpty().toSet()
     fun saveExcludedArtists(tags: Set<String>) { catalogPrefs.edit().putStringSet("excluded", tags.toSet()).apply() }

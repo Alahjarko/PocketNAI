@@ -18,28 +18,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import net.pocketnai.data.local.ChatSummary
+import net.pocketnai.ui.common.onSecondaryClick
 import net.pocketnai.ui.settings.*
 
 @Composable
-internal fun ChatHistorySheet(state: ChatViewModel.UiState, vm: ChatViewModel, onDelete: (String) -> Unit, onDismiss: () -> Unit) {
+internal fun ChatHistorySidebarContent(
+    state: ChatViewModel.UiState,
+    vm: ChatViewModel,
+    onDelete: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    onNewConversation: () -> Unit = vm::newConversation,
+    onSelectConversation: (String) -> Unit = vm::selectConversation,
+) {
     var query by rememberSaveable { mutableStateOf("") }
     var rename by remember { mutableStateOf<ChatSummary?>(null) }
-    var chosen by remember { mutableStateOf<String?>(null) }
-    var startNew by remember { mutableStateOf(false) }
     val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
-    SettingsEditorSheet("历史对话", Icons.Default.History, onDismiss = {
-        when {
-            startNew -> vm.newConversation()
-            chosen != null -> chosen?.let(vm::selectConversation)
-        }
-        onDismiss()
-    }, scrollContent = false) {
-        val close = LocalSettingsSheetDismiss.current
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         FilledTonalButton(
             onClick = {
                 haptics.tick()
-                startNew = true
-                close()
+                onNewConversation()
             },
             enabled = !state.busy && !state.switchingConversation,
             shape = CircleShape,
@@ -66,7 +64,9 @@ internal fun ChatHistorySheet(state: ChatViewModel.UiState, vm: ChatViewModel, o
             modifier = Modifier.fillMaxWidth(),
             inputModifier = Modifier.testTag("chat-history-search"),
         )
-        val rows = remember(state.conversations, query) { state.conversations.filter { it.title.contains(query.trim(), ignoreCase = true) } }
+        val rows = remember(state.conversations, query) {
+            state.conversations.filter { it.title.contains(query.trim(), ignoreCase = true) }
+        }
         val activeId = state.current?.id
         if (rows.isEmpty()) Text(
             if (query.isBlank()) "还没有历史对话" else "没有匹配的对话",
@@ -80,7 +80,10 @@ internal fun ChatHistorySheet(state: ChatViewModel.UiState, vm: ChatViewModel, o
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = if (isCurrent) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f) else Color.Transparent,
-                    modifier = Modifier.animateItem().fillMaxWidth(),
+                    modifier = Modifier
+                        .animateItem()
+                        .fillMaxWidth()
+                        .onSecondaryClick(enabled = !state.busy) { menu = true },
                 ) {
                     ListItem(
                         headlineContent = {
@@ -109,8 +112,7 @@ internal fun ChatHistorySheet(state: ChatViewModel.UiState, vm: ChatViewModel, o
                         } else null,
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         modifier = Modifier.settingsClickable(!state.busy && !state.switchingConversation) {
-                            if (!isCurrent) chosen = row.id
-                            close()
+                            onSelectConversation(row.id)
                         },
                         trailingContent = {
                             Box {
@@ -135,5 +137,35 @@ internal fun ChatHistorySheet(state: ChatViewModel.UiState, vm: ChatViewModel, o
             onSave = { vm.renameConversation(row.id, title); true }) {
             OutlinedTextField(title, { title = it.take(120) }, label = { Text("标题") }, modifier = Modifier.fillMaxWidth())
         }
+    }
+}
+
+@Composable
+internal fun ChatHistorySheet(state: ChatViewModel.UiState, vm: ChatViewModel, onDelete: (String) -> Unit, onDismiss: () -> Unit) {
+    var chosen by remember { mutableStateOf<String?>(null) }
+    var startNew by remember { mutableStateOf(false) }
+    val activeId = state.current?.id
+    SettingsEditorSheet("历史对话", Icons.Default.History, onDismiss = {
+        when {
+            startNew -> vm.newConversation()
+            chosen != null -> chosen?.let(vm::selectConversation)
+        }
+        onDismiss()
+    }, scrollContent = false) {
+        val close = LocalSettingsSheetDismiss.current
+        ChatHistorySidebarContent(
+            state = state,
+            vm = vm,
+            onDelete = onDelete,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            onNewConversation = {
+                startNew = true
+                close()
+            },
+            onSelectConversation = { id ->
+                if (id != activeId) chosen = id
+                close()
+            },
+        )
     }
 }

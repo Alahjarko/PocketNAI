@@ -15,6 +15,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas as ComposeCanvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
@@ -64,12 +65,27 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.onSizeChanged
@@ -79,6 +95,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import java.io.File
+import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -95,6 +112,7 @@ import net.pocketnai.domain.model.ReferenceRole
 import net.pocketnai.ui.LocalAppContainer
 import net.pocketnai.ui.common.CenteredHint
 import net.pocketnai.ui.common.messageRes
+import net.pocketnai.ui.common.onMouseWheel
 import net.pocketnai.ui.generate.GenerateViewModel
 import net.pocketnai.ui.motion.rememberPocketHaptics
 
@@ -127,6 +145,10 @@ fun InpaintEditorScreen(
     var viewPan by remember { mutableStateOf(Offset.Zero) }
     var clearConfirm by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
+    var hoverPosition by remember { mutableStateOf<Offset?>(null) }
+    var hoverIsEraser by remember { mutableStateOf(false) }
+    var keyPreviewPulse by remember { mutableIntStateOf(0) }
+    val rootFocusRequester = remember { FocusRequester() }
 
     val brushInteraction = remember { MutableInteractionSource() }
     val dilationInteraction = remember { MutableInteractionSource() }
@@ -144,11 +166,49 @@ fun InpaintEditorScreen(
             previewHold = false
         }
     }
+    LaunchedEffect(keyPreviewPulse) {
+        if (keyPreviewPulse > 0) {
+            previewHold = true
+            delay(420)
+            if (!sliderActive) previewHold = false
+        }
+    }
+    LaunchedEffect(clearConfirm) {
+        if (!clearConfirm) runCatching { rootFocusRequester.requestFocus() }
+    }
     val previewAlpha by animateFloatAsState(
         targetValue = if (previewHold) 1f else 0f,
         animationSpec = tween(if (previewHold) 80 else 180),
         label = "brush-preview-alpha",
     )
+
+    fun adjustBrushRadius(delta: Float, showCenterPreview: Boolean = false) {
+        val next = (brushRadius + delta).coerceIn(
+            MaskImageProcessor.BRUSH_RANGE.start,
+            MaskImageProcessor.BRUSH_RANGE.endInclusive,
+        )
+        if (next != brushRadius) {
+            brushRadius = next
+            haptics.frequentTick()
+            if (showCenterPreview && hoverPosition == null) {
+                keyPreviewPulse++
+            }
+        }
+    }
+
+    fun undoLastStroke() {
+        if (strokes.isNotEmpty()) {
+            haptics.tick()
+            redoStack.add(strokes.removeAt(strokes.lastIndex))
+        }
+    }
+
+    fun redoLastStroke() {
+        if (redoStack.isNotEmpty()) {
+            haptics.tick()
+            strokes.add(redoStack.removeAt(redoStack.lastIndex))
+        }
+    }
 
     // 同一进程内来回导航时恢复上次的笔画。
     LaunchedEffect(Unit) {
@@ -231,6 +291,32 @@ fun InpaintEditorScreen(
     }
 
     Scaffold(
+        modifier = Modifier
+            .focusRequester(rootFocusRequester)
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown || clearConfirm) return@onPreviewKeyEvent false
+                val ctrlOrMeta = (event.isCtrlPressed || event.isMetaPressed) && !event.isAltPressed
+                when {
+                    ctrlOrMeta && event.key == Key.Z -> {
+                        if (event.isShiftPressed) redoLastStroke() else undoLastStroke()
+                        true
+                    }
+                    ctrlOrMeta && !event.isShiftPressed && event.key == Key.Y -> {
+                        redoLastStroke()
+                        true
+                    }
+                    !event.isCtrlPressed && !event.isMetaPressed && !event.isAltPressed && event.key == Key.LeftBracket -> {
+                        adjustBrushRadius(-4f, showCenterPreview = true)
+                        true
+                    }
+                    !event.isCtrlPressed && !event.isMetaPressed && !event.isAltPressed && event.key == Key.RightBracket -> {
+                        adjustBrushRadius(4f, showCenterPreview = true)
+                        true
+                    }
+                    else -> false
+                }
+            },
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.inpaint_title)) },
@@ -270,10 +356,82 @@ fun InpaintEditorScreen(
                     ComposeCanvas(
                         modifier = Modifier
                             .fillMaxSize()
+                            .onMouseWheel { deltaY, isCtrlPressed ->
+                                if (isCtrlPressed) {
+                                    val factor = 1.15f.pow((-deltaY).coerceIn(-3f, 3f))
+                                    val nextZoom = (currentZoom * factor).coerceIn(1f, MaskGeometry.MAX_VIEW_ZOOM)
+                                    val vsize = currentViewSize
+                                    val (clampedX, clampedY) = MaskGeometry.clampPan(
+                                        bitmapWidth = maskSize.width,
+                                        bitmapHeight = maskSize.height,
+                                        viewWidth = vsize.width.toFloat(),
+                                        viewHeight = vsize.height.toFloat(),
+                                        zoom = nextZoom,
+                                        panX = currentPan.x,
+                                        panY = currentPan.y,
+                                    )
+                                    viewZoom = nextZoom
+                                    viewPan = Offset(clampedX, clampedY)
+                                } else {
+                                    val step = when {
+                                        currentBrushRadius < 24f -> 2f
+                                        currentBrushRadius < 64f -> 4f
+                                        else -> 6f
+                                    }
+                                    adjustBrushRadius(-deltaY.coerceIn(-3f, 3f) * step)
+                                }
+                            }
+                            .pointerInput(Unit) {
+                                awaitPointerEventScope {
+                                    while (true) {
+                                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                                        val change = event.changes.firstOrNull()
+                                        val isHoverCapable = change != null && (
+                                            change.type == PointerType.Mouse ||
+                                                change.type == PointerType.Stylus ||
+                                                change.type == PointerType.Eraser
+                                            )
+                                        when (event.type) {
+                                            PointerEventType.Enter,
+                                            PointerEventType.Move,
+                                            PointerEventType.Press,
+                                            -> {
+                                                if (isHoverCapable && change != null) {
+                                                    hoverPosition = change.position
+                                                    hoverIsEraser = change.type == PointerType.Eraser || event.buttons.isSecondaryPressed
+                                                } else {
+                                                    hoverPosition = null
+                                                    hoverIsEraser = false
+                                                }
+                                            }
+                                            PointerEventType.Release -> {
+                                                if (isHoverCapable && change != null) {
+                                                    hoverPosition = change.position
+                                                    hoverIsEraser = change.type == PointerType.Eraser
+                                                } else {
+                                                    hoverPosition = null
+                                                    hoverIsEraser = false
+                                                }
+                                            }
+                                            PointerEventType.Exit -> {
+                                                hoverPosition = null
+                                                hoverIsEraser = false
+                                            }
+                                            else -> Unit
+                                        }
+                                    }
+                                }
+                            }
                             .pointerInput(maskSize) {
                                 val touchSlop = viewConfiguration.touchSlop
                                 awaitEachGesture {
                                     val firstDown = awaitFirstDown(requireUnconsumed = false)
+                                    val isSecondaryDrag = currentEvent.buttons.isSecondaryPressed
+                                    val isStylusEraser = firstDown.type == PointerType.Eraser
+                                    val effectiveErase = currentIsErase || isSecondaryDrag || isStylusEraser
+                                    if (isSecondaryDrag) {
+                                        firstDown.consume()
+                                    }
                                     val startTransform = currentTransform
                                     val startPoint = startTransform.toBitmap(
                                         firstDown.position.x,
@@ -282,7 +440,7 @@ fun InpaintEditorScreen(
                                         maskSize.height,
                                     )
                                     currentStroke = MaskStroke(
-                                        isErase = currentIsErase,
+                                        isErase = effectiveErase,
                                         radius = MaskGeometry.bitmapRadius(currentBrushRadius, startTransform),
                                         points = listOf(startPoint),
                                     )
@@ -292,7 +450,7 @@ fun InpaintEditorScreen(
                                     do {
                                         val event = awaitPointerEvent()
                                         val pressed = event.changes.filter { it.pressed }
-                                        if (pressed.size >= 2) {
+                                        if (pressed.size >= 2 && !isSecondaryDrag) {
                                             if (!multiTouch) {
                                                 multiTouch = true
                                                 if (paintPastSlop) {
@@ -337,6 +495,9 @@ fun InpaintEditorScreen(
                                                 currentStroke = currentStroke?.let { s -> s.copy(points = s.points + pt) }
                                                 pointer.consume()
                                             }
+                                        }
+                                        if (isSecondaryDrag) {
+                                            event.changes.forEach { it.consume() }
                                         }
                                     } while (event.changes.any { it.pressed })
 
@@ -402,6 +563,36 @@ fun InpaintEditorScreen(
                                 style = Stroke(width = 1.5.dp.toPx()),
                             )
                         }
+
+                        // 鼠标 / 手写笔悬停时的实时空心笔刷光标，严格匹配当前屏幕笔刷半径。
+                        hoverPosition?.let { cursor ->
+                            val cursorErase = currentStroke?.isErase ?: (isErase || hoverIsEraser)
+                            val bmpRadius = MaskGeometry.bitmapRadius(brushRadius, transform)
+                            val effectiveBmpRadius = if (cursorErase) bmpRadius else bmpRadius + dilation.coerceAtLeast(0f)
+                            val screenRadius = (effectiveBmpRadius * transform.scale).coerceAtLeast(2f)
+                            val strokeWidthPx = 1.5.dp.toPx()
+                            drawCircle(
+                                color = ComposeColor.Black.copy(alpha = 0.55f),
+                                radius = screenRadius + 1.dp.toPx(),
+                                center = cursor,
+                                style = Stroke(width = strokeWidthPx),
+                            )
+                            drawCircle(
+                                color = if (cursorErase) {
+                                    ComposeColor.White.copy(alpha = 0.92f)
+                                } else {
+                                    primaryComposeColor.copy(alpha = 0.95f)
+                                },
+                                radius = screenRadius,
+                                center = cursor,
+                                style = Stroke(width = strokeWidthPx),
+                            )
+                            drawCircle(
+                                color = ComposeColor.White.copy(alpha = 0.85f),
+                                radius = 1.5.dp.toPx(),
+                                center = cursor,
+                            )
+                        }
                     }
 
                     if (viewZoom > 1.02f) {
@@ -451,23 +642,13 @@ fun InpaintEditorScreen(
                         label = { Text(stringResource(R.string.inpaint_eraser)) },
                     )
                     IconButton(
-                        onClick = {
-                            if (strokes.isNotEmpty()) {
-                                haptics.tick()
-                                redoStack.add(strokes.removeAt(strokes.lastIndex))
-                            }
-                        },
+                        onClick = { undoLastStroke() },
                         enabled = strokes.isNotEmpty(),
                     ) {
                         Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = stringResource(R.string.inpaint_undo))
                     }
                     IconButton(
-                        onClick = {
-                            if (redoStack.isNotEmpty()) {
-                                haptics.tick()
-                                strokes.add(redoStack.removeAt(redoStack.lastIndex))
-                            }
-                        },
+                        onClick = { redoLastStroke() },
                         enabled = redoStack.isNotEmpty(),
                     ) {
                         Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = stringResource(R.string.inpaint_redo))

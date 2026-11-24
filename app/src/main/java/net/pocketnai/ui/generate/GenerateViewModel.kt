@@ -702,6 +702,62 @@ class GenerateViewModel(
         }
     }
 
+    /**
+     * 从抽卡实验室一键应用画师串到首页生成面板：
+     * - 开启「独立画师提示词框」时直接替换画师框并与主正向词合并；
+     * - 关闭时先剥离已有 `artist:` 标签，再将新画师串置顶单独成行。
+     */
+    fun applyArtistChainFromLab(artistChain: String) {
+        val cleaned = artistChain.trim()
+        if (cleaned.isEmpty()) return
+        _state.update { current ->
+            if (settingsStore.artistPromptSplitEnabled.value) {
+                val combined = net.pocketnai.domain.prompt.ArtistPromptSplitter.combine(cleaned, current.positiveMainPrompt)
+                current.copy(
+                    artistPrompt = cleaned,
+                    promptTemplate = combined,
+                    params = current.params.copy(prompt = combined),
+                    artistTextRevision = current.artistTextRevision + 1,
+                    textRevision = current.textRevision + 1,
+                    expandSheetSignal = current.expandSheetSignal + 1,
+                )
+            } else {
+                val split = net.pocketnai.domain.prompt.ArtistPromptSplitter.split(
+                    current.promptTemplate,
+                    extractOnlyCompleted = false,
+                )
+                val baseMain = if (split.extractedAny) split.mainPrompt else current.promptTemplate
+                val combined = net.pocketnai.domain.prompt.ArtistPromptSplitter.combine(cleaned, baseMain)
+                current.copy(
+                    promptTemplate = combined,
+                    positiveMainPrompt = combined,
+                    params = current.params.copy(prompt = combined),
+                    textRevision = current.textRevision + 1,
+                    expandSheetSignal = current.expandSheetSignal + 1,
+                )
+            }
+        }
+    }
+
+    /**
+     * 从首页工作台或画廊卡片一键复用历史参数与参考图（不自动开始生成）。
+     */
+    fun reuseGalleryItem(item: net.pocketnai.domain.model.GalleryItem) {
+        viewModelScope.launch {
+            val detail = repository.loadDetail(item.imageId) ?: return@launch
+            val generation = detail.generation
+            draftStore.post(
+                GenerationRequest(
+                    params = generation.params,
+                    mode = generation.mode,
+                    references = generation.references,
+                    openAi = generation.openAi?.params,
+                ),
+            )
+            requestExpandSheet()
+        }
+    }
+
     fun onNegativePromptChange(value: String) {
         _state.update {
             it.copy(negativeTemplate = value, params = it.params.copy(negativePrompt = value))

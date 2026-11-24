@@ -71,6 +71,43 @@ class SettingsStore(context: Context) {
         _chatEnabled.value = enabled
     }
 
+    private val _chatEnterToSend = MutableStateFlow(prefs.getBoolean(KEY_CHAT_ENTER_TO_SEND, true))
+    val chatEnterToSend: StateFlow<Boolean> = _chatEnterToSend.asStateFlow()
+    fun setChatEnterToSend(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CHAT_ENTER_TO_SEND, enabled).apply()
+        _chatEnterToSend.value = enabled
+    }
+
+    private val _tabletHomeViewMode = MutableStateFlow(
+        normalizeTabletHomeViewMode(prefs.getString(KEY_TABLET_HOME_VIEW_MODE, TABLET_HOME_VIEW_MODE_GALLERY)),
+    )
+    val tabletHomeViewMode: StateFlow<String> = _tabletHomeViewMode.asStateFlow()
+    fun setTabletHomeViewMode(mode: String) {
+        val normalized = normalizeTabletHomeViewMode(mode)
+        prefs.edit().putString(KEY_TABLET_HOME_VIEW_MODE, normalized).apply()
+        _tabletHomeViewMode.value = normalized
+    }
+
+    private val _tabletGeneratePaneWidthDp = MutableStateFlow(
+        prefs.getInt(KEY_TABLET_GENERATE_PANE_WIDTH_DP, DEFAULT_TABLET_GENERATE_PANE_WIDTH_DP)
+            .coerceIn(MIN_TABLET_GENERATE_PANE_WIDTH_DP, MAX_TABLET_GENERATE_PANE_WIDTH_DP),
+    )
+    val tabletGeneratePaneWidthDp: StateFlow<Int> = _tabletGeneratePaneWidthDp.asStateFlow()
+    fun setTabletGeneratePaneWidthDp(widthDp: Int) {
+        val coerced = widthDp.coerceIn(MIN_TABLET_GENERATE_PANE_WIDTH_DP, MAX_TABLET_GENERATE_PANE_WIDTH_DP)
+        prefs.edit().putInt(KEY_TABLET_GENERATE_PANE_WIDTH_DP, coerced).apply()
+        _tabletGeneratePaneWidthDp.value = coerced
+    }
+
+    private val _tabletWorkbenchSyncFilter = MutableStateFlow(
+        prefs.getBoolean(KEY_TABLET_WORKBENCH_SYNC_FILTER, true),
+    )
+    val tabletWorkbenchSyncFilter: StateFlow<Boolean> = _tabletWorkbenchSyncFilter.asStateFlow()
+    fun setTabletWorkbenchSyncFilter(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_TABLET_WORKBENCH_SYNC_FILTER, enabled).apply()
+        _tabletWorkbenchSyncFilter.value = enabled
+    }
+
     private val _streamingPreviewEnabled = MutableStateFlow(
         // 默认关闭（2026-09-16）：功能本身已验证可用，但真机观感与官方网页版有明显差距
         // （网页版对中间图做过平滑处理，我们拿到的是原始采样帧，且生成只要几秒时一闪而过），
@@ -165,8 +202,23 @@ class SettingsStore(context: Context) {
         const val KEY_THEME_ACCENT = "theme_accent"
         const val KEY_SUBSCRIPTION_OVERRIDE = "subscription_override"
         const val KEY_UPDATE_DISMISSED = "update_dismissed_version_code"
+        const val KEY_CHAT_ENTER_TO_SEND = "chat_enter_to_send"
+        const val KEY_TABLET_HOME_VIEW_MODE = "tablet_home_view_mode"
+        const val KEY_TABLET_GENERATE_PANE_WIDTH_DP = "tablet_generate_pane_width_dp"
+        const val KEY_TABLET_WORKBENCH_SYNC_FILTER = "tablet_workbench_sync_filter"
+
+        const val TABLET_HOME_VIEW_MODE_GALLERY = "gallery"
+        const val TABLET_HOME_VIEW_MODE_STAGE = "stage"
+        const val DEFAULT_TABLET_GENERATE_PANE_WIDTH_DP = 400
+        const val MIN_TABLET_GENERATE_PANE_WIDTH_DP = 320
+        const val MAX_TABLET_GENERATE_PANE_WIDTH_DP = 560
 
         /** 连续失败阈值，需在协议探针阶段用真实数据确认（规划书 6.3）。 */
         const val STREAMING_FAILURE_THRESHOLD = 3
+
+        fun normalizeTabletHomeViewMode(mode: String?): String = when (mode) {
+            TABLET_HOME_VIEW_MODE_STAGE -> TABLET_HOME_VIEW_MODE_STAGE
+            else -> TABLET_HOME_VIEW_MODE_GALLERY
+        }
     }
 }

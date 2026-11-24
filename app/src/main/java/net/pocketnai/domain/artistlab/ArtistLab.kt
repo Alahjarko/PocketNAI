@@ -34,8 +34,17 @@ class ArtistLabPreflightChanged : RuntimeException("发送前账号或费用改�
 
 /** 实验表单草稿与批次参数快照分开，允许保留用户尚未填完的数字。 */
 @Serializable
-data class ArtistLabForm(val prompt: String, val negative: String, val seed: String, val count: String,
-                         val artists: Int, val minTicks: Int, val maxTicks: Int)
+data class ArtistLabForm(
+    val prompt: String,
+    val negative: String,
+    val seed: String,
+    val count: String,
+    val artists: Int,
+    val minTicks: Int,
+    val maxTicks: Int,
+    val lockedArtists: List<String> = emptyList(),
+    val tieredWeights: Boolean = false,
+)
 
 @Serializable
 data class ArtistLabConfig(
@@ -46,25 +55,65 @@ data class ArtistLabConfig(
     val drawCount: Int,
     val catalogHash: String,
     val templatesResolved: Boolean = false,
+    val lockedArtists: List<String> = emptyList(),
+    val tieredWeights: Boolean = false,
 ) {
     init {
         require(artistCount in 1..10)
         require(minTicks in 10..30 && maxTicks in minTicks..30)
         require(drawCount in 1..10_000)
+        require(lockedArtists.size <= MAX_LOCKED_ARTISTS)
+        require(lockedArtists.distinct().size == lockedArtists.size)
+        require(lockedArtists.all { it.startsWith("artist: ") })
+    }
+
+    companion object {
+        const val MAX_LOCKED_ARTISTS = 3
     }
 }
 
 object ArtistLabPlanner {
+    /** 返回阶梯权重模式下的 (辅画师上限 lowerMax, 主画师下限 upperMin)。 */
+    fun tieredBounds(minTicks: Int, maxTicks: Int): Pair<Int, Int> {
+        require(minTicks in 10..30 && maxTicks in minTicks..30)
+        val lowerMax = (minTicks + maxTicks) / 2
+        val upperMin = (minTicks + maxTicks + 1) / 2
+        return lowerMax to upperMin
+    }
+
+    /** 阶梯权重模式下主画师数量：存在锁定基底且仍有随机名额时全部锁定为主画师，否则首位为主画师。 */
+    fun primaryArtistCount(artistCount: Int, lockedCount: Int): Int {
+        return if (lockedCount in 1 until artistCount) lockedCount else 1
+    }
+
     fun plan(pool: List<String>, config: ArtistLabConfig, random: Random): List<ArtistMix> {
-        require(pool.distinct().size == pool.size && pool.size >= config.artistCount)
+        require(pool.distinct().size == pool.size)
+        val locked = config.lockedArtists.distinct().take(minOf(ArtistLabConfig.MAX_LOCKED_ARTISTS, config.artistCount))
+        val lockedSet = locked.toSet()
+        val remainingPool = if (lockedSet.isEmpty()) pool else pool.filterNot { it in lockedSet }
+        val remainingCount = config.artistCount - locked.size
+        require(remainingPool.size >= remainingCount)
+        val (lowerMax, upperMin) = tieredBounds(config.minTicks, config.maxTicks)
+        val primaryCount = primaryArtistCount(config.artistCount, locked.size)
         return List(config.drawCount) {
             // 只抽前 k 项的 Fisher–Yates：每张 O(k)，不为一万次抽卡重复洗牌整个词库。
             val swaps = mutableMapOf<Int, Int>()
-            val artists = (0 until config.artistCount).map { index ->
-                val pick = random.nextInt(index, pool.size)
+            val pickedTags = ArrayList<String>(config.artistCount)
+            pickedTags.addAll(locked)
+            for (index in 0 until remainingCount) {
+                val pick = random.nextInt(index, remainingPool.size)
                 val selected = swaps[pick] ?: pick
                 swaps[pick] = swaps[index] ?: index
-                ArtistTag(pool[selected], random.nextInt(config.minTicks, config.maxTicks + 1))
+                pickedTags += remainingPool[selected]
+            }
+            val artists = pickedTags.mapIndexed { slot, tag ->
+                val ticks = if (config.tieredWeights) {
+                    if (slot < primaryCount) random.nextInt(upperMin, config.maxTicks + 1)
+                    else random.nextInt(config.minTicks, lowerMax + 1)
+                } else {
+                    random.nextInt(config.minTicks, config.maxTicks + 1)
+                }
+                ArtistTag(tag, ticks)
             }
             ArtistMix(artists)
         }

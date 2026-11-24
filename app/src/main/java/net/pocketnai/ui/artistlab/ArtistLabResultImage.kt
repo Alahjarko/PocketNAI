@@ -27,6 +27,7 @@ internal fun ArtistLabResultImage(
     resolve: (String) -> File,
     onOpen: (String) -> Unit,
     modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
 ) {
     val motion = LocalImageMotion.current
     val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
@@ -58,10 +59,14 @@ internal fun ArtistLabResultImage(
                         scaleY = s
                     }
                 }
-                .clickable(enabled = decoded && (!watched || revealed)) {
-                    if (sfw.masks(file, image.sensitivePrompt)) haptics.tick()
-                    motion?.preview = ImageOriginPreview(image.imageId, file!!, image.aspectRatio, "抽卡结果", image.sensitivePrompt)
-                    onOpen(image.imageId)
+                .clickable(enabled = onClick != null || (decoded && (!watched || revealed))) {
+                    if (onClick != null) {
+                        onClick()
+                    } else {
+                        if (sfw.masks(file, image.sensitivePrompt)) haptics.tick()
+                        motion?.preview = ImageOriginPreview(image.imageId, file!!, image.aspectRatio, "抽卡结果", image.sensitivePrompt)
+                        onOpen(image.imageId)
+                    }
                 },
         )
         if (failed) Text(

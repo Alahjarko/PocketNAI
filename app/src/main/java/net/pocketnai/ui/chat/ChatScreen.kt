@@ -2,17 +2,36 @@ package net.pocketnai.ui.chat
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -30,6 +49,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.CallSplit
+import androidx.compose.material.icons.automirrored.filled.MenuOpen
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -39,15 +59,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.window.Dialog
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import net.pocketnai.ui.common.imageUriDropTarget
+import net.pocketnai.ui.common.onSecondaryClick
 import net.pocketnai.ui.generate.HistoryImagePickerDialog
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,6 +87,7 @@ import net.pocketnai.domain.chat.*
 import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -174,6 +200,13 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
     }
     val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
     val chatHaptics = net.pocketnai.ui.motion.rememberPocketHaptics()
+    val enterToSendFlow = remember(context) {
+        (context.applicationContext as? net.pocketnai.PocketNaiApplication)?.container?.settingsStore?.chatEnterToSend
+    }
+    val fallbackEnterToSendFlow = remember { MutableStateFlow(true) }
+    val enterToSend by (enterToSendFlow ?: fallbackEnterToSendFlow).collectAsStateWithLifecycle()
+    var sidebarOpen by rememberSaveable { mutableStateOf(true) }
+    var dragOver by remember { mutableStateOf(false) }
     val openAttachment: (ChatAttachment) -> Unit = { attachment ->
         if (sfw.masks(resolveImage(attachment.relativePath), attachment.hasSensitivePrompt)) {
             chatHaptics.tick()
@@ -186,154 +219,279 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
         following = true
         viewModel.send(input.text)
     }
-    ChatPageLayout(header = {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(
-                onClick = { chatHaptics.tick(); sessionsOpen = true },
-                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape),
-            ) {
-                Icon(Icons.Default.Forum, "历史对话")
-            }
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(Icons.Default.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                    Text(config.assistantName.ifBlank { "绘伴" }, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                }
-                TextButton(onClick = { modelsOpen = true }, enabled = !state.busy,
-                    modifier = Modifier.testTag("chat-model-picker"), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
-                    val providerName = catalog.providers.firstOrNull { it.id == catalog.activeProviderId }?.name
-                    Text(if (config.model.isBlank()) "选择模型" else "${providerName.orEmpty()} · ${config.model}",
-                        modifier = Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Icon(Icons.Default.ArrowDropDown, "切换模型", Modifier.size(18.dp))
-                }
-            }
-            IconButton(onClick = { chatHaptics.tick(); imagesOpen = true }, modifier = Modifier.testTag("chat-image-history").background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)) {
-                Icon(Icons.Default.PhotoLibrary, "打开对话图片记录")
-            }
-        }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-    }, messages = {
-        LazyColumn(state = list, modifier = Modifier.fillMaxSize().nestedScroll(userScroll).testTag("chat-messages"),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (entries.isEmpty()) item {
-                Column(
-                    Modifier.fillMaxWidth().padding(vertical = 48.dp, horizontal = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown &&
+                    (event.isCtrlPressed || event.isMetaPressed) &&
+                    !event.isAltPressed &&
+                    !event.isShiftPressed &&
+                    event.key == Key.N
                 ) {
-                    if (!hasKey || config.model.isBlank()) {
+                    if (!state.busy && !state.switchingConversation && !state.importingAttachment) {
+                        chatHaptics.tick()
+                        viewModel.newConversation()
+                    }
+                    true
+                } else {
+                    false
+                }
+            },
+    ) {
+        val isWide = maxWidth >= 840.dp
+        LaunchedEffect(isWide) {
+            if (isWide) sessionsOpen = false
+        }
+        Row(Modifier.fillMaxSize()) {
+            if (isWide) {
+                AnimatedVisibility(
+                    visible = sidebarOpen,
+                    enter = expandHorizontally(tween(200, easing = FastOutSlowInEasing)) + fadeIn(tween(150)),
+                    exit = shrinkHorizontally(tween(180, easing = FastOutSlowInEasing)) + fadeOut(tween(120)),
+                ) {
+                    Row(Modifier.fillMaxHeight()) {
                         Surface(
-                            shape = RoundedCornerShape(24.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerLow,
-                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.surfaceContainerLowest,
+                            modifier = Modifier.width(260.dp).fillMaxHeight().testTag("chat-history-sidebar"),
                         ) {
                             Column(
-                                Modifier.padding(horizontal = 24.dp, vertical = 28.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.fillMaxSize().padding(12.dp),
                                 verticalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
-                                Box(
-                                    Modifier.size(48.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-                                    contentAlignment = Alignment.Center,
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
                                 ) {
                                     Icon(
-                                        Icons.Default.AutoAwesome,
+                                        Icons.Default.History,
                                         contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier.size(24.dp),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp),
                                     )
+                                    Text("历史对话", style = MaterialTheme.typography.titleMedium)
                                 }
-                                Text("开始前先连接模型", style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    "请在设置 → 连接与人格配置提供商和模型",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ChatHistorySidebarContent(
+                                    state = state,
+                                    vm = viewModel,
+                                    onDelete = { deleteId = it },
+                                    modifier = Modifier.weight(1f).fillMaxWidth(),
                                 )
                             }
                         }
+                        VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                     }
                 }
             }
-            items(entries, key = { it.id }, contentType = { it.role }) { entry ->
-                ChatTimelineEntry(
-                    entry = entry,
-                    viewModel = viewModel,
-                    resolveImage = resolveImage,
-                    onOpenImage = onOpenImage,
-                    onRead = { title, text -> reading = title to text },
-                    onOpenAttachment = openAttachment,
-                    busy = state.busy || state.switchingConversation,
-                    onEdit = { editingEntry = it },
-                    onRetry = {
-                        if (!hasKey || config.model.isBlank()) { modelsOpen = true }
-                        else { following = true; viewModel.retryEntry(it.id) }
-                    },
-                    onBranch = { viewModel.branchFrom(it.id) },
-                )
-            }
-            state.streamId?.let { responseId -> item(key = responseId, contentType = "assistant") {
-                ChatTimelineEntry(null, viewModel, resolveImage, onOpenImage,
-                    { title, text -> reading = title to text }, openAttachment, busy = true)
-            } }
-            state.pending?.let { pending -> item {
-                ChatImagePlanCard(pending.plan, { viewModel.confirmImage(pending.callId, true) },
-                    { viewModel.confirmImage(pending.callId, false) }, { title, text -> reading = title to text },
-                    resolveImage = resolveImage)
-            } }
-            if (state.busy && state.pending == null) item(key = "activity", contentType = "activity") { ChatReplyIndicator(state.phase) }
-            if (state.stoppingImages) item { Text("将在当前图片完成后停止，剩余图片不会发送", style = MaterialTheme.typography.bodySmall) }
-            state.error?.let { error -> item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                    IconButton(onClick = viewModel::dismissError) { Icon(Icons.Default.Close, "关闭错误提示") }
-                }
-            } }
-        }
-    }, floating = {
-        ChatJumpToLatest(visible = !following && (entries.isNotEmpty() || state.busy), onClick = { following = true })
-    }, composer = {
-        ChatComposer(value = input, onValueChange = { input = it; viewModel.updateDraft(it.text, it.selection.start, it.selection.end) }, assistantName = config.assistantName,
-            editingEnabled = !state.switchingConversation && state.current != null,
-            busy = state.busy, generating = state.generating, importing = state.importingAttachment || state.switchingConversation || state.current == null,
-            hasAttachments = state.draftAttachments.isNotEmpty(), onSend = { submit() }, onStop = viewModel::stop,
-            attachments = {
-            if (state.draftAttachments.isNotEmpty()) LazyRow(Modifier.fillMaxWidth().testTag("chat-attachment-strip"),
-                contentPadding = PaddingValues(start = 14.dp, top = 12.dp, end = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(state.draftAttachments, key = { it.id }) { attachment ->
-                    Box(Modifier.size(80.dp)) {
-                        net.pocketnai.ui.safety.SfwAsyncImage(resolveImage(attachment.relativePath), if (attachment.promptContext != null) "待发送图片，已附生成参数" else "待发送图片", sensitive = attachment.hasSensitivePrompt, contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).clickable { openAttachment(attachment) })
-                        if (attachment.promptContext != null) AttachmentParametersButton(Modifier.align(Alignment.BottomStart).padding(3.dp)) { openAttachment(attachment) }
-                        IconButton(onClick = { viewModel.removeAttachment(attachment.id) }, enabled = !state.busy && !state.importingAttachment,
-                            modifier = Modifier.align(Alignment.TopEnd).size(32.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape).testTag("chat-remove-attachment")) {
-                            Icon(Icons.Default.Close, "移除图片", modifier = Modifier.size(18.dp))
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .imageUriDropTarget(
+                        enabled = !state.busy && !state.importingAttachment && !state.switchingConversation && state.current != null,
+                        onDragStateChange = { dragOver = it },
+                        onDropLocalPath = { dropped ->
+                            val filesRoot = runCatching { context.filesDir.canonicalPath }.getOrNull()
+                            val relative = if (filesRoot != null && dropped.startsWith(filesRoot + File.separator)) {
+                                dropped.removePrefix(filesRoot + File.separator)
+                            } else {
+                                dropped
+                            }
+                            viewModel.addGalleryImage(relative)
+                        },
+                        onDropUri = { uri -> viewModel.addPhoto(uri) },
+                    ),
+            ) {
+                ChatPageLayout(header = {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (isWide) {
+                            IconButton(
+                                onClick = { chatHaptics.tick(); sidebarOpen = !sidebarOpen },
+                                modifier = Modifier
+                                    .testTag("chat-sidebar-toggle")
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape),
+                            ) {
+                                Icon(
+                                    if (sidebarOpen) Icons.AutoMirrored.Filled.MenuOpen else Icons.Default.Forum,
+                                    if (sidebarOpen) "收起历史对话" else "展开历史对话",
+                                )
+                            }
+                        } else {
+                            IconButton(
+                                onClick = { chatHaptics.tick(); sessionsOpen = true },
+                                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape),
+                            ) {
+                                Icon(Icons.Default.Forum, "历史对话")
+                            }
+                        }
+                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Default.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                Text(config.assistantName.ifBlank { "绘伴" }, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                            }
+                            TextButton(onClick = { modelsOpen = true }, enabled = !state.busy,
+                                modifier = Modifier.testTag("chat-model-picker"), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                                val providerName = catalog.providers.firstOrNull { it.id == catalog.activeProviderId }?.name
+                                Text(if (config.model.isBlank()) "选择模型" else "${providerName.orEmpty()} · ${config.model}",
+                                    modifier = Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Icon(Icons.Default.ArrowDropDown, "切换模型", Modifier.size(18.dp))
+                            }
+                        }
+                        IconButton(onClick = { chatHaptics.tick(); imagesOpen = true }, modifier = Modifier.testTag("chat-image-history").background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)) {
+                            Icon(Icons.Default.PhotoLibrary, "打开对话图片记录")
+                        }
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                }, messages = {
+                    LazyColumn(state = list, modifier = Modifier.fillMaxSize().nestedScroll(userScroll).testTag("chat-messages"),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (entries.isEmpty()) item {
+                            Column(
+                                Modifier.fillMaxWidth().padding(vertical = 48.dp, horizontal = 12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                if (!hasKey || config.model.isBlank()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(24.dp),
+                                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Column(
+                                            Modifier.padding(horizontal = 24.dp, vertical = 28.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                                        ) {
+                                            Box(
+                                                Modifier.size(48.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.AutoAwesome,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                    modifier = Modifier.size(24.dp),
+                                                )
+                                            }
+                                            Text("开始前先连接模型", style = MaterialTheme.typography.titleMedium)
+                                            Text(
+                                                "请在设置 → 连接与人格配置提供商和模型",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        items(entries, key = { it.id }, contentType = { it.role }) { entry ->
+                            ChatTimelineEntry(
+                                entry = entry,
+                                viewModel = viewModel,
+                                resolveImage = resolveImage,
+                                onOpenImage = onOpenImage,
+                                onRead = { title, text -> reading = title to text },
+                                onOpenAttachment = openAttachment,
+                                busy = state.busy || state.switchingConversation,
+                                onEdit = { editingEntry = it },
+                                onRetry = {
+                                    if (!hasKey || config.model.isBlank()) { modelsOpen = true }
+                                    else { following = true; viewModel.retryEntry(it.id) }
+                                },
+                                onBranch = { viewModel.branchFrom(it.id) },
+                            )
+                        }
+                        state.streamId?.let { responseId -> item(key = responseId, contentType = "assistant") {
+                            ChatTimelineEntry(null, viewModel, resolveImage, onOpenImage,
+                                { title, text -> reading = title to text }, openAttachment, busy = true)
+                        } }
+                        state.pending?.let { pending -> item {
+                            ChatImagePlanCard(pending.plan, { viewModel.confirmImage(pending.callId, true) },
+                                { viewModel.confirmImage(pending.callId, false) }, { title, text -> reading = title to text },
+                                resolveImage = resolveImage)
+                        } }
+                        if (state.busy && state.pending == null) item(key = "activity", contentType = "activity") { ChatReplyIndicator(state.phase) }
+                        if (state.stoppingImages) item { Text("将在当前图片完成后停止，剩余图片不会发送", style = MaterialTheme.typography.bodySmall) }
+                        state.error?.let { error -> item {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                                IconButton(onClick = viewModel::dismissError) { Icon(Icons.Default.Close, "关闭错误提示") }
+                            }
+                        } }
+                    }
+                }, floating = {
+                    ChatJumpToLatest(visible = !following && (entries.isNotEmpty() || state.busy), onClick = { following = true })
+                }, composer = {
+                    ChatComposer(value = input, onValueChange = { input = it; viewModel.updateDraft(it.text, it.selection.start, it.selection.end) }, assistantName = config.assistantName,
+                        editingEnabled = !state.switchingConversation && state.current != null,
+                        enterToSend = enterToSend,
+                        busy = state.busy, generating = state.generating, importing = state.importingAttachment || state.switchingConversation || state.current == null,
+                        hasAttachments = state.draftAttachments.isNotEmpty(), onSend = { submit() }, onStop = viewModel::stop,
+                        attachments = {
+                        if (state.draftAttachments.isNotEmpty()) LazyRow(Modifier.fillMaxWidth().testTag("chat-attachment-strip"),
+                            contentPadding = PaddingValues(start = 14.dp, top = 12.dp, end = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            items(state.draftAttachments, key = { it.id }) { attachment ->
+                                Box(Modifier.size(80.dp)) {
+                                    net.pocketnai.ui.safety.SfwAsyncImage(resolveImage(attachment.relativePath), if (attachment.promptContext != null) "待发送图片，已附生成参数" else "待发送图片", sensitive = attachment.hasSensitivePrompt, contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).clickable { openAttachment(attachment) })
+                                    if (attachment.promptContext != null) AttachmentParametersButton(Modifier.align(Alignment.BottomStart).padding(3.dp)) { openAttachment(attachment) }
+                                    IconButton(onClick = { viewModel.removeAttachment(attachment.id) }, enabled = !state.busy && !state.importingAttachment,
+                                        modifier = Modifier.align(Alignment.TopEnd).size(32.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape).testTag("chat-remove-attachment")) {
+                                        Icon(Icons.Default.Close, "移除图片", modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            }
+                        }
+                        net.pocketnai.ui.common.AnimatedDisclosure(state.importingAttachment) {
+                            LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 20.dp))
+                        }
+                        }, leadingActions = {
+                            Box {
+                                IconButton(onClick = { focus.clearFocus(); keyboard?.hide(); attachmentMenu = true }, enabled = !state.busy && !state.importingAttachment && !state.switchingConversation && state.current != null,
+                                    modifier = Modifier.testTag("chat-attach-button")) { Icon(Icons.Default.Add, "添加图片") }
+                                DropdownMenu(attachmentMenu, { attachmentMenu = false }) {
+                                    DropdownMenuItem(text = { Text("从相册选择") }, onClick = { attachmentMenu = false; photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
+                                    DropdownMenuItem(text = { Text("从软件画廊选择") }, onClick = { attachmentMenu = false; galleryPicker = true })
+                                }
+                            }
+                            if (voiceAvailable) IconButton(onClick = {
+                                runCatching { voice.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+                                }) }.onFailure { voiceError = true }
+                            }, enabled = !state.busy && !state.importingAttachment) {
+                                Icon(Icons.Default.MicNone, "语音输入")
+                            }
+                        })
+                })
+                if (dragOver) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(12.dp)
+                            .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f), RoundedCornerShape(24.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            shadowElevation = 4.dp,
+                        ) {
+                            Text(
+                                "松手添加到对话附件",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                            )
                         }
                     }
                 }
             }
-            net.pocketnai.ui.common.AnimatedDisclosure(state.importingAttachment) {
-                LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 20.dp))
-            }
-            }, leadingActions = {
-                Box {
-                    IconButton(onClick = { focus.clearFocus(); keyboard?.hide(); attachmentMenu = true }, enabled = !state.busy && !state.importingAttachment && !state.switchingConversation && state.current != null,
-                        modifier = Modifier.testTag("chat-attach-button")) { Icon(Icons.Default.Add, "添加图片") }
-                    DropdownMenu(attachmentMenu, { attachmentMenu = false }) {
-                        DropdownMenuItem(text = { Text("从相册选择") }, onClick = { attachmentMenu = false; photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
-                        DropdownMenuItem(text = { Text("从软件画廊选择") }, onClick = { attachmentMenu = false; galleryPicker = true })
-                    }
-                }
-                if (voiceAvailable) IconButton(onClick = {
-                    runCatching { voice.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
-                    }) }.onFailure { voiceError = true }
-                }, enabled = !state.busy && !state.importingAttachment) {
-                    Icon(Icons.Default.MicNone, "语音输入")
-                }
-            })
-    })
+        }
+    }
     if (modelsOpen) ChatModelPicker(viewModel) { modelsOpen = false }
     if (voiceError) AlertDialog(onDismissRequest = { voiceError = false }, title = { Text("语音输入暂不可用") },
         text = { Text("当前设备未提供系统语音识别服务，可以使用输入法的语音输入。") },
@@ -490,140 +648,243 @@ fun ChatMessageBubble(
     val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
     val bubbleHaptics = net.pocketnai.ui.motion.rememberPocketHaptics()
     val user = entry.role == "user"
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = if (user) Alignment.End else Alignment.Start,
-        verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        entry.attachments.forEach { attachment ->
-            val file = resolveImage(attachment.relativePath)
-            if (file.isFile) Box(Modifier.fillMaxWidth(0.72f).aspectRatio(attachment.width.toFloat() / attachment.height.coerceAtLeast(1))) {
-                net.pocketnai.ui.safety.SfwAsyncImage(file, "发送的图片附件", sensitive = attachment.hasSensitivePrompt, contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)).clickable { onOpenAttachment(attachment) })
-                if (attachment.promptContext != null) AttachmentParametersButton(Modifier.align(Alignment.BottomStart).padding(8.dp)) { onOpenAttachment(attachment) }
-            }
-            else Text("图片附件已丢失", style = MaterialTheme.typography.bodySmall)
-        }
-        entry.images.forEach { image ->
-            val file = resolveImage(image.relativePath)
-            if (file.isFile) net.pocketnai.ui.safety.SfwAsyncImage(file, "对话生成的图片", contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth(0.78f).aspectRatio(image.width.toFloat() / image.height.coerceAtLeast(1))
-                    .sharedImage(image.imageId).clip(RoundedCornerShape(22.dp)).testTag("chat-image-${image.imageId}").clickable {
-                        if (sfw.masks(file)) bubbleHaptics.tick()
-                        imageMotion?.preview = ImageOriginPreview(image.imageId, file, image.width.toFloat() / image.height.coerceAtLeast(1), "对话生成的图片")
-                        onOpenImage(image.imageId, availableChatImageOrder(entry.images, resolveImage))
-                    })
-            else Text("图片已从图库移除", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        if (entry.role == "tool") {
-            entry.notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-            entry.sources.forEach { source ->
-                if (ChatSearchTool.safeUrl(source.url) != null) TextButton(onClick = { runCatching { uriHandler.openUri(source.url) } }) {
-                    Text(source.title.ifBlank { source.url }, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    val hoverInteraction = remember { MutableInteractionSource() }
+    val isHovered by hoverInteraction.collectIsHoveredAsState()
+    val actionRowAlpha by animateFloatAsState(
+        targetValue = if (isHovered) 1f else 0.78f,
+        animationSpec = tween(140),
+        label = "bubble-actions-alpha",
+    )
+    val hoverElevation by animateDpAsState(
+        targetValue = if (isHovered) 2.dp else 0.dp,
+        animationSpec = tween(140),
+        label = "bubble-hover-elevation",
+    )
+    var contextMenuOpen by remember(entry.id) { mutableStateOf(false) }
+    var contextMenuOffset by remember(entry.id) { mutableStateOf(Offset.Zero) }
+    var bubbleHeightPx by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
+    val clipboard = LocalClipboardManager.current
+    val canShowContextMenu = !streaming && entry.role != "tool" &&
+        (entry.content.isNotBlank() || onEdit != null || onRetry != null || onBranch != null)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .onSizeChanged { bubbleHeightPx = it.height }
+            .hoverable(hoverInteraction)
+            .onSecondaryClick(enabled = canShowContextMenu) { offset ->
+                contextMenuOffset = offset
+                contextMenuOpen = true
+            },
+    ) {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = if (user) Alignment.End else Alignment.Start,
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            entry.attachments.forEach { attachment ->
+                val file = resolveImage(attachment.relativePath)
+                if (file.isFile) Box(Modifier.fillMaxWidth(0.72f).aspectRatio(attachment.width.toFloat() / attachment.height.coerceAtLeast(1))) {
+                    net.pocketnai.ui.safety.SfwAsyncImage(file, "发送的图片附件", sensitive = attachment.hasSensitivePrompt, contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)).clickable { onOpenAttachment(attachment) })
+                    if (attachment.promptContext != null) AttachmentParametersButton(Modifier.align(Alignment.BottomStart).padding(8.dp)) { onOpenAttachment(attachment) }
                 }
+                else Text("图片附件已丢失", style = MaterialTheme.typography.bodySmall)
             }
-        } else {
-            if (entry.reasoning.isNotBlank()) {
-                var expanded by remember(entry.id) { mutableStateOf(false) }
-                Column(Modifier.fillMaxWidth(0.94f)) {
-                    Surface(
-                        onClick = {
-                            bubbleHaptics.tick()
-                            expanded = !expanded
-                        },
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Icon(
-                                Icons.Default.AutoAwesome,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(15.dp),
-                            )
-                            Text(
-                                text = if (expanded) "收起思考过程" else "思考过程",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            net.pocketnai.ui.common.ExpandingChevron(
-                                expanded = expanded,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
+            entry.images.forEach { image ->
+                val file = resolveImage(image.relativePath)
+                if (file.isFile) net.pocketnai.ui.safety.SfwAsyncImage(file, "对话生成的图片", contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth(0.78f).aspectRatio(image.width.toFloat() / image.height.coerceAtLeast(1))
+                        .sharedImage(image.imageId).clip(RoundedCornerShape(22.dp)).testTag("chat-image-${image.imageId}").clickable {
+                            if (sfw.masks(file)) bubbleHaptics.tick()
+                            imageMotion?.preview = ImageOriginPreview(image.imageId, file, image.width.toFloat() / image.height.coerceAtLeast(1), "对话生成的图片")
+                            onOpenImage(image.imageId, availableChatImageOrder(entry.images, resolveImage))
+                        })
+                else Text("图片已从图库移除", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (entry.role == "tool") {
+                entry.notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                entry.sources.forEach { source ->
+                    if (ChatSearchTool.safeUrl(source.url) != null) TextButton(onClick = { runCatching { uriHandler.openUri(source.url) } }) {
+                        Text(source.title.ifBlank { source.url }, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
-                    // 把间距放进 AnimatedVisibility 内部，并采用同步缓出曲线：收起到 0dp 时无末帧 8dp 间距突跳。
-                    AnimatedVisibility(
-                        visible = expanded,
-                        enter = expandVertically(
-                            animationSpec = tween(240, easing = FastOutSlowInEasing),
-                            expandFrom = Alignment.Top,
-                            clip = true,
-                        ) + fadeIn(tween(180, delayMillis = 40)),
-                        exit = shrinkVertically(
-                            animationSpec = tween(200, easing = FastOutSlowInEasing),
-                            shrinkTowards = Alignment.Top,
-                            clip = true,
-                        ) + fadeOut(tween(150, easing = FastOutSlowInEasing)),
-                    ) {
-                        Box(Modifier.padding(top = 8.dp).graphicsLayer()) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.fillMaxWidth(),
+                }
+            } else {
+                if (entry.reasoning.isNotBlank()) {
+                    var expanded by remember(entry.id) { mutableStateOf(false) }
+                    Column(Modifier.fillMaxWidth(0.94f)) {
+                        Surface(
+                            onClick = {
+                                bubbleHaptics.tick()
+                                expanded = !expanded
+                            },
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
-                                BoundedChatText(entry.reasoning, "思考过程", streaming, onRead, small = true)
+                                Icon(
+                                    Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(15.dp),
+                                )
+                                Text(
+                                    text = if (expanded) "收起思考过程" else "思考过程",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                net.pocketnai.ui.common.ExpandingChevron(
+                                    expanded = expanded,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                        // 把间距放进 AnimatedVisibility 内部，并采用同步缓出曲线：收起到 0dp 时无末帧 8dp 间距突跳。
+                        AnimatedVisibility(
+                            visible = expanded,
+                            enter = expandVertically(
+                                animationSpec = tween(240, easing = FastOutSlowInEasing),
+                                expandFrom = Alignment.Top,
+                                clip = true,
+                            ) + fadeIn(tween(180, delayMillis = 40)),
+                            exit = shrinkVertically(
+                                animationSpec = tween(200, easing = FastOutSlowInEasing),
+                                shrinkTowards = Alignment.Top,
+                                clip = true,
+                            ) + fadeOut(tween(150, easing = FastOutSlowInEasing)),
+                        ) {
+                            Box(Modifier.padding(top = 8.dp).graphicsLayer()) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                    shape = RoundedCornerShape(16.dp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    BoundedChatText(entry.reasoning, "思考过程", streaming, onRead, small = true)
+                                }
                             }
                         }
                     }
                 }
-            }
-            if (entry.content.isNotBlank()) {
-                if (user) Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth(0.86f)) {
-                    BoundedChatText(entry.content, "我的消息", streaming, onRead, markdown = false)
-                } else BoundedChatText(entry.content, "回复全文", streaming, onRead)
-            }
-            if (!streaming && (entry.content.isNotBlank() || entry.images.isNotEmpty() || entry.attachments.isNotEmpty())) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (entry.content.isNotBlank()) {
-                        ChatCopyAction(entry.content)
-                    }
-                    if (!user && onRetry != null) {
-                        IconButton(
-                            onClick = { bubbleHaptics.tick(); onRetry(entry) },
-                            enabled = !busy,
-                            modifier = Modifier.size(32.dp),
+                if (entry.content.isNotBlank()) {
+                    if (user) Surface(
+                        shape = RoundedCornerShape(22.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shadowElevation = hoverElevation,
+                        modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth(0.86f),
+                    ) {
+                        BoundedChatText(entry.content, "我的消息", streaming, onRead, markdown = false)
+                    } else BoundedChatText(entry.content, "回复全文", streaming, onRead)
+                }
+                if (!streaming && (entry.content.isNotBlank() || entry.images.isNotEmpty() || entry.attachments.isNotEmpty())) {
+                    Surface(
+                        shape = CircleShape,
+                        color = if (isHovered) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
+                        shadowElevation = hoverElevation,
+                        modifier = Modifier.alpha(actionRowAlpha),
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = if (isHovered) 4.dp else 0.dp),
                         ) {
-                            Icon(Icons.Default.Refresh, "重新生成", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
-                        }
-                    }
-                    if (onEdit != null) {
-                        IconButton(
-                            onClick = { bubbleHaptics.tick(); onEdit(entry) },
-                            enabled = !busy,
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(Icons.Default.Edit, if (user) "编辑消息" else "编辑回复", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
-                        }
-                    }
-                    if (onBranch != null) {
-                        IconButton(
-                            onClick = { bubbleHaptics.tick(); onBranch(entry) },
-                            enabled = !busy,
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.CallSplit, "从此开新分支", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
+                            if (entry.content.isNotBlank()) {
+                                ChatCopyAction(entry.content)
+                            }
+                            if (!user && onRetry != null) {
+                                IconButton(
+                                    onClick = { bubbleHaptics.tick(); onRetry(entry) },
+                                    enabled = !busy,
+                                    modifier = Modifier.size(32.dp),
+                                ) {
+                                    Icon(Icons.Default.Refresh, "重新生成", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
+                                }
+                            }
+                            if (onEdit != null) {
+                                IconButton(
+                                    onClick = { bubbleHaptics.tick(); onEdit(entry) },
+                                    enabled = !busy,
+                                    modifier = Modifier.size(32.dp),
+                                ) {
+                                    Icon(Icons.Default.Edit, if (user) "编辑消息" else "编辑回复", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
+                                }
+                            }
+                            if (onBranch != null) {
+                                IconButton(
+                                    onClick = { bubbleHaptics.tick(); onBranch(entry) },
+                                    enabled = !busy,
+                                    modifier = Modifier.size(32.dp),
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.CallSplit, "从此开新分支", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
+                                }
+                            }
                         }
                     }
                 }
+                entry.notice?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
-            entry.notice?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+        if (canShowContextMenu) {
+            DropdownMenu(
+                expanded = contextMenuOpen,
+                onDismissRequest = { contextMenuOpen = false },
+                offset = with(density) {
+                    DpOffset(
+                        x = contextMenuOffset.x.toDp(),
+                        y = (contextMenuOffset.y - bubbleHeightPx).toDp(),
+                    )
+                },
+            ) {
+                if (onEdit != null) {
+                    DropdownMenuItem(
+                        text = { Text("编辑") },
+                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        enabled = !busy,
+                        onClick = {
+                            contextMenuOpen = false
+                            bubbleHaptics.tick()
+                            onEdit(entry)
+                        },
+                    )
+                }
+                if (onRetry != null) {
+                    DropdownMenuItem(
+                        text = { Text("重试") },
+                        leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        enabled = !busy,
+                        onClick = {
+                            contextMenuOpen = false
+                            bubbleHaptics.tick()
+                            onRetry(entry)
+                        },
+                    )
+                }
+                if (onBranch != null) {
+                    DropdownMenuItem(
+                        text = { Text("从此开新分支") },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.CallSplit, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        enabled = !busy,
+                        onClick = {
+                            contextMenuOpen = false
+                            bubbleHaptics.tick()
+                            onBranch(entry)
+                        },
+                    )
+                }
+                if (entry.content.isNotBlank()) {
+                    DropdownMenuItem(
+                        text = { Text("复制正文") },
+                        leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        onClick = {
+                            contextMenuOpen = false
+                            bubbleHaptics.tick()
+                            runCatching { clipboard.setText(AnnotatedString(entry.content)) }
+                        },
+                    )
+                }
+            }
         }
     }
 }

@@ -14,6 +14,7 @@ import net.pocketnai.data.settings.GenerationDraftCodec
 import net.pocketnai.domain.artistlab.*
 import net.pocketnai.domain.billing.GenerationCostEstimate
 import net.pocketnai.domain.model.*
+import net.pocketnai.domain.prompt.ArtistPromptSplitter
 import net.pocketnai.ui.generate.GenerateViewModel
 import java.util.UUID
 import kotlin.random.Random
@@ -94,6 +95,57 @@ class ArtistLabViewModel(
     val form = _form.asStateFlow()
     fun updateForm(form: ArtistLabForm) { _form.value = form }
     fun clearMessage() { _message.value = "" }
+    fun showMessage(text: String) { _message.value = text }
+
+    private fun ensureForm(): ArtistLabForm {
+        _form.value?.let { return it }
+        val params = generate.state.value.params
+        val cleanPrompt = ArtistPromptSplitter.split(params.prompt, extractOnlyCompleted = false).mainPrompt
+        val seedStr = if (params.baseSeed > 0) params.baseSeed.toString()
+            else Random.nextLong(0, GenerationParams.MAX_SEED + 1).toString()
+        return ArtistLabForm(
+            prompt = cleanPrompt,
+            negative = params.negativePrompt,
+            seed = seedStr,
+            count = "100",
+            artists = 3,
+            minTicks = 10,
+            maxTicks = 30,
+        )
+    }
+
+    fun pinArtistToForm(tag: String) {
+        val normalized = tag.trim()
+        if (!normalized.startsWith("artist: ")) return
+        val current = ensureForm()
+        val display = normalized.removePrefix("artist: ")
+        if (normalized in current.lockedArtists) {
+            _message.value = "已在锁定基底画师中：$display"
+            return
+        }
+        if (current.lockedArtists.size >= ArtistLabConfig.MAX_LOCKED_ARTISTS) {
+            _message.value = "最多锁定 ${ArtistLabConfig.MAX_LOCKED_ARTISTS} 位基底画师，请先在新建实验配置中移除已有锁定"
+            return
+        }
+        val updatedLocked = (current.lockedArtists + normalized).distinct().take(ArtistLabConfig.MAX_LOCKED_ARTISTS)
+        val updated = current.copy(
+            lockedArtists = updatedLocked,
+            artists = maxOf(current.artists, updatedLocked.size),
+        )
+        _form.value = updated
+        store.saveForm(updated)
+        _message.value = "已设为锁定基底画师（${updatedLocked.size}/${ArtistLabConfig.MAX_LOCKED_ARTISTS}）：$display"
+    }
+
+    fun unpinArtistFromForm(tag: String) {
+        val current = _form.value ?: return
+        val normalized = tag.trim()
+        if (normalized !in current.lockedArtists) return
+        val updated = current.copy(lockedArtists = current.lockedArtists - normalized)
+        _form.value = updated
+        store.saveForm(updated)
+        _message.value = "已取消锁定基底画师：${normalized.removePrefix("artist: ")}"
+    }
     private var pool: List<String> = emptyList()
     private var allArtists: List<String> = emptyList()
     private var hash: String = ""
@@ -142,6 +194,14 @@ class ArtistLabViewModel(
         _excludedArtists.value = excluded
         pool = allArtists.filterNot { it in excluded }
         _catalogCount.value = pool.size
+        if (!enabled) {
+            val current = _form.value
+            if (current != null && tag in current.lockedArtists) {
+                val updated = current.copy(lockedArtists = current.lockedArtists - tag)
+                _form.value = updated
+                store.saveForm(updated)
+            }
+        }
         // 词库修改只作用于下一次新建实验；当前已确认/已规划的批次不重抽。
         if (!_busy.value) _approval.value = null
     }
@@ -169,7 +229,17 @@ class ArtistLabViewModel(
         }
     }
 
-    fun prepare(basePrompt: String, negative: String, seed: String, count: String, artistCount: Int, minTicks: Int, maxTicks: Int) {
+    fun prepare(
+        basePrompt: String,
+        negative: String,
+        seed: String,
+        count: String,
+        artistCount: Int,
+        minTicks: Int,
+        maxTicks: Int,
+        lockedArtists: List<String> = emptyList(),
+        tieredWeights: Boolean = false,
+    ) {
         if (_busy.value || _catalogImporting.value || !_ready.value || !enabled.value) return
         viewModelScope.launch {
             try {
@@ -179,14 +249,32 @@ class ArtistLabViewModel(
                 val drawCount = count.toIntOrNull()?.takeIf { it in 1..10_000 }
                     ?: throw IllegalArgumentException("抽卡次数请填写 1～10000")
                 require(basePrompt.isNotBlank()) { "请填写固定的基础提示词" }
-                require(pool.size >= artistCount) { "当前可用 ${pool.size} 位画师，请减少每张画师数量或重新启用画师" }
+                val effectiveLocked = lockedArtists
+                    .map { it.trim() }
+                    .filter { it.startsWith("artist: ") }
+                    .distinct()
+                    .take(minOf(ArtistLabConfig.MAX_LOCKED_ARTISTS, artistCount))
+                val remainingPool = if (effectiveLocked.isEmpty()) pool else pool.filterNot { it in effectiveLocked.toSet() }
+                val remainingSlots = artistCount - effectiveLocked.size
+                require(remainingPool.size >= remainingSlots) {
+                    "当前可用 ${remainingPool.size} 位画师，请减少每张画师数量或重新启用画师"
+                }
                 require(!Regex("artist\\s*:", RegexOption.IGNORE_CASE).containsMatchIn(negative)) { "负面提示词中也请移除 artist:，保持画师对比一致" }
                 val base = repository.freezePromptTemplates(generate.state.value.params.copy(prompt = basePrompt.trim(), negativePrompt = negative.trim(),
                     baseSeed = fixedSeed, seedMode = SeedMode.FIXED, sampleCount = 1, characters = emptyList(), useCharacterCoordinates = false))
                 ArtistLabPlanner.params(base, ArtistMix(emptyList()))
                 require(ModelCatalog.profileOf(base.model).normalize(base) == base) { "首页参数需要调整，请检查尺寸、采样器与步数" }
-                val config = ArtistLabConfig(GenerationDraftCodec.encode(GenerationDraft(base, base.prompt, base.negativePrompt)),
-                    artistCount, minTicks, maxTicks, drawCount, hash, templatesResolved = true)
+                val config = ArtistLabConfig(
+                    paramsJson = GenerationDraftCodec.encode(GenerationDraft(base, base.prompt, base.negativePrompt)),
+                    artistCount = artistCount,
+                    minTicks = minTicks,
+                    maxTicks = maxTicks,
+                    drawCount = drawCount,
+                    catalogHash = hash,
+                    templatesResolved = true,
+                    lockedArtists = effectiveLocked,
+                    tieredWeights = tieredWeights,
+                )
                 val account = generate.artistLabAccount() ?: throw IllegalArgumentException("请先在设置中连接 NovelAI 账号")
                 val quote = generate.quoteForArtistLab(base)
                 if (revision != catalogRevision || _catalogImporting.value) return@launch

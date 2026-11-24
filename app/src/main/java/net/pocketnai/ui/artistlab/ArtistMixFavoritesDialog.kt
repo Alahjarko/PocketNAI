@@ -34,6 +34,7 @@ fun ArtistMixFavoritesDialog(
     resolve: (String) -> File,
     onDismiss: () -> Unit,
     onOpen: (String) -> Unit,
+    onApplyArtistChain: ((String) -> Unit)? = null,
 ) {
     val mixes by vm.favoriteMixGallery.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
@@ -81,7 +82,19 @@ fun ArtistMixFavoritesDialog(
                         contentPadding = PaddingValues(bottom = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         items(visible, key = { it.prompt }, contentType = { "favorite-mix" }) { mix ->
-                            FavoriteMixCard(mix, resolve, { focusedPrompt = mix.prompt }, { copy(mix) }, { removing = mix })
+                            FavoriteMixCard(
+                                mix = mix,
+                                resolve = resolve,
+                                onFocus = { focusedPrompt = mix.prompt },
+                                onCopy = { copy(mix) },
+                                onRemove = { removing = mix },
+                                onApply = onApplyArtistChain?.let { apply ->
+                                    {
+                                        apply(mix.prompt)
+                                        onDismiss()
+                                    }
+                                },
+                            )
                         }
                     }
                 }
@@ -90,7 +103,21 @@ fun ArtistMixFavoritesDialog(
         }
     }
     mixes.firstOrNull { it.prompt == focusedPrompt }?.let { mix ->
-        FavoriteMixDetail(mix, resolve, { focusedPrompt = null }, { copy(mix) }, onOpen, snackbar)
+        FavoriteMixDetail(
+            mix = mix,
+            resolve = resolve,
+            onDismiss = { focusedPrompt = null },
+            onCopy = { copy(mix) },
+            onOpen = onOpen,
+            snackbar = snackbar,
+            onApply = onApplyArtistChain?.let { apply ->
+                {
+                    focusedPrompt = null
+                    apply(mix.prompt)
+                    onDismiss()
+                }
+            },
+        )
     }
     removing?.let { mix ->
         AlertDialog(onDismissRequest = { removing = null }, title = { Text("移除画师串收藏？") },
@@ -101,8 +128,14 @@ fun ArtistMixFavoritesDialog(
 }
 
 @Composable
-private fun FavoriteMixCard(mix: FavoriteArtistMix, resolve: (String) -> File,
-                            onFocus: () -> Unit, onCopy: () -> Unit, onRemove: () -> Unit) {
+private fun FavoriteMixCard(
+    mix: FavoriteArtistMix,
+    resolve: (String) -> File,
+    onFocus: () -> Unit,
+    onCopy: () -> Unit,
+    onRemove: () -> Unit,
+    onApply: (() -> Unit)? = null,
+) {
     var menu by remember { mutableStateOf(false) }
     val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
     val haptics = net.pocketnai.ui.motion.rememberPocketHaptics()
@@ -130,13 +163,24 @@ private fun FavoriteMixCard(mix: FavoriteArtistMix, resolve: (String) -> File,
             .padding(start = 10.dp, end = 10.dp, top = 10.dp),
             style = MaterialTheme.typography.bodyMedium, maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
         Row(Modifier.fillMaxWidth().padding(start = 2.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onCopy, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.ContentCopy, null, Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp)); Text("复制")
+            if (onApply != null) {
+                TextButton(onClick = onApply, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.AutoFixHigh, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp)); Text("应用", maxLines = 1)
+                }
+            } else {
+                TextButton(onClick = onCopy, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.ContentCopy, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp)); Text("复制")
+                }
             }
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "画师串操作") }
                 DropdownMenu(menu, { menu = false }) {
+                    if (onApply != null) {
+                        DropdownMenuItem(text = { Text("应用到生成面板") }, onClick = { menu = false; onApply() })
+                        DropdownMenuItem(text = { Text("复制画师串") }, onClick = { menu = false; onCopy() })
+                    }
                     DropdownMenuItem(text = { Text("查看图片与权重") }, onClick = { menu = false; openMix() })
                     DropdownMenuItem(text = { Text("移除画师串收藏") }, onClick = { menu = false; onRemove() })
                 }
@@ -146,9 +190,15 @@ private fun FavoriteMixCard(mix: FavoriteArtistMix, resolve: (String) -> File,
 }
 
 @Composable
-private fun FavoriteMixDetail(mix: FavoriteArtistMix, resolve: (String) -> File,
-                              onDismiss: () -> Unit, onCopy: () -> Unit, onOpen: (String) -> Unit,
-                              snackbar: SnackbarHostState) {
+private fun FavoriteMixDetail(
+    mix: FavoriteArtistMix,
+    resolve: (String) -> File,
+    onDismiss: () -> Unit,
+    onCopy: () -> Unit,
+    onOpen: (String) -> Unit,
+    snackbar: SnackbarHostState,
+    onApply: (() -> Unit)? = null,
+) {
     var selectedId by rememberSaveable(mix.prompt) { mutableStateOf(mix.images.firstOrNull()?.imageId) }
     val image = mix.images.firstOrNull { it.imageId == selectedId } ?: mix.images.firstOrNull()
     val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
@@ -179,15 +229,28 @@ private fun FavoriteMixDetail(mix: FavoriteArtistMix, resolve: (String) -> File,
                 SelectionContainer(Modifier.fillMaxWidth().heightIn(max = 160.dp).verticalScroll(rememberScrollState()).padding(vertical = 12.dp)) {
                     Text(mix.prompt, style = MaterialTheme.typography.bodyMedium)
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = onCopy, modifier = Modifier.weight(1f)) { Text("复制画师串") }
-                    OutlinedButton(onClick = {
-                        image?.let {
-                            if (sfw.masks(resolve(it.relativePath))) haptics.tick()
-                            onOpen(it.imageId)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (onApply != null) {
+                        Button(onClick = onApply, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.AutoFixHigh, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("应用到生成面板")
                         }
-                    }, enabled = image != null,
-                        modifier = Modifier.weight(1f)) { Text("图片详情") }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (onApply != null) {
+                            OutlinedButton(onClick = onCopy, modifier = Modifier.weight(1f)) { Text("复制画师串") }
+                        } else {
+                            Button(onClick = onCopy, modifier = Modifier.weight(1f)) { Text("复制画师串") }
+                        }
+                        OutlinedButton(onClick = {
+                            image?.let {
+                                if (sfw.masks(resolve(it.relativePath))) haptics.tick()
+                                onOpen(it.imageId)
+                            }
+                        }, enabled = image != null,
+                            modifier = Modifier.weight(1f)) { Text("图片详情") }
+                    }
                 }
               }
               SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(12.dp))

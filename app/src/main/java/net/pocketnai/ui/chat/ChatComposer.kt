@@ -17,6 +17,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
@@ -37,12 +46,14 @@ internal fun ChatComposer(
     onStop: () -> Unit,
     modifier: Modifier = Modifier,
     editingEnabled: Boolean = true,
+    enterToSend: Boolean = true,
     attachments: @Composable () -> Unit = {},
     leadingActions: @Composable RowScope.() -> Unit = {},
 ) {
     // 发送即收回输入法（2026-10-10 用户要求，原约定"发送不主动收起键盘"废止）；
     // 停止按钮不动键盘。
     val keyboard = LocalSoftwareKeyboardController.current
+    val canSend = !busy && !importing && editingEnabled && (value.text.isNotBlank() || hasAttachments)
     Surface(modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).testTag("chat-composer"),
         color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(24.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))) {
@@ -50,11 +61,41 @@ internal fun ChatComposer(
             attachments()
             BasicTextField(value, onValueChange,
                 enabled = editingEnabled,
-                modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 6.dp).testTag("chat-input"),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 6.dp)
+                    .onPreviewKeyEvent { event ->
+                        if (event.type == KeyEventType.KeyDown &&
+                            (event.key == Key.Enter || event.key == Key.NumPadEnter)
+                        ) {
+                            val hasAnyModifier = event.isShiftPressed || event.isCtrlPressed || event.isAltPressed || event.isMetaPressed
+                            val ctrlOrMetaOnly = (event.isCtrlPressed || event.isMetaPressed) && !event.isShiftPressed && !event.isAltPressed
+                            when {
+                                enterToSend && !hasAnyModifier -> {
+                                    if (canSend) {
+                                        keyboard?.hide()
+                                        onSend()
+                                    }
+                                    true
+                                }
+                                !enterToSend && ctrlOrMetaOnly -> {
+                                    if (canSend) {
+                                        keyboard?.hide()
+                                        onSend()
+                                    }
+                                    true
+                                }
+                                else -> false
+                            }
+                        } else {
+                            false
+                        }
+                    }
+                    .testTag("chat-input"),
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary), maxLines = 6,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { if (!busy) { keyboard?.hide(); onSend() } }),
+                keyboardOptions = KeyboardOptions(imeAction = if (enterToSend) ImeAction.Send else ImeAction.Default),
+                keyboardActions = KeyboardActions(onSend = { if (canSend) { keyboard?.hide(); onSend() } }),
                 decorationBox = { inner ->
                     Box(Modifier.heightIn(min = 26.dp)) {
                         if (value.text.isEmpty()) Text("给 ${assistantName.ifBlank { "绘伴" }} 发消息",
