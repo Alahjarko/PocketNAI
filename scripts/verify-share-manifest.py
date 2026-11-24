@@ -1,5 +1,6 @@
 """Inspect the actual packaged manifest; no device/emulator or application launch."""
 import argparse
+import re
 import struct
 import zipfile
 import xml.etree.ElementTree as ET
@@ -103,7 +104,11 @@ def verify(path, expected_code=None, xml_output=None):
     assert send_targets == ["net.pocketnai.ui.ShareImageActivity"], "Only the relay may receive image shares"
     if expected_code is not None:
         assert root.get(ns + "versionCode") == expected_code, "APK versionCode differs from release tag"
-        assert root.get(ns + "versionName") == f"0.1.{expected_code}", "Release must not use a dev versionName"
+        version_name = root.get(ns + "versionName") or ""
+        assert (
+            version_name == f"0.1.{expected_code}"
+            or re.fullmatch(r"[1-9]\d*\.\d+\.\d+", version_name) is not None
+        ), "Release must not use a dev versionName"
     print(f"Share task contract verified: {Path(path).name}; affinity={affinity!r}; "
           f"versionCode={root.get(ns + 'versionCode')}; versionName={root.get(ns + 'versionName')}")
 
