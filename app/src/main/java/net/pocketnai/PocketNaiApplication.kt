@@ -9,6 +9,7 @@ class PocketNaiApplication : Application(), coil.ImageLoaderFactory, net.pocketn
     override fun newImageLoader(): coil.ImageLoader = coil.ImageLoader.Builder(this)
         .memoryCache { net.pocketnai.ui.safety.SfwImageMemoryCache(this) }
         .components {
+            add(net.pocketnai.ui.safety.SfwMaskRequestInterceptor())
             if (android.os.Build.VERSION.SDK_INT >= 28) add(coil.decode.ImageDecoderDecoder.Factory())
             else add(coil.decode.GifDecoder.Factory())
             add(coil.decode.SvgDecoder.Factory(useViewBoundsAsIntrinsicSize = false))

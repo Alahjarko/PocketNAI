@@ -146,7 +146,14 @@ class GenerationRepository(
         else dao.galleryIds(net.pocketnai.data.local.GalleryQueries.build(filter, Int.MAX_VALUE, idsOnly = true))
     }
     fun observeRecentGenerations(limit: Int): Flow<List<GenerationSummary>> = dao.observeRecentGenerations(limit)
-        .map { rows -> rows.mapNotNull { row -> Mappers.toDomain(row.generation)?.let { GenerationSummary(it, row.imageCount) } } }.flowOn(Dispatchers.Default)
+        .map { rows ->
+            rows.mapNotNull { row ->
+                Mappers.toDomain(row.generation)?.let { generation ->
+                    val saved = row.savedOrdinals?.split(',')?.map(String::toInt)?.toSet().orEmpty()
+                    GenerationSummary(generation, row.imageCount, saved)
+                }
+            }
+        }.flowOn(Dispatchers.Default)
 
     fun observeImageSafety(): Flow<List<Pair<net.pocketnai.data.local.ImageSafetyRow, Boolean>>> =
         dao.observeImageSafetyRows().map { rows -> rows.map { row ->

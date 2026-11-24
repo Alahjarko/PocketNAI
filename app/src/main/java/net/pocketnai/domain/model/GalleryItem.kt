@@ -45,4 +45,5 @@ data class GalleryItem(
 data class GenerationSummary(
     val generation: Generation,
     val imageCount: Int,
+    val savedOrdinals: Set<Int> = emptySet(),
 )

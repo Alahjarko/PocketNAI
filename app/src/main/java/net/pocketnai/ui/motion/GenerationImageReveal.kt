@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -45,6 +46,8 @@ internal fun GenerationImageReveal(
     onRevealed: () -> Unit,
     modifier: Modifier = Modifier,
     queued: Boolean = false,
+    showLabel: Boolean = true,
+    indicatorSize: Dp = 64.dp,
     content: @Composable BoxScope.(State<Float>) -> Unit,
 ) {
     // Most cards are already finished: do not start effects or allocate animations/states
@@ -77,7 +80,7 @@ internal fun GenerationImageReveal(
             val showOrb by remember { derivedStateOf { completion.value < 1f } }
             val showCheck by remember { derivedStateOf { completion.value > 0f } }
             if (!failed && indicatorVisible) {
-                Box(Modifier.size(64.dp).align(Alignment.Center)
+                Box(Modifier.size(indicatorSize).align(Alignment.Center)
                     .graphicsLayer { alpha = indicatorAlpha.value }
                     .semantics { contentDescription = if (ready) "图片已就绪" else if (queued) "排队中" else "生成中" }) {
                     if (showOrb) {
@@ -116,7 +119,7 @@ internal fun GenerationImageReveal(
                         }
                     }
                 }
-                if (!ready) Text(if (queued) "排队中" else "生成中", style = MaterialTheme.typography.labelMedium,
+                if (showLabel && !ready) Text(if (queued) "排队中" else "生成中", style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp))
             }
         }

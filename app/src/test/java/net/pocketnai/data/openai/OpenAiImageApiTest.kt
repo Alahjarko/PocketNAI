@@ -7,6 +7,8 @@ import net.pocketnai.domain.openai.*
 import net.pocketnai.data.local.GalleryImageRow
 import net.pocketnai.data.local.Mappers
 import net.pocketnai.domain.model.*
+import net.pocketnai.ui.home.WorkbenchTaskSlot
+import net.pocketnai.ui.home.workbenchTaskSlots
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -91,6 +93,17 @@ class OpenAiImageApiTest {
         assertThat(pending(selected.copy(query = "not present"))).isEmpty()
         assertThat(pending(selected.copy(favoritesOnly = true))).isEmpty()
         assertThat(pending(GalleryFilter.None)).hasSize(4)
+        // 工作台对历史应用相同筛选，但任务栏始终按真实任务和缺失序号展示。
+        val running = jobs.first().copy(id = "run", params = legacy.copy(sampleCount = 4))
+        val queued = running.copy(id = "q1", createdAt = 2, status = GenerationStatus.QUEUED,
+            params = legacy.copy(sampleCount = 1))
+        val work = listOf(GenerationSummary(queued.copy(id = "q2", createdAt = 3), 0),
+            GenerationSummary(queued, 0), GenerationSummary(running, 1, setOf(2)))
+        val rail = workbenchTaskSlots(work, true, listOf(flare.copy(generationId = "run", ordinal = 4)))
+        assertThat(rail.map { it.key }).containsExactly("task-run-1", "task-run-3", "task-q1-1", "task-q2-1").inOrder()
+        assertThat(rail.map { it.queued }).containsExactly(false, false, true, true).inOrder()
+        assertThat(workbenchTaskSlots(emptyList(), true).single().key).isEqualTo(WorkbenchTaskSlot.SUBMITTING)
+        assertThat(workbenchTaskSlots(emptyList(), false)).isEmpty()
         MockWebServer().use { server ->
             server.start()
             val api = OpenAiImageApi(OkHttpClient(), server.url("/v1").toString())

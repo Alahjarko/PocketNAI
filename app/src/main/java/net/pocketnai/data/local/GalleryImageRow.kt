@@ -7,6 +7,7 @@ import androidx.room.Embedded
 data class GenerationWithCount(
     @Embedded val generation: GenerationEntity,
     val imageCount: Int,
+    val savedOrdinals: String?,
 )
 
 /**

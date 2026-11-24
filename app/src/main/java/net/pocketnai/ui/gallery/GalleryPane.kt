@@ -192,7 +192,7 @@ import net.pocketnai.ui.common.onSecondaryClick
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun GalleryPane(
+internal fun GalleryPane(
     onOpenImage: (String) -> Unit,
     /**
      * 对这张图做局部重绘。
@@ -208,7 +208,8 @@ fun GalleryPane(
     searchFocusRequester: FocusRequester? = null,
     onReuseItem: ((GalleryItem) -> Unit)? = null,
     galleryViewModel: GalleryViewModel? = null,
-    tabletWidth: Dp? = null,
+    tabletLayout: TabletGalleryLayout? = null,
+    gridState: LazyStaggeredGridState = androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState(),
 ) {
     val container = LocalAppContainer.current
     val viewModel: GalleryViewModel = galleryViewModel ?: viewModel(
@@ -234,7 +235,6 @@ fun GalleryPane(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val imageMotion = LocalImageMotion.current
-    val gridState = androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState()
     val snackbarHostState = remember { SnackbarHostState() }
     var actionTarget by remember { mutableStateOf<GalleryItem?>(null) }
     var referenceTarget by remember { mutableStateOf<GalleryItem?>(null) }
@@ -242,6 +242,13 @@ fun GalleryPane(
     var pendingBatchSave by remember { mutableStateOf<List<GalleryItem>?>(null) }
     var confirmBatchDelete by remember { mutableStateOf(false) }
     var openingImage by remember { mutableStateOf(false) }
+    val returning = imageMotion?.returning
+    LaunchedEffect(returning, items, filter, hasMore) {
+        if (returning?.source == Routes.HOME && hasMore && items.none { it.imageId == returning.imageId }) {
+            val rank = viewModel.fullOrder().indexOf(returning.imageId)
+            if (rank >= items.size) viewModel.includeIndex(filter, rank)
+        }
+    }
     LaunchedEffect(gridState) {
         snapshotFlow { gridState.layoutInfo.let { info ->
             Triple(info.visibleItemsInfo.lastOrNull()?.index ?: -1, info.totalItemsCount, hasMore)
@@ -365,79 +372,88 @@ fun GalleryPane(
                     modifier = Modifier.align(Alignment.Center),
                 )
             } else {
-                GalleryDesktopGrid(
-                    state = gridState,
-                    sections = sections,
-                    fileOf = container.generationRepository::fileOf,
-                    previews = previews,
-                    isSelectionMode = isSelectionMode,
-                    selectedIds = selectedImageIds,
-                    onClick = { item ->
-                        if (isSelectionMode) {
-                            haptics.tick()
-                            viewModel.toggleSelect(item.imageId)
-                        } else {
-                            if (!openingImage) {
-                                if (sfw.masks(container.generationRepository.fileOf(item), item.sensitivePrompt)) {
-                                    haptics.tick()
-                                }
-                                openingImage = true
-                                // 提前激活共享元素键，确保 NavHost 启动前源卡片已完成测量，正向进详情不丢动画。
-                                imageMotion?.open(net.pocketnai.ui.Routes.HOME, item.imageId)
-                                scope.launch {
-                                    try {
-                                        container.galleryOrderSnapshot.publish(viewModel.fullOrder())
-                                        onOpenImage(item.imageId)
-                                    } catch (e: kotlinx.coroutines.CancellationException) {
-                                        imageMotion?.cancelPendingOpen()
-                                        throw e
-                                    } catch (_: Exception) {
-                                        imageMotion?.cancelPendingOpen()
-                                        snackbarHostState.showSnackbar("无法读取图片列表，请稍后再试")
-                                    } finally { openingImage = false }
-                                }
-                            }
-                        }
-                    },
-                    onLongClick = { item ->
-                        haptics.longPress()
-                        if (isSelectionMode) viewModel.toggleSelect(item.imageId) else actionTarget = item
-                    },
-                    onRevealed = { viewModel.motionSlots.finish(it); motionRevision++ },
-                    onDismissFailure = { viewModel.motionSlots.dismiss(it); motionRevision++ },
-                    onDragSelect = viewModel::applyDragSelection,
-                    onToggleFavorite = { item ->
-                        if (!item.favorite) haptics.confirm() else haptics.tick()
-                        viewModel.toggleFavorite(item)
-                    },
-                    onReuseItem = onReuseItem?.let { reuse ->
-                        { item ->
-                            haptics.tick()
-                            reuse(item)
-                            scope.launch { snackbarHostState.showSnackbar("已复用参数到生成面板") }
-                        }
-                    },
-                    onUseAsReference = onUseAsReference,
-                    onQuickPickReference = if (onUseAsReference != null) {
-                        { item ->
-                            haptics.tick()
-                            if (supportsDirectorReference || supportsVibeTransfer) {
-                                referenceTarget = item
+                GalleryViewport(tabletLayout, gridState, sections) { layerState, tabletWidth, active ->
+                    GalleryDesktopGrid(
+                        state = layerState,
+                        sections = sections,
+                        fileOf = container.generationRepository::fileOf,
+                        previews = previews,
+                        isSelectionMode = isSelectionMode,
+                        selectedIds = selectedImageIds,
+                        onClick = { item ->
+                            if (isSelectionMode) {
+                                haptics.tick()
+                                viewModel.toggleSelect(item.imageId)
                             } else {
-                                onUseAsReference(item, ReferenceRole.IMG2IMG)
+                                if (!openingImage) {
+                                    if (sfw.masks(container.generationRepository.fileOf(item), item.sensitivePrompt)) {
+                                        haptics.tick()
+                                    }
+                                    openingImage = true
+                                    // 提前激活共享元素键，确保 NavHost 启动前源卡片已完成测量，正向进详情不丢动画。
+                                    imageMotion?.open(net.pocketnai.ui.Routes.HOME, item.imageId)
+                                    scope.launch {
+                                        try {
+                                            container.galleryOrderSnapshot.publish(viewModel.fullOrder())
+                                            onOpenImage(item.imageId)
+                                        } catch (e: kotlinx.coroutines.CancellationException) {
+                                            imageMotion?.cancelPendingOpen()
+                                            throw e
+                                        } catch (_: Exception) {
+                                            imageMotion?.cancelPendingOpen()
+                                            snackbarHostState.showSnackbar("无法读取图片列表，请稍后再试")
+                                        } finally { openingImage = false }
+                                    }
+                                }
                             }
-                        }
-                    } else null,
-                    supportsDirectorReference = supportsDirectorReference,
-                    supportsVibeTransfer = supportsVibeTransfer,
-                    onInpaintImage = onInpaintImage,
-                    onCopyPrompt = { item ->
-                        copyToClipboard(context, item.prompt)
-                        scope.launch { snackbarHostState.showSnackbar("已复制提示词") }
-                    },
-                    onDeleteItem = { item -> viewModel.deleteGeneration(item.generationId) },
-                    tabletWidth = tabletWidth,
-                )
+                        },
+                        onLongClick = { item ->
+                            haptics.longPress()
+                            if (isSelectionMode) viewModel.toggleSelect(item.imageId) else actionTarget = item
+                        },
+                        onRevealed = { key ->
+                            if (active) {
+                                viewModel.motionSlots.finish(key)
+                                motionRevision++
+                            }
+                        },
+                        onDismissFailure = { viewModel.motionSlots.dismiss(it); motionRevision++ },
+                        onDragSelect = viewModel::applyDragSelection,
+                        onToggleFavorite = { item ->
+                            if (!item.favorite) haptics.confirm() else haptics.tick()
+                            viewModel.toggleFavorite(item)
+                        },
+                        onReuseItem = onReuseItem?.let { reuse ->
+                            { item ->
+                                haptics.tick()
+                                reuse(item)
+                                scope.launch { snackbarHostState.showSnackbar("已复用参数到生成面板") }
+                            }
+                        },
+                        onUseAsReference = onUseAsReference,
+                        onQuickPickReference = if (onUseAsReference != null) {
+                            { item ->
+                                haptics.tick()
+                                if (supportsDirectorReference || supportsVibeTransfer) {
+                                    referenceTarget = item
+                                } else {
+                                    onUseAsReference(item, ReferenceRole.IMG2IMG)
+                                }
+                            }
+                        } else null,
+                        supportsDirectorReference = supportsDirectorReference,
+                        supportsVibeTransfer = supportsVibeTransfer,
+                        onInpaintImage = onInpaintImage,
+                        onCopyPrompt = { item ->
+                            copyToClipboard(context, item.prompt)
+                            scope.launch { snackbarHostState.showSnackbar("已复制提示词") }
+                        },
+                        onDeleteItem = { item -> viewModel.deleteGeneration(item.generationId) },
+                        tabletWidth = tabletWidth,
+                        active = active,
+                        panelMoving = tabletLayout?.moving == true,
+                    )
+                }
             }
 
             if (!isSelectionMode && sections.isNotEmpty()) {
@@ -1463,6 +1479,8 @@ private fun GalleryDesktopGrid(
     onCopyPrompt: (GalleryItem) -> Unit,
     onDeleteItem: (GalleryItem) -> Unit,
     tabletWidth: Dp? = null,
+    active: Boolean = true,
+    panelMoving: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val motion = LocalImageMotion.current
@@ -1498,7 +1516,7 @@ private fun GalleryDesktopGrid(
         )
     }
 
-    val dragSelectModifier = if (isSelectionMode) {
+    val dragSelectModifier = if (active && isSelectionMode) {
         rememberDesktopDragSelectModifier(
             sections = sections,
             selectedIds = selectedIds,
@@ -1511,14 +1529,15 @@ private fun GalleryDesktopGrid(
 
     LazyVerticalStaggeredGrid(
         columns = if (tabletWidth != null) {
-            StaggeredGridCells.Fixed((tabletWidth.value / 168f).toInt().coerceAtLeast(2))
+            StaggeredGridCells.Fixed(tabletGalleryColumns(tabletWidth))
         } else {
             StaggeredGridCells.Adaptive(160.dp)
         },
         state = state,
-        contentPadding = PaddingValues(8.dp),
-        verticalItemSpacing = 8.dp,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        userScrollEnabled = active,
+        contentPadding = PaddingValues(galleryGridGap),
+        verticalItemSpacing = galleryGridGap,
+        horizontalArrangement = Arrangement.spacedBy(galleryGridGap),
         modifier = modifier.fillMaxSize().then(dragSelectModifier),
     ) {
         sections.firstOrNull()?.let { first ->
@@ -1534,7 +1553,7 @@ private fun GalleryDesktopGrid(
         sections.forEachIndexed { dayIndex, section ->
             items(section.slots, key = { it.key }) { slot ->
                 val image = slot.image
-                val interactive = image != null && !isSelectionMode
+                val interactive = image != null && !isSelectionMode && active
                 val hoverInteraction = remember { MutableInteractionSource() }
                 val isHovered by hoverInteraction.collectIsHoveredAsState()
                 var contextMenuExpanded by remember { mutableStateOf(false) }
@@ -1545,7 +1564,7 @@ private fun GalleryDesktopGrid(
                         .testTag(slot.key)
                         .animateItem(
                             fadeInSpec = null,
-                            placementSpec = if (moving || returning != null || suppressPlacementAnimation) null else placementSpring,
+                            placementSpec = if (panelMoving || moving || returning != null || suppressPlacementAnimation) null else placementSpring,
                             fadeOutSpec = null,
                         )
                         .then(
@@ -1567,8 +1586,8 @@ private fun GalleryDesktopGrid(
                         preview = previews[slot.generation?.id],
                         isSelectionMode = isSelectionMode,
                         isSelected = image?.imageId in selectedIds,
-                        onClick = { image?.let(onClick) },
-                        onLongClick = { image?.let(onLongClick) },
+                        onClick = { if (active) image?.let(onClick) },
+                        onLongClick = { if (active) image?.let(onLongClick) },
                         onRevealed = { onRevealed(slot.key) },
                         onDismissFailure = { slot.generation?.id?.let(onDismissFailure) },
                         dateLabel = section.label.takeIf { dayIndex > 0 && slot.key == section.slots.first().key },

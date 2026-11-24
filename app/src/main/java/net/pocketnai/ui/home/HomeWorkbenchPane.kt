@@ -34,7 +34,6 @@ import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -48,6 +47,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.VerticalPager
@@ -74,6 +74,8 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -114,6 +116,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -127,6 +132,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.filterNotNull
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -137,8 +143,6 @@ import net.pocketnai.R
 import net.pocketnai.domain.model.GalleryFilter
 import net.pocketnai.domain.model.GalleryItem
 import net.pocketnai.domain.model.GalleryModels
-import net.pocketnai.domain.model.GallerySearch
-import net.pocketnai.domain.model.GenerationStatus
 import net.pocketnai.domain.model.ReferenceRole
 import net.pocketnai.domain.safety.SfwPolicy
 import net.pocketnai.ui.Routes
@@ -159,6 +163,7 @@ import net.pocketnai.ui.motion.ImageOriginPreview
 import net.pocketnai.ui.motion.LocalImageMotion
 import net.pocketnai.ui.motion.rememberPocketHaptics
 import net.pocketnai.ui.motion.sharedImage
+import net.pocketnai.ui.state.GenerationPreviewStore
 import net.pocketnai.ui.safety.SfwAsyncImage
 import java.io.File
 import kotlin.math.pow
@@ -186,6 +191,7 @@ fun HomeWorkbenchPane(
     inFlight: Boolean = false,
     selectedImageId: String? = null,
     onSelectedImageIdChange: ((String?) -> Unit)? = null,
+    filmstripState: LazyListState = rememberLazyListState(),
 ) {
     val container = LocalAppContainer.current
     val context = LocalContext.current
@@ -208,7 +214,8 @@ fun HomeWorkbenchPane(
     }
     var displayedPage by remember {
         mutableStateOf(galleryViewModel.filteredPage.value?.takeIf { page ->
-            syncFilter && (entryImageId == null || page.items.any { it.imageId == entryImageId })
+            (syncFilter || page.filter == GalleryFilter.None) &&
+                (entryImageId == null || page.items.any { it.imageId == entryImageId })
         })
     }
     var displayedSync by remember { mutableStateOf(syncFilter) }
@@ -217,21 +224,20 @@ fun HomeWorkbenchPane(
     val hasMore = displayedPage?.hasMore == true && displayedSync == syncFilter
     val lifecycle = LocalLifecycleOwner.current.lifecycle
 
-    val activeGenerations = remember(generations, filter) {
-        generations.filter { summary ->
-            summary.generation.isActive && GallerySearch.matches(summary.generation, filter)
-        }
-    }
-    val hasGeneratingSlot = activeGenerations.isNotEmpty() || inFlight
-
-    var viewingGenerating by remember { mutableStateOf(false) }
+    val taskSlots = remember(generations, inFlight, items) { workbenchTaskSlots(generations, inFlight, items) }
+    var selectedSlotKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedSlot = taskSlots.firstOrNull { it.key == selectedSlotKey }
+    // 状态先于图片页到达时，用最近一次真实的所选卡片垫底，直到匹配的成图可以接手。
+    var lastPickedSlot by remember(selectedSlotKey) { mutableStateOf(selectedSlot) }
+    if (selectedSlot != null && lastPickedSlot != selectedSlot) SideEffect { lastPickedSlot = selectedSlot }
+    val stageSlot = selectedSlot ?: lastPickedSlot ?: if (items.isEmpty()) taskSlots.firstOrNull() else null
     var showNewImageBanner by remember { mutableStateOf(false) }
     val initialPage = remember {
         items.indexOfFirst { it.imageId == entryImageId }.coerceAtLeast(0)
     }
     val stagePagerState = rememberPagerState(initialPage) { items.size }
     val currentIndex = stagePagerState.currentPage.coerceIn(0, items.lastIndex.coerceAtLeast(0))
-    val activeItem = if (viewingGenerating && hasGeneratingSlot) null else items.getOrNull(currentIndex)
+    val activeItem = if (stageSlot != null) null else items.getOrNull(currentIndex)
     var targetId by remember { mutableStateOf<String?>(null) }
     val pageRequests = remember { Channel<String>(Channel.CONFLATED) }
     val savedSelection by rememberUpdatedState(selectedImageId)
@@ -249,14 +255,26 @@ fun HomeWorkbenchPane(
                 val newArrival = sameSource && newTop != null && oldTop != null &&
                     newTop.imageId != oldTop.imageId && newTop.createdAt >= oldTop.createdAt &&
                     page.items.any { it.imageId == oldTop.imageId }
-                val atLatest = viewingGenerating || (oldIndex == 0 && targetId == null) || targetId == oldTop?.imageId
-                val followTop = (newArrival && atLatest) ||
-                    (sameSource && oldTop == null && newTop != null && viewingGenerating)
+                val atLatest = selectedSlotKey == null && ((oldIndex == 0 && targetId == null &&
+                    filmstripState.firstVisibleItemIndex == 0) || (targetId != null && targetId == oldTop?.imageId))
+                val followTop = newArrival && atLatest
+                val resultIndex = selectedSlotKey?.let { key ->
+                    page.items.indexOfFirst { WorkbenchTaskSlot.keyOf(it.generationId, it.ordinal) == key }
+                } ?: -1
+                if (resultIndex >= 0 && imageMotion?.returning == null) {
+                    displayedPage = page
+                    displayedSync = syncFilter
+                    targetId = null
+                    selectedSlotKey = null
+                    showNewImageBanner = false
+                    stagePagerState.requestScrollToPage(resultIndex)
+                    return@collectLatest
+                }
                 val anchor = imageMotion?.returning?.takeIf { it.source == Routes.HOME }?.imageId
                     ?: old?.items?.getOrNull(oldIndex)?.imageId ?: (if (old == null) entryImageId else savedSelection)
                 val anchorIndex = page.items.indexOfFirst { it.imageId == anchor }
                 // 稀疏筛选中的旧图可能落在全部图库的下一窗口。只查 ID 顺序，命中后一次扩窗。
-                if (anchor != null && anchorIndex < 0 && page.hasMore && (!sameSource || imageMotion?.returning != null)) {
+                if (anchor != null && anchorIndex < 0 && page.hasMore) {
                     val rank = container.generationRepository.galleryOrder(page.filter).indexOf(anchor)
                     if (rank >= page.items.size) {
                         if (syncFilter) galleryViewModel.includeIndex(page.filter, rank)
@@ -264,7 +282,7 @@ fun HomeWorkbenchPane(
                         return@collectLatest
                     }
                 }
-                val animateNewArrival = followTop && newArrival && !viewingGenerating && anchorIndex > 0 && newTop != null
+                val animateNewArrival = followTop && anchorIndex > 0
                 val index = when {
                     animateNewArrival -> anchorIndex
                     followTop -> 0
@@ -290,7 +308,6 @@ fun HomeWorkbenchPane(
                 }
                 if (!sameSource || followTop) showNewImageBanner = false
                 else if (newArrival) showNewImageBanner = true
-                if (followTop) viewingGenerating = false
             }
         }
     }
@@ -302,14 +319,18 @@ fun HomeWorkbenchPane(
             val index = items.indexOfFirst { it.imageId == returning.imageId }
             if (index >= 0) {
                 targetId = null
-                viewingGenerating = false
+                selectedSlotKey = null
                 stagePagerState.requestScrollToPage(index)
+                snapshotFlow {
+                    stagePagerState.currentPage == index &&
+                        stagePagerState.layoutInfo.visiblePagesInfo.any { it.key == returning.imageId }
+                }.first { it }
                 imageMotion.consume(returning)
             }
         }
     }
-    LaunchedEffect(activeItem?.imageId, displayedPage != null) {
-        if (displayedPage != null) onSelectedImageIdChange?.invoke(activeItem?.imageId)
+    LaunchedEffect(activeItem?.imageId, stageSlot?.key, displayedPage != null) {
+        if (displayedPage != null && stageSlot == null) onSelectedImageIdChange?.invoke(activeItem?.imageId)
     }
 
     // 单个翻页协程完成当前动画再取最新目标。高频滚轮不会逐帧重启弹簧，反向也不会排长队。
@@ -328,7 +349,6 @@ fun HomeWorkbenchPane(
         stagePagerState.interactionSource.interactions.collect { if (it is DragInteraction.Start) targetId = null }
     }
 
-    val filmstripState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
     val stageFocusRequester = remember { FocusRequester() }
 
@@ -351,28 +371,47 @@ fun HomeWorkbenchPane(
         }
     }
 
-    // 当所有进行中任务都结束时，自动退出占位查看态。
-    LaunchedEffect(hasGeneratingSlot) {
-        if (!hasGeneratingSlot && viewingGenerating) {
-            viewingGenerating = false
+    // 两条 Room Flow 独立发值。只跟进所选槽位自己的成图，其他任务完成不会抢走舞台。
+    LaunchedEffect(selectedSlotKey, taskSlots, displayedPage) {
+        val key = selectedSlotKey ?: return@LaunchedEffect
+        if (key == WorkbenchTaskSlot.SUBMITTING && taskSlots.isNotEmpty()) {
+            selectedSlotKey = taskSlots.first().key
+            return@LaunchedEffect
+        }
+        if (selectedSlot != null || displayedPage == null) return@LaunchedEffect
+        val page = displayedPage ?: return@LaunchedEffect
+        fun List<GalleryItem>.indexOfSlot() = indexOfFirst { WorkbenchTaskSlot.keyOf(it.generationId, it.ordinal) == key }
+        val index = items.indexOfSlot()
+        if (index >= 0) {
+            targetId = null
+            stagePagerState.requestScrollToPage(index)
+        } else if (galleryViewModel.observePage(page.filter, page.limit).first().items.indexOfSlot() >= 0) {
+            return@LaunchedEffect // 图片已提交，等正在订阅的分页把它送到 Pager。
+        }
+        selectedSlotKey = null
+    }
+
+    // 在下一次测量前覆盖 LazyColumn 的默认 key 锚定，仅当旧首项仍在顶部时跟随新前缀。
+    val firstSlotKey = taskSlots.firstOrNull()?.key
+    DisposableEffect(firstSlotKey) {
+        if (firstSlotKey != null && filmstripState.firstVisibleItemIndex == 0) {
+            filmstripState.requestScrollToItem(0)
+        }
+        onDispose { }
+    }
+    LaunchedEffect(activeItem?.imageId, displayedSync) {
+        val item = activeItem ?: return@LaunchedEffect
+        if (currentIndex == 0 && filmstripState.firstVisibleItemIndex == 0) return@LaunchedEffect
+        if (filmstripState.layoutInfo.visibleItemsInfo.none { it.key == item.imageId }) {
+            filmstripState.animateScrollToItem(currentIndex + taskSlots.size)
         }
     }
 
-    // 选中项变化时平滑保持胶片栏可见，接近末尾自动加载更多。
-    LaunchedEffect(currentIndex, activeItem?.imageId, hasGeneratingSlot, displayedSync) {
-        if (activeItem != null) {
-            val listIdx = currentIndex + if (hasGeneratingSlot) 1 else 0
-            val thumb = filmstripState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == activeItem.imageId }
-            if (thumb == null) filmstripState.animateScrollToItem(listIdx)
-            else if (thumb.index != listIdx) filmstripState.requestScrollToItem(listIdx, -thumb.offset)
-        }
-    }
-
-    LaunchedEffect(filmstripState, displayedPage, hasMore, hasGeneratingSlot) {
+    LaunchedEffect(filmstripState, displayedPage, hasMore, taskSlots.size) {
         if (!hasMore) return@LaunchedEffect
         snapshotFlow {
             val last = filmstripState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-            maxOf(stagePagerState.currentPage, last - if (hasGeneratingSlot) 1 else 0) >= items.size - 16
+            maxOf(stagePagerState.currentPage, last - taskSlots.size) >= items.size - 16
         }.collect { nearEnd ->
             if (nearEnd) {
                 if (syncFilter) galleryViewModel.loadMore()
@@ -420,7 +459,7 @@ fun HomeWorkbenchPane(
 
     fun selectIndex(index: Int) {
         val target = items.getOrNull(index) ?: return
-        viewingGenerating = false
+        selectedSlotKey = null
         targetId = target.imageId
         pageRequests.trySend(target.imageId)
         if (index == 0) showNewImageBanner = false
@@ -429,7 +468,7 @@ fun HomeWorkbenchPane(
     fun stepPages(steps: Int) {
         if (items.isEmpty()) return
         // 同一帧可能送达多个滚轮刻度，直接读最新目标，不能从尚在动画中的 currentPage 起算。
-        val base = if (viewingGenerating) -1 else targetId?.let { id -> items.indexOfFirst { it.imageId == id } }
+        val base = if (stageSlot != null) -1 else targetId?.let { id -> items.indexOfFirst { it.imageId == id } }
             ?.takeIf { it >= 0 } ?: stagePagerState.currentPage
         if (base < 0 && steps < 0) return
         val index = (base + steps).coerceIn(0, items.lastIndex)
@@ -498,7 +537,8 @@ fun HomeWorkbenchPane(
 
     fun zoomAt(scale: Float, pointer: Offset, item: GalleryItem) {
         val pivot = pointer - Offset(stageSize.width / 2f, stageSize.height / 2f)
-        val offset = pivot + (transform.targetOffset - pivot) * (scale / transform.targetScale)
+        val visiblePan = clampOffset(transform.targetOffset, transform.targetScale, item)
+        val offset = pivot + (visiblePan - pivot) * (scale / transform.targetScale)
         transform.animateTo(scale, clampOffset(offset, scale, item))
     }
 
@@ -553,10 +593,6 @@ fun HomeWorkbenchPane(
                     .clipToBounds()
                     .onSizeChanged {
                         stageSize = Size(it.width.toFloat(), it.height.toFloat())
-                        activeItem?.let { item ->
-                            val bounded = clampOffset(transform.offset, transform.scale, item)
-                            if (bounded != transform.offset) transform.snapTo(transform.scale, bounded)
-                        }
                     }
                     .onMouseWheel(PointerEventPass.Initial) { delta, ctrl, position ->
                         val item = activeItem
@@ -568,7 +604,7 @@ fun HomeWorkbenchPane(
                             }
                             item != null && (transform.targetScale > 1.02f || transform.scale > 1.02f) -> {
                                 wheelRemainder = 0f
-                                val pan = transform.targetOffset - Offset(0f, delta * wheelPanPx)
+                                val pan = clampOffset(transform.targetOffset, transform.targetScale, item) - Offset(0f, delta * wheelPanPx)
                                 transform.animateTo(transform.targetScale, clampOffset(pan, transform.targetScale, item))
                             }
                             !ctrl -> {
@@ -621,7 +657,7 @@ fun HomeWorkbenchPane(
                                         Offset.Zero
                                     } else {
                                         clampOffset(
-                                            transform.offset + panChange,
+                                            clampOffset(transform.offset, transform.scale, item) + panChange,
                                             nextScale,
                                             item,
                                         )
@@ -632,7 +668,7 @@ fun HomeWorkbenchPane(
                                     val pan = event.calculatePan()
                                     if (pan != Offset.Zero) {
                                         val nextOffset = clampOffset(
-                                            transform.offset + pan,
+                                            clampOffset(transform.offset, transform.scale, item) + pan,
                                             transform.scale,
                                             item,
                                         )
@@ -646,16 +682,17 @@ fun HomeWorkbenchPane(
                 contentAlignment = Alignment.Center,
             ) {
                 val stageMode = when {
-                    (viewingGenerating || items.isEmpty()) && hasGeneratingSlot -> StageContentMode.GENERATING
+                    stageSlot != null -> StageContentMode.GENERATING
                     displayedPage == null -> StageContentMode.LOADING
                     activeItem == null -> StageContentMode.EMPTY
                     else -> StageContentMode.PAGER
                 }
                 AnimatedContent(
-                    targetState = stageMode,
+                    targetState = stageMode to stageSlot,
+                    contentKey = { it.first },
                     label = "stage-content-mode",
                     transitionSpec = {
-                        if (targetState == StageContentMode.PAGER && initialState == StageContentMode.GENERATING) {
+                        if (targetState.first == StageContentMode.PAGER && initialState.first == StageContentMode.GENERATING) {
                             (fadeIn(tween(260, easing = FastOutSlowInEasing)) +
                                 scaleIn(tween(260, easing = FastOutSlowInEasing), initialScale = 0.96f)) togetherWith
                                 fadeOut(tween(180, easing = FastOutSlowInEasing))
@@ -665,14 +702,12 @@ fun HomeWorkbenchPane(
                         }
                     },
                     modifier = Modifier.fillMaxSize(),
-                ) { mode ->
+                ) { (mode, displayedSlot) ->
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         when (mode) {
                             StageContentMode.GENERATING -> {
-                                val activeGen = activeGenerations.firstOrNull()?.generation
+                                val activeGen = displayedSlot?.generation
                                 val aspect = activeGen?.params?.targetSize?.let { it.width.toFloat() / it.height } ?: (832f / 1216f)
-                                val preview = activeGen?.id?.let { previews[it] }
-                                val sensitive = activeGen?.let(SfwPolicy::isSensitive) ?: false
                                 Box(
                                     modifier = Modifier
                                         .padding(24.dp)
@@ -681,27 +716,7 @@ fun HomeWorkbenchPane(
                                         .clip(RoundedCornerShape(16.dp))
                                         .background(MaterialTheme.colorScheme.surfaceVariant),
                                 ) {
-                                    GenerationImageReveal(
-                                        ready = false,
-                                        failed = false,
-                                        animate = true,
-                                        startedAt = activeGen?.createdAt ?: System.currentTimeMillis(),
-                                        onRevealed = {},
-                                        queued = activeGen?.status == GenerationStatus.QUEUED,
-                                        modifier = Modifier.fillMaxSize(),
-                                    ) {
-                                        if (preview != null) {
-                                            SfwAsyncImage(
-                                                file = File(preview.path),
-                                                contentDescription = null,
-                                                contentScale = ContentScale.Crop,
-                                                sensitive = sensitive,
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .graphicsLayer { alpha = 0.35f },
-                                            )
-                                        }
-                                    }
+                                    WorkbenchTaskPreview(displayedSlot, activeGen?.let { previews[it.id] }, thumbnail = false)
                                 }
                             }
 
@@ -731,21 +746,15 @@ fun HomeWorkbenchPane(
                                         (if (stageItem.height > 0) stageItem.width.toFloat() / stageItem.height else 1f)
                                             .coerceIn(0.25f, 4f)
                                     }
-                                    BoxWithConstraints(
+                                    Box(
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .padding(12.dp),
                                         contentAlignment = Alignment.Center,
                                     ) {
-                                        val containerAspect = if (maxHeight > 0.dp) maxWidth.value / maxHeight.value else itemAspect
-                                        val fittedModifier = if (containerAspect > itemAspect) {
-                                            Modifier.fillMaxHeight().aspectRatio(itemAspect, matchHeightConstraintsFirst = true)
-                                        } else {
-                                            Modifier.fillMaxWidth().aspectRatio(itemAspect, matchHeightConstraintsFirst = false)
-                                        }
                                         val isStageSvg = stageItem.relativePath.endsWith(".svg", ignoreCase = true)
                                         Box(
-                                            modifier = fittedModifier
+                                            modifier = Modifier.aspectRatio(itemAspect)
                                                 .graphicsLayer {
                                                     scaleX = if (isCurrentPage) transform.scale else 1f
                                                     scaleY = scaleX
@@ -907,60 +916,41 @@ fun HomeWorkbenchPane(
                         .weight(1f)
                         .fillMaxWidth(),
                 ) {
-                    if (hasGeneratingSlot) {
-                        item(key = "workbench-generating-placeholder") {
-                            val activeGen = activeGenerations.firstOrNull()?.generation
-                            val preview = activeGen?.id?.let { previews[it] }
-                            val sensitive = activeGen?.let(SfwPolicy::isSensitive) ?: false
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .aspectRatio(1f)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .border(
-                                        width = if (viewingGenerating) 2.5.dp else 1.dp,
-                                        color = if (viewingGenerating) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
-                                        },
-                                        shape = RoundedCornerShape(10.dp),
-                                    )
-                                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                                    .clickable {
-                                        haptics.tick()
-                                        targetId = null
-                                        viewingGenerating = true
-                                        runCatching { stageFocusRequester.requestFocus() }
+                    itemsIndexed(taskSlots, key = { _, slot -> slot.key }) { index, slot ->
+                        val activeGen = slot.generation
+                        val preview = activeGen?.id?.let { previews[it] }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .border(
+                                    width = if (slot.key == stageSlot?.key) 2.5.dp else 1.dp,
+                                    color = if (slot.key == stageSlot?.key) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
                                     },
-                            ) {
-                                GenerationImageReveal(
-                                    ready = false,
-                                    failed = false,
-                                    animate = true,
-                                    startedAt = activeGen?.createdAt ?: System.currentTimeMillis(),
-                                    onRevealed = {},
-                                    queued = activeGen?.status == GenerationStatus.QUEUED,
-                                    modifier = Modifier.fillMaxSize(),
-                                ) {
-                                    if (preview != null) {
-                                        SfwAsyncImage(
-                                            file = File(preview.path),
-                                            contentDescription = null,
-                                            contentScale = ContentScale.Crop,
-                                            sensitive = sensitive,
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .graphicsLayer { alpha = 0.3f },
-                                        )
-                                    }
+                                    shape = RoundedCornerShape(10.dp),
+                                )
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .semantics {
+                                    contentDescription = "任务预览 ${index + 1}，第 ${slot.ordinal} 张"
+                                    selected = slot.key == stageSlot?.key
                                 }
-                            }
+                                .clickable {
+                                    haptics.tick()
+                                    targetId = null
+                                    selectedSlotKey = slot.key
+                                    runCatching { stageFocusRequester.requestFocus() }
+                                },
+                        ) {
+                            WorkbenchTaskPreview(slot, preview, thumbnail = true)
                         }
                     }
 
                     itemsIndexed(items, key = { _, item -> item.imageId }) { index, item ->
-                        val selected = !viewingGenerating && index == currentIndex
+                        val selected = stageSlot == null && index == currentIndex
                         val isSvg = item.relativePath.endsWith(".svg", ignoreCase = true)
                         var thumbMenuExpanded by remember { mutableStateOf(false) }
 
@@ -1141,9 +1131,9 @@ fun HomeWorkbenchPane(
                                 }
                             }
                         }
-                    } else if (hasGeneratingSlot) {
+                    } else if (stageSlot != null) {
                         Text(
-                            text = "正在生成中…",
+                            text = if (stageSlot.queued) "排队中…" else "正在生成中…",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                             maxLines = 1,
@@ -1259,6 +1249,31 @@ fun HomeWorkbenchPane(
                 onUseAsReference?.invoke(target, role)
             },
             onDismiss = { referenceTarget = null },
+        )
+    }
+}
+
+@Composable
+private fun WorkbenchTaskPreview(
+    slot: WorkbenchTaskSlot?,
+    preview: GenerationPreviewStore.Preview?,
+    thumbnail: Boolean,
+) {
+    GenerationImageReveal(
+        ready = false, failed = false, animate = true,
+        startedAt = slot?.generation?.createdAt ?: remember { System.currentTimeMillis() },
+        onRevealed = {},
+        queued = slot?.queued == true,
+        showLabel = !thumbnail,
+        indicatorSize = if (thumbnail) 36.dp else 64.dp,
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        if (preview != null) SfwAsyncImage(
+            file = File(preview.path),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            sensitive = slot?.generation?.let(SfwPolicy::isSensitive) ?: false,
+            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = if (thumbnail) 0.3f else 0.35f },
         )
     }
 }

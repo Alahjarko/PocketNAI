@@ -148,8 +148,8 @@
   `NavigationBar` 换成最左侧的 `NavigationRail`（`PocketNaiApp` 里按 `BoxWithConstraints`
   宽度切换）；内容宽度 ≥720dp（屏幕约 800dp 起）时再进一步，悬浮层整个取消，变成
   "Rail | 画廊 | 常驻生成面板（400dp）"三栏（`HomeScreen` 按宽度分形态，
-  对照 WinNAI 桌面端）。宽屏不重排表单本身；画廊网格是
-  `StaggeredGridCells.Adaptive(160.dp)`，列数随宽度自然增减，不要改回 `Fixed(2)`。
+  对照 WinNAI 桌面端）。平板面板与工作区共用开合弹簧。画廊按宽、窄两个端点各算列数，切换期间只对两层可见卡片做溶解与裁剪；手机使用 `Adaptive(160.dp)`。
+  大图胶片按任务和未产出序号显示，历史筛选只影响成图。见[平板首页回归矩阵](verification.md#平板首页面板与胶片条回归46301de-真机反馈)。
 - **详情页也按 ≥720dp 分两栏**（2026-09-19）：左列整幅大图（`ContentScale.Fit` 适配左栏）、
   分隔线、右列 380dp 参数与操作（可滚动）；窄屏保持单列。正文由一个**不带滚动与内边距**
   的 `detailInfoItems` 承担，两套布局各自使用懒加载列表 —— 加新参数行时只改那一处。

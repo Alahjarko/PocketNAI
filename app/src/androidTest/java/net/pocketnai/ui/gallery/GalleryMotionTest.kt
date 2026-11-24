@@ -37,6 +37,7 @@ import com.google.common.truth.Truth.assertThat
 import net.pocketnai.core.ErrorCode
 import net.pocketnai.domain.model.*
 import net.pocketnai.ui.motion.*
+import kotlinx.coroutines.async
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
@@ -49,8 +50,11 @@ class GalleryMotionTest {
     /** Decode/cache checks need Android's running main looper, not Layoutlib. */
     private fun checkSfwImageCache(file: File) = kotlinx.coroutines.runBlocking {
         val cache = net.pocketnai.ui.safety.SfwImageMemoryCache(compose.activity, 4 * 1024 * 1024)
-        val loader = coil.ImageLoader.Builder(compose.activity).memoryCache(cache).eventListener(object : coil.EventListener {
+        val transformations = java.util.concurrent.atomic.AtomicInteger()
+        val loader = coil.ImageLoader.Builder(compose.activity).memoryCache(cache)
+            .components { add(net.pocketnai.ui.safety.SfwMaskRequestInterceptor()) }.eventListener(object : coil.EventListener {
             override fun transformStart(request: coil.request.ImageRequest, input: Bitmap) {
+                transformations.incrementAndGet()
                 check(maxOf(input.width, input.height) <= 96)
             }
         }).build()
@@ -61,7 +65,11 @@ class GalleryMotionTest {
                 val clear = buildSharedImageRequest(compose.activity, file, false)
                 assertThat(masked.memoryCacheKey).isNotEqualTo(clear.memoryCacheKey)
                 assertThat(masked.placeholderMemoryCacheKey).isEqualTo(masked.memoryCacheKey)
-                val first = loader.execute(masked) as coil.request.SuccessResult
+                val pair = listOf(async { loader.execute(masked) }, async { loader.execute(masked) })
+                    .map { it.await() as coil.request.SuccessResult }
+                assertThat(transformations.get()).isEqualTo(1)
+                assertThat(pair.count { it.dataSource == coil.decode.DataSource.MEMORY_CACHE }).isEqualTo(1)
+                val first = pair.first()
                 val small = (first.drawable as android.graphics.drawable.BitmapDrawable).bitmap
                 assertThat(maxOf(small.width, small.height)).isEqualTo(48)
                 assertThat(small.allocationByteCount).isAtMost(48 * 48 * 4)

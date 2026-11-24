@@ -4,15 +4,13 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
@@ -34,9 +32,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -60,6 +62,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,6 +81,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
@@ -85,6 +89,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -98,6 +103,7 @@ import net.pocketnai.ui.common.ShortcutCheatsheetDialog
 import net.pocketnai.ui.common.imageUriDropTarget
 import net.pocketnai.ui.gallery.GalleryPane
 import net.pocketnai.ui.gallery.GalleryViewModel
+import net.pocketnai.ui.gallery.TabletGalleryLayout
 import net.pocketnai.ui.generate.GenerateSheet
 import net.pocketnai.ui.generate.GenerateViewModel
 import net.pocketnai.ui.motion.LocalWorkbenchSharedTransition
@@ -194,6 +200,12 @@ fun HomeScreen(
         }
     }
 
+    var rightPaneCollapsed by rememberSaveable { mutableStateOf(false) }
+    var stageImageId by rememberSaveable { mutableStateOf<String?>(null) }
+    val splitGrid = rememberLazyStaggeredGridState()
+    val fullGrid = rememberLazyStaggeredGridState()
+    val filmstripState = rememberLazyListState()
+    val modeState = rememberSaveableStateHolder()
     BoxWithConstraints(modifier = modifier.then(keyShortcutModifier)) {
         if (maxWidth >= 720.dp) {
             // ---- 平板 / 桌面形态：可切换视图 + 可拖宽可收起的常驻右侧面板 ----
@@ -203,15 +215,19 @@ fun HomeScreen(
             val maxAllowedPaneWidth = (maxWidth.value - 320f - SPLIT_HANDLE_WIDTH.value)
                 .coerceIn(MIN_PANE_WIDTH_DP, MAX_PANE_WIDTH_DP)
             val paneWidth = persistedPaneWidthDp.toFloat().coerceIn(MIN_PANE_WIDTH_DP, maxAllowedPaneWidth).dp
-            var rightPaneCollapsed by rememberSaveable { mutableStateOf(false) }
-            // 面板在独立图层滑动。展开时先覆盖图库，完全到位才收窄；收起时一次铺满背后。
-            val panel = updateTransition(!rightPaneCollapsed, label = "generate-pane")
-            val galleryWidth = if (panel.currentState && !rightPaneCollapsed && !panel.isRunning) {
-                maxWidth - paneWidth - SPLIT_HANDLE_WIDTH
-            } else maxWidth
+            val panel = updateTransition(rightPaneCollapsed, label = "generate-pane")
+            val visibleFraction = panel.animateFloat(
+                transitionSpec = { spring(dampingRatio = 1f, stiffness = 460f, visibilityThreshold = 0.0003f) },
+                label = "generate-pane-visible",
+            ) { collapsed -> if (collapsed) 0f else 1f }
+            val spanPx = with(density) { paneWidth.roundToPx() + SPLIT_HANDLE_WIDTH.roundToPx() }
+            fun visiblePanelPx() = (spanPx * visibleFraction.value).roundToInt().coerceIn(0, spanPx)
+            val tabletGallery = TabletGalleryLayout(
+                panel, visibleFraction, with(density) { (constraints.maxWidth - spanPx).toDp() },
+                maxWidth, splitGrid, fullGrid,
+            )
             var dragWidth by remember(paneWidth, maxAllowedPaneWidth) { mutableStateOf<Float?>(null) }
             val galleryItems by galleryViewModel.items.collectAsStateWithLifecycle()
-            var stageImageId by rememberSaveable { mutableStateOf<String?>(null) }
             val workbenchSharedImageId = remember(stageImageId, galleryItems) {
                 stageImageId?.takeIf { id -> galleryItems.any { it.imageId == id } }
                     ?: galleryItems.firstOrNull()?.imageId
@@ -221,7 +237,12 @@ fun HomeScreen(
                 // 左侧工作区：顶部切换栏 + 大图工作台 / 相册瀑布流
                 Column(
                     modifier = Modifier
-                        .width(galleryWidth)
+                        .layout { measurable, constraints ->
+                            // 左区和右栏共用一次像素舍入；动画只触发布局，不逐帧重组表单。
+                            val width = constraints.maxWidth - visiblePanelPx()
+                            val child = measurable.measure(constraints.copy(minWidth = width, maxWidth = width))
+                            layout(width, child.height) { child.placeRelative(0, 0) }
+                        }
                         .fillMaxHeight(),
                 ) {
                     TabletHomeTopBar(
@@ -234,6 +255,7 @@ fun HomeScreen(
                         onToggleRightPane = {
                             haptics.tick()
                             dragWidth = null
+                            tabletGallery.prepareToggle(rightPaneCollapsed)
                             rightPaneCollapsed = !rightPaneCollapsed
                         },
                     )
@@ -249,59 +271,63 @@ fun HomeScreen(
                             .weight(1f)
                             .fillMaxWidth(),
                     ) { isStage ->
+                        val shareModeImage = remember(homeViewMode) {
+                            !tabletGallery.moving
+                        }
                         CompositionLocalProvider(
                             LocalWorkbenchSharedTransition provides WorkbenchSharedTransition(
                                 visibility = this@AnimatedContent,
-                                activeImageId = workbenchSharedImageId,
+                                activeImageId = workbenchSharedImageId.takeIf { shareModeImage },
                             ),
                         ) {
-                            if (isStage) {
-                                HomeWorkbenchPane(
-                                    galleryViewModel = galleryViewModel,
-                                    onOpenImage = onOpenImage,
-                                    onInpaintImage = onInpaintImage,
-                                    onReuseItem = generateViewModel::reuseGalleryItem,
-                                    onUseAsReference = onUseAsReference,
-                                    supportsDirectorReference = supportsDirector,
-                                    supportsVibeTransfer = supportsVibe,
-                                    inFlight = inFlight,
-                                    selectedImageId = stageImageId,
-                                    onSelectedImageIdChange = { stageImageId = it },
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            } else {
-                                GalleryPane(
-                                    onOpenImage = onOpenImage,
-                                    onInpaintImage = onInpaintImage,
-                                    onUseAsReference = onUseAsReference,
-                                    supportsDirectorReference = supportsDirector,
-                                    supportsVibeTransfer = supportsVibe,
-                                    searchFocusRequester = searchFocusRequester,
-                                    onReuseItem = generateViewModel::reuseGalleryItem,
-                                    galleryViewModel = galleryViewModel,
-                                    tabletWidth = galleryWidth,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
+                            modeState.SaveableStateProvider(isStage) {
+                                if (isStage) {
+                                    HomeWorkbenchPane(
+                                        galleryViewModel = galleryViewModel,
+                                        onOpenImage = onOpenImage,
+                                        onInpaintImage = onInpaintImage,
+                                        onReuseItem = generateViewModel::reuseGalleryItem,
+                                        onUseAsReference = onUseAsReference,
+                                        supportsDirectorReference = supportsDirector,
+                                        supportsVibeTransfer = supportsVibe,
+                                        inFlight = inFlight,
+                                        selectedImageId = stageImageId,
+                                        filmstripState = filmstripState,
+                                        onSelectedImageIdChange = { stageImageId = it },
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                } else {
+                                    GalleryPane(
+                                        onOpenImage = onOpenImage,
+                                        onInpaintImage = onInpaintImage,
+                                        onUseAsReference = onUseAsReference,
+                                        supportsDirectorReference = supportsDirector,
+                                        supportsVibeTransfer = supportsVibe,
+                                        searchFocusRequester = searchFocusRequester,
+                                        onReuseItem = generateViewModel::reuseGalleryItem,
+                                        galleryViewModel = galleryViewModel,
+                                        tabletLayout = tabletGallery,
+                                        gridState = if (rightPaneCollapsed) fullGrid else splitGrid,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
-                // 手柄和右侧面板一起平移，动画只影响这一层。
-                panel.AnimatedVisibility(
-                    visible = { it },
-                    modifier = Modifier.align(Alignment.CenterEnd),
-                    enter = slideInHorizontally(tween(230, easing = FastOutSlowInEasing)) { it * endSign },
-                    exit = slideOutHorizontally(tween(200, easing = FastOutSlowInEasing)) { it * endSign },
-                ) {
-                    Row(Modifier.fillMaxHeight().background(MaterialTheme.colorScheme.surface)) {
+                // 面板始终按展开宽度排版，沿逻辑 end 方向移出；完全收起后释放表单。
+                if (!rightPaneCollapsed || tabletGallery.moving) {
+                    Row(Modifier.align(Alignment.CenterEnd).offset {
+                        IntOffset(spanPx - visiblePanelPx(), 0)
+                    }.fillMaxHeight().background(MaterialTheme.colorScheme.surface)) {
                         SplitPaneDragHandle(
                             onDragDeltaPx = { deltaPx ->
-                                dragWidth = ((dragWidth ?: paneWidth.value) - endSign * deltaPx / density.density)
+                                if (!rightPaneCollapsed) dragWidth = ((dragWidth ?: paneWidth.value) - endSign * deltaPx / density.density)
                                     .coerceIn(MIN_PANE_WIDTH_DP, maxAllowedPaneWidth)
                             },
                             onDragFinished = { commit ->
-                                if (commit) dragWidth?.let { container.settingsStore.setTabletGeneratePaneWidthDp(it.roundToInt()) }
+                                if (commit && !rightPaneCollapsed) dragWidth?.let { container.settingsStore.setTabletGeneratePaneWidthDp(it.roundToInt()) }
                                 dragWidth = null
                             },
                         )
@@ -379,6 +405,7 @@ fun HomeScreen(
                 searchFocusRequester = searchFocusRequester,
                 onReuseItem = generateViewModel::reuseGalleryItem,
                 galleryViewModel = galleryViewModel,
+                gridState = if (rightPaneCollapsed) fullGrid else splitGrid,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(contentPadding),
@@ -419,12 +446,12 @@ private fun TabletHomeTopBar(
             .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Surface(
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            modifier = Modifier.width(236.dp),
+            modifier = Modifier.weight(1f, fill = false).widthIn(max = 236.dp),
         ) {
             Row(
                 modifier = Modifier
@@ -460,7 +487,7 @@ private fun TabletHomeTopBar(
             }
         }
 
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.width(8.dp))
 
         Surface(
             shape = CircleShape,

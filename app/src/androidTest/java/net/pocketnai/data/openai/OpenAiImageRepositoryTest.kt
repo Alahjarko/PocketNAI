@@ -115,23 +115,30 @@ class OpenAiImageRepositoryTest {
             assertThat(billed.generationId).isEqualTo(image.generationId)
             assertThat(billed.status).isEqualTo("PARTIAL")
             assertThat(OpenAiImageCodec.decode(billed.snapshotJson)).isEqualTo(revised)
-            kotlinx.coroutines.withTimeout(5_000) {
+            kotlinx.coroutines.withTimeout(10_000) {
                 kotlinx.coroutines.coroutineScope {
                     val entered = java.util.concurrent.atomic.AtomicInteger()
-                    val both = kotlinx.coroutines.CompletableDeferred<Unit>()
+                    val release = kotlinx.coroutines.CompletableDeferred<Unit>()
                     val concurrent = OpenAiImageRepository(OpenAiImagesTransport { _, p, _ ->
-                        if (entered.incrementAndGet() == 2) both.complete(Unit)
-                        both.await()
+                        entered.incrementAndGet()
+                        release.await()
                         if (p.prompt == "failure") throw OpenAiImageFailure(false, "fake rejection")
                         OpenAiImageResponse(listOf(Base64.encodeToString(bytes, Base64.NO_WRAP)),
                             OpenAiImageSnapshot(p, OpenAiImageUsage(3, 0, 100)))
                     }, db.generationDao(), files, { secret })
-                    val requests = listOf("failure", "success").map { prompt -> async {
+                    val requests = listOf("failure", "success", "third", "fourth").map { prompt -> async {
                         concurrent.generate(OpenAiImageDraft(params.copy(prompt = prompt, count = 1))).toList()
                     } }
+                    // 即使历史窗口只取一条，所有活跃任务仍可见。第四条拿到许可前必须保持排队。
+                    db.generationDao().observeRecentGenerations(1).first { rows ->
+                        rows.count { it.generation.status == "GENERATING" } == 3 &&
+                            rows.count { it.generation.status == "QUEUED" } == 1
+                    }
+                    release.complete(Unit)
+                    requests.forEach { it.await() }
                     val failed = requests[0].await()
                     val succeeded = requests[1].await()
-                    assertThat(entered.get()).isEqualTo(2)
+                    assertThat(entered.get()).isEqualTo(4)
                     assertThat(failed.filterIsInstance<GenerationEvent.FatalError>()).hasSize(1)
                     assertThat(succeeded.filterIsInstance<GenerationEvent.Final>()).hasSize(1)
                     assertThat(failed.first().generationId).isNotEqualTo(succeeded.first().generationId)
@@ -229,7 +236,7 @@ class OpenAiImageRepositoryTest {
                 """<!DOCTYPE svg [<!ENTITY ext SYSTEM "file:///etc/passwd">]><svg xmlns="http://www.w3.org/2000/svg" width="64" height="32"><text>&ext;</text></svg>""",
             )) assertThat(runCatching { net.pocketnai.data.image.GeneratedMedia.inspect(unsafe.toByteArray(), "svg") }.isFailure).isTrue()
             val ledger = db.generationDao().observeOpenAiSpending().first()
-            assertThat(ledger).hasSize(5)
+            assertThat(ledger).hasSize(7)
             db.generationDao().purgeAllGenerations()
             assertThat(db.generationDao().observeOpenAiSpending().first()).isEqualTo(ledger)
             db.generationDao().clearOpenAiSpending()

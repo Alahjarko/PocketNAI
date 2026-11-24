@@ -78,7 +78,7 @@ class OpenAiImageRepository(
             size = ImageSizePreset(width, height), sampleCount = params.count,
             qualityTags = QualityTagsOption.NONE,
         )
-        val generation = Generation(id, now, now, GenerationStatus.GENERATING,
+        val generation = Generation(id, now, now, GenerationStatus.QUEUED,
             params.prompt.trim().take(60), params.prompt, legacy, 1,
             mode = if (draft.references.isEmpty()) GenerationMode.TXT2IMG else GenerationMode.IMG2IMG,
             openAi = OpenAiImageSnapshot(params, pricing = OpenAiImagePricing.officialRates,
@@ -101,6 +101,7 @@ class OpenAiImageRepository(
                 }
             }
             try {
+                dao.updateStatus(id, GenerationStatus.GENERATING.name, System.currentTimeMillis(), null, null, null)
                 val inputs = draft.references.map { ref ->
                     "data:image/png;base64," + Base64.encodeToString(files.resolve(ref.relativePath).readBytes(), Base64.NO_WRAP)
                 }
