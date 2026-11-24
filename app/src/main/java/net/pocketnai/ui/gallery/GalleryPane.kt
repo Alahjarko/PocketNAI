@@ -231,6 +231,7 @@ fun GalleryPane(
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val imageMotion = LocalImageMotion.current
     val gridState = androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState()
     val snackbarHostState = remember { SnackbarHostState() }
     var actionTarget by remember { mutableStateOf<GalleryItem?>(null) }
@@ -379,13 +380,19 @@ fun GalleryPane(
                                     haptics.tick()
                                 }
                                 openingImage = true
+                                // 提前激活共享元素键，确保 NavHost 启动前源卡片已完成测量，正向进详情不丢动画。
+                                imageMotion?.open(net.pocketnai.ui.Routes.HOME, item.imageId)
                                 scope.launch {
                                     try {
                                         container.galleryOrderSnapshot.publish(viewModel.fullOrder())
                                         onOpenImage(item.imageId)
-                                    } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-                                    catch (_: Exception) { snackbarHostState.showSnackbar("无法读取图片列表，请稍后再试") }
-                                    finally { openingImage = false }
+                                    } catch (e: kotlinx.coroutines.CancellationException) {
+                                        imageMotion?.cancelPendingOpen()
+                                        throw e
+                                    } catch (_: Exception) {
+                                        imageMotion?.cancelPendingOpen()
+                                        snackbarHostState.showSnackbar("无法读取图片列表，请稍后再试")
+                                    } finally { openingImage = false }
                                 }
                             }
                         }

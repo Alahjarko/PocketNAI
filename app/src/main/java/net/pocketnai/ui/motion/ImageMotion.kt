@@ -48,6 +48,7 @@ class ImageMotionState {
     var returning: ImageReturnRequest? by mutableStateOf(null)
         private set
     private var activeDetailCount by mutableIntStateOf(0)
+    private var pendingOpen by mutableStateOf(false)
     val isDetailActive: Boolean get() = activeDetailCount > 0
     private var sequence = 0
     private var closing = false
@@ -58,8 +59,20 @@ class ImageMotionState {
         currentImageId = imageId
         returning = null
         closing = false
+        pendingOpen = true
     }
-    fun enterDetail() { activeDetailCount++ }
+    fun cancelPendingOpen() {
+        if (pendingOpen && activeDetailCount == 0) {
+            pendingOpen = false
+            currentImageId = null
+            source = null
+            preview = null
+        }
+    }
+    fun enterDetail() {
+        activeDetailCount++
+        pendingOpen = false
+    }
     fun exitDetail() { activeDetailCount = (activeDetailCount - 1).coerceAtLeast(0) }
     fun selectImage(imageId: String) { if (!closing) currentImageId = imageId }
     /** Prepare the actual pager image before NavHost starts a seekable back gesture. */
@@ -72,6 +85,7 @@ class ImageMotionState {
         val origin = source ?: return
         val id = currentImageId ?: return
         closing = true
+        pendingOpen = false
         returning = ImageReturnRequest(origin, id, ++sequence)
     }
     fun consume(request: ImageReturnRequest) {
@@ -79,7 +93,7 @@ class ImageMotionState {
     }
     /** 详情页完全退场且来源页稳定后释放旧的 currentImageId，避免影响首页内部视图切换。 */
     fun clearIfIdle(routeSource: String) {
-        if (activeDetailCount == 0 && source == routeSource) {
+        if (activeDetailCount == 0 && !pendingOpen && source == routeSource) {
             returning = null
             closing = false
             currentImageId = null
@@ -171,6 +185,11 @@ fun Modifier.imageMotionChrome(zIndex: Float = 1f): Modifier {
     val shared = LocalSharedImages.current ?: return this
     val visibility = LocalImageVisibility.current ?: return this
     val viewport = LocalChromeViewport.current
+    val motion = LocalImageMotion.current
+    // 仅在 NavHost 路由切换（如画廊/工作台 <-> 详情页）时把外框抬到覆盖层；
+    // 首页内部切换「大图预览 <-> 相册预览」时绝不劫持搜索栏，让搜索栏随页面平滑淡入淡出。
+    val navMoving = visibility.transition.currentState != visibility.transition.targetState
+    val detailTransition = navMoving && motion?.currentImageId != null
     // Register before navigation starts. Adding this animation only after a match restarts
     // the controls' fade late and leaves them floating over an already faded page.
     val opacity = visibility.transition.animateFloat(
@@ -179,9 +198,9 @@ fun Modifier.imageMotionChrome(zIndex: Float = 1f): Modifier {
     ) { if (it == EnterExitState.Visible) 1f else 0f }
     return with(shared) {
         this@imageMotionChrome.renderInSharedTransitionScopeOverlay(
-            renderInOverlay = { isTransitionActive }, zIndexInOverlay = zIndex,
+            renderInOverlay = { isTransitionActive && detailTransition }, zIndexInOverlay = zIndex,
             clipInOverlayDuringTransition = { _, _ -> viewport?.let { Path().apply { addRect(it) } } },
-        ).graphicsLayer { alpha = if (shared.isTransitionActive) opacity.value else 1f }
+        ).graphicsLayer { alpha = if (shared.isTransitionActive && detailTransition) opacity.value else 1f }
     }
 }
 
@@ -234,9 +253,10 @@ fun Modifier.sharedImage(imageId: String, sensitive: Boolean? = null): Modifier 
     val shared = LocalSharedImages.current ?: return this
     val motion = LocalImageMotion.current
     val navMoving = imageRouteIsMoving()
-    val detailMatching = motion != null && motion.currentImageId == imageId &&
-        (motion.isDetailActive || motion.returning != null || navMoving)
-    if (detailMatching) {
+    // 点击图片进入详情页时，imageMotion.open() 会立刻写入 currentImageId；
+    // 必须立刻在第 0 帧注册详情共享元素，不能等 DetailScreen 的 DisposableEffect，否则正向跳转无过渡动画。
+    // 返回稳定后 ImageMotionRoute 会调用 clearIfIdle() 把 currentImageId 清空，从而让位给首页视图切换动画。
+    if (motion != null && motion.currentImageId == imageId) {
         val visibility = LocalImageVisibility.current ?: return this
         val source = LocalImageSource.current ?: return this
         return with(shared) {
@@ -249,7 +269,7 @@ fun Modifier.sharedImage(imageId: String, sensitive: Boolean? = null): Modifier 
         }
     }
     val workbench = LocalWorkbenchSharedTransition.current
-    if (workbench != null && workbench.activeImageId == imageId && !navMoving) {
+    if (workbench != null && workbench.activeImageId == imageId && !navMoving && motion?.currentImageId == null) {
         return with(shared) {
             this@sharedImage.testTag("shared-workbench:$imageId").sharedElement(
                 state = rememberSharedContentState("workbench:$imageId"),
