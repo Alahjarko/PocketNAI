@@ -8,9 +8,11 @@ import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.listSaver
@@ -45,6 +47,8 @@ class ImageMotionState {
     var preview: ImageOriginPreview? by mutableStateOf(null)
     var returning: ImageReturnRequest? by mutableStateOf(null)
         private set
+    private var activeDetailCount by mutableIntStateOf(0)
+    val isDetailActive: Boolean get() = activeDetailCount > 0
     private var sequence = 0
     private var closing = false
 
@@ -55,6 +59,8 @@ class ImageMotionState {
         returning = null
         closing = false
     }
+    fun enterDetail() { activeDetailCount++ }
+    fun exitDetail() { activeDetailCount = (activeDetailCount - 1).coerceAtLeast(0) }
     fun selectImage(imageId: String) { if (!closing) currentImageId = imageId }
     /** Prepare the actual pager image before NavHost starts a seekable back gesture. */
     fun prepareReturn(imageId: String) {
@@ -71,9 +77,25 @@ class ImageMotionState {
     fun consume(request: ImageReturnRequest) {
         if (returning == request) returning = null
     }
+    /** 详情页完全退场且来源页稳定后释放旧的 currentImageId，避免影响首页内部视图切换。 */
+    fun clearIfIdle(routeSource: String) {
+        if (activeDetailCount == 0 && source == routeSource) {
+            returning = null
+            closing = false
+            currentImageId = null
+            source = null
+            preview = null
+        }
+    }
 }
 
+internal data class WorkbenchSharedTransition(
+    val visibility: AnimatedVisibilityScope,
+    val activeImageId: String?,
+)
+
 val LocalImageMotion = staticCompositionLocalOf<ImageMotionState?> { null }
+internal val LocalWorkbenchSharedTransition = staticCompositionLocalOf<WorkbenchSharedTransition?> { null }
 @OptIn(ExperimentalSharedTransitionApi::class)
 private val LocalSharedImages = staticCompositionLocalOf<SharedTransitionScope?> { null }
 private val LocalImageVisibility = staticCompositionLocalOf<AnimatedVisibilityScope?> { null }
@@ -110,9 +132,11 @@ fun ImageMotionRoute(scope: AnimatedVisibilityScope, source: String, content: @C
     val returning = motion?.returning
     val settled = !scope.transition.isRunning && scope.transition.currentState == EnterExitState.Visible &&
         scope.transition.targetState == EnterExitState.Visible
+    val detailActive = motion?.isDetailActive == true
     // Missing/deleted/filtered sources also finish cleanly, allowing later gallery rearrangements.
-    LaunchedEffect(settled, returning, source) {
+    LaunchedEffect(settled, returning, detailActive, source) {
         if (settled && returning?.source == source) motion?.consume(returning)
+        if (settled && !detailActive) motion?.clearIfIdle(source)
     }
     CompositionLocalProvider(LocalImageVisibility provides scope, LocalImageSource provides source) { content() }
 }
@@ -207,17 +231,38 @@ fun Modifier.sharedImage(imageId: String, sensitive: Boolean? = null): Modifier 
     val sfw = net.pocketnai.ui.safety.LocalSfwDisplay.current
     if (sfw.enabled && (sensitive == true || !sfw.ready || imageId in sfw.imageIds ||
             LocalImageMotion.current?.preview?.takeIf { it.imageId == imageId }?.sensitivePrompt == true)) return this
-    // Pager neighbours must never match their thumbnails and fly alongside the selected image.
-    if (LocalImageMotion.current?.currentImageId != imageId) return this
     val shared = LocalSharedImages.current ?: return this
-    val visibility = LocalImageVisibility.current ?: return this
-    val source = LocalImageSource.current ?: return this
-    return with(shared) {
-        this@sharedImage.testTag("shared-image:$source:$imageId").sharedElement(
-            state = rememberSharedContentState("$source:$imageId"),
-            animatedVisibilityScope = visibility,
-            boundsTransform = { _, _ -> tween(300, easing = FastOutSlowInEasing) },
-            clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(12.dp)),
-        )
+    val motion = LocalImageMotion.current
+    val navMoving = imageRouteIsMoving()
+    val detailMatching = motion != null && motion.currentImageId == imageId &&
+        (motion.isDetailActive || motion.returning != null || navMoving)
+    if (detailMatching) {
+        val visibility = LocalImageVisibility.current ?: return this
+        val source = LocalImageSource.current ?: return this
+        return with(shared) {
+            this@sharedImage.testTag("shared-image:$source:$imageId").sharedElement(
+                state = rememberSharedContentState("$source:$imageId"),
+                animatedVisibilityScope = visibility,
+                boundsTransform = { _, _ -> tween(300, easing = FastOutSlowInEasing) },
+                clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(12.dp)),
+            )
+        }
     }
+    val workbench = LocalWorkbenchSharedTransition.current
+    if (workbench != null && workbench.activeImageId == imageId && !navMoving) {
+        return with(shared) {
+            this@sharedImage.testTag("shared-workbench:$imageId").sharedElement(
+                state = rememberSharedContentState("workbench:$imageId"),
+                animatedVisibilityScope = workbench.visibility,
+                boundsTransform = { _, _ ->
+                    spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = 440f,
+                    )
+                },
+                clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(12.dp)),
+            )
+        }
+    }
+    return this
 }

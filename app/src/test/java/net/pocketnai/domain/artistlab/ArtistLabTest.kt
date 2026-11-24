@@ -174,5 +174,34 @@ class ArtistLabTest {
         )
         assertThat(legacyForm.lockedArtists).isEmpty()
         assertThat(legacyForm.tieredWeights).isFalse()
+
+        // Cross-device config sync (A -> B): exported JSON/ZIP excluded + locked + tiered applies cleanly to existing built-in artists.
+        val deviceAConfigJson = ArtistCatalogExport.configuration(
+            entries = listOf(
+                ArtistCatalogEntry("artist: anmi", "Anmi"),
+                ArtistCatalogEntry("artist: salmon88", "Salmon88"),
+                ArtistCatalogEntry("artist: rella", "Rella"),
+            ),
+            excluded = setOf("artist: anmi"),
+            lockedArtists = listOf("artist: rella"),
+            tieredWeights = true,
+        )
+        val parsedOnB = ArtistCatalogImport.parse(deviceAConfigJson)
+        assertThat(parsedOnB.fromJsonConfig).isTrue()
+        assertThat(parsedOnB.lockedArtists).containsExactly("artist: rella")
+        assertThat(parsedOnB.tieredWeights).isTrue()
+        val syncedOnB = ArtistCatalogImport.merge(
+            current = listOf(
+                ArtistCatalogEntry("artist: anmi", "Anmi"),
+                ArtistCatalogEntry("artist: salmon88", "Salmon88"),
+                ArtistCatalogEntry("artist: rella", "Rella"),
+            ),
+            excluded = setOf("artist: salmon88"),
+            incoming = parsedOnB,
+            applySelection = true,
+        )
+        assertThat(syncedOnB.excluded).containsExactly("artist: anmi")
+        assertThat(syncedOnB.lockedArtists).containsExactly("artist: rella")
+        assertThat(syncedOnB.tieredWeights).isTrue()
     }
 }

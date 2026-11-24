@@ -27,7 +27,8 @@ object ArtistCatalogImport {
         require(text.toByteArray(Charsets.UTF_8).size <= MAX_BYTES) { "文件不能超过 2 MiB" }
         val content = text.removePrefix("\uFEFF").trim()
         require(content.isNotEmpty()) { "文件中没有画师" }
-        val selection = if (content.startsWith("{")) {
+        val isJsonConfig = content.startsWith("{")
+        val selection = if (isJsonConfig) {
             try { json.decodeFromString<ArtistCatalogSelection>(content) }
             catch (_: Exception) { throw IllegalArgumentException("JSON 格式不正确，请使用画师来源模板或导出的配置文件") }
         } else {
@@ -41,7 +42,7 @@ object ArtistCatalogImport {
                 ArtistCatalogEntry(canonical, canonical.removePrefix("artist: "))
             })
         }
-        require(selection.schemaVersion in 1..2) { "暂不支持此画师文件版本" }
+        require(selection.schemaVersion in 1..3) { "暂不支持此画师文件版本" }
         require(selection.artists.size in 1..MAX_ARTISTS && selection.excluded.size <= MAX_ARTISTS) { "文件应包含 1～5000 位画师" }
         require(selection.sourceName.length <= 120 && selection.sourceName.none(Char::isISOControl)) { "来源名称过长或包含控制字符" }
         val entries = selection.artists.map { entry ->
@@ -57,7 +58,18 @@ object ArtistCatalogImport {
         val excluded = selection.excluded.map(::tag).distinct()
         val tags = entries.map { it.tag }.toSet()
         require(excluded.all { it in tags }) { "移出名单中包含文件没有列出的画师" }
-        return selection.copy(artists = entries, excluded = excluded)
+        val excludedSet = excluded.toSet()
+        val locked = selection.lockedArtists
+            .mapNotNull { runCatching { tag(it) }.getOrNull() }
+            .filter { it in tags && it !in excludedSet }
+            .distinct()
+            .take(ArtistLabConfig.MAX_LOCKED_ARTISTS)
+        return selection.copy(
+            artists = entries,
+            excluded = excluded,
+            lockedArtists = locked,
+            fromJsonConfig = isJsonConfig,
+        )
     }
 
     private fun validProfile(url: String): Boolean = url.isBlank() || runCatching {
@@ -66,12 +78,33 @@ object ArtistCatalogImport {
             uri.host?.lowercase(Locale.ROOT) in setOf("pixiv.net", "www.pixiv.net", "x.com", "www.x.com", "twitter.com", "www.twitter.com")
     }.getOrDefault(false)
 
-    /** 已有标签与用户的移出状态优先，新条目才采用文件中的启用状态。 */
-    fun merge(current: List<ArtistCatalogEntry>, excluded: Set<String>, incoming: ArtistCatalogSelection): ArtistCatalogSelection {
+    /**
+     * 合并画师名单与启用/移出状态。
+     * - `applySelection = false`：仅新增未收录画师，已有画师保留本机移出状态；
+     * - `applySelection = true`：对文件中列出的画师同步应用其启用与移出配置（用于跨设备同步配置 JSON/ZIP）。
+     */
+    fun merge(
+        current: List<ArtistCatalogEntry>,
+        excluded: Set<String>,
+        incoming: ArtistCatalogSelection,
+        applySelection: Boolean = false,
+    ): ArtistCatalogSelection {
         val existing = current.map { it.tag }.toSet()
         val added = incoming.artists.filterNot { it.tag in existing }
         require(current.size + added.size <= MAX_ARTISTS) { "画师库最多保存 5000 位画师" }
-        return ArtistCatalogSelection(artists = current + added,
-            excluded = (excluded + incoming.excluded.filter { it !in existing }).sorted())
+        val nextExcluded = if (applySelection) {
+            val incomingTags = incoming.artists.map { it.tag }.toSet()
+            ((excluded - incomingTags) + incoming.excluded).sorted()
+        } else {
+            (excluded + incoming.excluded.filter { it !in existing }).sorted()
+        }
+        val nextExcludedSet = nextExcluded.toSet()
+        return ArtistCatalogSelection(
+            artists = current + added,
+            excluded = nextExcluded,
+            lockedArtists = if (applySelection) incoming.lockedArtists.filterNot { it in nextExcludedSet } else emptyList(),
+            tieredWeights = if (applySelection) incoming.tieredWeights else null,
+            fromJsonConfig = incoming.fromJsonConfig,
+        )
     }
 }

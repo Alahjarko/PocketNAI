@@ -5,14 +5,37 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 @Serializable
-data class ArtistCatalogSelection(val schemaVersion: Int = 2, val artists: List<ArtistCatalogEntry>,
-                                  val excluded: List<String> = emptyList(), val sourceName: String = "")
+data class ArtistCatalogSelection(
+    val schemaVersion: Int = 2,
+    val artists: List<ArtistCatalogEntry>,
+    val excluded: List<String> = emptyList(),
+    val sourceName: String = "",
+    val lockedArtists: List<String> = emptyList(),
+    val tieredWeights: Boolean? = null,
+    @kotlinx.serialization.Transient val fromJsonConfig: Boolean = false,
+)
 
 object ArtistCatalogExport {
     private val json = Json { prettyPrint = true; encodeDefaults = true }
-    fun configuration(entries: List<ArtistCatalogEntry>, excluded: Set<String>): String {
+    fun configuration(
+        entries: List<ArtistCatalogEntry>,
+        excluded: Set<String>,
+        lockedArtists: List<String> = emptyList(),
+        tieredWeights: Boolean? = null,
+    ): String {
         val tags = entries.map { it.tag }.toSet()
-        return json.encodeToString(ArtistCatalogSelection(artists = entries, excluded = excluded.filter { it in tags }.sorted()))
+        val validExcluded = excluded.filter { it in tags }.sorted()
+        val validLocked = lockedArtists.filter { it in tags && it !in validExcluded }
+            .distinct()
+            .take(ArtistLabConfig.MAX_LOCKED_ARTISTS)
+        return json.encodeToString(
+            ArtistCatalogSelection(
+                artists = entries,
+                excluded = validExcluded,
+                lockedArtists = validLocked,
+                tieredWeights = tieredWeights,
+            ),
+        )
     }
 
     fun enabledTags(entries: List<ArtistCatalogEntry>, excluded: Set<String>): String =

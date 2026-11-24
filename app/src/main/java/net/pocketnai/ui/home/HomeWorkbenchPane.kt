@@ -5,7 +5,9 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -13,6 +15,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -27,6 +30,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -103,6 +107,7 @@ import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -165,6 +170,8 @@ fun HomeWorkbenchPane(
     supportsDirectorReference: Boolean = false,
     supportsVibeTransfer: Boolean = false,
     inFlight: Boolean = false,
+    selectedImageId: String? = null,
+    onSelectedImageIdChange: ((String?) -> Unit)? = null,
 ) {
     val container = LocalAppContainer.current
     val context = LocalContext.current
@@ -205,16 +212,26 @@ fun HomeWorkbenchPane(
     }
     val hasGeneratingSlot = activeGenerations.isNotEmpty() || inFlight
 
-    var activeImageId by rememberSaveable { mutableStateOf<String?>(null) }
+    var activeImageId by rememberSaveable { mutableStateOf(selectedImageId) }
+    var slideDirection by remember { mutableIntStateOf(1) }
     var viewingGenerating by remember { mutableStateOf(false) }
     var previousTopImageId by remember { mutableStateOf<String?>(null) }
     var showNewImageBanner by remember { mutableStateOf(false) }
+
+    LaunchedEffect(selectedImageId) {
+        if (selectedImageId != null && selectedImageId != activeImageId) {
+            activeImageId = selectedImageId
+        }
+    }
 
     val currentIndex = remember(items, activeImageId) {
         if (items.isEmpty()) 0
         else items.indexOfFirst { it.imageId == activeImageId }.let { if (it >= 0) it else 0 }
     }
     val activeItem = if (viewingGenerating && hasGeneratingSlot) null else items.getOrNull(currentIndex)
+    LaunchedEffect(activeItem?.imageId) {
+        onSelectedImageIdChange?.invoke(activeItem?.imageId)
+    }
 
     val filmstripState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -334,6 +351,7 @@ fun HomeWorkbenchPane(
 
     fun selectIndex(index: Int) {
         val target = items.getOrNull(index) ?: return
+        slideDirection = if (index < currentIndex) -1 else 1
         viewingGenerating = false
         activeImageId = target.imageId
         if (index == 0) showNewImageBanner = false
@@ -398,10 +416,13 @@ fun HomeWorkbenchPane(
         scope.launch { snackbarHostState.showSnackbar("已复用参数到右侧生成面板") }
     }
 
-    // 舞台缩放与平移状态（切换图片时自动重置至 100%）
+    // 舞台缩放、平移与未放大时的竖向滑动切图状态（切换图片时自动重置至 100%）
+    val density = LocalDensity.current
+    val swipeThresholdPx = with(density) { 64.dp.toPx() }
     val scaleAnim = remember(activeItem?.imageId) { Animatable(1f) }
     val offsetXAnim = remember(activeItem?.imageId) { Animatable(0f) }
     val offsetYAnim = remember(activeItem?.imageId) { Animatable(0f) }
+    val swipeOffsetYAnim = remember(activeItem?.imageId) { Animatable(0f) }
     var stageSize by remember { mutableStateOf(Size.Zero) }
     var lastWheelStepMs by remember { mutableLongStateOf(0L) }
     val zoomSpring = remember {
@@ -550,15 +571,25 @@ fun HomeWorkbenchPane(
                             },
                         )
                     }
-                    .pointerInput(activeItem?.imageId) {
+                    .pointerInput(activeItem?.imageId, currentIndex, items.size) {
                         val item = activeItem ?: return@pointerInput
+                        val touchSlop = viewConfiguration.touchSlop
                         awaitEachGesture {
-                            awaitFirstDown(requireUnconsumed = false)
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            var totalVerticalDrag = 0f
+                            var totalHorizontalDrag = 0f
+                            var isVerticalSwipe = false
+                            var lastDragTimeMs = down.uptimeMillis
+                            var dragVelocityY = 0f
                             do {
                                 val event = awaitPointerEvent()
                                 if (event.buttons.isSecondaryPressed) break
                                 val pressedCount = event.changes.count { it.pressed }
                                 if (pressedCount >= 2) {
+                                    if (isVerticalSwipe) {
+                                        isVerticalSwipe = false
+                                        scope.launch { swipeOffsetYAnim.snapTo(0f) }
+                                    }
                                     val zoomChange = event.calculateZoom()
                                     val panChange = event.calculatePan()
                                     val nextScale = (scaleAnim.value * zoomChange).coerceIn(1f, 6f)
@@ -591,8 +622,61 @@ fun HomeWorkbenchPane(
                                         }
                                         event.changes.forEach { if (it.positionChanged()) it.consume() }
                                     }
+                                } else if (pressedCount == 1 && scaleAnim.value <= 1.02f) {
+                                    val change = event.changes.firstOrNull { it.pressed }
+                                    val pan = event.calculatePan()
+                                    if (pan != Offset.Zero) {
+                                        totalHorizontalDrag += pan.x
+                                        totalVerticalDrag += pan.y
+                                        if (!isVerticalSwipe &&
+                                            kotlin.math.abs(totalVerticalDrag) > touchSlop &&
+                                            kotlin.math.abs(totalVerticalDrag) > kotlin.math.abs(totalHorizontalDrag) * 1.1f
+                                        ) {
+                                            isVerticalSwipe = true
+                                        }
+                                        if (isVerticalSwipe) {
+                                            val nowMs = change?.uptimeMillis ?: lastDragTimeMs
+                                            val dt = (nowMs - lastDragTimeMs).coerceAtLeast(1L)
+                                            dragVelocityY = (pan.y / dt) * 1000f
+                                            lastDragTimeMs = nowMs
+                                            // 首尾边界柔和阻尼，非边界跟随手指移动。
+                                            val atTopEdge = totalVerticalDrag > 0f && currentIndex <= 0
+                                            val atBottomEdge = totalVerticalDrag < 0f && currentIndex >= items.lastIndex
+                                            val damped = if (atTopEdge || atBottomEdge) totalVerticalDrag * 0.28f else totalVerticalDrag * 0.72f
+                                            scope.launch { swipeOffsetYAnim.snapTo(damped) }
+                                            event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                        }
+                                    }
                                 }
                             } while (event.changes.any { it.pressed })
+
+                            if (isVerticalSwipe) {
+                                val fastSwipeUp = dragVelocityY < -650f && totalVerticalDrag < -touchSlop
+                                val fastSwipeDown = dragVelocityY > 650f && totalVerticalDrag > touchSlop
+                                val triggerNext = (totalVerticalDrag <= -swipeThresholdPx || fastSwipeUp) && currentIndex < items.lastIndex
+                                val triggerPrev = (totalVerticalDrag >= swipeThresholdPx || fastSwipeDown) && currentIndex > 0
+                                when {
+                                    triggerNext -> {
+                                        scope.launch { swipeOffsetYAnim.snapTo(0f) }
+                                        stepNext()
+                                    }
+                                    triggerPrev -> {
+                                        scope.launch { swipeOffsetYAnim.snapTo(0f) }
+                                        stepPrev()
+                                    }
+                                    else -> {
+                                        scope.launch {
+                                            swipeOffsetYAnim.animateTo(
+                                                0f,
+                                                spring(
+                                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                                    stiffness = Spring.StiffnessMediumLow,
+                                                ),
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     },
                 contentAlignment = Alignment.Center,
@@ -645,23 +729,64 @@ fun HomeWorkbenchPane(
                     }
 
                     else -> {
-                        val imageFile = container.generationRepository.fileOf(activeItem)
-                        SfwAsyncImage(
-                            file = imageFile,
-                            contentDescription = activeItem.title,
-                            sensitive = activeItem.sensitivePrompt,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(12.dp)
-                                .sharedImage(activeItem.imageId, activeItem.sensitivePrompt)
-                                .graphicsLayer {
-                                    scaleX = scaleAnim.value
-                                    scaleY = scaleAnim.value
-                                    translationX = offsetXAnim.value
-                                    translationY = offsetYAnim.value
-                                },
-                        )
+                        AnimatedContent(
+                            targetState = activeItem,
+                            contentKey = { it.imageId },
+                            label = "workbench-stage-slide",
+                            transitionSpec = {
+                                val dir = slideDirection
+                                (slideInVertically(
+                                    animationSpec = tween(240, easing = FastOutSlowInEasing),
+                                ) { fullHeight -> dir * (fullHeight / 3) } +
+                                    fadeIn(tween(220, easing = FastOutSlowInEasing)))
+                                    .togetherWith(
+                                        slideOutVertically(
+                                            animationSpec = tween(200, easing = FastOutSlowInEasing),
+                                        ) { fullHeight -> -dir * (fullHeight / 3) } +
+                                            fadeOut(tween(160, easing = FastOutSlowInEasing)),
+                                    )
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        ) { stageItem ->
+                            val imageFile = container.generationRepository.fileOf(stageItem)
+                            val itemAspect = remember(stageItem.width, stageItem.height) {
+                                (if (stageItem.height > 0) stageItem.width.toFloat() / stageItem.height else 1f)
+                                    .coerceIn(0.25f, 4f)
+                            }
+                            BoxWithConstraints(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(12.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                val containerAspect = if (maxHeight > 0.dp) maxWidth.value / maxHeight.value else itemAspect
+                                val fittedModifier = if (containerAspect > itemAspect) {
+                                    Modifier.fillMaxHeight().aspectRatio(itemAspect, matchHeightConstraintsFirst = true)
+                                } else {
+                                    Modifier.fillMaxWidth().aspectRatio(itemAspect, matchHeightConstraintsFirst = false)
+                                }
+                                Box(
+                                    modifier = fittedModifier
+                                        .graphicsLayer {
+                                            scaleX = scaleAnim.value
+                                            scaleY = scaleAnim.value
+                                            translationX = offsetXAnim.value
+                                            translationY = offsetYAnim.value + swipeOffsetYAnim.value
+                                        }
+                                        .clip(RoundedCornerShape(12.dp)),
+                                ) {
+                                    SfwAsyncImage(
+                                        file = imageFile,
+                                        contentDescription = stageItem.title,
+                                        sensitive = stageItem.sensitivePrompt,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .sharedImage(stageItem.imageId, stageItem.sensitivePrompt),
+                                    )
+                                }
+                            }
+                        }
 
                         // 缩放倍率轻提示（大于 105% 时显示，点击一键复原）
                         if (scaleAnim.value > 1.05f) {

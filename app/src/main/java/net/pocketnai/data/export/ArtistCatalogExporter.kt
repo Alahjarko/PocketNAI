@@ -14,8 +14,15 @@ enum class ArtistCatalogExportFormat { TEXT, JSON, ZIP, TEMPLATE }
 class ArtistCatalogExporter(context: Context) {
     private val app = context.applicationContext
 
-    suspend fun export(uri: Uri, format: ArtistCatalogExportFormat, entries: List<ArtistCatalogEntry>, excluded: Set<String>) = withContext(Dispatchers.IO) {
-        val configuration = ArtistCatalogExport.configuration(entries, excluded)
+    suspend fun export(
+        uri: Uri,
+        format: ArtistCatalogExportFormat,
+        entries: List<ArtistCatalogEntry>,
+        excluded: Set<String>,
+        lockedArtists: List<String> = emptyList(),
+        tieredWeights: Boolean? = null,
+    ) = withContext(Dispatchers.IO) {
+        val configuration = ArtistCatalogExport.configuration(entries, excluded, lockedArtists, tieredWeights)
         val tags = ArtistCatalogExport.enabledTags(entries, excluded)
         val output = checkNotNull(app.contentResolver.openOutputStream(uri, "wt"))
         output.use {

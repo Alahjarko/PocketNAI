@@ -53,9 +53,12 @@ class ArtistLabStore(context: Context, val database: PocketNaiDatabase) {
         (builtInEntries() + importedEntries()).distinctBy { it.tag }
     }
 
-    suspend fun importCatalog(incoming: ArtistCatalogSelection): ArtistCatalogSelection = withContext(Dispatchers.IO) {
+    suspend fun importCatalog(
+        incoming: ArtistCatalogSelection,
+        applySelection: Boolean = false,
+    ): ArtistCatalogSelection = withContext(Dispatchers.IO) {
         val builtIn = builtInEntries()
-        val merged = ArtistCatalogImport.merge(catalogEntries(), excludedArtists(), incoming)
+        val merged = ArtistCatalogImport.merge(catalogEntries(), excludedArtists(), incoming, applySelection = applySelection)
         val builtInTags = builtIn.map { it.tag }.toSet()
         val custom = ArtistCatalogSelection(artists = merged.artists.filterNot { it.tag in builtInTags })
         val encoded = json.encodeToString(custom)

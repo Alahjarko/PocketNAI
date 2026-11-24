@@ -1,5 +1,6 @@
 package net.pocketnai.ui.settings
 
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -397,11 +398,26 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
                 )
 
-                key(selectedCategory) {
+                androidx.compose.animation.AnimatedContent(
+                    targetState = selectedCategory,
+                    label = "settings-category-pane",
+                    transitionSpec = {
+                        val forward = targetState.ordinal >= initialState.ordinal
+                        val dir = if (forward) 1 else -1
+                        (androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200, easing = androidx.compose.animation.core.FastOutSlowInEasing)) +
+                            androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(220, easing = androidx.compose.animation.core.FastOutSlowInEasing)) { dir * (it / 24).coerceIn(12, 36) })
+                            .togetherWith(
+                                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(130)) +
+                                    androidx.compose.animation.slideOutVertically(androidx.compose.animation.core.tween(160)) { -dir * (it / 28).coerceIn(10, 28) }
+                            )
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                ) { activeCategory ->
                     Column(
                         modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
+                            .fillMaxSize()
                             .verticalScroll(rememberScrollState())
                             .padding(horizontal = 24.dp, vertical = 18.dp),
                     ) {
@@ -412,12 +428,12 @@ fun SettingsScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             Text(
-                                text = selectedCategory.label,
+                                text = activeCategory.label,
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.SemiBold,
                             )
 
-                            when (selectedCategory) {
+                            when (activeCategory) {
                                 SettingsCategory.ACCOUNTS -> {
                                     net.pocketnai.ui.openai.OpenAiImageSettingsRow(
                                         initiallyOpen = pendingOpenImageService,

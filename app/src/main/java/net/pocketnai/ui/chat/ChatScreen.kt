@@ -51,6 +51,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.filled.MenuOpen
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.AutoAwesomeMosaic
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -96,9 +98,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
-import android.content.Intent
-import android.speech.RecognizerIntent
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -121,22 +120,11 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
         if (input.text != state.draftText) input = TextFieldValue(state.draftText,
             androidx.compose.ui.text.TextRange(state.draftSelectionStart, state.draftSelectionEnd))
     }
-    var attachmentMenu by remember { mutableStateOf(false) }
     var galleryPicker by remember { mutableStateOf(false) }
     var viewingAttachment by remember { mutableStateOf<ChatAttachment?>(null) }
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    var voiceError by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    val voiceAvailable = remember(context) { Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).resolveActivity(context.packageManager) != null }
-    val voice = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { words ->
-            val start = input.selection.min
-            val end = input.selection.max
-            val next = input.text.replaceRange(start, end, words)
-            input = TextFieldValue(next, androidx.compose.ui.text.TextRange(start + words.length))
-        }
-    }
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let { viewModel.addPhoto(it.toString()) } }
     var editingEntry by remember { mutableStateOf<ChatEntry?>(null) }
     var deleteId by remember { mutableStateOf<String?>(null) }
@@ -448,21 +436,62 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
                             LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 20.dp))
                         }
                         }, leadingActions = {
-                            Box {
-                                IconButton(onClick = { focus.clearFocus(); keyboard?.hide(); attachmentMenu = true }, enabled = !state.busy && !state.importingAttachment && !state.switchingConversation && state.current != null,
-                                    modifier = Modifier.testTag("chat-attach-button")) { Icon(Icons.Default.Add, "添加图片") }
-                                DropdownMenu(attachmentMenu, { attachmentMenu = false }) {
-                                    DropdownMenuItem(text = { Text("从相册选择") }, onClick = { attachmentMenu = false; photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
-                                    DropdownMenuItem(text = { Text("从软件画廊选择") }, onClick = { attachmentMenu = false; galleryPicker = true })
+                            val canAttach = !state.busy && !state.importingAttachment && !state.switchingConversation && state.current != null
+                            Row(
+                                modifier = Modifier.padding(start = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Surface(
+                                    onClick = {
+                                        focus.clearFocus()
+                                        keyboard?.hide()
+                                        photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                    },
+                                    enabled = canAttach,
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.height(34.dp).testTag("chat-attach-button"),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 11.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.PhotoLibrary,
+                                            contentDescription = "从系统相册选择",
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                        Text("相册", style = MaterialTheme.typography.labelMedium)
+                                    }
                                 }
-                            }
-                            if (voiceAvailable) IconButton(onClick = {
-                                runCatching { voice.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
-                                }) }.onFailure { voiceError = true }
-                            }, enabled = !state.busy && !state.importingAttachment) {
-                                Icon(Icons.Default.MicNone, "语音输入")
+                                Surface(
+                                    onClick = {
+                                        focus.clearFocus()
+                                        keyboard?.hide()
+                                        galleryPicker = true
+                                    },
+                                    enabled = canAttach,
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.height(34.dp).testTag("chat-attach-gallery"),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 11.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.AutoAwesomeMosaic,
+                                            contentDescription = "从软件画廊选择",
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                        Text("画廊", style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
                             }
                         })
                 })
@@ -493,9 +522,6 @@ fun ChatScreen(viewModel: ChatViewModel, resolveImage: (String) -> File, onOpenI
         }
     }
     if (modelsOpen) ChatModelPicker(viewModel) { modelsOpen = false }
-    if (voiceError) AlertDialog(onDismissRequest = { voiceError = false }, title = { Text("语音输入暂不可用") },
-        text = { Text("当前设备未提供系统语音识别服务，可以使用输入法的语音输入。") },
-        confirmButton = { TextButton(onClick = { voiceError = false }) { Text("确定") } })
     if (sessionsOpen) ChatHistorySheet(state, viewModel, onDelete = { deleteId = it }) { sessionsOpen = false }
     if (imagesOpen) ModalBottomSheet(onDismissRequest = { imagesOpen = false }) {
         LaunchedEffect(Unit) { viewModel.loadImageHistory() }

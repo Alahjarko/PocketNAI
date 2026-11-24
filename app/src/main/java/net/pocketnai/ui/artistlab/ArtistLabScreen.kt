@@ -13,6 +13,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -899,124 +901,379 @@ private fun LabConfigDialog(
     }
     val (lowerMax, upperMin) = remember(min, max) { ArtistLabPlanner.tieredBounds(min, max) }
 
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-            Column(Modifier.safeDrawingPadding().imePadding().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("新建抽卡实验", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                    net.pocketnai.ui.common.InfoButton("使用首页的模型与参数进行单张文生图，不携带首页参考图与独立角色。")
-                    IconButton(onClick = onClose) { Icon(Icons.Default.Close, "关闭") }
-                }
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(params.model.shortDisplayName, style = MaterialTheme.typography.titleSmall)
-                        Text(params.size.label, style = MaterialTheme.typography.titleSmall)
-                    }
-                    Text("${params.steps} Steps · Guidance ${"%.2f".format(Locale.ROOT, params.guidance)}", style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    OutlinedTextField(prompt, { prompt = it }, Modifier.fillMaxWidth(), label = { Text("固定基础提示词（不含 artist:）") }, minLines = 2, maxLines = 6,
-                        trailingIcon = { net.pocketnai.ui.common.ClearPromptButton(prompt, "固定基础提示词") { prompt = it; 0 } })
-                    OutlinedTextField(negative, { negative = it }, Modifier.fillMaxWidth(), label = { Text("固定负面提示词") }, minLines = 1, maxLines = 4,
-                        trailingIcon = { net.pocketnai.ui.common.ClearPromptButton(negative, "固定负面提示词") { negative = it; 0 } })
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(seed, { seed = it }, Modifier.weight(1f), label = { Text("固定 Seed") }, singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                        IconButton(onClick = { seed = Random.nextLong(0, GenerationParams.MAX_SEED + 1).toString() }) { Icon(Icons.Default.Shuffle, "随机一个固定种子") }
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("每张抽取 $artists 位画师", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-                        net.pocketnai.ui.common.InfoButton("每张使用相同 Seed 和基础提示词，只随机画师组合与权重。画师标签来自公开数据，NovelAI 对不同画师的识别与画风表现可能不同。")
-                    }
-                    Slider(artists.toFloat(), { artists = it.roundToInt() }, valueRange = 1f..10f, steps = 8)
+    val fieldShape = RoundedCornerShape(16.dp)
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+    )
 
-                    // 锁定基底画师（最多 3 位，其余随机混搭）
-                    Surface(
-                        shape = MaterialTheme.shapes.medium,
-                        tonalElevation = 1.dp,
-                        modifier = Modifier.fillMaxWidth(),
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .safeDrawingPadding()
+                .imePadding()
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            val isWide = maxWidth >= 600.dp
+            Surface(
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+                shadowElevation = 8.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 620.dp)
+                    .heightIn(max = if (isWide) 780.dp else maxHeight),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // 顶部标题与当前首页参数胶囊
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 22.dp, end = 14.dp, top = 18.dp, bottom = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        "锁定基底画师（${lockedArtists.size}/${ArtistLabConfig.MAX_LOCKED_ARTISTS}，其余随机混搭）",
-                                        style = MaterialTheme.typography.titleSmall,
-                                    )
-                                    Text(
-                                        "固定保留主画风，其余名额从启用画师库不重复抽选",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                OutlinedButton(
-                                    onClick = { lockPickerOpen = true },
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "新建抽卡实验",
+                                style = MaterialTheme.typography.titleLarge,
+                                modifier = Modifier.weight(1f),
+                            )
+                            net.pocketnai.ui.common.InfoButton("使用首页的模型与参数进行单张文生图，不携带首页参考图与独立角色。")
+                            FilledTonalIconButton(
+                                onClick = onClose,
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                ),
+                                modifier = Modifier.size(36.dp),
+                            ) {
+                                Icon(Icons.Default.Close, "关闭", modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            listOf(
+                                params.model.shortDisplayName,
+                                params.size.label,
+                                "${params.steps} Steps",
+                                "CFG ${"%.2f".format(Locale.ROOT, params.guidance)}",
+                            ).forEach { badge ->
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
                                 ) {
-                                    Icon(Icons.Default.PushPin, null, Modifier.size(16.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("选择画师")
+                                    Text(
+                                        text = badge,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    )
                                 }
                             }
-                            if (lockedArtists.isNotEmpty()) {
-                                FlowRow(
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 18.dp, vertical = 14.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        if (error.isNotBlank()) {
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = MaterialTheme.colorScheme.errorContainer,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(
+                                    text = error,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                )
+                            }
+                        }
+
+                        // 卡片 1：固定基础提示词
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainer,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                Text("固定提示词", style = MaterialTheme.typography.titleSmall)
+                                OutlinedTextField(
+                                    value = prompt,
+                                    onValueChange = { prompt = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = fieldShape,
+                                    colors = fieldColors,
+                                    label = { Text("基础正向提示词（不含 artist:）") },
+                                    minLines = 2,
+                                    maxLines = 5,
+                                    trailingIcon = {
+                                        net.pocketnai.ui.common.ClearPromptButton(prompt, "固定基础提示词") { prompt = it; 0 }
+                                    },
+                                )
+                                OutlinedTextField(
+                                    value = negative,
+                                    onValueChange = { negative = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = fieldShape,
+                                    colors = fieldColors,
+                                    label = { Text("基础负面提示词") },
+                                    minLines = 1,
+                                    maxLines = 3,
+                                    trailingIcon = {
+                                        net.pocketnai.ui.common.ClearPromptButton(negative, "固定负面提示词") { negative = it; 0 }
+                                    },
+                                )
+                            }
+                        }
+
+                        // 卡片 2：Seed 与抽卡次数
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainer,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                Text("批次与种子", style = MaterialTheme.typography.titleSmall)
+                                if (isWide) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        OutlinedTextField(
+                                            value = seed,
+                                            onValueChange = { seed = it },
+                                            modifier = Modifier.weight(1.35f),
+                                            shape = fieldShape,
+                                            colors = fieldColors,
+                                            label = { Text("固定 Seed") },
+                                            singleLine = true,
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                            trailingIcon = {
+                                                IconButton(onClick = { seed = Random.nextLong(0, GenerationParams.MAX_SEED + 1).toString() }) {
+                                                    Icon(Icons.Default.Shuffle, "随机一个固定种子", modifier = Modifier.size(18.dp))
+                                                }
+                                            },
+                                        )
+                                        OutlinedTextField(
+                                            value = count,
+                                            onValueChange = { count = it },
+                                            modifier = Modifier.weight(1f),
+                                            shape = fieldShape,
+                                            colors = fieldColors,
+                                            label = { Text("抽卡次数（1～10000）") },
+                                            singleLine = true,
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        )
+                                    }
+                                } else {
+                                    OutlinedTextField(
+                                        value = seed,
+                                        onValueChange = { seed = it },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = fieldShape,
+                                        colors = fieldColors,
+                                        label = { Text("固定 Seed") },
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        trailingIcon = {
+                                            IconButton(onClick = { seed = Random.nextLong(0, GenerationParams.MAX_SEED + 1).toString() }) {
+                                                Icon(Icons.Default.Shuffle, "随机一个固定种子", modifier = Modifier.size(18.dp))
+                                            }
+                                        },
+                                    )
+                                    OutlinedTextField(
+                                        value = count,
+                                        onValueChange = { count = it },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = fieldShape,
+                                        colors = fieldColors,
+                                        label = { Text("抽卡次数（1～10000）") },
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    )
+                                }
+                            }
+                        }
+
+                        // 卡片 3：画师数量、锁定基底与权重策略
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainer,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp),
                                 ) {
-                                    lockedArtists.forEach { tag ->
-                                        InputChip(
-                                            selected = true,
-                                            onClick = { lockedArtists = lockedArtists - tag },
-                                            label = { Text(tag.removePrefix("artist: "), maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                            trailingIcon = { Icon(Icons.Default.Close, "移除锁定", Modifier.size(16.dp)) },
+                                    Text("每张抽取画师", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                                    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                                        Text(
+                                            text = "$artists 位",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                                        )
+                                    }
+                                    net.pocketnai.ui.common.InfoButton("每张使用相同 Seed 和基础提示词，只随机画师组合与权重。")
+                                }
+                                Slider(
+                                    value = artists.toFloat(),
+                                    onValueChange = { artists = it.roundToInt() },
+                                    valueRange = 1f..10f,
+                                    steps = 8,
+                                )
+
+                                // 锁定基底画师（最多 3 位，其余随机混搭）
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerLowest,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Column(Modifier.weight(1f)) {
+                                                Text(
+                                                    "锁定基底画师（${lockedArtists.size}/${ArtistLabConfig.MAX_LOCKED_ARTISTS}）",
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                )
+                                                Text(
+                                                    "固定保留主画风，其余名额从启用画师库随机混搭",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                            FilledTonalButton(
+                                                onClick = { lockPickerOpen = true },
+                                                shape = CircleShape,
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                            ) {
+                                                Icon(Icons.Default.PushPin, null, Modifier.size(16.dp))
+                                                Spacer(Modifier.width(4.dp))
+                                                Text("选择画师", style = MaterialTheme.typography.labelMedium)
+                                            }
+                                        }
+                                        if (lockedArtists.isNotEmpty()) {
+                                            FlowRow(
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                            ) {
+                                                lockedArtists.forEach { tag ->
+                                                    InputChip(
+                                                        selected = true,
+                                                        onClick = { lockedArtists = lockedArtists - tag },
+                                                        shape = CircleShape,
+                                                        label = { Text(tag.removePrefix("artist: "), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                                        trailingIcon = { Icon(Icons.Default.Close, "移除锁定", Modifier.size(16.dp)) },
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        if (lockedArtists.size > artists) {
+                                            Text(
+                                                "当前每张仅抽取 $artists 位，本次将取前 $artists 位锁定画师",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary,
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text("单画师权重（步长 0.05）", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                                    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer) {
+                                        Text(
+                                            text = "${formatTicks(min)}～${formatTicks(max)}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
                                         )
                                     }
                                 }
-                            }
-                            if (lockedArtists.size > artists) {
-                                Text(
-                                    "当前每张仅抽取 $artists 位，本次将取前 $artists 位锁定画师",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
+                                RangeSlider(
+                                    value = min.toFloat()..max.toFloat(),
+                                    onValueChange = { min = it.start.roundToInt(); max = it.endInclusive.roundToInt() },
+                                    valueRange = 10f..30f,
+                                    steps = 19,
                                 )
+
+                                // 阶梯权重（主高辅低）开关
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerLowest,
+                                    modifier = Modifier.fillMaxWidth().clickable { tieredWeights = !tieredWeights },
+                                ) {
+                                    Row(
+                                        Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text("阶梯权重（主高辅低）", style = MaterialTheme.typography.titleSmall)
+                                            Text(
+                                                "主画师 ${formatTicks(upperMin)}～${formatTicks(max)} · 辅画师 ${formatTicks(min)}～${formatTicks(lowerMax)}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        Switch(checked = tieredWeights, onCheckedChange = { tieredWeights = it })
+                                    }
+                                }
                             }
                         }
                     }
 
-                    Text("单画师权重 ${min / 20.0}～${max / 20.0} · 步长 0.05", style = MaterialTheme.typography.titleSmall)
-                    RangeSlider(min.toFloat()..max.toFloat(), { min = it.start.roundToInt(); max = it.endInclusive.roundToInt() }, valueRange = 10f..30f, steps = 19)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
 
-                    // 阶梯权重（主高辅低）开关
-                    Surface(
-                        shape = MaterialTheme.shapes.medium,
-                        tonalElevation = 1.dp,
-                        modifier = Modifier.fillMaxWidth(),
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 18.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Row(
-                            Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        TextButton(onClick = onClose, shape = CircleShape) {
+                            Text("取消")
+                        }
+                        Button(
+                            onClick = { onPrepare(prompt, negative, seed, count, artists, min, max, lockedArtists, tieredWeights) },
+                            shape = CircleShape,
+                            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
                         ) {
-                            Column(Modifier.weight(1f)) {
-                                Text("阶梯权重（主高辅低）", style = MaterialTheme.typography.titleSmall)
-                                Text(
-                                    "主画师 ${formatTicks(upperMin)}～${formatTicks(max)} · 辅画师 ${formatTicks(min)}～${formatTicks(lowerMax)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            Switch(checked = tieredWeights, onCheckedChange = { tieredWeights = it })
+                            Text("核对参数与费用")
                         }
                     }
-
-                    OutlinedTextField(count, { count = it }, Modifier.fillMaxWidth(), label = { Text("抽卡次数（1～10000）") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                }
-                Button(
-                    onClick = { onPrepare(prompt, negative, seed, count, artists, min, max, lockedArtists, tieredWeights) },
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                ) {
-                    Text("核对参数与费用")
                 }
             }
         }

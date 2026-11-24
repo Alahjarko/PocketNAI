@@ -172,6 +172,10 @@ fun DetailScreen(
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
     val imageMotion = LocalImageMotion.current
+    androidx.compose.runtime.DisposableEffect(imageMotion) {
+        imageMotion?.enterDetail()
+        onDispose { imageMotion?.exitDetail() }
+    }
     LaunchedEffect(state.currentId) { state.currentId?.let { imageMotion?.prepareReturn(it) } }
     val context = LocalContext.current
 
@@ -661,27 +665,50 @@ private fun DetailImagePane(
     val imageId = image?.id ?: preview?.imageId ?: return
     val sensitive = generation?.let(net.pocketnai.domain.safety.SfwPolicy::isSensitive) ?: preview?.sensitivePrompt
     val masked = net.pocketnai.ui.safety.LocalSfwDisplay.current.masks(file, sensitive, revealed)
-    Box(
-        modifier
-            .clip(RoundedCornerShape(12.dp))
+    val aspectRatio = remember(image?.width, image?.height, preview?.aspectRatio) {
+        val raw = image?.let { if (it.height > 0) it.width.toFloat() / it.height else 1f }
+            ?: preview?.aspectRatio ?: 1f
+        raw.coerceIn(0.25f, 4f)
+    }
+    BoxWithConstraints(
+        modifier = modifier
             .onMouseWheel(enabled = image != null, onWheel = onImageWheel)
             .clickable(enabled = image != null, onClick = onOpenFullscreen),
+        contentAlignment = Alignment.Center,
     ) {
-        net.pocketnai.ui.safety.SfwAsyncImage(file = file, sensitive = sensitive, revealed = revealed,
-            animate = animateMedia, revealTransition = true,
-            contentDescription = generation?.title ?: preview?.title, contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize().sharedImage(imageId, sensitive))
-        AnimatedVisibility(
-            visible = masked,
-            modifier = Modifier.align(Alignment.Center),
-            enter = fadeIn(tween(120)),
-            exit = fadeOut(tween(140)) + scaleOut(tween(140), targetScale = 0.92f),
+        // 将共享元素边界精确贴合图片实际渲染宽高比，避免宽屏双栏返回画廊时 ContentScale.Crop 在第 0 帧突然放大。
+        val containerAspect = if (maxHeight > 0.dp) maxWidth.value / maxHeight.value else aspectRatio
+        val fittedModifier = if (containerAspect > aspectRatio) {
+            Modifier.fillMaxHeight().aspectRatio(aspectRatio, matchHeightConstraintsFirst = true)
+        } else {
+            Modifier.fillMaxWidth().aspectRatio(aspectRatio, matchHeightConstraintsFirst = false)
+        }
+        Box(
+            modifier = fittedModifier.clip(RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center,
         ) {
-            Surface(
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                shape = RoundedCornerShape(12.dp),
+            net.pocketnai.ui.safety.SfwAsyncImage(
+                file = file,
+                sensitive = sensitive,
+                revealed = revealed,
+                animate = animateMedia,
+                revealTransition = true,
+                contentDescription = generation?.title ?: preview?.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().sharedImage(imageId, sensitive),
+            )
+            AnimatedVisibility(
+                visible = masked,
+                modifier = Modifier.align(Alignment.Center),
+                enter = fadeIn(tween(120)),
+                exit = fadeOut(tween(140)) + scaleOut(tween(140), targetScale = 0.92f),
             ) {
-                Text("SFW · 点击图片查看", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(12.dp))
+                Surface(
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Text("SFW · 点击图片查看", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(12.dp))
+                }
             }
         }
     }

@@ -316,8 +316,7 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                     to in detailRoutes || from in detailRoutes -> imagePageEnter()
                     to in secondaryRoutes -> fadeIn(tween(240, easing = FastOutSlowInEasing)) +
                         slideInHorizontally(tween(260, easing = FastOutSlowInEasing)) { it / 6 }
-                    else -> fadeIn(tween(180, easing = FastOutSlowInEasing)) +
-                        scaleIn(tween(200, easing = FastOutSlowInEasing), initialScale = 0.985f)
+                    else -> fadeIn(tween(180, easing = FastOutSlowInEasing))
                 }
             },
             exitTransition = {
@@ -327,7 +326,7 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                     to in detailRoutes || from in detailRoutes -> imagePageExit()
                     to in secondaryRoutes -> fadeOut(tween(220, easing = FastOutSlowInEasing)) +
                         scaleOut(tween(260, easing = FastOutSlowInEasing), targetScale = 0.965f)
-                    else -> fadeOut(tween(140, easing = FastOutSlowInEasing))
+                    else -> fadeOut(tween(130, easing = FastOutSlowInEasing))
                 }
             },
             popEnterTransition = {
@@ -335,8 +334,7 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                     in detailRoutes -> imagePageEnter()
                     in secondaryRoutes -> fadeIn(tween(240, easing = FastOutSlowInEasing)) +
                         scaleIn(tween(260, easing = FastOutSlowInEasing), initialScale = 0.965f)
-                    else -> fadeIn(tween(180, easing = FastOutSlowInEasing)) +
-                        scaleIn(tween(200, easing = FastOutSlowInEasing), initialScale = 0.985f)
+                    else -> fadeIn(tween(180, easing = FastOutSlowInEasing))
                 }
             },
             popExitTransition = {
@@ -345,7 +343,7 @@ private fun PocketNaiAppContent(sharedImageUri: String?, onSharedImageHandled: (
                     in secondaryRoutes -> fadeOut(tween(220, easing = FastOutSlowInEasing)) +
                         scaleOut(tween(260, easing = FastOutSlowInEasing), targetScale = 0.95f) +
                         slideOutHorizontally(tween(260, easing = FastOutSlowInEasing)) { it / 5 }
-                    else -> fadeOut(tween(140, easing = FastOutSlowInEasing))
+                    else -> fadeOut(tween(130, easing = FastOutSlowInEasing))
                 }
             },
         ) {

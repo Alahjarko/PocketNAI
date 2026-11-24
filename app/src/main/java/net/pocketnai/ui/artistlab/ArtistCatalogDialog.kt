@@ -38,6 +38,7 @@ import net.pocketnai.domain.artistlab.ArtistArtworkPreview
 fun ArtistCatalogDialog(vm: ArtistLabViewModel, onDismiss: () -> Unit) {
     val entries by vm.catalogEntries.collectAsStateWithLifecycle()
     val excluded by vm.excludedArtists.collectAsStateWithLifecycle()
+    val form by vm.form.collectAsStateWithLifecycle()
     val importing by vm.catalogImporting.collectAsStateWithLifecycle()
     val catalogMessage by vm.catalogMessage.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
@@ -57,10 +58,16 @@ fun ArtistCatalogDialog(vm: ArtistLabViewModel, onDismiss: () -> Unit) {
     var exportMessage by remember { mutableStateOf("") }
     fun export(uri: Uri?, format: ArtistCatalogExportFormat) {
         if (uri == null || exporting) return
-        val snapshot = entries.toList(); val excludedSnapshot = excluded.toSet()
+        val snapshot = entries.toList()
+        val excludedSnapshot = excluded.toSet()
+        val lockedSnapshot = form?.lockedArtists.orEmpty()
+        val tieredSnapshot = form?.tieredWeights
         exporting = true; exportMessage = ""
         scope.launch {
-            try { exporter.export(uri, format, snapshot, excludedSnapshot); exportMessage = "已导出" }
+            try {
+                exporter.export(uri, format, snapshot, excludedSnapshot, lockedSnapshot, tieredSnapshot)
+                exportMessage = "已导出（含当前停用与抽卡配置）"
+            }
             catch (_: Exception) { exportMessage = "导出未完成，请重试" }
             finally { exporting = false }
         }
@@ -92,8 +99,21 @@ fun ArtistCatalogDialog(vm: ArtistLabViewModel, onDismiss: () -> Unit) {
             Column(Modifier.padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("画师库", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                    TextButton(onClick = { fileImport.launch(arrayOf("text/plain", "application/json", "application/octet-stream")) },
-                        enabled = !reading && !importing && !exporting && !busy) { Text(if (reading || importing) "导入中" else "导入") }
+                    TextButton(
+                        onClick = {
+                            fileImport.launch(
+                                arrayOf(
+                                    "application/json",
+                                    "application/zip",
+                                    "application/x-zip-compressed",
+                                    "text/plain",
+                                    "application/octet-stream",
+                                    "*/*",
+                                ),
+                            )
+                        },
+                        enabled = !reading && !importing && !exporting && !busy,
+                    ) { Text(if (reading || importing) "导入中" else "导入") }
                     Box {
                         TextButton(onClick = { exportMenu = true }, enabled = !exporting && !reading && !importing) { Text(if (exporting) "导出中" else "导出") }
                         DropdownMenu(exportMenu, { exportMenu = false }) {
@@ -162,17 +182,93 @@ fun ArtistCatalogDialog(vm: ArtistLabViewModel, onDismiss: () -> Unit) {
         }
     }
     pending?.let { selection ->
-        val added = selection.artists.filterNot { it.tag in existingTags }
-        AlertDialog(onDismissRequest = { pending = null }, title = { Text("导入画师来源") }, text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text("新增 ${added.size} 位，已有 ${selection.artists.size - added.size} 位。已有画师的启用状态会保留。")
-                Text("${added.count { it.tag in selection.excluded }} 位新画师按文件设置保持移出。")
-                Text(selection.artists.take(8).joinToString("\n") { it.name })
-                Text("导入名单不会自动核实作者身份、活跃度、人气或模型效果。")
-            }
-        }, confirmButton = { TextButton(onClick = { vm.importCatalog(selection); pending = null; importMessage = "" },
-            enabled = !busy && !importing && added.isNotEmpty()) { Text("加入画师库") } },
-            dismissButton = { TextButton(onClick = { pending = null }) { Text("取消") } })
+        var applySelection by remember(selection) { mutableStateOf(selection.fromJsonConfig) }
+        val added = remember(selection, existingTags) { selection.artists.filterNot { it.tag in existingTags } }
+        val incomingTags = remember(selection) { selection.artists.map { it.tag }.toSet() }
+        val incomingExcludedSet = remember(selection) { selection.excluded.toSet() }
+        val willExclude = remember(selection, excluded, applySelection) {
+            if (applySelection) (incomingExcludedSet - excluded).size
+            else added.count { it.tag in incomingExcludedSet }
+        }
+        val willReenable = remember(selection, excluded, applySelection) {
+            if (applySelection) (excluded intersect (incomingTags - incomingExcludedSet)).size else 0
+        }
+        val hasFormConfigSync = applySelection && (selection.lockedArtists.isNotEmpty() || selection.tieredWeights != null)
+        val hasAnyChange = added.isNotEmpty() || willExclude > 0 || willReenable > 0 || hasFormConfigSync
+        AlertDialog(
+            onDismissRequest = { pending = null },
+            title = { Text(if (selection.fromJsonConfig) "导入画师配置" else "导入画师名单") },
+            text = {
+                Column(
+                    Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        "文件共 ${selection.artists.size} 位画师（新增 ${added.size} 位，本机已有 ${selection.artists.size - added.size} 位）。",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (selection.fromJsonConfig) {
+                        Surface(
+                            shape = MaterialTheme.shapes.medium,
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            modifier = Modifier.fillMaxWidth().clickable { applySelection = !applySelection },
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("同步应用文件中的停用/启用配置", style = MaterialTheme.typography.titleSmall)
+                                    Text(
+                                        if (applySelection) {
+                                            "将停用 $willExclude 位、重新启用 $willReenable 位" +
+                                                if (selection.lockedArtists.isNotEmpty()) "，并同步 ${selection.lockedArtists.size} 位基底画师" else ""
+                                        } else {
+                                            "仅新增未收录画师，保留本机现有启用状态"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Switch(checked = applySelection, onCheckedChange = { applySelection = it })
+                            }
+                        }
+                    }
+                    if (!hasAnyChange) {
+                        Text(
+                            "本机画师名单与当前配置已和该文件完全一致。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    } else if (added.isNotEmpty()) {
+                        Text(
+                            "新增示例：${added.take(6).joinToString("、") { it.name }}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        "导入名单不会自动核实作者身份、活跃度、人气或模型效果。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        vm.importCatalog(selection, applySelection = applySelection)
+                        pending = null
+                        importMessage = ""
+                    },
+                    enabled = !busy && !importing && hasAnyChange,
+                ) {
+                    Text(if (applySelection && added.isEmpty()) "应用配置" else "确认导入")
+                }
+            },
+            dismissButton = { TextButton(onClick = { pending = null }) { Text("取消") } },
+        )
     }
     details?.let { artist ->
         AlertDialog(onDismissRequest = { details = null }, title = { Text(artist.name) }, text = {

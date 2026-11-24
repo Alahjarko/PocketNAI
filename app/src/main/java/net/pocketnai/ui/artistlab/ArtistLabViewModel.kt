@@ -206,7 +206,7 @@ class ArtistLabViewModel(
         if (!_busy.value) _approval.value = null
     }
 
-    fun importCatalog(selection: ArtistCatalogSelection) {
+    fun importCatalog(selection: ArtistCatalogSelection, applySelection: Boolean = selection.fromJsonConfig) {
         if (!_ready.value || _busy.value || _catalogImporting.value) return
         _catalogImporting.value = true
         catalogRevision++
@@ -214,15 +214,59 @@ class ArtistLabViewModel(
         _approval.value = null
         viewModelScope.launch {
             try {
-                val previous = allArtists.size
-                val merged = store.importCatalog(selection)
+                val previousCount = allArtists.size
+                val previousExcluded = _excludedArtists.value
+                val merged = store.importCatalog(selection, applySelection = applySelection)
                 allArtists = merged.artists.map { it.tag }
                 hash = net.pocketnai.core.Hashing.sha256(allArtists.joinToString("\n", postfix = "\n").toByteArray(Charsets.UTF_8))
                 _catalogEntries.value = merged.artists
-                _excludedArtists.value = merged.excluded.toSet()
-                pool = allArtists.filterNot { it in _excludedArtists.value }
+                val nextExcluded = merged.excluded.toSet()
+                _excludedArtists.value = nextExcluded
+                pool = allArtists.filterNot { it in nextExcluded }
                 _catalogCount.value = pool.size
-                _catalogMessage.value = "已加入 ${allArtists.size - previous} 位画师，已有画师的启用状态已保留"
+                if (applySelection) {
+                    val currentForm = _form.value
+                    val hasLockedSync = selection.lockedArtists.isNotEmpty()
+                    val hasTieredSync = selection.tieredWeights != null
+                    if (currentForm != null) {
+                        val cleanedLocked = if (hasLockedSync) merged.lockedArtists else currentForm.lockedArtists.filterNot { it in nextExcluded }
+                        val updatedForm = currentForm.copy(
+                            lockedArtists = cleanedLocked,
+                            tieredWeights = selection.tieredWeights ?: currentForm.tieredWeights,
+                        )
+                        if (updatedForm != currentForm) {
+                            _form.value = updatedForm
+                            store.saveForm(updatedForm)
+                        }
+                    } else if (hasLockedSync || hasTieredSync) {
+                        val seeded = ArtistLabForm(
+                            prompt = "",
+                            negative = "",
+                            seed = "",
+                            count = "100",
+                            artists = 3,
+                            minTicks = 10,
+                            maxTicks = 30,
+                            lockedArtists = merged.lockedArtists,
+                            tieredWeights = selection.tieredWeights ?: false,
+                        )
+                        _form.value = seeded
+                        store.saveForm(seeded)
+                    }
+                }
+                val addedCount = allArtists.size - previousCount
+                val newlyExcluded = (nextExcluded - previousExcluded).size
+                val reenabled = (previousExcluded - nextExcluded).size
+                _catalogMessage.value = if (applySelection) {
+                    buildList {
+                        if (addedCount > 0) add("新增 $addedCount 位")
+                        if (newlyExcluded > 0) add("已停用 $newlyExcluded 位")
+                        if (reenabled > 0) add("已重新启用 $reenabled 位")
+                        if (selection.lockedArtists.isNotEmpty()) add("同步 ${merged.lockedArtists.size} 位基底画师")
+                    }.ifEmpty { listOf("当前配置已与文件一致") }.joinToString(" · ")
+                } else {
+                    "已加入 $addedCount 位画师，已有画师的启用状态已保留"
+                }
             } catch (e: IllegalArgumentException) { _catalogMessage.value = e.message ?: "画师文件格式不正确" }
             catch (_: Exception) { _catalogMessage.value = "画师库保存未完成，请重试" }
             finally { _catalogImporting.value = false }

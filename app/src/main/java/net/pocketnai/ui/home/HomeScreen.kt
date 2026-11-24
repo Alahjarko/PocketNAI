@@ -3,11 +3,15 @@ package net.pocketnai.ui.home
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -47,6 +51,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -90,6 +95,8 @@ import net.pocketnai.ui.gallery.GalleryPane
 import net.pocketnai.ui.gallery.GalleryViewModel
 import net.pocketnai.ui.generate.GenerateSheet
 import net.pocketnai.ui.generate.GenerateViewModel
+import net.pocketnai.ui.motion.LocalWorkbenchSharedTransition
+import net.pocketnai.ui.motion.WorkbenchSharedTransition
 import net.pocketnai.ui.motion.imageMotionChrome
 import net.pocketnai.ui.motion.rememberPocketHaptics
 import net.pocketnai.ui.openai.OpenAiImageSheet
@@ -196,6 +203,12 @@ fun HomeScreen(
             }
             var rightPaneCollapsed by rememberSaveable { mutableStateOf(false) }
             val effectivePaneWidth = paneWidthDp.coerceIn(MIN_PANE_WIDTH_DP, maxAllowedPaneWidth).dp
+            val galleryItems by galleryViewModel.items.collectAsStateWithLifecycle()
+            var stageImageId by rememberSaveable { mutableStateOf<String?>(null) }
+            val workbenchSharedImageId = remember(stageImageId, galleryItems) {
+                stageImageId?.takeIf { id -> galleryItems.any { it.imageId == id } }
+                    ?: galleryItems.firstOrNull()?.imageId
+            }
 
             Row(modifier = Modifier.fillMaxSize()) {
                 // 左侧工作区：顶部切换栏 + 大图工作台 / 相册瀑布流
@@ -220,72 +233,102 @@ fun HomeScreen(
                     AnimatedContent(
                         targetState = homeViewMode == HOME_MODE_STAGE,
                         label = "tablet-home-view-mode",
-                        transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(110)) },
+                        transitionSpec = {
+                            fadeIn(tween(240, easing = FastOutSlowInEasing)) togetherWith
+                                fadeOut(tween(180, easing = FastOutSlowInEasing))
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),
                     ) { isStage ->
-                        if (isStage) {
-                            HomeWorkbenchPane(
-                                galleryViewModel = galleryViewModel,
-                                onOpenImage = onOpenImage,
-                                onInpaintImage = onInpaintImage,
-                                onReuseItem = generateViewModel::reuseGalleryItem,
-                                onUseAsReference = onUseAsReference,
-                                supportsDirectorReference = supportsDirector,
-                                supportsVibeTransfer = supportsVibe,
-                                inFlight = inFlight,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        } else {
-                            GalleryPane(
-                                onOpenImage = onOpenImage,
-                                onInpaintImage = onInpaintImage,
-                                onUseAsReference = onUseAsReference,
-                                supportsDirectorReference = supportsDirector,
-                                supportsVibeTransfer = supportsVibe,
-                                searchFocusRequester = searchFocusRequester,
-                                onReuseItem = generateViewModel::reuseGalleryItem,
-                                galleryViewModel = galleryViewModel,
-                                modifier = Modifier.fillMaxSize(),
-                            )
+                        CompositionLocalProvider(
+                            LocalWorkbenchSharedTransition provides WorkbenchSharedTransition(
+                                visibility = this@AnimatedContent,
+                                activeImageId = workbenchSharedImageId,
+                            ),
+                        ) {
+                            if (isStage) {
+                                HomeWorkbenchPane(
+                                    galleryViewModel = galleryViewModel,
+                                    onOpenImage = onOpenImage,
+                                    onInpaintImage = onInpaintImage,
+                                    onReuseItem = generateViewModel::reuseGalleryItem,
+                                    onUseAsReference = onUseAsReference,
+                                    supportsDirectorReference = supportsDirector,
+                                    supportsVibeTransfer = supportsVibe,
+                                    inFlight = inFlight,
+                                    selectedImageId = stageImageId,
+                                    onSelectedImageIdChange = { stageImageId = it },
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else {
+                                GalleryPane(
+                                    onOpenImage = onOpenImage,
+                                    onInpaintImage = onInpaintImage,
+                                    onUseAsReference = onUseAsReference,
+                                    supportsDirectorReference = supportsDirector,
+                                    supportsVibeTransfer = supportsVibe,
+                                    searchFocusRequester = searchFocusRequester,
+                                    onReuseItem = generateViewModel::reuseGalleryItem,
+                                    galleryViewModel = galleryViewModel,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
                         }
                     }
                 }
 
-                // 中间可拖拽分栏手柄 + 右侧常驻生成面板
-                if (!rightPaneCollapsed) {
-                    SplitPaneDragHandle(
-                        onDragDeltaPx = { deltaPx ->
-                            val deltaDp = deltaPx / density.density
-                            paneWidthDp = (paneWidthDp - deltaDp).coerceIn(MIN_PANE_WIDTH_DP, maxAllowedPaneWidth)
-                        },
-                        onDragFinished = {
-                            container.settingsStore.setTabletGeneratePaneWidthDp(paneWidthDp.roundToInt())
-                        },
-                    )
-                    Surface(
-                        modifier = Modifier
-                            .width(effectivePaneWidth)
-                            .fillMaxHeight()
-                            .imageMotionChrome(zIndex = 2f),
-                    ) {
-                        if (openAiViewModel != null) {
-                            OpenAiDropContainer(
-                                openAiViewModel = openAiViewModel,
-                                onOpenAiSettings = onOpenAiSettings,
-                            )
-                        } else {
-                            GenerateSheet(
-                                viewModel = generateViewModel,
-                                state = state,
-                                expanded = true,
-                                connected = connected,
-                                credentialType = credentialType,
-                                onRequestConnect = onRequestConnect,
-                                onOpenInpaintEditor = onOpenInpaintEditor,
-                                onOpenStatistics = onOpenStatistics,
-                            )
+                // 中间可拖拽分栏手柄 + 右侧常驻生成面板（带展开/收起平滑物理动效）
+                AnimatedVisibility(
+                    visible = !rightPaneCollapsed,
+                    enter = expandHorizontally(
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = 460f,
+                        ),
+                        expandFrom = Alignment.End,
+                    ) + fadeIn(tween(190, easing = FastOutSlowInEasing)),
+                    exit = shrinkHorizontally(
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = 520f,
+                        ),
+                        shrinkTowards = Alignment.End,
+                    ) + fadeOut(tween(140, easing = FastOutSlowInEasing)),
+                ) {
+                    Row(modifier = Modifier.fillMaxHeight()) {
+                        SplitPaneDragHandle(
+                            onDragDeltaPx = { deltaPx ->
+                                val deltaDp = deltaPx / density.density
+                                paneWidthDp = (paneWidthDp - deltaDp).coerceIn(MIN_PANE_WIDTH_DP, maxAllowedPaneWidth)
+                            },
+                            onDragFinished = {
+                                container.settingsStore.setTabletGeneratePaneWidthDp(paneWidthDp.roundToInt())
+                            },
+                        )
+                        Surface(
+                            modifier = Modifier
+                                .width(effectivePaneWidth)
+                                .fillMaxHeight()
+                                .imageMotionChrome(zIndex = 2f),
+                        ) {
+                            if (openAiViewModel != null) {
+                                OpenAiDropContainer(
+                                    openAiViewModel = openAiViewModel,
+                                    onOpenAiSettings = onOpenAiSettings,
+                                )
+                            } else {
+                                GenerateSheet(
+                                    viewModel = generateViewModel,
+                                    state = state,
+                                    expanded = true,
+                                    connected = connected,
+                                    credentialType = credentialType,
+                                    onRequestConnect = onRequestConnect,
+                                    onOpenInpaintEditor = onOpenInpaintEditor,
+                                    onOpenStatistics = onOpenStatistics,
+                                )
+                            }
                         }
                     }
                 }
