@@ -320,6 +320,8 @@ internal fun ArtistLabCompareDialog(
 @Composable
 internal fun ArtistLabStageInspector(
     cards: List<LabCard>,
+    orderIds: List<String>,
+    appendNewDraws: Boolean,
     currentCardId: String,
     lockedArtists: List<String>,
     excludedArtists: Set<String>,
@@ -335,7 +337,25 @@ internal fun ArtistLabStageInspector(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val inspectable = remember(cards) { cards.filter { it.image != null } }
+    // 沿用打开大图检视时冻结的顺序快照，同时读取最新的 LabCard（实时刷新收藏心形等状态）；
+    // 收藏/取消收藏不会把当前页拉回置顶区，关闭检视回到网格后仍按收藏置顶展示。
+    val inspectable = remember(cards, orderIds, appendNewDraws) {
+        val withImage = cards.filter { it.image != null }
+        if (orderIds.isEmpty()) {
+            withImage
+        } else {
+            val byId = withImage.associateBy { it.draw.id }
+            val pinned = orderIds.mapNotNull { byId[it] }
+            if (pinned.isEmpty()) {
+                withImage
+            } else if (!appendNewDraws) {
+                pinned
+            } else {
+                val seen = pinned.mapTo(HashSet(pinned.size)) { it.draw.id }
+                pinned + withImage.filter { it.draw.id !in seen }
+            }
+        }
+    }
     val currentIndex = inspectable.indexOfFirst { it.draw.id == currentCardId }
     val card = inspectable.getOrNull(currentIndex) ?: inspectable.firstOrNull()
     if (card == null) {

@@ -90,6 +90,8 @@ fun ArtistLabScreen(
     var onlyFavorites by rememberSaveable { mutableStateOf(false) }
     var focusedId by rememberSaveable { mutableStateOf<String?>(null) }
     var stageCardId by rememberSaveable { mutableStateOf<String?>(null) }
+    var stageOrderIds by rememberSaveable(stateSaver = StringListSaver) { mutableStateOf<List<String>>(emptyList()) }
+    var stageOnlyFavorites by rememberSaveable { mutableStateOf(false) }
     var compareMode by rememberSaveable { mutableStateOf(false) }
     var compareIds by rememberSaveable(stateSaver = StringListSaver) { mutableStateOf<List<String>>(emptyList()) }
     var compareDialogOpen by remember { mutableStateOf(false) }
@@ -122,10 +124,41 @@ fun ArtistLabScreen(
     LaunchedEffect(approval) { if (approval != null) configOpen = false }
     LaunchedEffect(selected) {
         stageCardId = null
+        stageOrderIds = emptyList()
+        stageOnlyFavorites = false
         focusedId = null
         compareMode = false
         compareIds = emptyList()
         compareDialogOpen = false
+    }
+
+    val openStageInspector: (LabCard) -> Unit = { card ->
+        if (card.image != null) {
+            // 打开大图检视时冻结当前浏览顺序：检视过程中收藏/取消收藏只更新状态，不再触发置顶重排把进度拉回第 1 张。
+            stageOrderIds = shown.asSequence().filter { it.image != null }.map { it.draw.id }.toList()
+            stageOnlyFavorites = onlyFavorites
+            stageCardId = card.draw.id
+        }
+    }
+    val closeStageInspector: () -> Unit = {
+        stageCardId = null
+        stageOrderIds = emptyList()
+        stageOnlyFavorites = false
+    }
+    val setOnlyFavorites: (Boolean) -> Unit = { next ->
+        if (onlyFavorites != next) {
+            onlyFavorites = next
+            if (stageCardId != null) {
+                val visible = cards.filter { it.statusVisible() && (!next || it.favorite) }
+                val nextShown = if (next) visible else visible.filter { it.favorite } + visible.filterNot { it.favorite }
+                val nextOrder = nextShown.asSequence().filter { it.image != null }.map { it.draw.id }.toList()
+                stageOnlyFavorites = next
+                stageOrderIds = nextOrder
+                if (stageCardId !in nextOrder) {
+                    stageCardId = nextOrder.firstOrNull()
+                }
+            }
+        }
     }
 
     val toggleCompareSelection: (LabCard) -> Unit = { card ->
@@ -146,7 +179,7 @@ fun ArtistLabScreen(
             compareIds = emptyList()
             compareDialogOpen = false
         } else {
-            stageCardId = null
+            closeStageInspector()
         }
     }
 
@@ -207,8 +240,8 @@ fun ArtistLabScreen(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            FilterChip(!onlyFavorites, { onlyFavorites = false }, { Text("全部") })
-                            FilterChip(onlyFavorites, { onlyFavorites = true }, { Text("仅收藏") })
+                            FilterChip(!onlyFavorites, { setOnlyFavorites(false) }, { Text("全部") })
+                            FilterChip(onlyFavorites, { setOnlyFavorites(true) }, { Text("仅收藏") })
                             FilterChip(
                                 selected = compareMode,
                                 onClick = toggleCompareMode,
@@ -263,7 +296,9 @@ fun ArtistLabScreen(
                     val activeStageId = stageCardId
                     if (activeStageId != null && !compareMode) {
                         ArtistLabStageInspector(
-                            cards = shown,
+                            cards = cards,
+                            orderIds = stageOrderIds,
+                            appendNewDraws = !stageOnlyFavorites,
                             currentCardId = activeStageId,
                             lockedArtists = lockedArtists,
                             excludedArtists = excludedArtists,
@@ -282,7 +317,7 @@ fun ArtistLabScreen(
                             },
                             onOpenDetail = onOpen,
                             onApplyArtistChain = onApplyArtistChain,
-                            onClose = { stageCardId = null },
+                            onClose = closeStageInspector,
                         )
                     } else {
                         LabResultsGridPane(
@@ -296,7 +331,7 @@ fun ArtistLabScreen(
                             plannedAspectRatio = (snapshot ?: currentParams).targetSize.let { it.width.toFloat() / it.height },
                             resolve = resolve,
                             onOpen = onOpen,
-                            onInspectStage = { card -> if (card.image != null) stageCardId = card.draw.id },
+                            onInspectStage = openStageInspector,
                             onFocusMix = { focusedId = it.draw.id },
                             onFavorite = vm::favorite,
                             onToggleCompare = toggleCompareSelection,
@@ -345,8 +380,8 @@ fun ArtistLabScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            FilterChip(!onlyFavorites, { onlyFavorites = false }, { Text("全部结果") })
-                            FilterChip(onlyFavorites, { onlyFavorites = true }, { Text("只看收藏") })
+                            FilterChip(!onlyFavorites, { setOnlyFavorites(false) }, { Text("全部结果") })
+                            FilterChip(onlyFavorites, { setOnlyFavorites(true) }, { Text("只看收藏") })
                             FilterChip(
                                 selected = compareMode,
                                 onClick = toggleCompareMode,
@@ -379,7 +414,7 @@ fun ArtistLabScreen(
                         plannedAspectRatio = (snapshot ?: currentParams).targetSize.let { it.width.toFloat() / it.height },
                         resolve = resolve,
                         onOpen = onOpen,
-                        onInspectStage = { card -> if (card.image != null) stageCardId = card.draw.id },
+                        onInspectStage = openStageInspector,
                         onFocusMix = { focusedId = it.draw.id },
                         onFavorite = vm::favorite,
                         onToggleCompare = toggleCompareSelection,
@@ -394,7 +429,9 @@ fun ArtistLabScreen(
                 val activeStageId = stageCardId
                 if (activeStageId != null && !compareMode) {
                     ArtistLabStageInspector(
-                        cards = shown,
+                        cards = cards,
+                        orderIds = stageOrderIds,
+                        appendNewDraws = !stageOnlyFavorites,
                         currentCardId = activeStageId,
                         lockedArtists = lockedArtists,
                         excludedArtists = excludedArtists,
@@ -413,7 +450,7 @@ fun ArtistLabScreen(
                         },
                         onOpenDetail = onOpen,
                         onApplyArtistChain = onApplyArtistChain,
-                        onClose = { stageCardId = null },
+                        onClose = closeStageInspector,
                     )
                 }
             }
