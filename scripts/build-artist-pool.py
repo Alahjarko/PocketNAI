@@ -24,9 +24,10 @@ for artist in review["artists"]:
     assert row and row[1] == "1", f"Not a canonical Danbooru artist: {tag}"
     assert int(row[2]) >= 50 and int(row[2]) == artist["danbooru_post_count"], f"Invalid post count: {tag}"
     assert artist["review_status"] == "accepted" and artist["identity_evidence"], f"Unreviewed identity: {tag}"
-    # 增量审核不能把旧条目冒充为今日重新核对；活动窗口以各条目的审核日为准。
+    # 增量审核不能把旧条目冒充为今日重新核对；活动窗口以各条目的审核日与声明窗口为准（默认365天，2026-11-25批次按用户要求允许近五年即1825天活跃）。
     reviewed_on = artist.get("review_date", review["review_date"])
-    active_since = (date.fromisoformat(reviewed_on) - timedelta(days=365)).isoformat()
+    window_days = int(artist.get("activity_window_days", 365))
+    active_since = (date.fromisoformat(reviewed_on) - timedelta(days=window_days)).isoformat()
     activity_date = artist.get("latest_activity_date", artist.get("latest_pixiv_work_date"))
     assert date.fromisoformat(activity_date) >= date.fromisoformat(active_since) and artist["activity_evidence_url"], f"Inactive artist: {tag}"
     work_review = artist.get("work_review", artist.get("sfw_review"))

@@ -117,5 +117,80 @@ class NovelAiRequestBuilderTest {
         assertThat(mediumDraft.characters).isEqualTo(params.characters)
         val curated = ModelCatalog.profileOf(ImageModel.V5_CURATED)
         assertThat(curated.normalize(mediumDraft.copy(model = curated.model)).effort).isEqualTo(NovelAiEffort.HIGH)
+
+        // V5 Precise Reference: 97 buckets, 6 base_captions, 0..5 strength, fixed fidelity=1 (wire 0.0), and V4.5 normalization.
+        assertThat(net.pocketnai.domain.image.ImageGeometry.DIRECTOR_BUCKETS).hasSize(97)
+        net.pocketnai.domain.image.ImageGeometry.DIRECTOR_BUCKETS.forEach { bucket ->
+            assertThat(bucket.width % 64).isEqualTo(0)
+            assertThat(bucket.height % 64).isEqualTo(0)
+            assertThat(bucket.totalPixels).isAtMost(1_048_576L)
+        }
+        assertThat(net.pocketnai.domain.image.ImageGeometry.directorBucket(net.pocketnai.domain.image.PixelSize(500, 800)))
+            .isEqualTo(net.pocketnai.domain.image.PixelSize(768, 1280))
+        assertThat(net.pocketnai.domain.image.ImageGeometry.directorBucket(net.pocketnai.domain.image.PixelSize(1920, 1080)))
+            .isEqualTo(net.pocketnai.domain.image.PixelSize(1344, 768))
+        val exactBucket = net.pocketnai.domain.image.ImageGeometry.placementFor(
+            net.pocketnai.domain.image.ImageTransform.DirectorBucket,
+            net.pocketnai.domain.image.PixelSize(1024, 1024),
+        )
+        assertThat(exactBucket.canvas).isEqualTo(net.pocketnai.domain.image.PixelSize(1024, 1024))
+        assertThat(exactBucket.destination).isEqualTo(net.pocketnai.domain.image.PixelRegion(0, 0, 1024, 1024))
+
+        fun directorRef(
+            idx: Int,
+            kind: net.pocketnai.domain.model.DirectorReferenceKind,
+            strength: Double,
+            fidelity: Double? = 0.35,
+            info: Double? = 0.6,
+        ) = net.pocketnai.domain.model.ReferenceImage(
+            id = "d-$idx",
+            role = net.pocketnai.domain.model.ReferenceRole.DIRECTOR,
+            ordinal = idx,
+            relativePath = "references/d-$idx.png",
+            width = 832,
+            height = 1216,
+            byteSize = 100L,
+            sha256 = "sha-$idx",
+            createdAt = 0L,
+            strength = strength,
+            secondaryStrength = fidelity,
+            informationExtracted = info,
+            directorKind = kind,
+        )
+        val v5Directors = listOf(
+            directorRef(0, net.pocketnai.domain.model.DirectorReferenceKind.CHARACTER_MAIN_OUTFIT, 2.5),
+            directorRef(1, net.pocketnai.domain.model.DirectorReferenceKind.OUTFIT, 5.0),
+            directorRef(2, net.pocketnai.domain.model.DirectorReferenceKind.CHARACTER_AND_STYLE_ANY_OUTFIT, 6.2),
+            directorRef(3, net.pocketnai.domain.model.DirectorReferenceKind.CHARACTER.withPreferSameOutfit(false), 0.4),
+        )
+        val v5DirectorReq = net.pocketnai.domain.model.GenerationRequest(
+            params = params,
+            mode = net.pocketnai.domain.model.GenerationMode.PRECISE_REFERENCE,
+            references = v5Directors,
+        ).withActiveReferences(v5)
+        val v5DirectorPayload = NovelAiRequestBuilder.build(
+            profile = v5,
+            request = v5DirectorReq,
+            upstreamImages = mapOf(net.pocketnai.domain.model.ReferenceRole.DIRECTOR to listOf("B0", "B1", "B2", "B3")),
+        )["parameters"]!!.jsonObject
+        assertThat(
+            v5DirectorPayload["director_reference_descriptions"]!!.jsonArray.map {
+                it.jsonObject["caption"]!!.jsonObject["base_caption"]!!.jsonPrimitive.content
+            },
+        ).containsExactly("character_mainoutfit", "costume", "character&style_anyoutfit", "character").inOrder()
+        assertThat(v5DirectorPayload["director_reference_strength_values"]!!.jsonArray.map { it.jsonPrimitive.double })
+            .containsExactly(2.5, 5.0, 5.0, 0.4).inOrder()
+        assertThat(v5DirectorPayload["director_reference_secondary_strength_values"]!!.jsonArray.map { it.jsonPrimitive.double })
+            .containsExactly(0.0, 0.0, 0.0, 0.0)
+        assertThat(v5DirectorPayload["director_reference_information_extracted"]!!.jsonArray.map { it.jsonPrimitive.double })
+            .containsExactly(1.0, 1.0, 1.0, 1.0)
+
+        val v45 = ModelCatalog.profileOf(ImageModel.V4_5_FULL)
+        val v45Normalized = v5DirectorReq.copy(params = params.copy(model = v45.model)).withActiveReferences(v45)
+        assertThat(v45Normalized.references.map { it.ordinal to it.directorKind }).containsExactly(
+            0 to net.pocketnai.domain.model.DirectorReferenceKind.CHARACTER,
+            1 to net.pocketnai.domain.model.DirectorReferenceKind.CHARACTER_AND_STYLE,
+            2 to net.pocketnai.domain.model.DirectorReferenceKind.CHARACTER,
+        ).inOrder()
     }
 }

@@ -103,12 +103,26 @@ data class ModelProfile(
     /**
      * 是否支持 Vibe Transfer。
      *
-     * 账号所有者确认（2026-09-14）：**Vibe Transfer 与 Precise Reference 目前只有 V4.5 能用**，
-     * V5 不支持。界面据此隐藏入口，避免构造出服务端一定拒绝的请求。
+     * 目前只有 V4.5 能用，V5 不支持（2026-11-25 复核官方前端能力表）。
+     * 界面据此隐藏入口，避免构造出服务端一定拒绝的请求。
      */
     val supportsVibeTransfer: Boolean,
-    /** 是否支持 Precise Reference。同上：目前仅 V4.5。 */
+    /** 是否支持 Precise Reference（2026-11-25 起 V4.5 与 V5 均支持）。 */
     val supportsDirectorReference: Boolean,
+    /**
+     * 局部重绘时是否允许同时附带 Precise Reference（对应官方 `charRefInpainting`）：
+     * V4.5 为 `true`，V5 为 `false`（V5 重绘时忽略精确参考且不收附加费）。
+     */
+    val supportsDirectorInpaint: Boolean = true,
+    /**
+     * Precise Reference 预处理方式：
+     * `false` 使用 V4.5 三种固定画布等比补黑边；`true` 使用 V5 的 97 个分桶居中裁切（不补黑边）。
+     */
+    val usesBucketDirectorReference: Boolean = false,
+    /** 是否暴露并发送自定义 Fidelity / Information Extracted（V4.5 为 `true`，V5 固定为 1.0）。 */
+    val supportsDirectorFidelity: Boolean = true,
+    /** 是否支持服装参考 `costume` 与保持同款服装开关（对应官方 `outfitReferences`，V5 为 `true`）。 */
+    val supportsOutfitReference: Boolean = false,
     /**
      * 是否支持局部重绘（通过**公开 API**）。当前四个模型都为 true（真机实测通过，
      * 2026-09-14，技术决策记录第十八节）。
@@ -135,8 +149,10 @@ data class ModelProfile(
      * 刻意不同 —— 图生图要保留原图构图，重绘的蒙版内则是换掉那块内容。
      */
     val defaultInpaintStrength: Double,
-    /** Precise Reference 三个滑块（Strength / Fidelity / Information Extracted）共用的区间。 */
+    /** Precise Reference 的 Fidelity / Information Extracted 区间（0–1）。 */
     val directorReferenceRange: NumericRange,
+    /** Precise Reference 的 Strength 区间（V4.5 为 0–1，V5 为 0–5）。 */
+    val directorStrengthRange: NumericRange = directorReferenceRange,
     /** Precise Reference 的 Strength 默认值。 */
     val defaultDirectorStrength: Double,
     /** Precise Reference 的 Fidelity（API 里的 secondary strength）默认值。 */

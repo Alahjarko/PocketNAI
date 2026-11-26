@@ -117,7 +117,7 @@
     <string name="info_button_hint">查看说明</string>
     <string name="prompt_tools_info">选中文字后可用「强化 / 弱化」包裹 {} / []；书签可保存选中片段或整条提示词。输入 @ 可选择本地收藏作为提示词宏，也可以写 !macro:名称!，支持嵌套引用。官方随机语法为 ||选项一|选项二||；旧版 &lt;选项一|选项二&gt; 仍可使用。</string>
     <string name="generate_reference_section">参考图</string>
-    <string name="generate_img2img_info">图生图把图片当作起点：模型在它的基础上重新生成，挂上底图后还可涂蒙版做局部重绘；不额外收费（与纯文字一致）。Precise Reference 与 Vibe Transfer 目前只有 V4.5 支持。</string>
+    <string name="generate_img2img_info">图生图把图片当作起点：模型在它的基础上重新生成，挂上底图后还可涂蒙版做局部重绘；不额外收费（与纯文字一致）。Precise Reference 支持 V4.5 与 V5（V5 额外支持独立服装参考），Vibe Transfer 目前仅 V4.5 支持。</string>
     <string name="generate_mode_img2img">图生图</string>
     <string name="generate_mode_txt2img">纯文字</string>
     <string name="generate_mode_precise_reference">Precise Reference</string>
@@ -149,18 +149,38 @@
     <string name="action_inpaint">局部重绘</string>
     <string name="generate_reference_fidelity">Fidelity</string>
     <string name="generate_reference_kind_character">参考类型：角色</string>
+    <string name="generate_reference_kind_character_main_outfit">参考类型：角色（保持同款服装）</string>
+    <string name="generate_reference_kind_outfit">参考类型：服装</string>
     <string name="generate_reference_kind_character_style">参考类型：角色与画风</string>
+    <string name="generate_reference_kind_character_style_any_outfit">参考类型：角色与画风（自由换装）</string>
     <string name="generate_reference_kind_character_short">角色</string>
+    <string name="generate_reference_kind_outfit_short">服装</string>
     <string name="generate_reference_kind_character_style_short">角色+画风</string>
+    <string name="generate_reference_prefer_same_outfit">保持同款服装</string>
+    <string name="generate_reference_prefer_same_outfit_on_desc">连同参考图中的服饰一起还原</string>
+    <string name="generate_reference_prefer_same_outfit_off_desc">仅固定角色外貌，服装可由提示词或另一张「服装」参考自由搭配</string>
+    <string name="generate_reference_outfit_active_hint">仅提取图中服饰造型；可搭配另一张关闭「保持同款服装」的角色参考完成换装。</string>
+    <string name="generate_reference_outfit_v45_inactive_hint">V4.5 不支持独立服装参考，生成时将自动跳过此卡；切回 V5 自动恢复，也可点击上方改选其他类型。</string>
+    <string name="generate_reference_summary_char_style_same_outfit">角色 + 画风 · 保持同款服装</string>
+    <string name="generate_reference_summary_char_style_any_outfit">角色 + 画风 · 自由换装</string>
+    <string name="generate_reference_summary_char_same_outfit">仅角色 · 保持同款服装</string>
+    <string name="generate_reference_summary_char_any_outfit">仅角色 · 自由换装</string>
+    <string name="generate_reference_summary_outfit">服装参考</string>
+    <string name="generate_reference_summary_style">画风参考</string>
+    <string name="generate_reference_summary_outfit_skipped">服装参考 · V4.5 暂不使用</string>
     <string name="generate_reference_information">Information Extracted</string>
 
     <!-- Precise Reference -->
     <string name="generate_director_title">参考图 · Precise Reference</string>
-    <string name="generate_director_hint">参考图用于参考角色或画风，可与图生图、局部重绘同时使用。不能与 Vibe 同时使用，添加其中一类会移除另一类。</string>
-    <string name="generate_director_unsupported">%1$s 不支持 Precise Reference（目前只有 V4.5 支持），请切换到 V4.5 模型。</string>
+    <string name="generate_director_hint">用于参考角色、服装或画风，可与图生图并用（V4.5 还可与局部重绘并用）。不能与 Vibe 同时使用，添加其中一类会移除另一类。</string>
+    <string name="generate_director_unsupported">%1$s 不支持 Precise Reference。</string>
+    <string name="generate_director_v5_inpaint_paused">V5 局部重绘暂不支持叠加精确参考；当前参考图已保留，不参与本次重绘且不计附加费（移除蒙版或切回 V4.5 后恢复）。</string>
     <string name="generate_director_slots">已添加 %1$d / %2$d 张</string>
     <string name="generate_director_cost_hint">每张 5 Anlas</string>
-    <string name="generate_director_padded_size">已按官方要求补齐为 %1$d × %2$d</string>
+    <string name="generate_director_padded_size">提交画布 %1$d × %2$d（自动补边）</string>
+    <string name="generate_director_canvas_size">源图 %1$d × %2$d · 提交画布 %3$d × %4$d</string>
+    <string name="generate_director_bucket_size_same">提交分桶 %1$d × %2$d</string>
+    <string name="generate_director_bucket_size">源图 %1$d × %2$d · 提交分桶 %3$d × %4$d</string>
 
     <!-- Vibe Transfer -->
     <string name="generate_vibe_title">参考图 · Vibe Transfer</string>

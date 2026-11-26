@@ -409,12 +409,31 @@ class ChatProtocolTest {
         assertThat(parsedNaiRef.references[1].role).isEqualTo(ReferenceRole.DIRECTOR)
         assertThat(parsedNaiRef.references[1].directorKind).isEqualTo(DirectorReferenceKind.STYLE)
 
-        // V5 rejects precise_ref & vibe_ref; V4.5 rejects precise_ref + vibe_ref together
+        // V5 accepts precise_ref (including costume) while rejecting vibe_ref; V4.5 rejects costume & precise+vibe together
         val naiV5Base = GenerationParams.defaultsFor(ModelCatalog.profileOf(ImageModel.V5_FULL))
+        val parsedV5Outfit = ImageChatTools.parseWithReferences(
+            ToolCall("r2", "generate_image", """{"prompt":"1girl","negative_prompt":"","precise_ref":"ref_1","precise_kind":"costume"}"""),
+            naiV5Base,
+            availMap,
+        )
+        assertThat(parsedV5Outfit.references.single().directorKind).isEqualTo(DirectorReferenceKind.OUTFIT)
+        val parsedV45Normalized = ImageChatTools.parseWithReferences(
+            ToolCall("r2b", "generate_image", """{"prompt":"1girl","negative_prompt":"","precise_ref":"ref_1","precise_kind":"character_mainoutfit"}"""),
+            naiV45Base,
+            availMap,
+        )
+        assertThat(parsedV45Normalized.references.single().directorKind).isEqualTo(DirectorReferenceKind.CHARACTER)
         assertThat(runCatching {
             ImageChatTools.parseWithReferences(
-                ToolCall("r2", "generate_image", """{"prompt":"1girl","negative_prompt":"","precise_ref":"ref_1"}"""),
+                ToolCall("r2c", "generate_image", """{"prompt":"1girl","negative_prompt":"","vibe_ref":"ref_1"}"""),
                 naiV5Base,
+                availMap,
+            )
+        }.isFailure).isTrue()
+        assertThat(runCatching {
+            ImageChatTools.parseWithReferences(
+                ToolCall("r2d", "generate_image", """{"prompt":"1girl","negative_prompt":"","precise_ref":"ref_1","precise_kind":"costume"}"""),
+                naiV45Base,
                 availMap,
             )
         }.isFailure).isTrue()

@@ -525,6 +525,7 @@ class ChatViewModel(
                                             put("tool_permission", cfg.effectiveToolPermission.name.lowercase())
                                             put("max_characters", CharacterPrompt.limitFor(p.model)); put("use_coords", p.useCharacterCoordinates)
                                             put("supports_precise_ref", profile.supportsDirectorReference)
+                                            put("supports_outfit_ref", profile.supportsOutfitReference)
                                             put("supports_vibe_ref", profile.supportsVibeTransfer)
                                             put("prompt_edit_provider", snapshot.provider); put("prompt", snapshot.beforePrompt.take(16000))
                                             snapshot.beforeNegative?.let { value -> put("negative_prompt", value.take(16000)) }

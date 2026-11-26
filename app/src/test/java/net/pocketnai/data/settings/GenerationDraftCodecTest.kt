@@ -104,6 +104,20 @@ class GenerationDraftCodecTest {
         assertThat(mediumRestored.params.characters).isEqualTo(medium.params.characters)
         val oldDraft = GenerationDraftCodec.encode(medium).replace("\"effort\":\"MEDIUM\",", "").replace(",\"effort\":\"MEDIUM\"", "")
         assertThat(GenerationDraftCodec.decode(oldDraft)!!.params.effort).isEqualTo(net.pocketnai.domain.model.NovelAiEffort.HIGH)
+
+        // V5 Precise Reference strength (> 1.0) and outfit kinds survive draft round-trip even when saved under V4.5.
+        val v45WithV5Ref = original.copy(
+            params = original.params.copy(model = ImageModel.V4_5_FULL),
+            references = listOf(
+                reference("outfit-ref", ReferenceRole.DIRECTOR, 0).copy(
+                    strength = 3.25,
+                    directorKind = DirectorReferenceKind.OUTFIT,
+                ),
+            ),
+        )
+        val v45Restored = GenerationDraftCodec.decode(GenerationDraftCodec.encode(v45WithV5Ref))!!
+        assertThat(v45Restored.references.single().strength).isEqualTo(3.25)
+        assertThat(v45Restored.references.single().directorKind).isEqualTo(DirectorReferenceKind.OUTFIT)
     }
 
     @Test

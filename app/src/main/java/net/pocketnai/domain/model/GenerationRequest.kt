@@ -24,15 +24,44 @@ data class GenerationRequest(
 
     /** Editor material remains in the draft; only supported conditions enter this request. */
     fun withActiveReferences(profile: ModelProfile): GenerationRequest {
-        val active = references.filter { reference -> when (reference.role) {
-            ReferenceRole.DIRECTOR -> profile.supportsDirectorReference
-            ReferenceRole.VIBE -> profile.supportsVibeTransfer
-            ReferenceRole.IMG2IMG -> profile.supportsImg2Img
-            ReferenceRole.INPAINT_MASK -> profile.supportsInpaint
-        } }
-        val activeMode = if (mode == GenerationMode.PRECISE_REFERENCE && !profile.supportsDirectorReference) {
+        val inpaintActive = profile.supportsInpaint && (
+            mode == GenerationMode.INPAINT ||
+                (references.any { it.role == ReferenceRole.IMG2IMG } &&
+                    references.any { it.role == ReferenceRole.INPAINT_MASK })
+            )
+        val allowDirector = profile.supportsDirectorReference &&
+            (!inpaintActive || profile.supportsDirectorInpaint)
+        var directorOrdinal = 0
+        val active = references.mapNotNull { reference ->
+            when (reference.role) {
+                ReferenceRole.DIRECTOR -> {
+                    if (!allowDirector) {
+                        null
+                    } else {
+                        val rawKind = reference.directorKind
+                        val normalizedKind = (rawKind ?: DirectorReferenceKind.DEFAULT)
+                            .normalizeFor(profile)
+                        normalizedKind?.let {
+                            reference.copy(
+                                ordinal = directorOrdinal++,
+                                directorKind = if (rawKind == null) null else it,
+                            )
+                        }
+                    }
+                }
+                ReferenceRole.VIBE -> reference.takeIf { profile.supportsVibeTransfer }
+                ReferenceRole.IMG2IMG -> reference.takeIf { profile.supportsImg2Img }
+                ReferenceRole.INPAINT_MASK -> reference.takeIf { profile.supportsInpaint }
+            }
+        }
+        val activeMode = if (
+            mode == GenerationMode.PRECISE_REFERENCE &&
+            active.none { it.role == ReferenceRole.DIRECTOR }
+        ) {
             if (active.any { it.role == ReferenceRole.IMG2IMG }) GenerationMode.IMG2IMG else GenerationMode.TXT2IMG
-        } else mode
+        } else {
+            mode
+        }
         return copy(mode = activeMode, references = active)
     }
 
@@ -66,20 +95,26 @@ data class GenerationRequest(
             if (referencesOf(ReferenceRole.INPAINT_MASK).isEmpty()) {
                 add(ReferenceViolation.MissingInpaintMask)
             }
-            // Precise 支持与重绘并用；Vibe 的重绘限制保持不变。
+            // V4.5 Precise 支持与重绘并用；V5 重绘不支持叠加 Precise；Vibe 的重绘限制保持不变。
             if (referencesOf(ReferenceRole.VIBE).isNotEmpty()) {
                 add(ReferenceViolation.ConflictingWithMode(GenerationMode.INPAINT))
             }
+            if (!profile.supportsDirectorInpaint && referencesOf(ReferenceRole.DIRECTOR).isNotEmpty()) {
+                add(ReferenceViolation.ConflictingWithMode(GenerationMode.INPAINT))
+            }
         }
-        // Precise Reference 与 Vibe 目前只有 V4.5 能用（账号所有者确认），
-        // V5 上提交这类请求只会得到服务端拒绝，因此在本地就拦下并说明原因。
         if (mode == GenerationMode.PRECISE_REFERENCE && !profile.supportsDirectorReference) {
             add(ReferenceViolation.ModeUnsupported(GenerationMode.PRECISE_REFERENCE))
         }
         if (referencesOf(ReferenceRole.VIBE).isNotEmpty() && !profile.supportsVibeTransfer) {
             add(ReferenceViolation.FeatureUnsupported(ReferenceRole.VIBE))
         }
-        if (referencesOf(ReferenceRole.DIRECTOR).isNotEmpty() && !profile.supportsDirectorReference) {
+        val directorRefs = referencesOf(ReferenceRole.DIRECTOR)
+        if (directorRefs.isNotEmpty() && (
+                !profile.supportsDirectorReference ||
+                    directorRefs.any { (it.directorKind ?: DirectorReferenceKind.DEFAULT).normalizeFor(profile) == null }
+                )
+        ) {
             add(ReferenceViolation.FeatureUnsupported(ReferenceRole.DIRECTOR))
         }
 

@@ -252,8 +252,23 @@ class GenerateViewModel(
         val allReferences: List<ReferenceImage>
             get() = listOfNotNull(referenceSource) + directorReferences + vibeReferences + inpaintReferences
 
+        private val rawMode: GenerationMode
+            get() = when {
+                // 重绘要求底图与蒙版同时在场：只有蒙版没有底图是残缺状态
+                // （旧版本曾允许移除底图后蒙版残留），绝不能按 INPAINT 提交 ——
+                // 那会发出"常规模型 ID + infill"的自相矛盾请求被服务端 400。
+                hasInpaintMask && inpaintBase != null -> GenerationMode.INPAINT
+                referenceSource != null -> GenerationMode.IMG2IMG
+                directorReferences.isNotEmpty() && supportsDirectorReference -> GenerationMode.PRECISE_REFERENCE
+                else -> GenerationMode.TXT2IMG
+            }
+
+        private val activeRequest: GenerationRequest
+            get() = GenerationRequest(params, mode = rawMode, references = allReferences)
+                .withActiveReferences(profile)
+
         val activeReferences: List<ReferenceImage>
-            get() = GenerationRequest(params, references = allReferences).withActiveReferences(profile).references
+            get() = activeRequest.references
 
         /** 当前模型是否支持 Vibe Transfer（目前仅 V4.5）。 */
         val supportsVibeTransfer: Boolean get() = profile.supportsVibeTransfer
@@ -280,17 +295,9 @@ class GenerateViewModel(
             get() = (profile.maxVibeReferences - vibeReferences.size).coerceAtLeast(0)
 
         val mode: GenerationMode
-            get() = when {
-                // 重绘要求底图与蒙版同时在场：只有蒙版没有底图是残缺状态
-                // （旧版本曾允许移除底图后蒙版残留），绝不能按 INPAINT 提交 ——
-                // 那会发出"常规模型 ID + infill"的自相矛盾请求被服务端 400。
-                hasInpaintMask && inpaintBase != null -> GenerationMode.INPAINT
-                referenceSource != null -> GenerationMode.IMG2IMG
-                directorReferences.isNotEmpty() && supportsDirectorReference -> GenerationMode.PRECISE_REFERENCE
-                else -> GenerationMode.TXT2IMG
-            }
+            get() = activeRequest.mode
 
-        /** 当前模型是否支持 Precise Reference（目前仅 V4.5；V5 不支持）。 */
+        /** 当前模型是否支持 Precise Reference（V4.5 与 V5 均支持）。 */
         val supportsDirectorReference: Boolean get() = profile.supportsDirectorReference
 
         /** 还能再加几张 Precise Reference。 */
@@ -1488,8 +1495,8 @@ class GenerateViewModel(
     /**
      * 添加一张 Precise Reference。
      *
-     * 导入时用 [ImageTransform.DirectorCanvas] 等比缩放并补齐黑边，
-     * 因此缩略图看到的就是实际提交的那张图；提交时再次处理标准画布是恒等变换。
+     * 导入时保留原比例归一化 PNG，提交时再按当前模型走 V4.5 补黑边画布或 V5 97 分桶居中裁切，
+     * 避免在 V4.5 与 V5 之间切换模型时把 V4.5 的黑边带进 V5。
      */
     fun onDirectorReferencePicked(source: ReferenceSource) {
         val current = _state.value
@@ -1507,8 +1514,7 @@ class GenerateViewModel(
             when (
                 val outcome = referenceImporter.import(
                     source = source,
-                    // 导入时就按官方要求补齐黑边：缩略图与提交图因此是同一张。
-                    transform = ImageTransform.DirectorCanvas,
+                    transform = null,
                 )
             ) {
                 is Outcome.Success -> {
@@ -1675,7 +1681,7 @@ class GenerateViewModel(
 
     fun onDirectorStrengthChanged(id: String, value: Double) {
         updateDirectorReference(id) { reference ->
-            reference.copy(strength = clampedDirector(value))
+            reference.copy(strength = _state.value.profile.directorStrengthRange.clamp(value))
         }
     }
 

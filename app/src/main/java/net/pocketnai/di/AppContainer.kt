@@ -98,12 +98,9 @@ class AppContainer(application: Application, mcpBackendOverride: net.pocketnai.d
                             if (!fileStore.resolve(spec.relativePath).isFile) {
                                 throw net.pocketnai.domain.chat.ChatFailure("参考图 ${spec.refId} 的本地文件不存在，可能已被删除")
                             }
-                            val transform = if (model != null && spec.role == net.pocketnai.domain.model.ReferenceRole.DIRECTOR) {
-                                net.pocketnai.domain.image.ImageTransform.DirectorCanvas
-                            } else null
                             val outcome = referenceImageProcessor.import(
                                 source = net.pocketnai.domain.image.ReferenceSource.LocalPath(spec.relativePath),
-                                transform = transform,
+                                transform = null,
                             )
                             val prepared = when (outcome) {
                                 is net.pocketnai.core.Outcome.Success -> outcome.value

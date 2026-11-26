@@ -1068,7 +1068,7 @@ private fun SheetHeader(
                             append(" · ")
                             append(img2imgMarker)
                         }
-                        if (state.supportsDirectorReference && state.directorReferences.isNotEmpty()) {
+                        if (state.activeReferences.any { it.role == ReferenceRole.DIRECTOR }) {
                             append(" · ")
                             append(preciseReferenceMarker)
                         }

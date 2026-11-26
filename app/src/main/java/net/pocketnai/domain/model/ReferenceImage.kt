@@ -69,19 +69,69 @@ enum class ReferenceRole {
 
 /**
  * Precise Reference 的取用方式，直接对应 `director_reference_descriptions[].caption.base_caption`
- * 的三个取值（2026-10-11 核对官方前端）。
+ * 的六个官方取值（2026-10-11 核对 V4.5 三项；2026-11-25 核对 V5 新增服装参考与同款服装变体）。
  */
 @kotlinx.serialization.Serializable
 enum class DirectorReferenceKind(val apiValue: String) {
-    /** 只取角色。 */
+    /** 只取角色（V5 下表示不锁定原服装，可由提示词或服装参考自由换装）。 */
     CHARACTER("character"),
+
+    /** 角色并保持同款服装（V5 `outfitReferences` 开启时支持；V4.5 归一化为 [CHARACTER]）。 */
+    CHARACTER_MAIN_OUTFIT("character_mainoutfit"),
 
     /** 只取画风。 */
     STYLE("style"),
 
-    /** 角色与画风一起取。 */
+    /** 独立服装参考（仅取服饰造型，仅 V5 支持；V4.5 下自动停用跳过）。 */
+    OUTFIT("costume"),
+
+    /** 角色与画风一起取（V5 下默认连同原服装一起保持）。 */
     CHARACTER_AND_STYLE("character&style"),
+
+    /** 角色与画风一起取，但不锁定原服装（V5 支持；V4.5 归一化为 [CHARACTER_AND_STYLE]）。 */
+    CHARACTER_AND_STYLE_ANY_OUTFIT("character&style_anyoutfit"),
     ;
+
+    /** 是否支持「保持同款服装」（Prefer same outfit）子开关。 */
+    val supportsPreferSameOutfit: Boolean
+        get() = when (this) {
+            CHARACTER, CHARACTER_MAIN_OUTFIT,
+            CHARACTER_AND_STYLE, CHARACTER_AND_STYLE_ANY_OUTFIT,
+            -> true
+            STYLE, OUTFIT -> false
+        }
+
+    /** 当前是否处于「保持同款服装」开启状态（与官网 `g(e,t)` 映射一致）。 */
+    val prefersSameOutfit: Boolean
+        get() = when (this) {
+            CHARACTER_MAIN_OUTFIT, CHARACTER_AND_STYLE -> true
+            CHARACTER, STYLE, OUTFIT, CHARACTER_AND_STYLE_ANY_OUTFIT -> false
+        }
+
+    /** 切换「保持同款服装」子开关后的对应取值。 */
+    fun withPreferSameOutfit(prefer: Boolean): DirectorReferenceKind = when (this) {
+        CHARACTER, CHARACTER_MAIN_OUTFIT -> if (prefer) CHARACTER_MAIN_OUTFIT else CHARACTER
+        CHARACTER_AND_STYLE, CHARACTER_AND_STYLE_ANY_OUTFIT ->
+            if (prefer) CHARACTER_AND_STYLE else CHARACTER_AND_STYLE_ANY_OUTFIT
+        STYLE, OUTFIT -> this
+    }
+
+    /**
+     * 按当前模型能力归一化（对齐官方前端 `09aajvaad_e63.js` 的 `c(refs, model)`）：
+     * - 不支持 `outfitReferences`（如 V4.5）时，[OUTFIT] 返回 `null`（草稿保留、请求跳过）；
+     * - [CHARACTER_MAIN_OUTFIT] 退化为 [CHARACTER]，[CHARACTER_AND_STYLE_ANY_OUTFIT] 退化为 [CHARACTER_AND_STYLE]。
+     */
+    fun normalizeFor(profile: ModelProfile): DirectorReferenceKind? =
+        if (profile.supportsOutfitReference) {
+            this
+        } else {
+            when (this) {
+                OUTFIT -> null
+                CHARACTER_MAIN_OUTFIT -> CHARACTER
+                CHARACTER_AND_STYLE_ANY_OUTFIT -> CHARACTER_AND_STYLE
+                CHARACTER, STYLE, CHARACTER_AND_STYLE -> this
+            }
+        }
 
     companion object {
         /** 与官网新添加参考图的初值一致，不覆盖已有参考图明确保存的类型。 */

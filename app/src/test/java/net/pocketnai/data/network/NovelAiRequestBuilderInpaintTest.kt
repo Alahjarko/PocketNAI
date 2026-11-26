@@ -94,6 +94,25 @@ class NovelAiRequestBuilderInpaintTest {
         assertThat(medium["model"]!!.jsonPrimitive.content).isEqualTo("nai-diffusion-5-full-medium-inpainting")
         assertThat(medium["parameters"]!!.jsonObject["steps"]!!.jsonPrimitive.content).isEqualTo("14")
 
+        val director = mask().copy(id = "dir", role = ReferenceRole.DIRECTOR)
+        val v5InpaintWithDirector = GenerationRequest(
+            params = GenerationParams.defaultsFor(v5),
+            mode = GenerationMode.INPAINT,
+            references = listOf(mask(), mask().copy(id = "base", role = ReferenceRole.IMG2IMG), director),
+        )
+        assertThat(v5InpaintWithDirector.withActiveReferences(v5).references.map { it.role })
+            .containsExactly(ReferenceRole.INPAINT_MASK, ReferenceRole.IMG2IMG)
+        val v5InpaintForced = NovelAiRequestBuilder.build(
+            v5,
+            v5InpaintWithDirector,
+            upstreamImages = mapOf(
+                ReferenceRole.INPAINT_MASK to listOf("MASK64"),
+                ReferenceRole.IMG2IMG to listOf("BASE64"),
+                ReferenceRole.DIRECTOR to listOf("DIR64"),
+            ),
+        )
+        assertThat(v5InpaintForced["parameters"]!!.jsonObject.containsKey("director_reference_images")).isFalse()
+
         val zoomed = net.pocketnai.domain.inpaint.MaskGeometry.zoomedFit(1000, 1000, 500f, 500f, 2f, 0f, 0f)
         val centerBitmap = zoomed.toBitmap(250f, 250f, 1000, 1000)
         assertThat(centerBitmap.x).isWithin(0.01f).of(500f)

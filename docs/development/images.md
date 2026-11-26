@@ -14,13 +14,12 @@
 ## 参考图的请求形态
 
 - 图生图：`action` 换成 `img2img`，`parameters.image` + `parameters.strength`。
-- Precise Reference：发 `director_reference_*` **五个数组**，作为附加条件独立于生成模式。无底图时 `action=generate`；与图生图合用时为 `img2img`；与局部重绘合用时为 `infill`（仍用专用 inpainting 模型）。
+- Precise Reference：发 `director_reference_*` **五个数组**，作为附加条件独立于生成模式。无底图时 `action=generate`；与图生图合用时为 `img2img`；V4.5 与局部重绘合用时为 `infill`（仍用专用 inpainting 模型），而 V5 的 `charRefInpainting=false`，重绘时自动停用精确参考且不收附加费。
   数组按下标一一对应，**任何一项缺失都不能跳过**（必须补默认值），
   否则"这个角色的强度"会落到"那个角色"上，而服务端不报错。
-- Precise 的 `secondaryStrength` 在界面、草稿和历史中保存 **Fidelity 原值**；仅在请求构造时转换为 `1 − Fidelity`。默认 Fidelity 1 对应线上 `secondary_strength` 0，不可直接发送原值。五个数组保持同序，描述为 `caption` + `legacy_uc: false`。
-- Precise 新导入默认取「角色与画风」，保留已有明确的取用类型；界面支持角色、画风及两者。缺省滑块显示与请求共同使用模型默认值。
-- 参考画布从 1024×1536、1536×1024、1472×1472 中按长宽比绝对差最小选择，等距取前项。导入时用 `ImageTransform.DirectorCanvas` 等比放大或缩小、居中补黑边，不能沿用禁止放大小图的普通 Letterbox。提交时再次处理标准画布是恒等变换，缩略图因此就是提交图。
-- 旧版已补黑边的素材不能可靠恢复原始边界，不自动裁切；需要重新选择原图才能应用新的导入规则。2026-10-11 官网源码核对与验证范围见[Precise Reference 核对记录](../precise-reference-audit-2026-10-11.md)。
+- Precise 的 `secondaryStrength` 在界面、草稿和历史中保存 **Fidelity 原值**；V4.5 请求构造时转换为 `1 − Fidelity`（默认 Fidelity 1 对应线上 `secondary_strength` 0），V5 官网不开放 Fidelity/Information Extracted 滑块并固定提交 `secondary_strength=0.0`、`information_extracted=1.0`。Strength 区间在 V4.5 为 `0–1`、V5 为 `0–5`（默认均为 `1.0`）。五个数组保持同序，描述为 `caption` + `legacy_uc: false`。
+- Precise 新导入默认取「角色与画风」（`character&style`），保留已有明确的取用类型；V5 额外支持独立服装参考（`costume`）以及「保持同款服装」联动开关（`character` ↔ `character_mainoutfit`、`character&style_anyoutfit` ↔ `character&style`）。切回 V4.5 时，`costume` 保留在草稿并自动跳过，两个同款服装变体自动归一化为 `character` / `character&style`。
+- 导入时统一保存未补黑边的归一化原比例 PNG，提交时再按当前模型分支处理：V4.5 从 `1024×1536`、`1536×1024`、`1472×1472` 中按长宽比绝对差最小选择并用 `ImageTransform.DirectorCanvas` 等比缩放居中补黑边；V5 按对数宽高比匹配官方 97 个分桶之一，用 `ImageTransform.DirectorBucket` 等比覆盖缩放并居中裁切，绝不把 V4.5 的黑边带进 V5。2026-10-11 与 2026-11-25 官网源码核对见 [Precise Reference 核对记录](../precise-reference-audit-2026-10-11.md) 与 [V5 精确参考与服装参考记录](../v5-precise-reference-2026-11-25.md)。
 - Vibe Transfer：`action` 也保持 `generate`，发 `reference_*_multiple` **三个数组**，
   内容是 `encode-vibe` 的产物 base64（实测服务端收编码产物，不收原图）。
   编码缓存在 `files/vibes/<hash>.vibe`，键含模型 + 图片 sha256 + Information Extracted。
@@ -165,7 +164,7 @@
 - DEBUG 诊断日志（tag `PocketNaiStream`）**只允许记结构**：事件名、data 长度、
   JSON 顶层键名、图片 magic —— 不得添加任何字段值。
 
-## 模型切换后的参考图（2026-10-10）
+## 模型切换后的参考图（2026-10-10，2026-11-25 更新）
 
-- `UiState.allReferences` 是保留的编辑素材，草稿持久化与文件存活集合使用它；`activeReferences` 仅包含当前模型支持的条件，请求与报价使用它。
-- V4.5的Precise/Vibe切到V5后仍保留图片和数值，界面显示缩略图与暂不使用状态；不进入请求、不编码Vibe、不计附加费，也不把模式判为PRECISE_REFERENCE。切回V4.5恢复。模型不支持的新增入口继续不可用。
+- `UiState.allReferences` 是保留的编辑素材，草稿持久化与文件存活集合使用它；`activeReferences` 仅包含当前模型与生成模式实际支持的条件，请求与报价使用它。
+- Vibe 切到 V5、V5 的独立服装参考（`costume`）切回 V4.5、以及在 V5 进入局部重绘时的 Precise 参考均保留图片和数值，不进入请求、不编码 Vibe、不计附加费，切回支持的模型或移除蒙版后自动恢复。

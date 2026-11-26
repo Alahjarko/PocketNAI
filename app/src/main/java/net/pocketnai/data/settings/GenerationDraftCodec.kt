@@ -240,11 +240,17 @@ object GenerationDraftCodec {
      * 文件真的丢了的话，提交时会被 `GenerationRequest.validate` 拦下并明确提示；
      * 界面上的缩略图会显示为空白，用户重新选一张即可。
      */
+    private val DIRECTOR_DRAFT_STRENGTH_RANGE = net.pocketnai.domain.model.NumericRange(
+        min = 0.0,
+        max = 5.0,
+        step = 0.01,
+    )
+
     private fun ReferenceDto.toDomain(profile: ModelProfile): ReferenceImage? {
         if (relativePath.isBlank()) return null
         val parsedRole = runCatching { ReferenceRole.valueOf(role) }.getOrNull() ?: return null
         val range = if (parsedRole == ReferenceRole.DIRECTOR) {
-            profile.directorReferenceRange
+            DIRECTOR_DRAFT_STRENGTH_RANGE
         } else {
             profile.img2imgStrengthRange
         }

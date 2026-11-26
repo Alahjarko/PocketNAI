@@ -1189,9 +1189,14 @@ private fun ReferenceRow(reference: ReferenceImage) {
                     text = stringResource(
                         when (kind) {
                             DirectorReferenceKind.CHARACTER -> R.string.generate_reference_kind_character
+                            DirectorReferenceKind.CHARACTER_MAIN_OUTFIT ->
+                                R.string.generate_reference_kind_character_main_outfit
                             DirectorReferenceKind.STYLE -> R.string.generate_reference_kind_style
+                            DirectorReferenceKind.OUTFIT -> R.string.generate_reference_kind_outfit
                             DirectorReferenceKind.CHARACTER_AND_STYLE ->
                                 R.string.generate_reference_kind_character_style
+                            DirectorReferenceKind.CHARACTER_AND_STYLE_ANY_OUTFIT ->
+                                R.string.generate_reference_kind_character_style_any_outfit
                         },
                     ),
                     style = MaterialTheme.typography.bodySmall,

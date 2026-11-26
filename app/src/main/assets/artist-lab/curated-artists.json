@@ -12036,6 +12036,1481 @@
         ],
         "style_notes": "蓝紫氛围与细密服饰、光点，现代游戏角色插画。"
       }
+    },
+    {
+      "danbooru_tag": "piromizu",
+      "display_name": "ピロ水",
+      "danbooru_post_count": 1708,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "piro_sui"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/piromizu",
+      "pixiv_id": "151922",
+      "pixiv_profile_url": "https://www.pixiv.net/users/151922",
+      "pixiv_display_name": "ピロ水",
+      "feature_url": "https://www.pixiv.net/users/151922",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/151922",
+        "https://twitter.com/piromizu",
+        "http://piromizu.web.fc2.com/"
+      ],
+      "latest_pixiv_work_date": "2022-08-07",
+      "latest_activity_date": "2022-08-07",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/151922/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "100285403",
+          "100253382",
+          "99037239",
+          "95074615",
+          "95052702",
+          "95035455",
+          "95024705",
+          "94999223",
+          "93964496",
+          "93407463",
+          "92996436",
+          "92529625"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/100285403",
+          "https://www.pixiv.net/artworks/95074615"
+        ],
+        "style_notes": "清透湿润眼眸、细腻发丝与通透肌肤高光，现代日系美少女比例端正稳定。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "chigusa_minori",
+      "display_name": "千種みのり",
+      "danbooru_post_count": 2054,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "minori_chigusa",
+        "minori_748"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/chigusa_minori",
+      "pixiv_id": "41106591",
+      "pixiv_profile_url": "https://www.pixiv.net/users/41106591",
+      "pixiv_display_name": "千種みのり@お仕事募集中",
+      "feature_url": "https://www.pixiv.net/users/41106591",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/41106591",
+        "https://twitter.com/minori_chigusa",
+        "https://xfolio.jp/portfolio/minori_chigusa"
+      ],
+      "latest_pixiv_work_date": "2026-11-23",
+      "latest_activity_date": "2026-11-23",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/41106591/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "152400407",
+          "152338894",
+          "152134567",
+          "152072890",
+          "151865725",
+          "151804426",
+          "151601866",
+          "151531341",
+          "151305074",
+          "151239846",
+          "151037033",
+          "150973488"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/152400407",
+          "https://www.pixiv.net/artworks/152338894"
+        ],
+        "style_notes": "干净利落的现代日系少女五官，制服与针织褶皱自然，神态生动耐看。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "sakiyamama",
+      "display_name": "さきやまま",
+      "danbooru_post_count": 1158,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/sakiyamama",
+      "pixiv_id": "10948474",
+      "pixiv_profile_url": "https://www.pixiv.net/users/10948474",
+      "pixiv_display_name": "sakiyamama",
+      "feature_url": "https://www.pixiv.net/users/10948474",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/10948474",
+        "https://twitter.com/sakiyamama",
+        "https://www.weibo.com/6683064099"
+      ],
+      "latest_pixiv_work_date": "2026-11-06",
+      "latest_activity_date": "2026-11-06",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/10948474/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "151744428",
+          "151435175",
+          "151386617",
+          "150943346",
+          "150912764",
+          "150841922",
+          "150755281",
+          "150640796",
+          "150287581",
+          "150284393",
+          "150087702",
+          "149734676"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/151435175",
+          "https://www.pixiv.net/artworks/151386617"
+        ],
+        "style_notes": "光泽感肌肤与柔顺发丝层次丰富，手部与五官结构扎实，现代日系商业插画风。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "oouso",
+      "display_name": "大嘘",
+      "danbooru_post_count": 1659,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/oouso",
+      "pixiv_id": "457541",
+      "pixiv_profile_url": "https://www.pixiv.net/users/457541",
+      "pixiv_display_name": "大嘘＠3日目東１ウ07ab",
+      "feature_url": "https://www.pixiv.net/users/457541",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/457541",
+        "https://twitter.com/U_S_O",
+        "https://lit.link/usotukiya"
+      ],
+      "latest_pixiv_work_date": "2024-12-20",
+      "latest_activity_date": "2024-12-20",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/457541/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "125359507",
+          "123929771",
+          "123235652",
+          "119489092",
+          "116942746",
+          "116262546",
+          "116053470",
+          "114223147",
+          "113320374",
+          "113077375",
+          "112679341",
+          "112321988"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/123235652",
+          "https://www.pixiv.net/artworks/116942746"
+        ],
+        "style_notes": "端正日系二次元脸型，西装制服与丝袜腿部质感细腻，肢体比例稳定。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "ayuma_sayu",
+      "display_name": "あゆま紗由",
+      "danbooru_post_count": 459,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "ayuma_sayori"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/ayuma_sayu",
+      "pixiv_id": "2473967",
+      "pixiv_profile_url": "https://www.pixiv.net/users/2473967",
+      "pixiv_display_name": "あゆま紗由",
+      "feature_url": "https://www.pixiv.net/users/2473967",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/2473967",
+        "https://twitter.com/ayumasayun",
+        "https://ayumasayu.fanbox.cc/"
+      ],
+      "latest_pixiv_work_date": "2026-06-14",
+      "latest_activity_date": "2026-06-14",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/2473967/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "145986782",
+          "130518009",
+          "129180709",
+          "124733613",
+          "112407145",
+          "112194747",
+          "111518909",
+          "106524300",
+          "105259370",
+          "100949484",
+          "97649168",
+          "95188542"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/130518009",
+          "https://www.pixiv.net/artworks/112407145"
+        ],
+        "style_notes": "柔和通透的粉嫩肤色与精致蕾丝衣饰，典型现代日系美少女插画且易于混抽调和。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "kani_biimu",
+      "display_name": "かにビーム",
+      "danbooru_post_count": 2444,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "peko",
+        "pepepe"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/kani_biimu",
+      "pixiv_id": "3439325",
+      "pixiv_profile_url": "https://www.pixiv.net/users/3439325",
+      "pixiv_display_name": "かにビーム",
+      "feature_url": "https://www.pixiv.net/users/3439325",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/3439325",
+        "https://twitter.com/kani_biimu"
+      ],
+      "latest_pixiv_work_date": "2024-12-23",
+      "latest_activity_date": "2024-12-23",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/3439325/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "125443741",
+          "119499577",
+          "117384461",
+          "117090067",
+          "115953653",
+          "115615387",
+          "115072059",
+          "95613373",
+          "91719039",
+          "91696252",
+          "90519519",
+          "80512680"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/125443741",
+          "https://www.pixiv.net/artworks/119499577"
+        ],
+        "style_notes": "明亮通透的日系色彩与清爽线条，少女姿态与手部结构自然，画面干净。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "necomi",
+      "display_name": "necömi",
+      "danbooru_post_count": 644,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "gugugunogu"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/necomi",
+      "pixiv_id": "420509",
+      "pixiv_profile_url": "https://www.pixiv.net/users/420509",
+      "pixiv_display_name": "necömi@初画集発売中",
+      "feature_url": "https://www.pixiv.net/users/420509",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/420509",
+        "https://twitter.com/necomi_info",
+        "http://necomiinfo.tumblr.com/"
+      ],
+      "latest_pixiv_work_date": "2025-09-14",
+      "latest_activity_date": "2025-09-14",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/420509/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "135063232",
+          "129960646",
+          "129922952",
+          "129886008",
+          "129487122",
+          "129202226",
+          "120910333",
+          "120910319",
+          "120882003",
+          "120881996",
+          "120378889",
+          "119764067"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/135063232",
+          "https://www.pixiv.net/artworks/129886008"
+        ],
+        "style_notes": "柔和暖光、纤细发丝与精致服饰小物的现代日系插画，五官端正且氛围感柔和。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "suimya",
+      "display_name": "すいみゃ",
+      "danbooru_post_count": 381,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/suimya",
+      "pixiv_id": "25386",
+      "pixiv_profile_url": "https://www.pixiv.net/users/25386",
+      "pixiv_display_name": "すいみゃ",
+      "feature_url": "https://www.pixiv.net/users/25386",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/25386",
+        "https://twitter.com/suimya",
+        "https://www.suimya.com/"
+      ],
+      "latest_pixiv_work_date": "2024-01-22",
+      "latest_activity_date": "2024-01-22",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/25386/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "115390538",
+          "114662575",
+          "110748379",
+          "101428201",
+          "100424033",
+          "100423997",
+          "96080418",
+          "96058093",
+          "95981671",
+          "95958566",
+          "95913647",
+          "95890273"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/115390538",
+          "https://www.pixiv.net/artworks/101428201"
+        ],
+        "style_notes": "高明度清透光色与宝石感眼眸，日系少女比例协调，适合提亮柔和光影。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "riichu",
+      "display_name": "りいちゅ",
+      "danbooru_post_count": 1205,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/riichu",
+      "pixiv_id": "159905",
+      "pixiv_profile_url": "https://www.pixiv.net/users/159905",
+      "pixiv_display_name": "りいちゅ@C108㈯Ａ02",
+      "feature_url": "https://www.pixiv.net/users/159905",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/159905",
+        "https://twitter.com/rityulate",
+        "https://www.riichu.com/"
+      ],
+      "latest_pixiv_work_date": "2026-08-14",
+      "latest_activity_date": "2026-08-14",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/159905/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "148410622",
+          "148374914",
+          "148326019",
+          "145690521",
+          "139216983",
+          "139170887",
+          "137457081",
+          "133966141",
+          "133927095",
+          "125659106",
+          "115144199",
+          "104407055"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/148374914",
+          "https://www.pixiv.net/artworks/148326019"
+        ],
+        "style_notes": "轻盈通透的现代轻小说插画风格，裙装荷叶边与发丝层次细腻，面部比例均衡。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "dsmile",
+      "display_name": "DSマイル",
+      "danbooru_post_count": 640,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/dsmile",
+      "pixiv_id": "795196",
+      "pixiv_profile_url": "https://www.pixiv.net/users/795196",
+      "pixiv_display_name": "DSマイル🌻画集発売中",
+      "feature_url": "https://www.pixiv.net/users/795196",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/795196",
+        "https://twitter.com/DSmile9"
+      ],
+      "latest_pixiv_work_date": "2023-09-27",
+      "latest_activity_date": "2023-09-27",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/795196/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "112060447",
+          "101553430",
+          "99170653",
+          "97806585",
+          "97608823",
+          "94442641",
+          "94115114",
+          "91403647",
+          "91383176",
+          "88865174",
+          "87013579",
+          "86401376"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/112060447",
+          "https://www.pixiv.net/artworks/99170653"
+        ],
+        "style_notes": "清透水光与花叶环境反射，服饰细节丰富且保持干净端正的二次元五官。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "lpip",
+      "display_name": "Lpip",
+      "danbooru_post_count": 1222,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "lp_(hamasa00)"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/lpip",
+      "pixiv_id": "6996493",
+      "pixiv_profile_url": "https://www.pixiv.net/users/6996493",
+      "pixiv_display_name": "Lpip",
+      "feature_url": "https://www.pixiv.net/users/6996493",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/6996493",
+        "https://slada.tistory.com/"
+      ],
+      "latest_pixiv_work_date": "2026-09-25",
+      "latest_activity_date": "2026-09-25",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/6996493/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "150084902",
+          "149116596",
+          "142080974",
+          "141298291",
+          "139171113",
+          "139127870",
+          "139127040",
+          "136886682",
+          "134526425",
+          "132708298",
+          "129700478",
+          "129699575"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/150084902",
+          "https://www.pixiv.net/artworks/149116596"
+        ],
+        "style_notes": "极干净的线条与空气感柔光，五官骨相平均端正，混抽兼容性极佳且无结构崩坏。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "teffish",
+      "display_name": "teffish",
+      "danbooru_post_count": 316,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/teffish",
+      "pixiv_id": "673438",
+      "pixiv_profile_url": "https://www.pixiv.net/users/673438",
+      "pixiv_display_name": "teffish",
+      "feature_url": "https://www.pixiv.net/users/673438",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/673438",
+        "https://twitter.com/teffish",
+        "https://we414mint.fanbox.cc/"
+      ],
+      "latest_pixiv_work_date": "2024-12-06",
+      "latest_activity_date": "2024-12-06",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/673438/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "124928956",
+          "124928953",
+          "121122235",
+          "120216112",
+          "118435176",
+          "115698782",
+          "111060466",
+          "102533428",
+          "101901589",
+          "101479507",
+          "101287811",
+          "101016728"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/124928953",
+          "https://www.pixiv.net/artworks/121122235"
+        ],
+        "style_notes": "清爽利落的现代二次元光影与丝滑肤质，手部与面部比例扎实，混抽不抢戏。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "ayamy",
+      "display_name": "あやみ",
+      "danbooru_post_count": 1269,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/ayamy",
+      "pixiv_id": "14112962",
+      "pixiv_profile_url": "https://www.pixiv.net/users/14112962",
+      "pixiv_display_name": "あやみ@1日目(土)ア08ab",
+      "feature_url": "https://www.pixiv.net/users/14112962",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/14112962",
+        "https://twitter.com/ayamy_garubinu",
+        "https://twitter.com/ayamy_garubinu"
+      ],
+      "latest_pixiv_work_date": "2026-08-10",
+      "latest_activity_date": "2026-08-10",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/14112962/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "148227525",
+          "139152017",
+          "134168487",
+          "134130454",
+          "130040573",
+          "127934679",
+          "125609054",
+          "125435597",
+          "125400359",
+          "122295046",
+          "122170124",
+          "121338203"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/148227525",
+          "https://www.pixiv.net/artworks/139152017"
+        ],
+        "style_notes": "明亮自然光下的柔滑肌肤与泳装制服细节，纯正日系美少女五官。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "ichimi",
+      "display_name": "13 / いちみ",
+      "danbooru_post_count": 2370,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/ichimi",
+      "pixiv_id": "40255",
+      "pixiv_profile_url": "https://www.pixiv.net/users/40255",
+      "pixiv_display_name": "13(いちみ)",
+      "feature_url": "https://www.pixiv.net/users/40255",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/40255",
+        "https://twitter.com/ichimi_131",
+        "https://fori.io/ichimi131"
+      ],
+      "latest_pixiv_work_date": "2025-05-13",
+      "latest_activity_date": "2025-05-13",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/40255/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "130368474",
+          "130337514",
+          "126562826",
+          "119376384",
+          "105822317",
+          "101344074",
+          "101343971",
+          "100252232",
+          "99080114",
+          "98177385",
+          "97604958",
+          "96120991"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/130337514",
+          "https://www.pixiv.net/artworks/119376384"
+        ],
+        "style_notes": "柔和粉紫氛围光与灵动日系少女造型，发丝与手指刻画细致。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "miwabe_sakura",
+      "display_name": "みわべさくら",
+      "danbooru_post_count": 617,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "sakura_m"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/miwabe_sakura",
+      "pixiv_id": "4816744",
+      "pixiv_profile_url": "https://www.pixiv.net/users/4816744",
+      "pixiv_display_name": "みわべさくら",
+      "feature_url": "https://www.pixiv.net/users/4816744",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/4816744",
+        "https://twitter.com/sakurapion",
+        "http://cherryblossompio.blog.fc2.com/"
+      ],
+      "latest_pixiv_work_date": "2025-08-02",
+      "latest_activity_date": "2025-08-02",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/4816744/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "133376038",
+          "123905535",
+          "118078286",
+          "117957021",
+          "117930391",
+          "112251611",
+          "111673422",
+          "106623242",
+          "105680405",
+          "102850663",
+          "101048888",
+          "99276527"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/123905535",
+          "https://www.pixiv.net/artworks/118078286"
+        ],
+        "style_notes": "近年画风演进为温暖窗边光影与协调少女比例，发丝与裙摆过渡柔和。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "karory",
+      "display_name": "karory",
+      "danbooru_post_count": 789,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "karoryyyyy"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/karory",
+      "pixiv_id": "18095070",
+      "pixiv_profile_url": "https://www.pixiv.net/users/18095070",
+      "pixiv_display_name": "karory",
+      "feature_url": "https://www.pixiv.net/users/18095070",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/18095070",
+        "https://twitter.com/karory",
+        "http://karory.net/"
+      ],
+      "latest_pixiv_work_date": "2026-05-28",
+      "latest_activity_date": "2026-05-28",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/18095070/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "145288992",
+          "145223001",
+          "145095432",
+          "140019059",
+          "139828854",
+          "138359230",
+          "138002779",
+          "137222301",
+          "133891906",
+          "133499494",
+          "133424188",
+          "129241360"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/145288992",
+          "https://www.pixiv.net/artworks/140019059"
+        ],
+        "style_notes": "清透高光、华丽偶像裙装与扎实人体结构，保持纯正日系美少女面部特征。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "gomano_rio",
+      "display_name": "胡麻乃りお",
+      "danbooru_post_count": 307,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/gomano_rio",
+      "pixiv_id": "431880",
+      "pixiv_profile_url": "https://www.pixiv.net/users/431880",
+      "pixiv_display_name": "胡麻乃りお",
+      "feature_url": "https://www.pixiv.net/users/431880",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/431880",
+        "https://twitter.com/gomalio_y",
+        "http://www.gomanolio.com/"
+      ],
+      "latest_pixiv_work_date": "2026-08-13",
+      "latest_activity_date": "2026-08-13",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/431880/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "148352711",
+          "143696732",
+          "140442790",
+          "139511539",
+          "139151800",
+          "134316349",
+          "133838144",
+          "133836028",
+          "133004181",
+          "132968690",
+          "132926637",
+          "132885078"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/143696732",
+          "https://www.pixiv.net/artworks/139151800"
+        ],
+        "style_notes": "珠光感柔和浅色、细腻肩颈肌肤与温婉日系少女神态，画面柔和干净。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "konomi_(kino_konomi)",
+      "display_name": "きのこのみ / konomi",
+      "danbooru_post_count": 313,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "konomi_(noco)"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/konomi_(kino_konomi)",
+      "pixiv_id": "171980",
+      "pixiv_profile_url": "https://www.pixiv.net/users/171980",
+      "pixiv_display_name": "konomi★きのこのみ",
+      "feature_url": "https://www.pixiv.net/users/171980",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/171980",
+        "http://hcdl.net/kinokonomi/"
+      ],
+      "latest_pixiv_work_date": "2026-08-14",
+      "latest_activity_date": "2026-08-14",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/171980/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "148393707",
+          "133926156",
+          "122535873",
+          "122535691",
+          "121219466",
+          "119968394",
+          "72159083",
+          "68915819",
+          "68387551",
+          "67862553",
+          "67699160",
+          "67422003"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/133926156",
+          "https://www.pixiv.net/artworks/122535691"
+        ],
+        "style_notes": "丰富蕾丝褶皱与通透发色，现代日系轻小说美少女画风，结构端正。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "fuumi_(radial_engine)",
+      "display_name": "ふーみ",
+      "danbooru_post_count": 429,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/fuumi_(radial_engine)",
+      "pixiv_id": "10292",
+      "pixiv_profile_url": "https://www.pixiv.net/users/10292",
+      "pixiv_display_name": "ふーみ",
+      "feature_url": "https://www.pixiv.net/users/10292",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/10292",
+        "https://twitter.com/fuumiisc",
+        "http://fuumiis.tumblr.com/"
+      ],
+      "latest_pixiv_work_date": "2024-12-29",
+      "latest_activity_date": "2024-12-29",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/10292/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "125664866",
+          "121381392",
+          "114649750",
+          "89528119",
+          "84831308",
+          "84333405",
+          "83592061",
+          "82784607",
+          "78533060",
+          "78377223",
+          "77899254",
+          "76868418"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/84831308",
+          "https://www.pixiv.net/artworks/84333405"
+        ],
+        "style_notes": "清风感自然光、半透明薄纱与端正清秀的日系少女五官，整体气质柔和耐看。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "ikeuchi_tanuma",
+      "display_name": "池内たぬま",
+      "danbooru_post_count": 1637,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/ikeuchi_tanuma",
+      "pixiv_id": "9675329",
+      "pixiv_profile_url": "https://www.pixiv.net/users/9675329",
+      "pixiv_display_name": "たぬま",
+      "feature_url": "https://www.pixiv.net/users/9675329",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/9675329",
+        "https://twitter.com/tnm_tyny",
+        "https://www.tanuma-illustration.com/"
+      ],
+      "latest_pixiv_work_date": "2026-01-05",
+      "latest_activity_date": "2026-01-05",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/9675329/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "139570421",
+          "139054326",
+          "136308711",
+          "135965472",
+          "129552099",
+          "120967174",
+          "118754452",
+          "113896131",
+          "112107914",
+          "108903866",
+          "105312996",
+          "104724390"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/139570421",
+          "https://www.pixiv.net/artworks/136308711"
+        ],
+        "style_notes": "温暖室内光影、柔和肌肤中间调与精细女仆哥特衣饰，日系美少女比例扎实。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "mafuyu_(chibi21)",
+      "display_name": "まふゆ",
+      "danbooru_post_count": 609,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/mafuyu_(chibi21)",
+      "pixiv_id": "5229572",
+      "pixiv_profile_url": "https://www.pixiv.net/users/5229572",
+      "pixiv_display_name": "まふゆ",
+      "feature_url": "https://www.pixiv.net/users/5229572",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/5229572",
+        "https://twitter.com/mfy_le",
+        "https://www.mmafu.art/"
+      ],
+      "latest_pixiv_work_date": "2025-04-07",
+      "latest_activity_date": "2025-04-07",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/5229572/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "129038197",
+          "128996852",
+          "125576812",
+          "125435419",
+          "125400192",
+          "124511830",
+          "124484641",
+          "124430037",
+          "121307286",
+          "121218503",
+          "121122232",
+          "121091303"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/129038197",
+          "https://www.pixiv.net/artworks/128996852"
+        ],
+        "style_notes": "雾感柔光、极细发丝与白皙通透肤质，甜美端正的日系美少女画风。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "pottsness",
+      "display_name": "pottsness",
+      "danbooru_post_count": 707,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/pottsness",
+      "pixiv_id": "59336265",
+      "pixiv_profile_url": "https://www.pixiv.net/users/59336265",
+      "pixiv_display_name": "pottsness",
+      "feature_url": "https://www.pixiv.net/users/59336265",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/59336265",
+        "https://twitter.com/pottsness"
+      ],
+      "latest_pixiv_work_date": "2026-08-09",
+      "latest_activity_date": "2026-08-09",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/59336265/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "148183040",
+          "137209920",
+          "135422375",
+          "133004369",
+          "132128666",
+          "131256103",
+          "127208133",
+          "120854206",
+          "119258477",
+          "119141561",
+          "117365403",
+          "117224358"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/137209920",
+          "https://www.pixiv.net/artworks/135422375"
+        ],
+        "style_notes": "丝滑绸缎与金属配饰高光出色，同时保持干净的纯正二次元五官与手部结构。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "houkisei",
+      "display_name": "ほうき星",
+      "danbooru_post_count": 325,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "houkiboshi_(mmjw7432)"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/houkisei",
+      "pixiv_id": "70050825",
+      "pixiv_profile_url": "https://www.pixiv.net/users/70050825",
+      "pixiv_display_name": "ほうき星",
+      "feature_url": "https://www.pixiv.net/users/70050825",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/70050825",
+        "https://twitter.com/houk1se1",
+        "https://twitter.com/houk1se1"
+      ],
+      "latest_pixiv_work_date": "2026-05-11",
+      "latest_activity_date": "2026-05-11",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/70050825/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 11,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "144629159",
+          "138786755",
+          "137735988",
+          "97512754",
+          "97224602",
+          "95970418",
+          "94437739",
+          "93767141",
+          "92883814",
+          "92689587",
+          "92017526"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/144629159",
+          "https://www.pixiv.net/artworks/137735988"
+        ],
+        "style_notes": "清透现代日系学园风，面部红晕、眼神光与白色礼服褶皱干净利落，混抽亲和度高。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "silence_girl",
+      "display_name": "Silence Girl",
+      "danbooru_post_count": 865,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "whgkdud_dd"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/silence_girl",
+      "pixiv_id": "2517274",
+      "pixiv_profile_url": "https://www.pixiv.net/users/2517274",
+      "pixiv_display_name": "Silence Girl",
+      "feature_url": "https://www.pixiv.net/users/2517274",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/2517274",
+        "https://twitter.com/whgkdud_d"
+      ],
+      "latest_pixiv_work_date": "2026-08-14",
+      "latest_activity_date": "2026-08-14",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/2517274/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "148391392",
+          "137895211",
+          "129663867",
+          "113069171",
+          "112074661",
+          "107581180",
+          "106495584",
+          "103878748",
+          "101490679",
+          "101251445",
+          "100857660",
+          "99685886"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/148391392",
+          "https://www.pixiv.net/artworks/129663867"
+        ],
+        "style_notes": "擅长光泽感紧身衣料、薄纱高光与精致配饰，面部保持端正二次元比例。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "weee_(raemz)",
+      "display_name": "raemz",
+      "danbooru_post_count": 679,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "raemz"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/weee_(raemz)",
+      "pixiv_id": "145972",
+      "pixiv_profile_url": "https://www.pixiv.net/users/145972",
+      "pixiv_display_name": "raemz",
+      "feature_url": "https://www.pixiv.net/users/145972",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/145972",
+        "https://twitter.com/weee_desu",
+        "https://weeesite.wixsite.com/work"
+      ],
+      "latest_pixiv_work_date": "2025-03-20",
+      "latest_activity_date": "2025-03-20",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/145972/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "128404793",
+          "128404518",
+          "128404489",
+          "128404388",
+          "121011420",
+          "121007193",
+          "121006935",
+          "114047564",
+          "113038739",
+          "113038723",
+          "110917052",
+          "110263183"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/128404793",
+          "https://www.pixiv.net/artworks/128404489"
+        ],
+        "style_notes": "透明水彩感现代轻小说光影，日常与泳装少女体态自然，五官清爽均衡。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "ohisashiburi",
+      "display_name": "お久しぶり",
+      "danbooru_post_count": 1749,
+      "danbooru_category": 1,
+      "danbooru_aliases": [
+        "nuae5elll",
+        "wntame"
+      ],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/ohisashiburi",
+      "pixiv_id": "1079073",
+      "pixiv_profile_url": "https://www.pixiv.net/users/1079073",
+      "pixiv_display_name": "ㅤ",
+      "feature_url": "https://www.pixiv.net/users/1079073",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/1079073",
+        "https://avd6jt2l.fanbox.cc/"
+      ],
+      "latest_pixiv_work_date": "2025-12-28",
+      "latest_activity_date": "2025-12-28",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/1079073/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "139158792",
+          "129665567",
+          "125612628",
+          "125436762",
+          "115429290",
+          "109933004",
+          "106482450",
+          "103992149",
+          "97188332",
+          "95132586",
+          "94192143",
+          "93980571"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/129665567",
+          "https://www.pixiv.net/artworks/125436762"
+        ],
+        "style_notes": "清透粉蓝配色与精致睫毛眼妆，近年单幅插画线条细腻、五官比例端正。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "takehana_note",
+      "display_name": "竹花ノート",
+      "danbooru_post_count": 487,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/takehana_note",
+      "pixiv_id": "3303798",
+      "pixiv_profile_url": "https://www.pixiv.net/users/3303798",
+      "pixiv_display_name": "竹花ノート",
+      "feature_url": "https://www.pixiv.net/users/3303798",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/3303798",
+        "https://twitter.com/nano_phan"
+      ],
+      "latest_pixiv_work_date": "2025-08-23",
+      "latest_activity_date": "2025-08-23",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/3303798/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "134206774",
+          "133534544",
+          "132625194",
+          "132511772",
+          "120882103",
+          "112712800",
+          "104704964",
+          "103659017",
+          "101733565",
+          "100565046",
+          "100314421",
+          "100142754"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/132625194",
+          "https://www.pixiv.net/artworks/132511772"
+        ],
+        "style_notes": "明快干净的现代日系VTuber与轻小说人物上色，笑容与肢体结构稳定。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
+    },
+    {
+      "danbooru_tag": "weri",
+      "display_name": "WERI",
+      "danbooru_post_count": 226,
+      "danbooru_category": 1,
+      "danbooru_aliases": [],
+      "danbooru_tag_url": "https://danbooru.donmai.us/wiki_pages/weri",
+      "pixiv_id": "20728711",
+      "pixiv_profile_url": "https://www.pixiv.net/users/20728711",
+      "pixiv_display_name": "WERI",
+      "feature_url": "https://www.pixiv.net/users/20728711",
+      "identity_evidence": "Pixiv 公开主页署名、关联 X/社交账号与 Danbooru 类别1规范标签/别名交叉核对；所选代表作作者ID与主页一致。",
+      "identity_source_urls": [
+        "https://www.pixiv.net/users/20728711",
+        "https://twitter.com/weri__"
+      ],
+      "latest_pixiv_work_date": "2026-10-02",
+      "latest_activity_date": "2026-10-02",
+      "activity_window_days": 1825,
+      "activity_evidence_url": "https://www.pixiv.net/users/20728711/illustrations",
+      "work_review": {
+        "scope": "Public Pixiv profile/top works; adult-oriented creators eligible; bundled 250px previews are xRestrict=0 and non-AI",
+        "sample_count": 24,
+        "no_ai_generated_samples": true,
+        "sample_owner_verified": true,
+        "sample_work_ids": [
+          "150368423",
+          "136001854",
+          "135840141",
+          "133646393",
+          "127252723",
+          "125226709",
+          "124572360",
+          "123872573",
+          "123214277",
+          "122436730",
+          "121865201",
+          "121711728"
+        ]
+      },
+      "visual_review": {
+        "status": "accepted",
+        "sample_urls": [
+          "https://www.pixiv.net/artworks/150368423",
+          "https://www.pixiv.net/artworks/136001854"
+        ],
+        "style_notes": "阳光氛围、白丝女仆与夏装连衣裙刻画细腻，五官端正柔和，混抽兼容性佳。"
+      },
+      "review_status": "accepted",
+      "review_date": "2026-11-25"
     }
   ],
   "exclusions": [
@@ -12116,6 +13591,34 @@
         "yan.c": "本轮人物造型偏硬朗漫画，不符合此次柔和人物质感重点。"
       },
       "basis": "User-enabled 156-artist selection from 2026-10-11. No previously excluded artist re-enabled. 250px previews inspected; no NovelAI generation."
+    },
+    {
+      "date": "2026-11-25",
+      "profile_candidates": 46,
+      "visual_candidates": 44,
+      "added": 28,
+      "activity_window_days": 1825,
+      "excluded_this_round": {
+        "melon22": "Pixiv公开全年龄样本以平涂动作与男性夸张角色为主，缺少代表其美少女质感的公开缩略图。",
+        "saitou_masatsugu": "近期公开样本含黑白线稿与早期厚重描边，色彩与风格跨度较大。",
+        "fumio_(ura_fmo)": "公开前排样本混入多张玩梗夸张表情漫画，不适合作为代表预览。",
+        "mochizuki_kei": "高对比黑红平涂与强烈个人图形符号，混抽中极易吞噬其他画师风格。",
+        "yoneyama_mai": "公开样本多为黑白网点或强色散特效，个人视觉符号过强，混抽易夺舍全局。",
+        "loundraw": "公开样本以远景大场景和动画分镜平涂为主，近景人物肌肤衣料证据不足。",
+        "booota": "近年公开样本转向Q版贴纸风边框设计，偏离常规比例人物插画。",
+        "kamo_ashi": "部分样本头身比略显僵硬且含特殊史莱姆发质题材，本轮从严不收。",
+        "syroh": "眼型偏早期萌系方眼且含玩梗作品，不符合现代均衡面部取向。",
+        "sky-freedom": "近期公开样本大量为黑白漫画分镜页，混抽存在去色与分镜污染风险。",
+        "hisasi": "公开样本多带商业宣传字样且上色偏早期高饱和赛璐璐，暂不收录。",
+        "tidsean": "侧脸鼻唇与厚涂笔触偏欧美半写实绘本感，不够纯粹二次元。",
+        "dino_(dinoartforame)": "粗犷厚涂笔触与灰暗色调个人风格极强，混抽易覆盖其他画师细节。",
+        "swav": "深灰硬核军武机甲题材与冷暗色调主导画面，混抽中会吞噬柔和画风。",
+        "reoen": "样本偏重舞台概念设计与碎片化特效背景，非人物质感主导。",
+        "yd_(orange_maru)": "近期公开样本含半写实3D面部与机甲头雕，不符合纯二次元均衡面部要求。",
+        "liduke": "Pixiv公开最近作品早于五年活动窗口（2020-06），且偏厚涂油画感。",
+        "alchemaniac": "Pixiv主页当前无公开可见作品可供核验。"
+      },
+      "basis": "User-exported 168-enabled / 55-excluded selection from 2026-11-25. Focused on modern East-Asian pure 2D anime rendering, skin/fabric craftsmanship (NSFW-primary masters eligible), Danbooru post_count >= 50 (actual 226..2444), active within 5 years, non-overpowering mix-friendly facial proportions, and manual visual anatomy check across 4 works per candidate; no NovelAI generation."
     }
   ]
 }

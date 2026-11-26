@@ -140,7 +140,9 @@ object NovelAiRequestBuilder {
         val directorSources = upstreamImages[ReferenceRole.DIRECTOR].orEmpty()
         val directors = request.referencesOf(ReferenceRole.DIRECTOR)
         // 数量对不上说明编码环节漏了图：宁可不发这组字段，也不发一个对不齐的数组。
+        // V5 重绘（supportsDirectorInpaint = false）与官网一致：不附带 director_reference_*。
         val useDirector = profile.supportsDirectorReference &&
+            (!useInpaint || profile.supportsDirectorInpaint) &&
             directorSources.size == directors.size &&
             directors.isNotEmpty()
 
@@ -245,10 +247,11 @@ object NovelAiRequestBuilder {
                             put(
                                 "caption",
                                 buildJsonObject {
+                                    val normalizedKind = (reference.directorKind ?: DirectorReferenceKind.DEFAULT)
+                                        .normalizeFor(profile) ?: DirectorReferenceKind.DEFAULT
                                     put(
                                         "base_caption",
-                                        (reference.directorKind
-                                            ?: DirectorReferenceKind.DEFAULT).apiValue,
+                                        normalizedKind.apiValue,
                                     )
                                     put("char_captions", buildJsonArray { })
                                 },
@@ -260,7 +263,8 @@ object NovelAiRequestBuilder {
             },
         )
 
-        val strengthRange = profile.directorReferenceRange
+        val strengthRange = profile.directorStrengthRange
+        val fidelityRange = profile.directorReferenceRange
         put(
             "director_reference_strength_values",
             buildJsonArray {
@@ -271,8 +275,13 @@ object NovelAiRequestBuilder {
             "director_reference_secondary_strength_values",
             buildJsonArray {
                 references.forEach {
-                    // 界面/草稿保存 Fidelity；官网发送的是它的反值，而非滑块原值。
-                    add(1.0 - strengthRange.clamp(it.secondaryStrength ?: profile.defaultDirectorFidelity))
+                    // 界面/草稿保存 Fidelity；V5 官网固定 Fidelity=1（反值 0.0），V4.5 发送 1 - Fidelity。
+                    val fidelity = if (profile.supportsDirectorFidelity) {
+                        fidelityRange.clamp(it.secondaryStrength ?: profile.defaultDirectorFidelity)
+                    } else {
+                        1.0
+                    }
+                    add(1.0 - fidelity)
                 }
             },
         )
@@ -280,7 +289,12 @@ object NovelAiRequestBuilder {
             "director_reference_information_extracted",
             buildJsonArray {
                 references.forEach {
-                    add(strengthRange.clamp(it.informationExtracted ?: profile.defaultDirectorInfoExtracted))
+                    val info = if (profile.supportsDirectorFidelity) {
+                        fidelityRange.clamp(it.informationExtracted ?: profile.defaultDirectorInfoExtracted)
+                    } else {
+                        1.0
+                    }
+                    add(info)
                 }
             },
         )

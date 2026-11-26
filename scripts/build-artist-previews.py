@@ -8,6 +8,12 @@ CACHE=ROOT/'.tooling/artist-lab/previews'
 CACHE.mkdir(parents=True,exist_ok=True)
 (TARGET/'previews').mkdir(exist_ok=True)
 review=json.loads((TARGET/'curated-artists.json').read_text(encoding='utf-8'))
+existing_previews={}
+if (TARGET/'previews.json').exists():
+ for item in json.loads((TARGET/'previews.json').read_text(encoding='utf-8')):
+  ps=item.get('previews') or []
+  if ps and all((TARGET/'previews'/p['asset']).is_file() and (TARGET/'previews'/p['asset']).stat().st_size<180_000 for p in ps):
+   existing_previews[item['tag']]=item
 def fetch(url):
  req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0','Referer':'https://www.pixiv.net/','Accept':'application/json,image/*'})
  return urllib.request.urlopen(req,timeout=25).read()
@@ -34,6 +40,8 @@ def thumb(work):
  return re.sub(r'/c/[^/]+/','/c/250x250_80_a2/',url)
 def build(artist):
  uid=str(artist['pixiv_id']);tag='artist: '+artist['danbooru_tag'].replace('_',' ')
+ if tag in existing_previews:
+  return existing_previews[tag]
  ids=[]
  for url in artist['visual_review']['sample_urls']:
   match=re.search(r'/artworks/(\d+)',url)

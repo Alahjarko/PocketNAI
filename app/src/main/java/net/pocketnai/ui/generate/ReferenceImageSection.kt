@@ -427,8 +427,8 @@ internal fun ReferenceRoleChooserDialog(
                     onClick = { onSelect(net.pocketnai.domain.model.ReferenceRole.IMG2IMG) },
                 )
                 ReferenceRoleChoiceTile(
-                    title = "Precise Ref（角色 / 画风）",
-                    subtitle = if (supportsDirector) "作为角色或画风条件参考（每张 +5 Anlas）" else "仅 V4.5 系列模型支持",
+                    title = "Precise Ref（角色 / 服装 / 画风）",
+                    subtitle = if (supportsDirector) "作为角色、服装或画风条件参考（每张 +5 Anlas）" else "当前模型不支持",
                     enabled = supportsDirector,
                     onClick = { onSelect(net.pocketnai.domain.model.ReferenceRole.DIRECTOR) },
                 )

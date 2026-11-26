@@ -53,12 +53,18 @@ sealed interface ImageTransform {
     data class Letterbox(val canvas: PixelSize) : ImageTransform
 
     /**
-     * 按官方要求补齐到与源图方向对应的画布（1024×1536 / 1536×1024 / 1472×1472）。
+     * 按官方 V4.5 要求补齐到与源图方向对应的画布（1024×1536 / 1536×1024 / 1472×1472）。
      *
      * 单独成一个变体，是因为"选哪块画布"取决于源图的方向，而方向要解码之后才知道 ——
      * 调用方在导入时还不掌握这个信息，只能把决策交给处理管线。
      */
     data object DirectorCanvas : ImageTransform
+
+    /**
+     * 按官方 V5 `bucketCharacterReferences` 规则匹配对数宽高比最近的 97 个分桶之一，
+     * 等比覆盖缩放并居中裁切，不填充黑边（2026-11-25 核对官方前端 `2s4lj3fycctfh.js`）。
+     */
+    data object DirectorBucket : ImageTransform
 }
 
 /**
@@ -82,10 +88,39 @@ object ImageGeometry {
     /** 单张参考图编码后的体积上限（base64 之前）。 */
     const val MAX_REFERENCE_FILE_BYTES: Long = 8L * 1024 * 1024
 
-    /** Precise Reference 官方要求的三种画布（规划书 3.3，来自 OpenAPI 的字段说明）。 */
+    /** Precise Reference V4.5 官方要求的三种画布（规划书 3.3，来自 OpenAPI 的字段说明）。 */
     val DIRECTOR_PORTRAIT: PixelSize = PixelSize(1024, 1536)
     val DIRECTOR_LANDSCAPE: PixelSize = PixelSize(1536, 1024)
     val DIRECTOR_SQUARE: PixelSize = PixelSize(1472, 1472)
+
+    /** Precise Reference V5 官方使用的 97 个分辨率分桶（核对自 `2s4lj3fycctfh.js` 模块 589161）。 */
+    val DIRECTOR_BUCKETS: List<PixelSize> = listOf(
+        PixelSize(256, 4096), PixelSize(256, 4032), PixelSize(256, 3968), PixelSize(256, 3904),
+        PixelSize(256, 3840), PixelSize(256, 3776), PixelSize(256, 3712), PixelSize(256, 3648),
+        PixelSize(256, 3584), PixelSize(256, 3520), PixelSize(256, 3456), PixelSize(256, 3392),
+        PixelSize(256, 3328), PixelSize(320, 3264), PixelSize(320, 3200), PixelSize(320, 3136),
+        PixelSize(320, 3072), PixelSize(320, 3008), PixelSize(320, 2944), PixelSize(320, 2880),
+        PixelSize(320, 2816), PixelSize(320, 2752), PixelSize(384, 2688), PixelSize(384, 2624),
+        PixelSize(384, 2560), PixelSize(384, 2496), PixelSize(384, 2432), PixelSize(384, 2368),
+        PixelSize(448, 2304), PixelSize(448, 2240), PixelSize(448, 2176), PixelSize(448, 2112),
+        PixelSize(512, 2048), PixelSize(512, 1984), PixelSize(512, 1920), PixelSize(512, 1856),
+        PixelSize(576, 1792), PixelSize(576, 1728), PixelSize(576, 1664), PixelSize(640, 1600),
+        PixelSize(640, 1536), PixelSize(704, 1472), PixelSize(704, 1408), PixelSize(768, 1344),
+        PixelSize(768, 1280), PixelSize(832, 1216), PixelSize(896, 1152), PixelSize(960, 1088),
+        PixelSize(1024, 1024), PixelSize(1088, 960), PixelSize(1152, 896), PixelSize(1216, 832),
+        PixelSize(1280, 768), PixelSize(1344, 768), PixelSize(1408, 704), PixelSize(1472, 704),
+        PixelSize(1536, 640), PixelSize(1600, 640), PixelSize(1664, 576), PixelSize(1728, 576),
+        PixelSize(1792, 576), PixelSize(1856, 512), PixelSize(1920, 512), PixelSize(1984, 512),
+        PixelSize(2048, 512), PixelSize(2112, 448), PixelSize(2176, 448), PixelSize(2240, 448),
+        PixelSize(2304, 448), PixelSize(2368, 384), PixelSize(2432, 384), PixelSize(2496, 384),
+        PixelSize(2560, 384), PixelSize(2624, 384), PixelSize(2688, 384), PixelSize(2752, 320),
+        PixelSize(2816, 320), PixelSize(2880, 320), PixelSize(2944, 320), PixelSize(3008, 320),
+        PixelSize(3072, 320), PixelSize(3136, 320), PixelSize(3200, 320), PixelSize(3264, 320),
+        PixelSize(3328, 256), PixelSize(3392, 256), PixelSize(3456, 256), PixelSize(3520, 256),
+        PixelSize(3584, 256), PixelSize(3648, 256), PixelSize(3712, 256), PixelSize(3776, 256),
+        PixelSize(3840, 256), PixelSize(3904, 256), PixelSize(3968, 256), PixelSize(4032, 256),
+        PixelSize(4096, 256),
+    )
 
     /** 按放置方式给出完整方案。 */
     fun placementFor(transform: ImageTransform, source: PixelSize): ImagePlacement =
@@ -94,6 +129,7 @@ object ImageGeometry {
             is ImageTransform.MaskCover -> centerCrop(source, transform.target)
             is ImageTransform.Letterbox -> letterbox(source, transform.canvas)
             ImageTransform.DirectorCanvas -> directorPlacement(source)
+            ImageTransform.DirectorBucket -> directorBucketPlacement(source)
         }
 
     /**
@@ -148,12 +184,33 @@ object ImageGeometry {
         )
     }
 
-    /** 官网选择长宽比绝对差最小的画布，等距时保留列表前项。 */
+    /** 官网 V4.5 选择长宽比绝对差最小的画布，等距时保留列表前项。 */
     fun directorCanvas(source: PixelSize): PixelSize =
         listOf(DIRECTOR_PORTRAIT, DIRECTOR_LANDSCAPE, DIRECTOR_SQUARE)
             .minBy { abs(it.aspectRatio - source.aspectRatio) }
 
-    /** Precise Ref 小图也要放大填满一边，否则角色会缩在大黑框中，损失有效占比。 */
+    /** 官网 V5 按对数长宽比绝对差最小匹配 97 个分桶之一，等距时保留前项。 */
+    fun directorBucket(source: PixelSize): PixelSize {
+        val logAspect = kotlin.math.ln(
+            max(source.width, 1).toDouble() / max(source.height, 1).toDouble(),
+        )
+        var best = DIRECTOR_BUCKETS.first()
+        var bestDiff = Double.POSITIVE_INFINITY
+        for (bucket in DIRECTOR_BUCKETS) {
+            val diff = abs(logAspect - kotlin.math.ln(bucket.width.toDouble() / bucket.height.toDouble()))
+            if (diff < bestDiff) {
+                bestDiff = diff
+                best = bucket
+            }
+        }
+        return best
+    }
+
+    /** 根据模型策略返回参考图提交时的实际目标尺寸。 */
+    fun directorTargetSize(source: PixelSize, useBucket: Boolean): PixelSize =
+        if (useBucket) directorBucket(source) else directorCanvas(source)
+
+    /** Precise Ref (V4.5) 小图也要放大填满一边，否则角色会缩在大黑框中，损失有效占比。 */
     private fun directorPlacement(source: PixelSize): ImagePlacement {
         val canvas = directorCanvas(source)
         val wider = source.aspectRatio > canvas.aspectRatio
@@ -169,6 +226,33 @@ object ImageGeometry {
                 ((canvas.height - fittedHeight) / 2.0).roundToInt(),
                 fittedWidth, fittedHeight,
             ),
+        )
+    }
+
+    /**
+     * Precise Ref (V5) 分桶放置：对齐官方 `2s4lj3fycctfh.js` 模块 134691 `v(e)`。
+     * 先按 `max(bw/w, bh/h)` 缩放到 `(rw, rh)`，再从 `(floor((rw-bw)/2), floor((rh-bh)/2))` 居中裁出 `bw × bh`。
+     */
+    private fun directorBucketPlacement(source: PixelSize): ImagePlacement {
+        val bucket = directorBucket(source)
+        val w = max(source.width, 1)
+        val h = max(source.height, 1)
+        if (w == bucket.width && h == bucket.height) {
+            return ImagePlacement(
+                source = PixelRegion(0, 0, w, h),
+                canvas = bucket,
+                destination = PixelRegion(0, 0, bucket.width, bucket.height),
+            )
+        }
+        val scale = max(bucket.width.toDouble() / w, bucket.height.toDouble() / h)
+        val rw = max(kotlin.math.floor(w * scale + 0.5).toInt(), bucket.width)
+        val rh = max(kotlin.math.floor(h * scale + 0.5).toInt(), bucket.height)
+        val left = (rw - bucket.width) / 2
+        val top = (rh - bucket.height) / 2
+        return ImagePlacement(
+            source = PixelRegion(0, 0, source.width, source.height),
+            canvas = bucket,
+            destination = PixelRegion(-left, -top, rw, rh),
         )
     }
 

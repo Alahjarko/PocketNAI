@@ -197,6 +197,34 @@ artist: xnnagu
 artist: yohaku
 artist: yotte
 artist: yoyopipa
+artist: piromizu
+artist: chigusa minori
+artist: sakiyamama
+artist: oouso
+artist: ayuma sayu
+artist: kani biimu
+artist: necomi
+artist: suimya
+artist: riichu
+artist: dsmile
+artist: lpip
+artist: teffish
+artist: ayamy
+artist: ichimi
+artist: miwabe sakura
+artist: karory
+artist: gomano rio
+artist: konomi (kino konomi)
+artist: fuumi (radial engine)
+artist: ikeuchi tanuma
+artist: mafuyu (chibi21)
+artist: pottsness
+artist: houkisei
+artist: silence girl
+artist: weee (raemz)
+artist: ohisashiburi
+artist: takehana note
+artist: weri
 artist: shirabi
 artist: misaki kurehito
 artist: coffee-kizoku

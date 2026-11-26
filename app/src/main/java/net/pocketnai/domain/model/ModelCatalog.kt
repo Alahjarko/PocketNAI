@@ -26,7 +26,7 @@ package net.pocketnai.domain.model
 object ModelCatalog {
 
     /** 待与官方网页版继续核对的配置版本号。 */
-    const val CONFIG_VERSION: String = "2026-11-02-wallpaper"
+    const val CONFIG_VERSION: String = "2026-11-25-v5-precise-ref"
 
     /** NovelAI 生成接口的 `params_version`，当前网页前端使用 4。 */
     private const val PARAMS_VERSION_V4_V5 = 4
@@ -56,7 +56,7 @@ object ModelCatalog {
      * 核对之后改这两个常量即可，界面与请求构造都通过 [ModelProfile] 读取，不必跟着改。
      */
     private const val MAX_VIBE_REFERENCES = 4
-    private const val MAX_DIRECTOR_REFERENCES = 4
+    private const val MAX_DIRECTOR_REFERENCES = 6
 
     /**
      * Image2Img 的 Strength 默认值：**0.7**（已核对）。
@@ -80,14 +80,9 @@ object ModelCatalog {
     /** Image2Img 的 Strength 区间。官方滑块是 0–1。 */
     private val IMG2IMG_STRENGTH_RANGE = NumericRange(min = 0.0, max = 1.0, step = 0.01)
 
-    /**
-     * Precise Reference 三个滑块共用的区间。
-     *
-     * ⚠️ 官方的 Strength / Fidelity / Information Extracted 都是 0–1 的滑杆
-     * （OpenAPI 对其中两个明确标注了 0–1），但**各自的实际可用区间尚未核对**，
-     * 因此三个共用同一个区间；核对后可以拆成三个。
-     */
+    /** Precise Reference 的 Fidelity / Information Extracted 区间（0–1），以及 V5 扩展到 0–5 的 Strength 区间。 */
     private val DIRECTOR_REFERENCE_RANGE = NumericRange(min = 0.0, max = 1.0, step = 0.01)
+    private val V5_DIRECTOR_STRENGTH_RANGE = NumericRange(min = 0.0, max = 5.0, step = 0.01)
 
     /**
      * Precise Reference 三个滑块的默认值：**全部 1.0**（已核对）。
@@ -193,9 +188,13 @@ object ModelCatalog {
         paramsVersion = PARAMS_VERSION_V4_V5,
         // Image2Img 四个模型都能用（账号所有者确认：V4.5 与 V5 都支持）。
         supportsImg2Img = true,
-        // 参考条件类功能目前只有 V4.5 能用，V5 不支持（账号所有者确认）。
+        // Vibe Transfer 仍仅 V4.5 支持；Precise Reference 在 V4.5 与 V5 均已开放（2026-11-25 核对官方前端）。
         supportsVibeTransfer = model.family == GenerationFamily.V4_5,
-        supportsDirectorReference = model.family == GenerationFamily.V4_5,
+        supportsDirectorReference = true,
+        supportsDirectorInpaint = model.family == GenerationFamily.V4_5,
+        usesBucketDirectorReference = model.family == GenerationFamily.V5,
+        supportsDirectorFidelity = model.family == GenerationFamily.V4_5,
+        supportsOutfitReference = model.family == GenerationFamily.V5,
         // 局部重绘：四个模型都开放（真机实测通过，2026-09-14，技术决策记录第十八节）。
         // 关键前提是请求侧的配合：model 字段必须换成 `ImageModel.inpaintingApiModelId`
         // （专用的 `-inpainting` 模型 ID），用常规模型 ID 发 infill 必然 400。
@@ -206,6 +205,11 @@ object ModelCatalog {
         defaultImg2ImgStrength = DEFAULT_IMG2IMG_STRENGTH,
         defaultInpaintStrength = DEFAULT_INPAINT_STRENGTH,
         directorReferenceRange = DIRECTOR_REFERENCE_RANGE,
+        directorStrengthRange = if (model.family == GenerationFamily.V5) {
+            V5_DIRECTOR_STRENGTH_RANGE
+        } else {
+            DIRECTOR_REFERENCE_RANGE
+        },
         defaultDirectorStrength = DEFAULT_DIRECTOR_STRENGTH,
         defaultDirectorFidelity = DEFAULT_DIRECTOR_FIDELITY,
         defaultDirectorInfoExtracted = DEFAULT_DIRECTOR_INFO_EXTRACTED,

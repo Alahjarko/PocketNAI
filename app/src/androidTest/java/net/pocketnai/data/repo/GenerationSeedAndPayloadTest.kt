@@ -262,12 +262,79 @@ class GenerationSeedAndPayloadTest {
             }
             assertThat(repo.loadDetail(image.id)!!.generation.references.map { it.sourceImageId }).containsExactly("source-0", null, null, null).inOrder()
             assertThat(repo.loadDetail(image.id)!!.generation.references.map { it.secondaryStrength }).isEqualTo(fidelities)
-            // 保留先前的模型切换防线：素材留在草稿，V5 不提交 Precise Ref。
+            // V5 现已支持 Precise Reference：使用 97 分桶居中裁切（无黑边）、0–5 强度、服装参考，且固定 Fidelity=1（反值 0.0）。
             val v5 = ModelCatalog.profileOf(ImageModel.V5_FULL)
-            val inactive = request.copy(params = params.copy(model = v5.model)).withActiveReferences(v5)
-            assertThat(inactive.references).isEmpty()
-            assertThat(inactive.mode).isEqualTo(net.pocketnai.domain.model.GenerationMode.TXT2IMG)
-            assertThat(inactive.validate(v5)).isEmpty()
+            val v5RawRefs = listOf(0, 1, 2).map { index ->
+                val rawPrepared = (processor.import(
+                    net.pocketnai.domain.image.ReferenceSource.LocalPath("inputs/$index.png"),
+                    transform = null,
+                ) as Outcome.Success).value
+                val v5Kind = when (index) {
+                    0 -> net.pocketnai.domain.model.DirectorReferenceKind.CHARACTER_MAIN_OUTFIT
+                    1 -> net.pocketnai.domain.model.DirectorReferenceKind.OUTFIT
+                    else -> net.pocketnai.domain.model.DirectorReferenceKind.CHARACTER_AND_STYLE_ANY_OUTFIT
+                }
+                net.pocketnai.domain.model.ReferenceImage(
+                    id = "v5-ref-$index",
+                    role = net.pocketnai.domain.model.ReferenceRole.DIRECTOR,
+                    ordinal = index,
+                    relativePath = rawPrepared.relativePath,
+                    width = rawPrepared.width,
+                    height = rawPrepared.height,
+                    byteSize = rawPrepared.byteSize,
+                    sha256 = rawPrepared.sha256,
+                    createdAt = 0,
+                    strength = 2.5,
+                    secondaryStrength = 0.35,
+                    informationExtracted = 0.6,
+                    directorKind = v5Kind,
+                )
+            }
+            val v5Params = GenerationParams.defaultsFor(v5).copy(
+                prompt = "sfw, a traveler",
+                seedMode = SeedMode.FIXED,
+                baseSeed = 654,
+            )
+            val v5Request = GenerationRequest(
+                v5Params,
+                net.pocketnai.domain.model.GenerationMode.PRECISE_REFERENCE,
+                v5RawRefs,
+            ).withActiveReferences(v5)
+            assertThat(v5Request.mode).isEqualTo(net.pocketnai.domain.model.GenerationMode.PRECISE_REFERENCE)
+            assertThat(v5Request.validate(v5)).isEmpty()
+            val v5Payloads = mutableListOf<JsonObject>()
+            val v5Repo = repository(v5Payloads, Random(1), files) { "$id-v5" }
+            v5Repo.generate(v5Request, v5Params.prompt).toList()
+            val v5Sent = parametersOf(v5Payloads.single())
+            assertThat(
+                v5Sent.getValue("director_reference_descriptions").jsonArray.map {
+                    it.jsonObject.getValue("caption").jsonObject.getValue("base_caption").jsonPrimitive.content
+                },
+            ).containsExactly("character_mainoutfit", "costume", "character&style_anyoutfit").inOrder()
+            assertThat(v5Sent.getValue("director_reference_strength_values").jsonArray.map { it.jsonPrimitive.double })
+                .containsExactly(2.5, 2.5, 2.5)
+            assertThat(v5Sent.getValue("director_reference_secondary_strength_values").jsonArray.map { it.jsonPrimitive.double })
+                .containsExactly(0.0, 0.0, 0.0)
+            assertThat(v5Sent.getValue("director_reference_information_extracted").jsonArray.map { it.jsonPrimitive.double })
+                .containsExactly(1.0, 1.0, 1.0)
+            val v5ExpectedBuckets = listOf(832 to 1216, 1408 to 704, 960 to 1088)
+            v5Sent.getValue("director_reference_images").jsonArray.forEachIndexed { index, value ->
+                val png = Base64.decode(value.jsonPrimitive.content, Base64.DEFAULT)
+                val decoded = BitmapFactory.decodeByteArray(png, 0, png.size)
+                assertThat(decoded.width to decoded.height).isEqualTo(v5ExpectedBuckets[index])
+                // V5 分桶铺满裁切不补黑边，四角与中心均为原图纯色。
+                assertThat(decoded.getPixel(0, 0)).isEqualTo(colors[index])
+                assertThat(decoded.getPixel(decoded.width - 1, decoded.height - 1)).isEqualTo(colors[index])
+                decoded.recycle()
+            }
+            // 仅含服装参考（costume）时切回 V4.5：素材保留在草稿，但激活列表为空并自动回退为纯文生图。
+            val outfitOnlyOnV45 = GenerationRequest(
+                params,
+                net.pocketnai.domain.model.GenerationMode.PRECISE_REFERENCE,
+                listOf(v5RawRefs[1].copy(ordinal = 0)),
+            ).withActiveReferences(profile)
+            assertThat(outfitOnlyOnV45.references).isEmpty()
+            assertThat(outfitOnlyOnV45.mode).isEqualTo(net.pocketnai.domain.model.GenerationMode.TXT2IMG)
             assertThat(request.withActiveReferences(profile).references).isEqualTo(references)
             // 同一组 Precise 条件也必须进入 img2img 请求，不能因主模式改变而丢失。
             val base = references[0].copy(id = "base", role = ReferenceRole.IMG2IMG, strength = 0.7)
@@ -291,7 +358,7 @@ class GenerationSeedAndPayloadTest {
             assertThat(mixedHistory.references.map { it.role }).containsExactly(ReferenceRole.IMG2IMG,
                 ReferenceRole.DIRECTOR, ReferenceRole.DIRECTOR, ReferenceRole.DIRECTOR, ReferenceRole.DIRECTOR)
             val v5Mixed = mixed.copy(params = params.copy(model = v5.model)).withActiveReferences(v5)
-            assertThat(v5Mixed.references).containsExactly(base)
+            assertThat(v5Mixed.references).hasSize(5)
             assertThat(v5Mixed.mode).isEqualTo(GenerationMode.IMG2IMG)
             val conflicting = mixed.copy(references = mixed.references + base.copy(id = "vibe", role = ReferenceRole.VIBE))
             assertThat(conflicting.validate(profile)).contains(

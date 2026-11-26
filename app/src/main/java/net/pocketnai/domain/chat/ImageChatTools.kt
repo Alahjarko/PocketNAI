@@ -38,11 +38,11 @@ object ImageChatTools {
             })
             put("img2img_ref", text("可选，对话中已有图片的 ref_id，作为图生图底图"))
             put("img2img_strength", number("number", "可选，图生图重绘强度（0.01–0.99，默认 0.7）"))
-            put("precise_ref", text("可选，对话中已有图片的 ref_id，作为 Precise Reference（仅 V4.5 支持，不能与 vibe_ref 同时使用）"))
+            put("precise_ref", text("可选，对话中已有图片的 ref_id，作为 Precise Reference（V4.5 / V5 均支持，不能与 vibe_ref 同时使用）"))
             put("precise_kind", buildJsonObject {
                 put("type", "string")
                 put("enum", JsonArray(DirectorReferenceKind.entries.map { JsonPrimitive(it.apiValue) }))
-                put("description", "可选，Precise Reference 类型，默认 character&style")
+                put("description", "可选，Precise Reference 类型，默认 character&style；costume（仅服装）、character_mainoutfit、character&style_anyoutfit 仅 V5 支持")
             })
             put("vibe_ref", text("可选，对话中已有图片的 ref_id，作为 Vibe Transfer（仅 V4.5 支持，不能与 precise_ref 同时使用）"))
         }, listOf("prompt", "negative_prompt")))
@@ -271,14 +271,16 @@ object ImageChatTools {
         }
         if (preciseRefId != null) {
             if (!profile.supportsDirectorReference) {
-                throw ChatFailure("当前模型不支持 Precise Reference，请切换 V4.5 或改用图生图")
+                throw ChatFailure("当前模型不支持 Precise Reference，请改用图生图")
             }
             val path = availableRefs[preciseRefId]
                 ?: throw ChatFailure("未找到参考图 $preciseRefId，请先调用 get_generation_settings 查看可用图片")
-            val kind = obj.string("precise_kind")?.trim()?.takeIf { it.isNotEmpty() }?.let { raw ->
+            val rawKind = obj.string("precise_kind")?.trim()?.takeIf { it.isNotEmpty() }?.let { raw ->
                 DirectorReferenceKind.entries.firstOrNull { it.apiValue == raw }
                     ?: throw ChatFailure("不支持的 precise_kind：$raw")
             } ?: DirectorReferenceKind.DEFAULT
+            val kind = rawKind.normalizeFor(profile)
+                ?: throw ChatFailure("当前模型不支持服装参考（costume），请切换 V5 模型或改用 character / style")
             refs += ChatReferenceSpec(preciseRefId, path, ReferenceRole.DIRECTOR, directorKind = kind)
         }
         if (vibeRefId != null) {
